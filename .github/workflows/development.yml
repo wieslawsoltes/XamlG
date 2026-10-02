@@ -13,7 +13,7 @@ jobs:
   validate:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,6 +36,14 @@ jobs:
                   target = root / relative
                   old = subprocess.check_output(['git', 'hash-object', str(target)], text=True).strip() if target.is_file() else None
                   content = entry.get('content')
+                  if 'replacements' in entry:
+                      if not entry.get('previous') or old != entry['previous']:
+                          raise RuntimeError(f'Concurrent modification of {relative}: {old}')
+                      content = target.read_text()
+                      for replacement in entry['replacements']:
+                          if not replacement['old'] or content.count(replacement['old']) != 1:
+                              raise RuntimeError(f'Replacement in {relative} must match exactly once')
+                          content = content.replace(replacement['old'], replacement['new'], 1)
                   new = subprocess.check_output(['git', 'hash-object', '--stdin'], input=content, text=True).strip() if content is not None else None
                   if old != entry.get('previous') and old != new:
                       raise RuntimeError(f'Concurrent modification of {relative}: {old}')
@@ -52,23 +60,25 @@ jobs:
                   subprocess.run(['git', '-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com', 'commit', '-m', transaction['message']], check=True)
           if manifests:
               subprocess.run(['git', 'push', 'origin', 'HEAD:main'], check=True)
+          print('SOURCE_COMMIT=' + subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip())
           PY
-      - name: Inspect recovered contracts
-        if: ${{ !hashFiles('src/XamlG.Compiler/XamlG.Compiler.csproj') }}
-        run: |
-          for file in src/XamlG.Compiler/Bound*.cs src/XamlG.Compiler/IXaml*.cs src/XamlG.Compiler/ObjectBindingBuilder.cs src/XamlG.Compiler/ConstructorBinder.cs src/XamlG.Compiler/DeferredContentBinder.cs src/XamlG.Compiler/ContentWhitespaceNormalizer.cs src/XamlG.Compiler/MarkupBinder.cs src/XamlG.Compiler/MetadataDiagnosticCollector.cs; do
-            echo "===== $file ====="
-            cat "$file"
-          done
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.401'
-      - name: Build compiler
-        if: ${{ hashFiles('src/XamlG.Compiler/XamlG.Compiler.csproj') != '' }}
-        run: dotnet build src/XamlG.Compiler/XamlG.Compiler.csproj -c Release -p:NuGetAudit=false
+      - name: Build compiler and implemented hosts
+        run: |
+          dotnet build src/XamlG.Compiler/XamlG.Compiler.csproj -c Release -p:NuGetAudit=false
+          for project in src/XamlG.Generator/XamlG.Generator.csproj src/XamlG.Workspaces/XamlG.Workspaces.csproj tools/XamlG.Cli/XamlG.Cli.csproj; do
+            if [ -f "$project" ]; then dotnet build "$project" -c Release -p:NuGetAudit=false; fi
+          done
       - name: Execute compiler tests
-        if: ${{ hashFiles('tests/XamlG.Tests/XamlG.Tests.csproj') != '' }}
         run: dotnet test tests/XamlG.Tests/XamlG.Tests.csproj -c Release -p:NuGetAudit=false --logger 'trx;LogFileName=compiler.trx' --results-directory artifacts/tests
+      - name: Execute Avalonia integration tests
+        if: ${{ hashFiles('tests/XamlG.Avalonia.Tests/XamlG.Avalonia.Tests.csproj') != '' }}
+        run: dotnet test tests/XamlG.Avalonia.Tests/XamlG.Avalonia.Tests.csproj -c Release -p:NuGetAudit=false --logger 'trx;LogFileName=avalonia.trx' --results-directory artifacts/tests
+      - name: Build browser playground
+        if: ${{ hashFiles('tools/XamlG.Playground/XamlG.Playground.csproj') != '' }}
+        run: dotnet publish tools/XamlG.Playground/XamlG.Playground.csproj -c Release -p:NuGetAudit=false -o artifacts/playground
       - uses: actions/upload-artifact@v4
         if: always()
         with:
