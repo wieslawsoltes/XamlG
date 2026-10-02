@@ -4,17 +4,58 @@ on:
     paths: ['.github/workflows/recovery-snapshot.yml']
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   snapshot:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Preserve checked-in source
+        with:
+          fetch-depth: 0
+      - name: Recover complete JSON records without accepting truncated files
+        run: |
+          python - <<'PY'
+          import base64, json, zlib
+          from pathlib import Path, PurePosixPath
+          root = Path.cwd()
+          encoded = ''.join(p.read_text().strip() for p in sorted((root / '.bootstrap').glob('source-*.b64')))
+          source = zlib.decompressobj(31).decompress(base64.b64decode(encoded, validate=True)).decode('utf8')
+          decoder = json.JSONDecoder()
+          position = source.index('[') + 1
+          recovered = []
+          while position < len(source):
+              while position < len(source) and source[position] in ', \r\n\t':
+                  position += 1
+              try:
+                  entry, position = decoder.raw_decode(source, position)
+              except json.JSONDecodeError:
+                  break
+              relative = PurePosixPath(entry['path'])
+              if relative.is_absolute() or '..' in relative.parts or any(p in {'.git', '.github', '.bootstrap', 'bin', 'obj'} for p in relative.parts):
+                  raise RuntimeError(f'Unsafe path: {relative}')
+              path = root / relative
+              content = base64.b64decode(entry['content'], validate=True) if entry.get('encoding') == 'base64' else entry['content'].encode('utf8')
+              if path.exists() and path.read_bytes() != content:
+                  raise RuntimeError(f'Refusing to overwrite {relative}')
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_bytes(content)
+              recovered.append(str(relative))
+          Path('.bootstrap/recovery.json').write_text(json.dumps({'files': recovered, 'count': len(recovered), 'uncompressedPrefixBytes': len(source), 'completeArchive': False}, indent=2))
+          print('\n'.join(recovered))
+          print(f'Recovered {len(recovered)} complete files. Truncated final record discarded.')
+          PY
+      - name: Commit recovered files
+        run: |
+          git add --all
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'chore: recover complete compiler source records from interrupted upload'
+            git push origin HEAD:main
+          fi
+      - name: Archive recovered source
         run: git archive --format=tar.gz -o /tmp/xamlg-recovery.tar.gz HEAD
       - uses: actions/upload-artifact@v4
         with:
-          name: xamlg-recovery
+          name: xamlg-recovered-source
           path: /tmp/xamlg-recovery.tar.gz
-          retention-days: 3
+          retention-days: 7
