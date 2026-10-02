@@ -1,0 +1,20 @@
+name: Recovery snapshot
+on:
+  push:
+    paths: ['.github/workflows/recovery-snapshot.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preserve checked-in source
+        run: git archive --format=tar.gz -o /tmp/xamlg-recovery.tar.gz HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xamlg-recovery
+          path: /tmp/xamlg-recovery.tar.gz
+          retention-days: 3
