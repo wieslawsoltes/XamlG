@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/tests/">
+    <Project Path="tests/XamlG.Tests/XamlG.Tests.csproj" />
+  </Folder>
+  <Project Path="src/XamlG.Compiler/XamlG.Compiler.csproj" />
+  <Project Path="src/XamlG.Emit.CSharp/XamlG.Emit.CSharp.csproj" />
+  <Project Path="src/XamlG.Frameworks/XamlG.Frameworks.csproj" />
+  <Project Path="src/XamlG.Generator/XamlG.Generator.csproj" />
+  <Project Path="src/XamlG.Roslyn/XamlG.Roslyn.csproj" />
+  <Project Path="src/XamlG.Runtime/XamlG.Runtime.csproj" />
+  <Project Path="src/XamlG.Syntax/XamlG.Syntax.csproj" />
+  <Project Path="src/XamlG.Workspace/XamlG.Workspace.csproj" />
+</Solution>

@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+artifacts/
+TestResults/
+node_modules/
+.upstream/
+*.user
+
+external/
+TestResults/
+artifacts/
+.bootstrap/
