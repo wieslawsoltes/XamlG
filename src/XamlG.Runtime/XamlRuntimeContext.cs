@@ -1,7 +1,7 @@
 namespace XamlG.Runtime;
 
 /// <summary>Persistent service-provider frames preserve parent and target semantics across nested and deferred construction.</summary>
-public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvider, IXamlProvideValueTarget, IXamlParentStackProvider, IXamlUriContext
+public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvider, IXamlProvideValueTarget, IXamlParentStackProvider, IXamlUriContext, System.ComponentModel.ITypeDescriptorContext
 {
     private readonly IServiceProvider? _outer;
     private readonly Func<XamlRuntimeContext, Type, object?>? _services;
@@ -13,13 +13,18 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
     private object? _intermediateRoot;
     public XamlRuntimeContext(IServiceProvider? outer = null, object? root = null, Uri? baseUri = null, Func<XamlRuntimeContext, Type, object?>? services = null)
     { _outer = outer; _root = root; _intermediateRoot = root; BaseUri = baseUri; _services = services; _names = new(); Session = new(); }
-    private XamlRuntimeContext(XamlRuntimeContext parent, object? frameObject, object? targetObject, object? targetProperty, string? nodeKey, bool newScope)
+    private XamlRuntimeContext(XamlRuntimeContext parent, object? frameObject, object? targetObject, object? targetProperty, string? nodeKey, bool newScope, IServiceProvider? outer = null)
     {
-        _outer = parent._outer; _services = parent._services; _parent = parent; _frameObject = frameObject;
+        _outer = outer ?? parent._outer; _services = parent._services; _parent = parent; _frameObject = frameObject;
         _root = parent.RootObject; _intermediateRoot = newScope ? null : parent.IntermediateRootObject;
         _names = newScope ? new() : parent._names; Session = newScope ? new() : parent.Session;
-        BaseUri = parent.BaseUri; TargetObject = targetObject; TargetProperty = targetProperty; NodeKey = nodeKey ?? parent.NodeKey;
+        BaseUri = parent.BaseUri; TargetObject = targetObject; TargetProperty = targetProperty; NodeKey = newScope ? null : nodeKey ?? parent.NodeKey;
     }
+    public System.ComponentModel.IContainer? Container => null;
+    public object? Instance => TargetObject;
+    public System.ComponentModel.PropertyDescriptor? PropertyDescriptor => null;
+    public bool OnComponentChanging() => true;
+    public void OnComponentChanged() { }
     public XamlRuntimeSession Session { get; }
     public object? RootObject => _root ?? _parent?.RootObject;
     public object? IntermediateRootObject => _intermediateRoot ?? _parent?.IntermediateRootObject;
@@ -39,7 +44,7 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
         return new(this, value, TargetObject, TargetProperty, key, false);
     }
     public XamlRuntimeContext ForTarget(object target, object? property) => new(this, null, target, property, NodeKey, false);
-    public XamlRuntimeContext CreateDeferredScope(IServiceProvider? services = null) => new(this, null, TargetObject, TargetProperty, null, true);
+    public XamlRuntimeContext CreateDeferredScope(IServiceProvider? services = null) => new(this, null, TargetObject, TargetProperty, null, true, services);
     public object? GetService(Type serviceType)
     {
         if (serviceType == null) throw new ArgumentNullException(nameof(serviceType));
