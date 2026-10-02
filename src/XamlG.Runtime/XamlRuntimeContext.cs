@@ -1,30 +1,63 @@
+using System.ComponentModel;
+
 namespace XamlG.Runtime;
 
-/// <summary>Persistent service-provider frames preserve parent and target semantics across nested and deferred construction.</summary>
-public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvider, IXamlProvideValueTarget, IXamlParentStackProvider, IXamlUriContext, System.ComponentModel.ITypeDescriptorContext
+/// <summary>
+/// Persistent construction and service-provider frames. Target-specific adapters are cached on the
+/// frame which created them, never inherited from a frame with a different target object.
+/// </summary>
+public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvider, IXamlProvideValueTarget,
+    IXamlParentStackProvider, IXamlUriContext, ITypeDescriptorContext
 {
     private readonly IServiceProvider? _outer;
     private readonly Func<XamlRuntimeContext, Type, object?>? _services;
+    private readonly Func<IServiceProvider, IServiceProvider>? _innerFactory;
     private readonly XamlRuntimeContext? _parent;
     private readonly object? _frameObject;
     private readonly XamlNameScope _names;
-    private readonly Dictionary<Type, object> _localServices = new();
+    private readonly IReadOnlyDictionary<Type, object>? _namespaces;
+    private Dictionary<Type, object>? _localServices;
+    private Dictionary<Type, object>? _adapterCache;
+    private IServiceProvider? _inner;
     private object? _root;
     private object? _intermediateRoot;
-    public XamlRuntimeContext(IServiceProvider? outer = null, object? root = null, Uri? baseUri = null, Func<XamlRuntimeContext, Type, object?>? services = null)
-    { _outer = outer; _root = root; _intermediateRoot = root; BaseUri = baseUri; _services = services; _names = new(); Session = new(); }
-    private XamlRuntimeContext(XamlRuntimeContext parent, object? frameObject, object? targetObject, object? targetProperty, string? nodeKey, bool newScope, IServiceProvider? outer = null)
+
+    public XamlRuntimeContext(IServiceProvider? outer = null, object? root = null, Uri? baseUri = null,
+        Func<XamlRuntimeContext, Type, object?>? services = null,
+        Func<IServiceProvider, IServiceProvider>? innerFactory = null,
+        IReadOnlyDictionary<Type, object>? namespaces = null)
     {
-        _outer = outer ?? parent._outer; _services = parent._services; _parent = parent; _frameObject = frameObject;
-        _root = parent.RootObject; _intermediateRoot = newScope ? null : parent.IntermediateRootObject;
-        _names = newScope ? new() : parent._names; Session = newScope ? new() : parent.Session;
-        BaseUri = parent.BaseUri; TargetObject = targetObject; TargetProperty = targetProperty; NodeKey = newScope ? null : nodeKey ?? parent.NodeKey;
+        _outer = outer;
+        _root = root;
+        _intermediateRoot = root;
+        BaseUri = baseUri;
+        _services = services;
+        _innerFactory = innerFactory;
+        _namespaces = namespaces;
+        _names = new();
+        Session = new();
     }
-    public System.ComponentModel.IContainer? Container => null;
-    public object? Instance => TargetObject;
-    public System.ComponentModel.PropertyDescriptor? PropertyDescriptor => null;
-    public bool OnComponentChanging() => true;
-    public void OnComponentChanged() { }
+
+    private XamlRuntimeContext(XamlRuntimeContext parent, object? frameObject, object? targetObject,
+        object? targetProperty, string? nodeKey, bool newScope, IServiceProvider? outer = null,
+        IReadOnlyDictionary<Type, object>? namespaces = null)
+    {
+        _outer = outer ?? parent._outer;
+        _services = parent._services;
+        _innerFactory = parent._innerFactory;
+        _namespaces = namespaces ?? parent._namespaces;
+        _parent = parent;
+        _frameObject = frameObject;
+        _root = parent.RootObject;
+        _intermediateRoot = newScope ? null : parent.IntermediateRootObject;
+        _names = newScope ? new() : parent._names;
+        Session = newScope ? new() : parent.Session;
+        BaseUri = parent.BaseUri;
+        TargetObject = targetObject;
+        TargetProperty = targetProperty;
+        NodeKey = newScope ? null : nodeKey ?? parent.NodeKey;
+    }
+
     public XamlRuntimeSession Session { get; }
     public object? RootObject => _root ?? _parent?.RootObject;
     public object? IntermediateRootObject => _intermediateRoot ?? _parent?.IntermediateRootObject;
@@ -32,10 +65,29 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
     public object? TargetProperty { get; }
     public string? NodeKey { get; }
     public Uri? BaseUri { get; set; }
+    public IContainer? Container => null;
+    public object? Instance => TargetObject;
+    public PropertyDescriptor? PropertyDescriptor => null;
+    public bool OnComponentChanging() => true;
+    public void OnComponentChanged() { }
+
     public IEnumerable<object> Parents
     {
-        get { for (var current = this; current != null; current = current._parent) if (current._frameObject != null) yield return current._frameObject; }
+        get
+        {
+            for (var current = this; current != null; current = current._parent)
+                if (current._frameObject != null) yield return current._frameObject;
+        }
     }
+
+    public IEnumerable<object> EnumerateParents(Type externalContract, Func<object, IEnumerable<object>> selector)
+    {
+        foreach (var parent in Parents) yield return parent;
+        var external = GetExternalService(externalContract);
+        if (external != null)
+            foreach (var parent in selector(external)) yield return parent;
+    }
+
     public XamlRuntimeContext Push(object value, string key)
     {
         if (_root == null && _parent == null) _root = value;
@@ -43,19 +95,60 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
         Session.Register(key, value, NodeKey);
         return new(this, value, TargetObject, TargetProperty, key, false);
     }
-    public XamlRuntimeContext ForTarget(object target, object? property) => new(this, null, target, property, NodeKey, false);
-    public XamlRuntimeContext CreateDeferredScope(IServiceProvider? services = null) => new(this, null, TargetObject, TargetProperty, null, true, services);
+
+    public XamlRuntimeContext ForTarget(object target, object? property) =>
+        new(this, null, target, property, NodeKey, false);
+
+    public XamlRuntimeContext WithNamespaces(IReadOnlyDictionary<Type, object> namespaces) =>
+        ReferenceEquals(namespaces, _namespaces) ? this : new(this, null, TargetObject, TargetProperty, NodeKey, false, namespaces: namespaces);
+
+    public XamlRuntimeContext CreateDeferredScope(IServiceProvider? services = null) =>
+        new(this, null, TargetObject, TargetProperty, null, true, services);
+
+    public object? GetExternalService(Type serviceType) => _outer?.GetService(serviceType);
+    public object? GetNamespaceValue(Type contractType) =>
+        _namespaces != null && _namespaces.TryGetValue(contractType, out var value) ? value : null;
+
     public object? GetService(Type serviceType)
     {
         if (serviceType == null) throw new ArgumentNullException(nameof(serviceType));
-        if (serviceType == typeof(IServiceProvider) || serviceType == typeof(XamlRuntimeContext) || serviceType == typeof(IXamlRootObjectProvider) || serviceType == typeof(IXamlProvideValueTarget) || serviceType == typeof(IXamlParentStackProvider) || serviceType == typeof(IXamlUriContext)) return this;
-        if (_localServices.TryGetValue(serviceType, out var local)) return local;
-        for (var parent = _parent; parent != null; parent = parent._parent) if (parent._localServices.TryGetValue(serviceType, out local)) return local;
-        return _services?.Invoke(this, serviceType) ?? _outer?.GetService(serviceType);
+        if (serviceType == typeof(IServiceProvider) || serviceType == typeof(XamlRuntimeContext) ||
+            serviceType == typeof(IXamlRootObjectProvider) || serviceType == typeof(IXamlProvideValueTarget) ||
+            serviceType == typeof(IXamlParentStackProvider) || serviceType == typeof(IXamlUriContext) ||
+            serviceType == typeof(ITypeDescriptorContext)) return this;
+
+        for (var frame = this; frame != null; frame = frame._parent)
+            if (frame._localServices != null && frame._localServices.TryGetValue(serviceType, out var local)) return local;
+        if (_adapterCache != null && _adapterCache.TryGetValue(serviceType, out var cached)) return cached;
+        var adapter = _services?.Invoke(this, serviceType);
+        if (adapter != null)
+        {
+            (_adapterCache ??= new())[serviceType] = adapter;
+            return adapter;
+        }
+        if (_innerFactory != null)
+        {
+            _inner ??= _innerFactory(this);
+            var provided = _inner.GetService(serviceType);
+            if (provided != null) return provided;
+        }
+        return GetExternalService(serviceType);
     }
-    public void AddService(Type contract, object instance) => _localServices[contract] = instance;
+
+    public void AddService(Type contract, object instance)
+    {
+        if (contract == null) throw new ArgumentNullException(nameof(contract));
+        if (instance == null) throw new ArgumentNullException(nameof(instance));
+        if (!contract.IsInstanceOfType(instance)) throw new ArgumentException("Service does not implement its contract.", nameof(instance));
+        (_localServices ??= new())[contract] = instance;
+    }
+
     public void RegisterName(string name, object value) => _names.Register(name, value);
     public T ResolveName<T>(string name) => (T)_names.Resolve(name);
     public void Defer(Action assignment) => _names.Defer(assignment);
-    public void Complete(object root) { _names.Complete(); Session.Attach(root); }
+    public void Complete(object root)
+    {
+        _names.Complete();
+        Session.Attach(root);
+    }
 }
