@@ -32,6 +32,8 @@ public sealed class ValueBinder
         { var inner = TryText(text, nullable.TypeArguments[0], scope, span, member); return inner == null ? null : new BoundCastExpression(inner, target, span); }
         if (PrimitiveValueParser.TryParse(text, target.SpecialType, out var primitive))
             return new BoundConstantExpression(primitive, target.SpecialType == SpecialType.System_Object ? _context.Types.Special(SpecialType.System_String) : target, span);
+        // A malformed primitive is a compile-time error, not a deferred call to Int32.Parse.
+        if (target.SpecialType is SpecialType.System_Boolean or SpecialType.System_Char or SpecialType.System_Byte or SpecialType.System_SByte or SpecialType.System_Int16 or SpecialType.System_UInt16 or SpecialType.System_Int32 or SpecialType.System_UInt32 or SpecialType.System_Int64 or SpecialType.System_UInt64 or SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Decimal) return null;
         if (target.TypeKind == TypeKind.Enum && target is INamedTypeSymbol enumeration)
         {
             var fields = ImmutableArray.CreateBuilder<IFieldSymbol>();
