@@ -24,15 +24,22 @@ jobs:
           XML
           dotnet restore /tmp/host-inputs/Hosts.csproj
           tar -czf /tmp/host-packages.tar.gz -C /tmp host-packages
+          split -b 380M /tmp/host-packages.tar.gz /tmp/host-cache-
           reference=$(ls "$DOTNET_ROOT/packs/Microsoft.AspNetCore.App.Ref" | grep '^10\.' | sort -V | tail -1)
           tar -czf /tmp/aspnet-reference.tar.gz -C "$DOTNET_ROOT" "packs/Microsoft.AspNetCore.App.Ref/$reference"
-          ls -lh /tmp/host-packages.tar.gz /tmp/aspnet-reference.tar.gz
+          ls -lh /tmp/host-cache-* /tmp/aspnet-reference.tar.gz
       - uses: actions/upload-artifact@v4
         with:
-          name: host-package-cache
+          name: host-package-cache-aa
           compression-level: 0
           retention-days: 3
-          path: /tmp/host-packages.tar.gz
+          path: /tmp/host-cache-aa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: host-package-cache-ab
+          compression-level: 0
+          retention-days: 3
+          path: /tmp/host-cache-ab
       - uses: actions/upload-artifact@v4
         with:
           name: aspnet-reference
