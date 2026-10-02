@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <Description>Incremental XAML-to-C# source generator and MSBuild integration for XamlG.</Description>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../XamlG.CSharp/XamlG.CSharp.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../XamlG.Frameworks/XamlG.Frameworks.csproj" PrivateAssets="all" />
+    <ProjectReference Include="../XamlG.Runtime/XamlG.Runtime.csproj" ReferenceOutputAssembly="false" />
+    <None Include="buildTransitive/*" Pack="true" PackagePath="buildTransitive" />
+  </ItemGroup>
+  <Target Name="PackXamlGAnalyzerDependencies" BeforeTargets="_GetPackageFiles" DependsOnTargets="Build">
+    <ItemGroup>
+      <None Include="$(OutputPath)XamlG.Generator.dll;$(OutputPath)XamlG.Syntax.dll;$(OutputPath)XamlG.Roslyn.dll;$(OutputPath)XamlG.Compiler.dll;$(OutputPath)XamlG.CSharp.dll;$(OutputPath)XamlG.Frameworks.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    </ItemGroup>
+  </Target>
+</Project>

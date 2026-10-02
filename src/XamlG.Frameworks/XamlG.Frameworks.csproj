@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Description>Symbol-only framework profiles and semantic adapters for XamlG.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../XamlG.Compiler/XamlG.Compiler.csproj" />
+  </ItemGroup>
+</Project>

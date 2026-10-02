@@ -1,0 +1,26 @@
+<Project>
+  <ItemGroup Condition="'$(XamlGEnabled)' == 'true' and '$(XamlGEnableDefaultItems)' == 'true'">
+    <XamlGSource Include="**/*.xaml;**/*.axaml" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder);@(XamlGSource)" />
+  </ItemGroup>
+  <Target Name="PrepareXamlGAdditionalFiles"
+          BeforeTargets="GenerateMSBuildEditorConfigFileShouldRun;CoreCompile"
+          AfterTargets="_InjectAvaloniaAdditionalFiles"
+          Condition="'$(XamlGEnabled)' == 'true'">
+    <PropertyGroup>
+      <EnableAvaloniaXamlCompilation>false</EnableAvaloniaXamlCompilation>
+      <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
+    </PropertyGroup>
+    <ItemGroup>
+      <AdditionalFiles Remove="@(XamlGSource)" />
+      <AdditionalFiles Include="@(XamlGSource)">
+        <XamlGCompile Condition="'%(XamlGSource.XamlGCompile)' == ''">true</XamlGCompile>
+        <XamlGLogicalPath Condition="'%(XamlGSource.Link)' != ''">%(XamlGSource.Link)</XamlGLogicalPath>
+        <XamlGLogicalPath Condition="'%(XamlGSource.Link)' == ''">%(XamlGSource.Identity)</XamlGLogicalPath>
+      </AdditionalFiles>
+    </ItemGroup>
+  </Target>
+  <Target Name="ValidateXamlGConfiguration" BeforeTargets="CoreCompile" Condition="'$(XamlGEnabled)' == 'true'">
+    <Error Condition="'$(Language)' != 'C#'" Text="XamlG emits C# and requires a C# project." Code="XG2000" />
+    <Error Condition="'$(EnableAvaloniaXamlCompilation)' == 'true'" Text="XamlG and the Avalonia IL XAML compiler cannot compile the same documents. Disable EnableAvaloniaXamlCompilation." Code="XG2000" />
+  </Target>
+</Project>
