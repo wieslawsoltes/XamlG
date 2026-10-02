@@ -1,0 +1,46 @@
+name: Toolchain and upstream baselines
+on:
+  push:
+    paths: ['.github/workflows/toolchain.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Capture public reference sources
+        run: |
+          mkdir -p /tmp/xamlg-baseline
+          git clone --filter=blob:none --no-checkout https://github.com/AvaloniaUI/Avalonia.git /tmp/xamlg-baseline/Avalonia
+          git -C /tmp/xamlg-baseline/Avalonia checkout 17350180c33b063f0e98abbfd19aa3cae63f5d56
+          git clone --filter=blob:none --no-checkout https://github.com/kekekeks/XamlX.git /tmp/xamlg-baseline/XamlX
+          git -C /tmp/xamlg-baseline/XamlX checkout 7ef6aef496ab6e8dcf3df04bef697be49db37c04
+          rm -rf /tmp/xamlg-baseline/{Avalonia,XamlX}/.git
+          tar -czf /tmp/upstream.tar.gz -C /tmp/xamlg-baseline .
+      - name: Prepare offline build inputs
+        run: |
+          mkdir -p /tmp/xamlg-packages
+          cat > /tmp/xamlg-packages/Cache.csproj <<'XML'
+          <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFrameworks>net10.0;netstandard2.0</TargetFrameworks></PropertyGroup><ItemGroup><PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" /><PackageReference Include="System.Text.Json" Version="10.0.0" /></ItemGroup><ItemGroup Condition="'$(TargetFramework)' == 'net10.0'"><PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.0.0" /><PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.0.0" /><PackageReference Include="Microsoft.Build.Locator" Version="1.7.8" /><PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" /><PackageReference Include="xunit" Version="2.9.3" /><PackageReference Include="xunit.runner.visualstudio" Version="3.1.1" /><PackageReference Include="Avalonia" Version="12.1.3" /><PackageReference Include="Avalonia.Headless.XUnit" Version="12.1.3" /><PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.12" /><PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.12" /></ItemGroup></Project>
+          XML
+          dotnet restore /tmp/xamlg-packages/Cache.csproj
+          dotnet --info > /tmp/dotnet-info.txt
+          tar -czf /tmp/dotnet-offline.tar.gz -C "$DOTNET_ROOT" dotnet host shared sdk packs
+          tar -czf /tmp/nuget-offline.tar.gz -C "$HOME/.nuget" packages
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xamlg-build-inputs
+          compression-level: 0
+          retention-days: 3
+          path: |
+            /tmp/upstream.tar.gz
+            /tmp/dotnet-offline.tar.gz
+            /tmp/nuget-offline.tar.gz
+            /tmp/dotnet-info.txt
