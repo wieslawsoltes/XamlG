@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework></PropertyGroup><ItemGroup><ProjectReference Include="../XamlG.Syntax/XamlG.Syntax.csproj" /><PackageReference Include="Microsoft.CodeAnalysis.CSharp" /></ItemGroup></Project>

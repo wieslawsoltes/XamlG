@@ -1,0 +1,122 @@
+using System.Collections.Concurrent;
+using System.Collections.Immutable;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using XamlG.Syntax;
+namespace XamlG.Roslyn;
+
+/// <summary>Thread-safe caches owned by one immutable Roslyn compilation. No process-wide symbol retention.</summary>
+public sealed class RoslynTypeSystem
+{
+    private readonly ConcurrentDictionary<(string Namespace, string Name, int Arity), TypeResolution> _types = new();
+    private readonly ConcurrentDictionary<ITypeSymbol, ImmutableArray<IMethodSymbol>> _addMethods = new(SymbolEqualityComparer.Default);
+    private readonly ImmutableArray<IAssemblySymbol> _assemblies;
+    public RoslynTypeSystem(CSharpCompilation compilation, XamlTypeSystemConfiguration? configuration = null)
+    {
+        Compilation = compilation ?? throw new ArgumentNullException(nameof(compilation)); Configuration = configuration ?? new();
+        _assemblies = ImmutableArray.Create(compilation.Assembly).AddRange(compilation.SourceModule.ReferencedAssemblySymbols);
+        var mappings = Configuration.NamespaceMappings.ToBuilder();
+        foreach (var assembly in _assemblies)
+            foreach (var attribute in assembly.GetAttributes())
+            {
+                if (attribute.AttributeClass == null || !Configuration.XmlnsDefinitionAttributes.Contains(attribute.AttributeClass.MetadataName())) continue;
+                if (attribute.ConstructorArguments.Length < 2 || attribute.ConstructorArguments[0].Value is not string xml || attribute.ConstructorArguments[1].Value is not string clr) continue;
+                var target = attribute.NamedArguments.FirstOrDefault(p => p.Key == "AssemblyName").Value.Value as string ?? assembly.Identity.Name;
+                mappings.Add(new(xml, clr, target));
+            }
+        NamespaceMappings = mappings.Distinct().ToImmutableArray();
+    }
+    public CSharpCompilation Compilation { get; }
+    public XamlTypeSystemConfiguration Configuration { get; }
+    public ImmutableArray<XmlNamespaceMapping> NamespaceMappings { get; }
+    public INamedTypeSymbol? Find(string metadataName) => Compilation.GetTypeByMetadataName(metadataName);
+    public INamedTypeSymbol Special(SpecialType type) => Compilation.GetSpecialType(type);
+    public bool IsAccessible(ISymbol symbol, INamedTypeSymbol? within = null) => Compilation.IsSymbolAccessibleWithin(symbol, (ISymbol?)within ?? Compilation.Assembly);
+    public TypeResolution Resolve(string xmlNamespace, string name, int arity = 0) => _types.GetOrAdd((xmlNamespace, name, arity), key => ResolveCore(key.Namespace, key.Name, key.Arity));
+    private TypeResolution ResolveCore(string xmlNamespace, string name, int arity)
+    {
+        if (XamlNames.IsLanguage(xmlNamespace))
+        {
+            var special = XamlIntrinsicTypes.GetSpecialType(name);
+            var intrinsic = special == SpecialType.None ? name == "Uri" ? Find(ClrNames.Uri) : name == "Type" ? Find(ClrNames.Type) : null : Special(special);
+            return intrinsic != null && intrinsic.Arity == arity ? new(intrinsic, ImmutableArray.Create(intrinsic)) : TypeResolution.Missing;
+        }
+        var mappings = new List<XmlNamespaceMapping>();
+        if (xmlNamespace.StartsWith("clr-namespace:", StringComparison.Ordinal))
+        {
+            var pieces = xmlNamespace.Substring(14).Split(';');
+            var assembly = pieces.Skip(1).FirstOrDefault(p => p.StartsWith("assembly=", StringComparison.Ordinal))?.Substring(9) ?? Compilation.AssemblyName;
+            mappings.Add(new(xmlNamespace, pieces[0], assembly));
+        }
+        else if (xmlNamespace.StartsWith("using:", StringComparison.Ordinal)) mappings.Add(new(xmlNamespace, xmlNamespace.Substring(6)));
+        else mappings.AddRange(NamespaceMappings.Where(m => m.XmlNamespace == xmlNamespace));
+        var candidates = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var metadata = name + (arity == 0 ? string.Empty : "`" + arity);
+        foreach (var mapping in mappings)
+            foreach (var assembly in _assemblies)
+            {
+                if (mapping.AssemblyName != null && !string.Equals(mapping.AssemblyName.Split(',')[0].Trim(), assembly.Identity.Name, StringComparison.Ordinal)) continue;
+                var type = assembly.GetTypeByMetadataName(string.IsNullOrEmpty(mapping.ClrNamespace) ? metadata : mapping.ClrNamespace + "." + metadata);
+                if (type != null && IsAccessible(type)) candidates.Add(type);
+            }
+        var result = candidates.OrderBy(c => c.ContainingAssembly.Identity.ToString(), StringComparer.Ordinal).ThenBy(c => c.MetadataName(), StringComparer.Ordinal).ToImmutableArray();
+        return new(result.Length == 1 ? result[0] : null, result);
+    }
+    public ImmutableArray<IPropertySymbol> GetDeclaredContentProperties(INamedTypeSymbol type)
+    {
+        var result = new HashSet<IPropertySymbol>(SymbolEqualityComparer.Default);
+        foreach (var property in type.GetMembers().OfType<IPropertySymbol>())
+            if (!property.IsStatic && property.HasAttribute(Configuration.ContentAttributes)) result.Add(property);
+        foreach (var attribute in type.GetAttributes())
+        {
+            if (attribute.AttributeClass == null || !Configuration.ContentAttributes.Contains(attribute.AttributeClass.MetadataName())) continue;
+            var name = attribute.ConstructorArguments.FirstOrDefault().Value as string ?? attribute.NamedArguments.FirstOrDefault(p => p.Key == Configuration.ContentPropertyAttributeProperty).Value.Value as string;
+            if (name != null && type.Members(name).OfType<IPropertySymbol>().FirstOrDefault() is { } property) result.Add(property);
+        }
+        return result.ToImmutableArray();
+    }
+    public IPropertySymbol? GetContentProperty(INamedTypeSymbol type)
+    {
+        for (var current = type; current != null; current = current.BaseType)
+        { var properties = GetDeclaredContentProperties(current); if (properties.Length != 0) return properties[0]; }
+        return null;
+    }
+    public bool HasInheritedAttribute(ITypeSymbol type, IEnumerable<string> names)
+    {
+        for (var current = type as INamedTypeSymbol; current != null; current = current.BaseType) if (current.HasAttribute(names)) return true;
+        return false;
+    }
+    public bool IsUsableDuringInitialization(ITypeSymbol type)
+    {
+        for (var current = type as INamedTypeSymbol; current != null; current = current.BaseType)
+            foreach (var attribute in current.GetAttributes())
+                if (attribute.AttributeClass != null && Configuration.UsableDuringInitializationAttributes.Contains(attribute.AttributeClass.MetadataName()))
+                    return attribute.ConstructorArguments.Length == 0 || attribute.ConstructorArguments[0].Value is true;
+        return false;
+    }
+    public ImmutableArray<IMethodSymbol> AddMethods(ITypeSymbol type) => _addMethods.GetOrAdd(type, CollectAddMethods);
+    private ImmutableArray<IMethodSymbol> CollectAddMethods(ITypeSymbol type)
+    {
+        var methods = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+        foreach (var method in type.Members(Configuration.CollectionAddMethod).OfType<IMethodSymbol>())
+            if (!method.IsStatic && !method.IsGenericMethod && method.Parameters.Length is 1 or 2 && IsAccessible(method)) methods.Add(method);
+        foreach (var contract in type.AllInterfaces)
+        {
+            var addChild = Configuration.AddChildInterfaces.Contains(contract.OriginalDefinition.MetadataName());
+            foreach (var method in contract.GetMembers(addChild ? Configuration.AddChildMethod : Configuration.CollectionAddMethod).OfType<IMethodSymbol>())
+                if (method.Parameters.Length is 1 or 2 && !method.IsStatic && !method.IsGenericMethod && IsAccessible(contract)) methods.Add(method);
+        }
+        return methods.OrderBy(m => m.ContainingType.TypeKind == TypeKind.Interface ? 1 : 0).ThenBy(m => m.ToDisplayString(), StringComparer.Ordinal).ToImmutableArray();
+    }
+    public IEnumerable<INamedTypeSymbol> EnumerateTypes(string xmlNamespace)
+    {
+        var namespaces = NamespaceMappings.Where(m => m.XmlNamespace == xmlNamespace).ToArray();
+        foreach (var assembly in _assemblies)
+            foreach (var mapping in namespaces.Where(m => m.AssemblyName == null || m.AssemblyName == assembly.Identity.Name))
+            {
+                INamespaceSymbol? scope = assembly.GlobalNamespace;
+                foreach (var part in mapping.ClrNamespace.Split('.')) if (part.Length != 0) scope = scope?.GetNamespaceMembers().FirstOrDefault(n => n.Name == part);
+                if (scope != null) foreach (var type in scope.GetTypeMembers()) if (IsAccessible(type)) yield return type;
+            }
+    }
+}

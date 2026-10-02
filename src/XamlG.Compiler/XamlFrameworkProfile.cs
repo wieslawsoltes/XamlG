@@ -1,0 +1,20 @@
+using System.Collections.Immutable;
+using XamlG.Roslyn;
+namespace XamlG.Compiler;
+
+/// <summary>Composable immutable language policy. Compiler hosts consume the same profile and passes.</summary>
+public sealed record XamlFrameworkProfile
+{
+    public static XamlFrameworkProfile Portable { get; } = new();
+    public string Name { get; init; } = "Portable";
+    public XamlTypeSystemConfiguration TypeSystem { get; init; } = new();
+    public XamlRuntimeConfiguration Runtime { get; init; } = new();
+    public ImmutableArray<IXamlTypeBindingRule> TypeBindingRules { get; init; } = ImmutableArray<IXamlTypeBindingRule>.Empty;
+    public ImmutableArray<IXamlBindingRule> BindingRules { get; init; } = ImmutableArray<IXamlBindingRule>.Empty;
+    public ImmutableArray<IXamlObjectBindingRule> ObjectBindingRules { get; init; } = ImmutableArray<IXamlObjectBindingRule>.Empty;
+    public ImmutableArray<IXamlMemberBindingRule> MemberBindingRules { get; init; } = ImmutableArray<IXamlMemberBindingRule>.Empty;
+    public ImmutableArray<IXamlPropertyBindingRule> PropertyBindingRules { get; init; } = ImmutableArray<IXamlPropertyBindingRule>.Empty;
+    public ImmutableArray<IXamlMarkupBindingRule> MarkupBindingRules { get; init; } = ImmutableArray<IXamlMarkupBindingRule>.Empty;
+    public ImmutableArray<IXamlTextConversionRule> TextConversionRules { get; init; } = ImmutableArray<IXamlTextConversionRule>.Empty;
+    public ImmutableArray<IXamlDocumentPass> Passes { get; init; } = ImmutableArray<IXamlDocumentPass>.Empty;
+}
