@@ -13,7 +13,7 @@
     <ProjectReference Include="../XamlG.Runtime/XamlG.Runtime.csproj" ReferenceOutputAssembly="false" />
     <None Include="buildTransitive/*" Pack="true" PackagePath="buildTransitive" />
   </ItemGroup>
-  <Target Name="PackXamlGAnalyzerDependencies" BeforeTargets="_GetPackageFiles" DependsOnTargets="Build">
+  <Target Name="PackXamlGAnalyzerDependencies" BeforeTargets="_GetPackageFiles">
     <ItemGroup>
       <None Include="$(OutputPath)XamlG.Generator.dll;$(OutputPath)XamlG.Syntax.dll;$(OutputPath)XamlG.Roslyn.dll;$(OutputPath)XamlG.Compiler.dll;$(OutputPath)XamlG.CSharp.dll;$(OutputPath)XamlG.Frameworks.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
     </ItemGroup>
