@@ -1,0 +1,6 @@
+<Panel xmlns="clr-namespace:PackagingSmoke"
+       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+       x:Class="PackagingSmoke.Card"
+       Title="Compiled by the packaged generator">
+  <Button x:Name="action" Text="Run" Click="OnClick" />
+</Panel>

@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   compiler:
-    name: Compiler and generated-code execution
+    name: Compiler, generator and packaged MSBuild integration
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -25,10 +25,29 @@ jobs:
           dotnet-version: '10.0.401'
       - name: Build generator
         run: dotnet build src/XamlG.Generator/XamlG.Generator.csproj -c Release -p:NuGetAudit=false
-      - name: Execute compiler regression suite
+      - name: Execute compiler and incremental-generator tests
         run: dotnet test tests/XamlG.Tests/XamlG.Tests.csproj -c Release -p:NuGetAudit=false --logger 'trx;LogFileName=compiler.trx' --results-directory artifacts/tests
-      - name: Validate generator packaging
-        run: dotnet pack src/XamlG.Generator/XamlG.Generator.csproj -c Release --no-build -p:NuGetAudit=false -o artifacts/packages
+      - name: Package runtime and generator
+        run: |
+          dotnet pack src/XamlG.Runtime/XamlG.Runtime.csproj -c Release -p:NuGetAudit=false -o artifacts/packages
+          dotnet pack src/XamlG.Generator/XamlG.Generator.csproj -c Release --no-build -p:NuGetAudit=false -o artifacts/packages
+      - name: Inspect analyzer package dependencies
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          package = glob.glob('artifacts/packages/XamlG.Generator.*.nupkg')[0]
+          with zipfile.ZipFile(package) as archive:
+              names = archive.namelist()
+              for component in ('Generator', 'Syntax', 'Roslyn', 'Compiler', 'CSharp', 'Frameworks'):
+                  assert f'analyzers/dotnet/cs/XamlG.{component}.dll' in names, component
+              assert not any('/Microsoft.CodeAnalysis' in name for name in names), 'Do not shadow the compiler host Roslyn assemblies'
+              assert 'buildTransitive/XamlG.Generator.targets' in names
+              print('\n'.join(names))
+          PY
+      - name: Build and execute a clean package-consuming application
+        run: |
+          dotnet restore tests/PackagingSmoke/PackagingSmoke.csproj --source "$PWD/artifacts/packages" --source https://api.nuget.org/v3/index.json -p:NuGetAudit=false
+          dotnet run --project tests/PackagingSmoke/PackagingSmoke.csproj -c Release --no-restore
       - uses: actions/upload-artifact@v4
         if: always()
         with:
