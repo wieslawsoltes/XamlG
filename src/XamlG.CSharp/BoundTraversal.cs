@@ -1,0 +1,35 @@
+using XamlG.Compiler;
+namespace XamlG.CSharp;
+internal static class BoundTraversal
+{
+    public static IEnumerable<BoundObject> Objects(BoundObject root, bool includeDeferred = false)
+    {
+        yield return root;
+        foreach (var expression in Expressions(root)) foreach (var child in Objects(expression, includeDeferred)) yield return child;
+    }
+    public static IEnumerable<BoundExpression> Expressions(BoundObject root)
+    {
+        foreach (var argument in root.Arguments) yield return argument;
+        foreach (var assignment in root.Assignments)
+            foreach (var expression in Expressions(assignment)) yield return expression;
+    }
+    public static IEnumerable<BoundExpression> Expressions(BoundAssignment assignment) => assignment switch
+    {
+        BoundSetAssignment s => new[] { s.Value }, BoundAddAssignment a => a.Arguments, BoundDynamicSetAssignment d => new[] { d.Value },
+        BoundAdaptedSetAssignment a => new[] { a.Value }, BoundCallAssignment c => c.Arguments, _ => Array.Empty<BoundExpression>()
+    };
+    private static IEnumerable<BoundObject> Objects(BoundExpression expression, bool includeDeferred)
+    {
+        if (expression is BoundObjectExpression obj) { foreach (var child in Objects(obj.Object, includeDeferred)) yield return child; yield break; }
+        if (expression is BoundMarkupExpression markup) { foreach (var child in Objects(markup.Extension, includeDeferred)) yield return child; yield break; }
+        foreach (var child in Children(expression, includeDeferred)) foreach (var nested in Objects(child, includeDeferred)) yield return nested;
+    }
+    public static bool ContainsReference(BoundExpression expression) => expression is BoundReferenceExpression || Children(expression, false).Any(ContainsReference);
+    public static IEnumerable<BoundExpression> Children(BoundExpression expression, bool includeDeferred) => expression switch
+    {
+        BoundCastExpression cast => new[] { cast.Value }, BoundArrayExpression array => array.Values, BoundNewExpression n => n.Arguments,
+        BoundCallExpression c => c.Receiver == null ? c.Arguments : c.Arguments.Insert(0, c.Receiver),
+        BoundDeferredExpression d when includeDeferred => new[] { d.Content },
+        BoundObjectExpression o => Expressions(o.Object), BoundMarkupExpression m => Expressions(m.Extension), _ => Array.Empty<BoundExpression>()
+    };
+}
