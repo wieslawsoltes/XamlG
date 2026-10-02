@@ -1,0 +1,67 @@
+name: Compiler CI
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'tests/**', 'tools/**', 'build/**', 'Directory.*', 'global.json', '*.slnx']
+  pull_request:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ['Import verified source']
+    types: [completed]
+permissions:
+  contents: read
+concurrency:
+  group: compiler-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, xamlx-baseline, xamlx-compatibility, avalonia, avalonia-compatibility]
+        include:
+          - suite: core
+            project: tests/XamlG.Tests
+          - suite: xamlx-baseline
+            project: tests/XamlG.XamlX.Baseline.Tests
+          - suite: xamlx-compatibility
+            project: tests/XamlG.XamlX.Compatibility.Tests
+          - suite: avalonia
+            project: tests/XamlG.Avalonia.Tests
+          - suite: avalonia-compatibility
+            project: tests/XamlG.Avalonia.Compatibility.Tests
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.sha }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Checkout pinned XamlX tests
+        if: startsWith(matrix.suite, 'xamlx-')
+        uses: actions/checkout@v4
+        with:
+          repository: kekekeks/XamlX
+          ref: 7ef6aef496ab6e8dcf3df04bef697be49db37c04
+          path: external/XamlX
+      - name: Checkout pinned Avalonia tests
+        if: matrix.suite == 'avalonia-compatibility'
+        uses: actions/checkout@v4
+        with:
+          repository: AvaloniaUI/Avalonia
+          ref: 17350180c33b063f0e98abbfd19aa3cae63f5d56
+          path: external/Avalonia
+          sparse-checkout: tests/Avalonia.Markup.Xaml.UnitTests
+      - name: Restore
+        run: dotnet restore ${{ matrix.project }} -p:NuGetAudit=false
+      - name: Build and execute
+        run: dotnet test ${{ matrix.project }} --no-restore --configuration Release --logger "trx;LogFileName=${{ matrix.suite }}.trx" --results-directory artifacts/tests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.suite }}
+          path: artifacts/tests
+          retention-days: 14
