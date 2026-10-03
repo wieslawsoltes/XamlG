@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using XamlG.Compiler;
+using XamlG.Frameworks.Avalonia.Styling;
 using XamlG.Roslyn;
 
 namespace XamlG.Frameworks.Avalonia;
@@ -27,10 +28,7 @@ public static class AvaloniaFrameworkProfile
             DeferredContentCustomizer = new(AvaloniaMetadata.RuntimeHelpers, "DeferredTransformationFactoryV3"),
             DeferredDefaultTypeArgument = AvaloniaMetadata.Control,
             DeferredTypeArgumentAttributeProperties = ImmutableArray.Create("TemplateResultType"),
-            NameScope = new(AvaloniaMetadata.NameScope, AvaloniaMetadata.NameScopeContract)
-            {
-                Attach = new(AvaloniaMetadata.NameScope, "SetNameScope")
-            },
+            NameScope = new(AvaloniaMetadata.NameScope, AvaloniaMetadata.NameScopeContract) { Attach = new(AvaloniaMetadata.NameScope, "SetNameScope") },
             Services = ImmutableArray.Create(
                 new XamlServiceMapping(AvaloniaMetadata.RootProvider, XamlServiceKind.RootObject),
                 new XamlServiceMapping(AvaloniaMetadata.ValueTarget, XamlServiceKind.ProvideValueTarget),
@@ -39,8 +37,9 @@ public static class AvaloniaFrameworkProfile
                 new XamlServiceMapping(AvaloniaMetadata.NamespaceProvider, XamlServiceKind.XmlNamespaces, AvaloniaMetadata.NamespaceItem))
         },
         TextConversionRules = ImmutableArray.Create<IXamlTextConversionRule>(new AvaloniaTextConversionRule()),
+        ObjectBindingRules = ImmutableArray.Create<IXamlObjectBindingRule>(new AvaloniaStyleObjectRule()),
         MemberBindingRules = ImmutableArray.Create<IXamlMemberBindingRule>(new AvaloniaPropertyDescriptorRule()),
-        PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(new AvaloniaBindingRule()),
+        PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(new AvaloniaStylePropertyRule(), new AvaloniaBindingRule()),
         MarkupBindingRules = ImmutableArray.Create<IXamlMarkupBindingRule>(new AvaloniaBindingMarkupRule())
     };
 }
