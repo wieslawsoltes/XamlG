@@ -1,29 +1,39 @@
 # Validation and upstream provenance
 
-## Immutable inputs
+## Pinned inputs
 
 | Input | Revision/version |
 | --- | --- |
-| Avalonia source | `17350180c33b063f0e98abbfd19aa3cae63f5d56` |
-| XamlX source | `7ef6aef496ab6e8dcf3df04bef697be49db37c04` |
+| Avalonia source inspected for adapter contracts | `17350180c33b063f0e98abbfd19aa3cae63f5d56` |
+| XamlX test source | `7ef6aef496ab6e8dcf3df04bef697be49db37c04` |
 | Avalonia runtime packages | `12.1.3` |
 | Microsoft.CodeAnalysis | `5.0.0` |
 | .NET SDK/runtime | `10.0.401` / `10.0.12` |
 
-The runtime release and source-main baseline are deliberately recorded independently. A test needing a newer source-only runtime API must not be silently skipped or counted as passing.
+Source revisions and runtime package releases are recorded independently. Reading an upstream implementation does not count as passing its tests.
 
-## Baseline test sets
+## Committed executable suites
 
-- `XamlG.Tests`: portable compiler, emitted-code execution, editing, malformed-input handling, dynamic setters and metadata diagnostics.
-- `XamlG.XamlX.Baseline.Tests`: the original XamlX parser/compiler suite with its original backend, establishing an oracle.
-- `XamlG.XamlX.Compatibility.Tests`: 195 original language test cases linked unmodified and executed against XamlG-generated C#. Covers construction, generics, primitives, collections, dictionaries, markup extensions, converters, service providers, initialization, deferred delegate/function-pointer factories and whitespace.
-- `XamlG.Avalonia.Tests`: focused real Avalonia headless tests, including bindings, templates, namescopes, selectors and typed setters.
-- `XamlG.Avalonia.Compatibility.Tests`: 46 original Avalonia basic test cases linked unmodified, with the loader routed to XamlG and the platform setup replaced by real Avalonia.Headless. Styled tests use the same SimpleTheme family as the original tests.
+| Suite | Coverage |
+| --- | --- |
+| `XamlG.Tests` | Portable compiler, generated-code execution, source generator, malformed-input handling, dynamic setters, metadata diagnostics and incremental syntax differential tests. |
+| `XamlG.Tooling.Tests` | Shared analysis, semantic navigation, designer operations, revisioned history, Unicode-safe minimal buffer diffs and subtree reuse. |
+| `XamlG.Workspaces.Tests` | Roslyn project/additional-document snapshots and the explicit MSBuild trust boundary. |
+| `XamlG.LanguageServer.Tests` | Framing, malformed headers, truncated payloads, UTF-16 edits, budgets and stale revisions. |
+| `XamlG.Avalonia.Tests` | Five focused real-framework tests: namescope/brush construction, bindings, static resources, deferred template instances and realized visual inspection. |
+| `XamlG.XamlX.Baseline.Tests` | 222 pinned upstream cases through the original XamlX backend; baseline only, not evidence about XamlG. |
+| `XamlG.XamlX.Compatibility.Tests` | 217 upstream cases through XamlG binding, C# emission, Roslyn assembly emission and execution. |
 
-The Avalonia compatibility assembly is public-signed with Avalonia's **public** test key to preserve the upstream friend-assembly access contract. No private key is included. The original public key is recorded in the pinned source's `build/AvaloniaPublicKey.props`.
+The default solution includes the five local test projects. Upstream projects are opt-in and require the pinned checkout. The historical claim of a 46-case Avalonia compatibility project is not applicable to the committed tree: that suite is not present and is not counted. The focused Avalonia tests do not establish selector, styling or compiled-binding parity.
 
-## Honest boundaries
+## Host and package validation
 
-The 195-case XamlX compatibility set is not the 222-case original baseline. Tests coupled to IL-transformer injection or exact IL exception internals are not silently relabeled as source-generator tests. Dynamic-setter behavior has independent executable tests in XamlG.Tests. The generated compiler does not call the original compiler as a fallback.
+`ci.yml` packs the runtime/source generator, checks analyzer dependency layout and executes a clean package-consuming application. `workspaces.yml` runs standalone CLI source/assembly emission and inspection. `lsp-host.yml` launches the real stdio executable, verifies semantic requests and source recovery, and packs the .NET tool. `solution.yml` builds and tests the default solution on Linux, Windows and macOS. A workflow definition describes the gate; the run's conclusion is the evidence that a particular revision passed it.
 
-Additional Avalonia feature families are being integrated. A passing basic suite does not establish parity for compiled binding paths, resource-group transforms, all designer metadata or binary-loader conventions. The feature matrix will advance with executable evidence.
+`playground.yml` publishes and runs the browser suite. `pages.yml` additionally checks the exact deployed commit and runs browser tests on the public site. Browser coverage includes immediate source edits and undo/redo as well as the initial preview path.
+
+## Upstream comparison boundaries
+
+See [the comparison harness](upstream-validation.md) for the unchanged assertions and explicit exclusions. Exact case counts are enforced by `scripts/verify-test-results.py`; skipped cases are failures. The XamlX assemblies are test-only and cannot become production package dependencies through these projects.
+
+Five baseline cases are outside the source-backend comparison: four XamlX-internal AST representation assertions and one IL-only helper metadata-name assertion. Framework-specific transforms beyond this portable test corpus require their own tests. Full Avalonia styling, compiled binding paths, binary-loader compatibility and structural hot reload are not implied by the portable suite.
