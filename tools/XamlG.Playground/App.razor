@@ -14,8 +14,9 @@
         <label class="example-picker"><span>EXAMPLE</span><select aria-label="Example" value="@_exampleIndex" @onchange="SelectExampleAsync" disabled="@_busy">@for (var i = 0; i < PlaygroundExamples.All.Count; i++) { <option value="@i">@PlaygroundExamples.All[i].Name</option> }</select></label>
         <span class="toolbar-divider"></span>
         <button @onclick="CompileAsync" disabled="@(!_ready || _busy)">Compile</button>
-        <button class="primary" @onclick="RunAsync" disabled="@(!_ready || _busy)" data-testid="run-preview">▷ Run preview</button>
-        <span class="shortcut">⌘ / Ctrl + Enter</span>
+        <button class="primary" @onclick="RunTrustedAsync" disabled="@(!_ready || _busy)" data-testid="run-preview" title="Executes trusted code in the editor tab, enabling visual design">▷ Run preview</button>
+        <button @onclick="RunIsolatedAsync" disabled="@(!_ready || _busy)" data-testid="run-isolated" title="Executes in a separate opaque-origin sandbox without editor DOM or storage access">◇ Run isolated</button>
+        @if (_isolationVisible) { <button @onclick="ResetIsolationAsync" data-testid="reset-isolation">Reset isolation</button> }
         <div class="toolbar-spacer"></div>
         <button @onclick="UndoAsync" disabled="@(!_document.CanUndo || _busy)" title="Undo source edit">↶ Undo</button>
         <button @onclick="RedoAsync" disabled="@(!_document.CanRedo || _busy)" title="Redo source edit">↷ Redo</button>
@@ -29,7 +30,7 @@
             <button class="file @(_editorTab == "xaml" ? "selected" : "")" @onclick='() => _editorTab = "xaml"'><span class="file-icon">◇</span> View.axaml <small>XAML</small></button>
             <button class="file @(_editorTab == "code" ? "selected" : "")" @onclick='() => _editorTab = "code"'><span class="file-icon">#</span> Code.cs <small>C#</small></button>
             <div class="explorer-note"><span class="eyebrow">ONE COMPILER</span><p>Syntax → Roslyn symbols → typed operations → C#.</p><p>@PlaygroundExamples.All[_exampleIndex].Description</p></div>
-            <div class="trust-note">Run executes your code in this browser tab. Review imported code before running it. Nothing is sent to a compiler server.</div>
+            <div class="trust-note">Run preview and Design execute trusted code in this tab. Run isolated uses a separate opaque-origin frame. Compilation never sends source to a server.</div>
         </aside>
         <section class="source-pane">
             <div class="tabbar" role="tablist">
@@ -38,8 +39,8 @@
                 <span class="tab-spacer"></span><small>revision @_document.Current.Version</small>
             </div>
             <div class="editor-stack">
-                <div class="editor-page @(_editorTab == "xaml" ? "visible" : "")"><CodeEditor @ref="_xamlEditor" Text="@_document.Current.Text" TextChanged="XamlChangedAsync" Language="xml" RunRequested="RunAsync" /></div>
-                <div class="editor-page @(_editorTab == "code" ? "visible" : "")"><CodeEditor @ref="_codeEditor" Text="@_code" TextChanged="CodeChangedAsync" Language="csharp" RunRequested="RunAsync" /></div>
+                <div class="editor-page @(_editorTab == "xaml" ? "visible" : "")"><CodeEditor @ref="_xamlEditor" Text="@_document.Current.Text" TextChanged="XamlChangedAsync" Language="xml" RunRequested="RunCurrentModeAsync" /></div>
+                <div class="editor-page @(_editorTab == "code" ? "visible" : "")"><CodeEditor @ref="_codeEditor" Text="@_code" TextChanged="CodeChangedAsync" Language="csharp" RunRequested="RunCurrentModeAsync" /></div>
             </div>
             <section class="diagnostics" aria-label="Compiler diagnostics">
                 <div class="panel-heading"><h2>PROBLEMS <span class="count">@(_result?.Diagnostics.Length ?? 0)</span></h2><small>@(_result == null ? "Compile to inspect" : $"{_result.ElapsedMilliseconds:0.0} ms · semantic analysis + C# diagnostics")</small></div>
@@ -56,11 +57,15 @@
         </section>
         <section class="inspection-pane">
             <div class="preview-heading">
-                <h2>LIVE PREVIEW <span class="badge subtle">AVALONIA</span></h2>
-                <DesignerCommands Enabled="_designMode" Disabled="@(_busy || Preview.Root == null)" Toggle="ToggleDesignMode" />
-                <button @onclick="RefreshVisuals" disabled="@(Preview.Root == null)" title="Refresh the realized visual tree">↻ Inspect</button>
+                <h2>@(_isolationVisible ? "ISOLATED PREVIEW" : "LIVE PREVIEW") <span class="badge subtle">AVALONIA</span></h2>
+                <DesignerCommands Enabled="_designMode" Disabled="@(_busy || _isolationVisible || Preview.Root == null)" Toggle="ToggleDesignMode" />
+                <button @onclick="RefreshCurrentVisualsAsync" disabled="@(!_previewShown)" title="Refresh the realized visual tree">↻ Inspect</button>
             </div>
-            <div class="preview-surface"><div id="avalonia-preview" class="avalonia-preview"></div>@if (!_previewShown) { <div class="preview-placeholder"><span>◇</span><strong>From source to pixels.</strong><p>Run the compiled document to see its actual Avalonia controls.</p></div> }</div>
+            <div class="preview-surface">
+                <div id="avalonia-preview" class="avalonia-preview" style="visibility:@(_isolationVisible ? "hidden" : "visible")"></div>
+                <div class="isolated-container @(_isolationVisible ? "visible" : "")"><IsolatedPreview @ref="_isolatedPreview" /></div>
+                @if (!_previewShown && !_isolationVisible) { <div class="preview-placeholder"><span>◇</span><strong>From source to pixels.</strong><p>Run the compiled document to see its actual Avalonia controls.</p></div> }
+            </div>
             <div class="tabbar inspector-tabs" role="tablist">
                 @foreach (var tab in InspectorTabs)
                 {
@@ -100,9 +105,9 @@
                         }
                         <div><b>02</b><strong>Roslyn semantic binding</strong><span>@(_result?.Analysis.Document.Symbols.Length ?? 0) symbol occurrences</span></div>
                         <div><b>03</b><strong>Typed C# lowering</strong><span>@(_result?.Analysis.Output.SourceMappings.Length ?? 0) source mappings</span></div>
-                        <div><b>04</b><strong>State-preserving replacement</strong><span>Reload revision @Preview.Revision · named identities and unchanged declarations</span></div>
+                        <div><b>04</b><strong>State-preserving replacement</strong><span>Named identities and unchanged declarations</span></div>
                         @foreach (var warning in Preview.LastWarnings) { <p class="muted">@warning</p> }
-                        <p class="muted">Local syntax edits can reuse unchanged nodes. Structural reload builds a detached candidate, transfers eligible interaction state, then swaps roots. It does not preserve arbitrary object identities or copy application fields.</p>
+                        <p class="muted">Local syntax edits reuse unchanged nodes. Structural reload builds a detached candidate, transfers eligible interaction state, then swaps roots. Opaque-origin isolation protects the editor DOM/storage; it is not an operating-system CPU or memory sandbox.</p>
                     </div>
                 }
             </div>

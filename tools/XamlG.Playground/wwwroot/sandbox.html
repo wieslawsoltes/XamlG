@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base href="./"><title>XamlG isolated execution</title></head>
+<body style="margin:0;overflow:hidden"><div id="app"></div>
+<script>
+(() => {
+  const base = new URL('.', location.href).href;
+  const policy = document.createElement('meta');
+  policy.httpEquiv = 'Content-Security-Policy';
+  policy.content = `default-src 'none'; script-src 'unsafe-eval' 'wasm-unsafe-eval' ${base}; style-src 'unsafe-inline' ${base}; connect-src ${base}; img-src data: blob: ${base}; font-src data: blob: ${base}; worker-src blob: ${base}; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri ${base}`;
+  document.head.appendChild(policy);
+  const boot = document.createElement('script');
+  boot.src = new URL('_framework/blazor.webassembly.js', base).href;
+  boot.setAttribute('autostart', 'false');
+  boot.onload = () => Blazor.start({ loadBootResource: (type, name, uri, integrity) => {
+    if (type === 'dotnetjs') return uri;
+    return fetch(uri, { credentials: 'omit', cache: 'no-store', integrity });
+  }});
+  boot.onerror = () => { document.getElementById('app').textContent = 'The isolated runtime could not be loaded.'; };
+  document.body.appendChild(boot);
+})();
+</script></body></html>

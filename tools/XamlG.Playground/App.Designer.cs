@@ -19,13 +19,13 @@ public partial class App
     }
     private void ToggleDesignMode()
     {
-        _designMode = !_designMode;
-        Preview.IsDesignMode = _designMode;
+        if (_isolationVisible) return;
+        _designMode = !_designMode; Preview.IsDesignMode = _designMode;
         _status = _designMode ? "Design mode · drag to move · eight resize handles · Shift locks aspect · Alt disables snapping · Escape cancels" : "Interaction mode";
     }
     private async Task SelectVisualSourceAsync(XamlSourceInfo source)
     {
-        if (source.Version != _document.Current.Version || source.Path != _document.Current.Path)
+        if (_isolationVisible || source.Version != _document.Current.Version || source.Path != _document.Current.Path)
         { _status = "Preview is stale · Run before editing its source"; return; }
         _selectedElement = _document.Current.Root?.DescendantsAndSelf().FirstOrDefault(e => e.Span.Start == source.Start && e.Span.Length == source.Length);
         if (_selectedElement == null) return;
@@ -36,14 +36,12 @@ public partial class App
     }
     private async Task CommitVisualEditAsync(XamlVisualEdit edit)
     {
-        if (_busy) throw new InvalidOperationException("A compilation is already in progress.");
+        if (_busy || _isolationVisible) throw new InvalidOperationException("The local designer is not active.");
         await CaptureEditorsAsync();
-        var transaction = XamlBatchDesignerEdits.FromVisualEdit(_document.Current, edit);
-        await CommitDesignerTransactionAsync(transaction);
+        await CommitDesignerTransactionAsync(XamlBatchDesignerEdits.FromVisualEdit(_document.Current, edit));
     }
     private async Task CommitDesignerTransactionAsync(XamlEditTransaction transaction)
     {
-        // Validate on an immutable candidate before adding the edit to the user's undo history.
         var candidate = _document.Current.WithChanges(transaction.Changes, transaction.ExpectedRevision);
         var analysis = Compiler.Analyze(candidate, _code);
         if (!analysis.Success)
@@ -54,9 +52,13 @@ public partial class App
         await CompileSnapshotAsync();
         if (_result?.Success == true)
         {
-            _visualTree = await Preview.ShowAsync(Compiler.Run(_result));
-            _previewShown = true;
-            _status = "Designer edit committed · state-preserving reload " + Preview.Revision;
+            if (_isolationVisible) await ShowIsolatedCompilationAsync();
+            else
+            {
+                _visualTree = await Preview.ShowAsync(Compiler.Run(_result));
+                _previewShown = true;
+                _status = "Designer edit committed · state-preserving reload " + Preview.Revision;
+            }
         }
         StateHasChanged();
     }

@@ -1,0 +1,72 @@
+@implements IAsyncDisposable
+@inject AvaloniaPreviewHost Preview
+@inject IJSRuntime JavaScript
+@inject NavigationManager Navigation
+@using System.Reflection
+@using XamlG.Playground.Isolation
+
+<div id="sandbox-view" style="position:fixed;inset:0;background:white"></div>
+@if (_error != null) { <pre style="position:fixed;inset:0;overflow:auto;padding:16px;background:#fff;color:#8a2334">@_error</pre> }
+
+@code {
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<SandboxFrame>? _reference;
+    private int _loaded;
+    private string? _error;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            _module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./sandbox-frame.js");
+            if (!await _module.InvokeAsync<bool>("isIsolated"))
+                throw new InvalidOperationException("This execution host must be opened by Compiler Studio inside its opaque-origin sandbox.");
+            await Preview.InitializeAsync("sandbox-view", new Uri(Navigation.BaseUri));
+            _reference = DotNetObjectReference.Create(this);
+            await _module.InvokeVoidAsync("connect", _reference);
+        }
+        catch (Exception error) { _error = error.Message; StateHasChanged(); }
+    }
+
+    [JSInvokable]
+    public async Task<SandboxRunResult> Execute(SandboxRunRequest request)
+    {
+        if (_module == null || !await _module.InvokeAsync<bool>("isIsolated")) throw new InvalidOperationException("The execution boundary is not active.");
+        if (++_loaded > 64) throw new InvalidOperationException("Reset the isolated preview to reclaim its loaded assemblies.");
+        if (request.AssemblyBase64.Length > (SandboxPayloadBuilder.MaximumAssemblyBytes + 2L) / 3 * 4 || request.FactoryType.Length > 1024 || request.PopulateMethod.Length > 256)
+            throw new InvalidDataException("The execution request exceeds its configured limits.");
+        var bytes = Convert.FromBase64String(request.AssemblyBase64);
+        if (bytes.Length > SandboxPayloadBuilder.MaximumAssemblyBytes) throw new InvalidDataException("The assembly is too large.");
+        var assembly = Assembly.Load(bytes);
+        var factory = assembly.GetType(request.FactoryType, throwOnError: true)!;
+        object root;
+        try
+        {
+            if (request.BuildMethod != null)
+                root = factory.GetMethod(request.BuildMethod, BindingFlags.Public | BindingFlags.Static)!.Invoke(null, new object?[] { null })!;
+            else
+            {
+                root = Activator.CreateInstance(factory) ?? throw new InvalidOperationException("The root could not be constructed.");
+                if (!XamlG.Runtime.XamlRuntimeSession.TryGet(root, out _))
+                    factory.GetMethod(request.PopulateMethod, BindingFlags.Public | BindingFlags.Static)!.Invoke(null, new object?[] { root, null });
+            }
+        }
+        catch (TargetInvocationException error) when (error.InnerException != null) { throw error.InnerException; }
+        var tree = await Preview.ShowAsync(root);
+        return new(tree, Preview.Revision, Preview.LastWarnings);
+    }
+
+    [JSInvokable]
+    public SandboxRunResult Inspect() => new(Preview.Inspect() ?? throw new InvalidOperationException("No isolated view has been constructed."), Preview.Revision, Preview.LastWarnings);
+
+    public async ValueTask DisposeAsync()
+    {
+        Preview.Dispose();
+        if (_module != null)
+        {
+            try { await _module.InvokeVoidAsync("disconnect"); await _module.DisposeAsync(); } catch (JSDisconnectedException) { }
+        }
+        _reference?.Dispose();
+    }
+}

@@ -1,0 +1,9 @@
+@inject NavigationManager Navigation
+@if (new Uri(Navigation.Uri).AbsolutePath.EndsWith("/sandbox.html", StringComparison.Ordinal))
+{
+    <SandboxFrame />
+}
+else
+{
+    <App />
+}
