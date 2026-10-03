@@ -1,0 +1,17 @@
+<ul class="inspection-tree" role="tree">
+    <li role="treeitem">
+        <details open="@(Depth < 3)">
+            <summary><button @onclick="() => Selected.InvokeAsync(Node)"><span class="node-kind">▣</span><span>@Node.TypeName.Split('.').Last()@(!string.IsNullOrEmpty(Node.Name) ? " #" + Node.Name : "")</span><small>@($"{Node.Width:0} × {Node.Height:0}")</small></button></summary>
+            @foreach (var child in Node.Children)
+            {
+                <VisualTree @key="child.Id" Node="child" Selected="Selected" Depth="@(Depth + 1)" />
+            }
+        </details>
+    </li>
+</ul>
+
+@code {
+    [Parameter, EditorRequired] public AvaloniaVisualNode Node { get; set; } = default!;
+    [Parameter] public EventCallback<AvaloniaVisualNode> Selected { get; set; }
+    [Parameter] public int Depth { get; set; }
+}

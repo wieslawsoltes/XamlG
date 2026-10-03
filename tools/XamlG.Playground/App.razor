@@ -1,0 +1,98 @@
+@implements IAsyncDisposable
+@inject BrowserCompilerService Compiler
+@inject AvaloniaPreviewHost Preview
+@inject IJSRuntime JavaScript
+@inject NavigationManager Navigation
+
+<div class="studio" data-ready="@(_ready ? "true" : "false")">
+    <header class="titlebar">
+        <div class="brand"><span class="brand-mark">X</span><strong>XamlG</strong><span class="brand-divider"></span><span>Compiler Studio</span><span class="badge">PREVIEW</span></div>
+        <nav aria-label="Project links"><a href="https://github.com/wieslawsoltes/XamlG" target="_blank" rel="noopener">Source ↗</a><button class="icon-button" aria-label="Toggle color theme" @onclick="ToggleThemeAsync">◐</button></nav>
+    </header>
+    <div class="toolbar">
+        <label class="example-picker"><span>EXAMPLE</span><select aria-label="Example" value="@_exampleIndex" @onchange="SelectExampleAsync">@for (var i = 0; i < PlaygroundExamples.All.Count; i++) { <option value="@i">@PlaygroundExamples.All[i].Name</option> }</select></label>
+        <span class="toolbar-divider"></span>
+        <button @onclick="CompileAsync" disabled="@(!_ready || _busy)">Compile</button>
+        <button class="primary" @onclick="RunAsync" disabled="@(!_ready || _busy)" data-testid="run-preview">▷ Run preview</button>
+        <span class="shortcut">⌘ / Ctrl + Enter</span>
+        <div class="toolbar-spacer"></div>
+        <button @onclick="UndoAsync" disabled="@(!_document.CanUndo || _busy)" title="Undo source edit">↶ Undo</button>
+        <button @onclick="RedoAsync" disabled="@(!_document.CanRedo || _busy)" title="Redo source edit">↷ Redo</button>
+        <button @onclick="RestoreDraftAsync" disabled="@(!_ready || _busy)">Restore draft</button>
+        <button @onclick="ExportAsync" disabled="@(!_ready)">Export</button>
+    </div>
+    <main class="workspace">
+        <aside class="explorer">
+            <h2>EXPLORER</h2>
+            <div class="project-label">⌄ &nbsp; PLAYGROUND</div>
+            <button class="file @(_editorTab == "xaml" ? "selected" : "")" @onclick='() => _editorTab = "xaml"'><span class="file-icon">◇</span> View.axaml <small>XAML</small></button>
+            <button class="file @(_editorTab == "code" ? "selected" : "")" @onclick='() => _editorTab = "code"'><span class="file-icon">#</span> Code.cs <small>C#</small></button>
+            <div class="explorer-note"><span class="eyebrow">ONE COMPILER</span><p>Syntax → Roslyn symbols → typed operations → C#.</p><p>@PlaygroundExamples.All[_exampleIndex].Description</p></div>
+            <div class="trust-note">Run executes your code in this browser tab. Review imported code before running it. Nothing is sent to a compiler server.</div>
+        </aside>
+        <section class="source-pane">
+            <div class="tabbar" role="tablist">
+                <button class="@(_editorTab == "xaml" ? "active" : "")" @onclick='() => _editorTab = "xaml"' role="tab" aria-selected="@(_editorTab == "xaml")">◇ &nbsp; View.axaml</button>
+                <button class="@(_editorTab == "code" ? "active" : "")" @onclick='() => _editorTab = "code"' role="tab" aria-selected="@(_editorTab == "code")"># &nbsp; Code.cs</button>
+                <span class="tab-spacer"></span><small>revision @_document.Current.Version</small>
+            </div>
+            <div class="editor-stack">
+                <div class="editor-page @(_editorTab == "xaml" ? "visible" : "")"><CodeEditor @ref="_xamlEditor" Text="@_document.Current.Text" TextChanged="XamlChangedAsync" Language="xml" RunRequested="RunAsync" /></div>
+                <div class="editor-page @(_editorTab == "code" ? "visible" : "")"><CodeEditor @ref="_codeEditor" Text="@_code" TextChanged="CodeChangedAsync" Language="csharp" RunRequested="RunAsync" /></div>
+            </div>
+            <section class="diagnostics" aria-label="Compiler diagnostics">
+                <div class="panel-heading"><h2>PROBLEMS <span class="count">@(_result?.Diagnostics.Length ?? 0)</span></h2><small>@(_result == null ? "Compile to inspect" : $"{_result.ElapsedMilliseconds:0.0} ms · semantic analysis + C# diagnostics")</small></div>
+                @if (_error != null) { <div class="runtime-error" role="alert">@_error</div> }
+                @if (_result?.Diagnostics.Length == 0) { <p class="empty"><span class="success-dot"></span>No compiler diagnostics. Ready to run.</p> }
+                @if (_result != null)
+                {
+                    @foreach (var diagnostic in _result.Diagnostics)
+                    {
+                        <button class="diagnostic-row" @onclick="() => RevealDiagnosticAsync(diagnostic)"><span class="@(diagnostic.Severity == "Error" ? "error-dot" : "warning-dot")"></span><code>@diagnostic.Code</code><span>@diagnostic.Message</span><small>@diagnostic.Path:@diagnostic.StartLine</small></button>
+                    }
+                }
+            </section>
+        </section>
+        <section class="inspection-pane">
+            <div class="preview-heading"><h2>LIVE PREVIEW <span class="badge subtle">AVALONIA</span></h2><button @onclick="RefreshVisuals" disabled="@(Preview.Root == null)" title="Refresh the realized visual tree">↻ Inspect</button></div>
+            <div class="preview-surface"><div id="avalonia-preview" class="avalonia-preview"></div>@if (!_previewShown) { <div class="preview-placeholder"><span>◇</span><strong>From source to pixels.</strong><p>Run the compiled document to see its actual Avalonia controls.</p></div> }</div>
+            <div class="tabbar inspector-tabs" role="tablist">
+                @foreach (var tab in InspectorTabs)
+                {
+                    <button class="@(_inspectorTab == tab ? "active" : "")" @onclick="() => _inspectorTab = tab" role="tab" aria-selected="@(_inspectorTab == tab)">@tab</button>
+                }
+            </div>
+            <div class="inspector-body">
+                <div class="inspector-page @(_inspectorTab == "C# output" ? "visible" : "")"><CodeEditor Text="@(_result?.Analysis.Output.Source ?? "// Generated C# appears here after compilation.\n")" Language="csharp" ReadOnly="true" /></div>
+                @if (_inspectorTab == "Syntax") { <div class="tree-scroll"><InspectionTree Items="@(_result == null ? Array.Empty<XamlInspectionNode>() : XamlInspector.Syntax(_result.Analysis.Syntax))" Selected="SelectSyntaxAsync" /></div> }
+                @if (_inspectorTab == "Bound tree") { <div class="tree-scroll">@if (_result != null && XamlInspector.Bound(_result.Analysis.Document) is { } bound) { <InspectionTree Items="@(new[] { bound })" Selected="SelectSyntaxAsync" /> }</div> }
+                @if (_inspectorTab == "Visual tree") { <div class="tree-scroll">@if (_visualTree != null) { <VisualTree Node="_visualTree" Selected="SelectVisual" /> } else { <p class="empty">Run a preview to inspect realized framework visuals.</p> }</div> }
+                @if (_inspectorTab == "Properties")
+                {
+                    <div class="properties">
+                        <h3>@(_selectedElement?.Name ?? "Select a syntax node")</h3>
+                        @if (_selectedElement != null)
+                        {
+                            @foreach (var attribute in _selectedElement.Attributes.Where(a => !a.IsNamespace)) { <div class="property-readout"><code>@attribute.Name</code><span>@attribute.Value</span></div> }
+                            <label>Property <input @bind="_propertyName" placeholder="Text" /></label>
+                            <label>Value <input @bind="_propertyValue" placeholder="New value" /></label>
+                            <button class="primary" @onclick="ApplyPropertyAsync" disabled="@string.IsNullOrWhiteSpace(_propertyName)">Apply to XAML</button>
+                        }
+                        @if (_selectedVisual != null) { <h3>Realized visual</h3><code>@_selectedVisual.TypeName</code><p>@($"Bounds: {_selectedVisual.X:0.##}, {_selectedVisual.Y:0.##} · {_selectedVisual.Width:0.##} × {_selectedVisual.Height:0.##}")</p><p>Visible: @_selectedVisual.IsVisible</p> }
+                    </div>
+                }
+                @if (_inspectorTab == "Pipeline")
+                {
+                    <div class="pipeline"><h3>Inspect the real compilation</h3><p>All hosts consume the same immutable syntax and bound operations.</p>
+                        <div><b>01</b><strong>Source-preserving syntax</strong><span>@(_result?.Analysis.Syntax.Root?.DescendantsAndSelf().Count() ?? 0) elements</span></div>
+                        <div><b>02</b><strong>Roslyn semantic binding</strong><span>@(_result?.Analysis.Document.Symbols.Length ?? 0) symbol occurrences</span></div>
+                        <div><b>03</b><strong>Typed C# lowering</strong><span>@(_result?.Analysis.Output.SourceMappings.Length ?? 0) source mappings</span></div>
+                        <div><b>04</b><strong>Explicit execution</strong><span>Real Avalonia controls, not HTML approximations</span></div>
+                        <p class="muted">The current parser reparses edited text. Property transactions are available in the runtime; full structural hot reload and complete XamlX parity are not yet claimed.</p>
+                    </div>
+                }
+            </div>
+        </section>
+    </main>
+    <footer class="statusbar"><span><i class="@(_error == null ? "success-dot" : "error-dot")"></i>@_status</span><span>@Compiler.ReferenceCount references <span class="status-divider">│</span> UTF-16 <span class="status-divider">│</span> Roslyn · .NET 10</span></footer>
+</div>
