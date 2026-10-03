@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>netstandard2.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../XamlG.CSharp/XamlG.CSharp.csproj" />
+    <ProjectReference Include="../XamlG.Runtime/XamlG.Runtime.csproj" />
+  </ItemGroup>
+</Project>
