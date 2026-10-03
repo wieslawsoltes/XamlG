@@ -40,6 +40,7 @@ internal sealed class CompilerCommand
         {
             XamlCompilationSession session;
             ImmutableArray<XamlSyntaxTree> documents;
+            var parseOptions = new CSharpParseOptions(LanguageVersion.Preview);
             if (options.Project != null)
             {
                 var properties = ImmutableDictionary<string, string>.Empty;
@@ -48,6 +49,12 @@ internal sealed class CompilerCommand
                 var project = await host.OpenProjectAsync(options.Project, cancellationToken);
                 foreach (var diagnostic in host.Diagnostics) Console.Error.WriteLine("workspace: " + diagnostic.Message);
                 session = project.Compiler;
+                // Preserve the evaluated project's language version, feature switches and symbols.
+                // A fresh options object can make Roslyn reject the entire compilation, even when
+                // the apparent language version is identical. Project.ParseOptions also works
+                // for a project which initially contains no C# syntax trees.
+                parseOptions = project.Project.ParseOptions as CSharpParseOptions
+                    ?? throw new InvalidOperationException("The evaluated C# project has no C# parse options.");
                 documents = project.Documents.Values.OrderBy(d => d.Path, StringComparer.Ordinal).ToImmutableArray();
                 if (options.File != null)
                 {
@@ -61,7 +68,7 @@ internal sealed class CompilerCommand
                     .Concat(options.References.Select(Path.GetFullPath)).Distinct(StringComparer.Ordinal).Select(p => MetadataReference.CreateFromFile(p)).ToArray();
                 var trees = new List<SyntaxTree>();
                 foreach (var file in options.CodeFiles)
-                    trees.Add(CSharpSyntaxTree.ParseText(await System.IO.File.ReadAllTextAsync(file, cancellationToken), new CSharpParseOptions(LanguageVersion.Preview), file, cancellationToken: cancellationToken));
+                    trees.Add(CSharpSyntaxTree.ParseText(await System.IO.File.ReadAllTextAsync(file, cancellationToken), parseOptions, file, cancellationToken: cancellationToken));
                 var compilation = CSharpCompilation.Create("XamlG.Standalone", trees, references,
                     new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
                 session = new(compilation, KnownFrameworkProfiles.Select(compilation, options.Framework));
@@ -75,7 +82,7 @@ internal sealed class CompilerCommand
                 return new CliDiagnostic(d.Code, d.Message, d.Severity.ToString(), a.Syntax.Path, position.Line + 1, position.Character + 1);
             })).ToList();
             var compilationWithOutput = session.Types.Compilation.AddSyntaxTrees(analyses.Where(a => a.Output.Success)
-                .Select(a => CSharpSyntaxTree.ParseText(a.Output.Source, new CSharpParseOptions(LanguageVersion.Preview), a.Output.HintName, cancellationToken: cancellationToken)));
+                .Select(a => CSharpSyntaxTree.ParseText(a.Output.Source, parseOptions, a.Output.HintName, cancellationToken: cancellationToken)));
             foreach (var diagnostic in compilationWithOutput.GetDiagnostics(cancellationToken).Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning))
             {
                 var position = diagnostic.Location.GetMappedLineSpan();
