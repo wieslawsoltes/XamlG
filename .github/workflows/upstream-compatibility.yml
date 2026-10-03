@@ -1,0 +1,65 @@
+name: Pinned upstream compatibility
+on:
+  push:
+    branches: [main, feat/tooling-and-playground]
+    paths: ['src/**', 'tests/**', 'scripts/verify-test-results.py', '.github/workflows/upstream-compatibility.yml']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: upstream-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: Baseline
+            expected: 222
+          - suite: Compatibility
+            expected: 217
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read pinned upstream revision
+        id: revision
+        run: |
+          python - <<'PY'
+          import os, re, xml.etree.ElementTree as ET
+          revision=ET.parse('tests/Upstream.props').findtext('.//XamlXRevision')
+          if not re.fullmatch(r'[0-9a-f]{40}', revision or ''): raise RuntimeError('Invalid upstream revision')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('xamlx='+revision+'\n')
+          PY
+      - uses: actions/checkout@v4
+        with:
+          repository: AvaloniaUI/XamlX
+          ref: ${{ steps.revision.outputs.xamlx }}
+          path: external/XamlX
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Execute upstream assertions
+        run: |
+          mkdir -p artifacts/tests
+          set +e
+          dotnet test tests/XamlG.XamlX.${{ matrix.suite }}.Tests -c Release -p:NuGetAudit=false --logger 'trx;LogFileName=${{ matrix.suite }}.trx' --results-directory artifacts/tests > artifacts/upstream.log 2>&1
+          result=$?
+          tail -n 140 artifacts/upstream.log
+          exit "$result"
+      - name: Require the full expected test count and no skips
+        if: always()
+        run: python scripts/verify-test-results.py artifacts/tests/${{ matrix.suite }}.trx --expected ${{ matrix.expected }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-${{ matrix.suite }}
+          path: |
+            artifacts/tests
+            artifacts/upstream.log
+          retention-days: 14

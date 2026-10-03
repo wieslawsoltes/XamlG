@@ -1,14 +1,26 @@
 <Solution>
-  <Folder Name="/src/" />
+  <Folder Name="/src/">
+    <Project Path="src/XamlG.Syntax/XamlG.Syntax.csproj" />
+    <Project Path="src/XamlG.Roslyn/XamlG.Roslyn.csproj" />
+    <Project Path="src/XamlG.Compiler/XamlG.Compiler.csproj" />
+    <Project Path="src/XamlG.CSharp/XamlG.CSharp.csproj" />
+    <Project Path="src/XamlG.Frameworks/XamlG.Frameworks.csproj" />
+    <Project Path="src/XamlG.Runtime/XamlG.Runtime.csproj" />
+    <Project Path="src/XamlG.Generator/XamlG.Generator.csproj" />
+    <Project Path="src/XamlG.Tooling/XamlG.Tooling.csproj" />
+    <Project Path="src/XamlG.Workspaces/XamlG.Workspaces.csproj" />
+    <Project Path="src/XamlG.LanguageServer/XamlG.LanguageServer.csproj" />
+    <Project Path="src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/XamlG.Cli/XamlG.Cli.csproj" />
+    <Project Path="tools/XamlG.Lsp/XamlG.Lsp.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/XamlG.Tests/XamlG.Tests.csproj" />
+    <Project Path="tests/XamlG.Tooling.Tests/XamlG.Tooling.Tests.csproj" />
+    <Project Path="tests/XamlG.Workspaces.Tests/XamlG.Workspaces.Tests.csproj" />
+    <Project Path="tests/XamlG.LanguageServer.Tests/XamlG.LanguageServer.Tests.csproj" />
+    <Project Path="tests/XamlG.Avalonia.Tests/XamlG.Avalonia.Tests.csproj" />
   </Folder>
-  <Project Path="src/XamlG.Compiler/XamlG.Compiler.csproj" />
-  <Project Path="src/XamlG.Emit.CSharp/XamlG.Emit.CSharp.csproj" />
-  <Project Path="src/XamlG.Frameworks/XamlG.Frameworks.csproj" />
-  <Project Path="src/XamlG.Generator/XamlG.Generator.csproj" />
-  <Project Path="src/XamlG.Roslyn/XamlG.Roslyn.csproj" />
-  <Project Path="src/XamlG.Runtime/XamlG.Runtime.csproj" />
-  <Project Path="src/XamlG.Syntax/XamlG.Syntax.csproj" />
-  <Project Path="src/XamlG.Workspace/XamlG.Workspace.csproj" />
 </Solution>

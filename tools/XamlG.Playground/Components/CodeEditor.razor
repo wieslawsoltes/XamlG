@@ -1,0 +1,72 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JavaScript
+<div class="code-editor" @ref="_host" aria-label="@($"{Language} source editor")"></div>
+
+@code {
+    [Parameter] public string Text { get; set; } = string.Empty;
+    [Parameter] public string Language { get; set; } = "xml";
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public EventCallback<string> TextChanged { get; set; }
+    [Parameter] public EventCallback RunRequested { get; set; }
+    private ElementReference _host;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<CodeEditor>? _reference;
+    private string? _parameterText;
+    private int _id;
+    private bool _disposed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+        _reference = DotNetObjectReference.Create(this);
+        _id = await _module.InvokeAsync<int>("createEditor", _host, _reference, Text, Language, ReadOnly);
+        if (_disposed) await DisposeAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // An unrelated parent render must not replace a newer, still-debounced Monaco buffer.
+        if (_parameterText == Text) return;
+        _parameterText = Text;
+        if (_module != null && _id != 0) await _module.InvokeVoidAsync("setEditorText", _id, Text);
+    }
+
+    [JSInvokable] public Task Changed(string text)
+    {
+        _parameterText = text;
+        return TextChanged.InvokeAsync(text);
+    }
+    [JSInvokable] public Task Run() => RunRequested.InvokeAsync();
+
+    public async Task<string> GetTextAsync()
+    {
+        var value = _module != null && _id != 0
+            ? await _module.InvokeAsync<string>("getEditorText", _id)
+            : Text;
+        _parameterText = value;
+        return value;
+    }
+
+    public async Task RevealAsync(TextSpan span)
+    {
+        if (_module != null && _id != 0) await _module.InvokeVoidAsync("reveal", _id, span.Start, span.Length);
+    }
+    public async Task SetDiagnosticsAsync(IEnumerable<PlaygroundDiagnostic> diagnostics)
+    {
+        if (_module != null && _id != 0) await _module.InvokeVoidAsync("setMarkers", _id, diagnostics);
+    }
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        if (_module != null)
+        {
+            try { if (_id != 0) await _module.InvokeVoidAsync("disposeEditor", _id); await _module.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+            _module = null;
+            _id = 0;
+        }
+        _reference?.Dispose();
+        _reference = null;
+    }
+}

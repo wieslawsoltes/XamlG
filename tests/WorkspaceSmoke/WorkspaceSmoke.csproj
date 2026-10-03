@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/XamlG.Runtime/XamlG.Runtime.csproj" />
+    <AdditionalFiles Include="View.xaml" />
+  </ItemGroup>
+</Project>

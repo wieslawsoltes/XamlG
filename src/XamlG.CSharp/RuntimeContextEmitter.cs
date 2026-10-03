@@ -29,7 +29,7 @@ internal sealed class RuntimeContextEmitter
         if (root == "null" && rootContract != null)
         {
             var property = rootContract.Properties.First(p => p.Value == XamlServiceValue.RootObject).Property;
-            root = "((" + rootContract.InterfaceType.CSharpName() + "?)" + outer + "?.GetService(typeof(" + rootContract.InterfaceType.CSharpName() + ")))?." + CSharpNames.Identifier(property.Name);
+            root = "((" + rootContract.InterfaceType.CSharpName() + "?)" + outer + "?.GetService(typeof(" + rootContract.InterfaceType.CSharpName() + ")))? .".Replace("? .", "?.") + CSharpNames.Identifier(property.Name);
         }
         var baseUri = _context.Document.Options.BaseUri is { } uri
             ? "new global::System.Uri(" + CSharpNames.Literal(uri) + ", global::System.UriKind.RelativeOrAbsolute)" : "null";
@@ -38,7 +38,7 @@ internal sealed class RuntimeContextEmitter
         var inner = runtime.InnerServiceProviderFactory is { } innerFactory
             ? "static __compiled => " + innerFactory.ContainingType.CSharpName() + "." + CSharpNames.Method(innerFactory) + "(__compiled)" : "null";
         var namespaces = _namespaces.GetMap(_context.Document.Root!.Scope);
-        writer.Line("var " + variable + " = new " + CSharpNames.Context + "(" + outer + ", " + root + ", " + baseUri + ", " + services + ", " + inner + ", " + namespaces + ");");
+        writer.Line("var " + variable + " = new " + CSharpNames.Context + "(" + outer + ", " + root + ", " + baseUri + ", " + services + ", " + inner + ", " + namespaces + ", useTypeDescriptorStubs: " + (_context.Document.Profile.Runtime.UseTypeDescriptorStubs ? "true" : "false") + ");");
         InitializeNameScope(variable, outer);
     }
 

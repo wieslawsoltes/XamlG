@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>xamlg-lsp</ToolCommandName>
+    <Description>Stdio language server for the Roslyn-native XamlG compiler.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/XamlG.LanguageServer/XamlG.LanguageServer.csproj" />
+    <ProjectReference Include="../../src/XamlG.Workspaces/XamlG.Workspaces.csproj" />
+  </ItemGroup>
+</Project>

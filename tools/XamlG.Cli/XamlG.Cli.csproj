@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>xamlg</ToolCommandName>
+    <Description>Compile, validate and inspect XAML using the reusable XamlG Roslyn compiler.</Description>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../../src/XamlG.Workspaces/XamlG.Workspaces.csproj" /></ItemGroup>
+</Project>

@@ -1,0 +1,13 @@
+<Project>
+  <!-- Avalonia imports this entry point by a stable URL. Preserve package assets alongside
+       SDK-fingerprinted assets so static hosts do not require server-side route rewriting. -->
+  <Target Name="PublishAvaloniaStableModuleAssets" AfterTargets="Publish">
+    <ItemGroup>
+      <_AvaloniaBrowserPackage Include="@(PackageReference)" Condition="'%(PackageReference.Identity)' == 'Avalonia.Browser'" />
+      <_AvaloniaBrowserVersion Include="@(PackageVersion)" Condition="'%(PackageVersion.Identity)' == 'Avalonia.Browser'" />
+      <_AvaloniaModule Include="$(NuGetPackageRoot)avalonia.browser/%(_AvaloniaBrowserVersion.Version)/staticwebassets/**/*" />
+    </ItemGroup>
+    <Error Condition="'@(_AvaloniaModule)' == ''" Text="Avalonia Browser static module assets were not resolved." />
+    <Copy SourceFiles="@(_AvaloniaModule)" DestinationFiles="@(_AvaloniaModule->'$(PublishDir)wwwroot/_content/Avalonia.Browser/%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

@@ -1,0 +1,52 @@
+name: Browser playground
+on:
+  push:
+    branches: [main, feat/tooling-and-playground]
+    paths: ['src/**', 'tools/XamlG.Playground/**', 'Directory.*', '.github/workflows/playground.yml']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: playground-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser toolchain
+        run: dotnet workload install wasm-tools --skip-manifest-update
+      - name: Prepare pinned editor and test assets
+        working-directory: tools/XamlG.Playground
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run prepare-assets
+          npx playwright install --with-deps chromium
+      - name: Publish production browser host
+        run: dotnet publish tools/XamlG.Playground/XamlG.Playground.csproj -c Release -p:NuGetAudit=false -o artifacts/playground
+      - name: Browser acceptance tests
+        working-directory: tools/XamlG.Playground
+        run: npm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playground-validation
+          path: |
+            tools/XamlG.Playground/test-results
+            tools/XamlG.Playground/playwright-report
+            artifacts/playground-studio.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playground-site
+          path: artifacts/playground/wwwroot
+          retention-days: 7

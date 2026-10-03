@@ -17,14 +17,16 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
     private Dictionary<Type, object>? _adapterCache;
     private IServiceProvider? _inner;
     private bool _resolvingInner;
+    private readonly bool _useTypeDescriptorStubs;
     private object? _root;
     private object? _intermediateRoot;
 
     public XamlRuntimeContext(IServiceProvider? outer = null, object? root = null, Uri? baseUri = null,
         Func<XamlRuntimeContext, Type, object?>? services = null,
         Func<IServiceProvider, IServiceProvider>? innerFactory = null,
-        IReadOnlyDictionary<Type, object>? namespaces = null)
+        IReadOnlyDictionary<Type, object>? namespaces = null, bool useTypeDescriptorStubs = false)
     {
+        _useTypeDescriptorStubs = useTypeDescriptorStubs;
         _outer = outer;
         _root = root;
         _intermediateRoot = root;
@@ -40,6 +42,7 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
         object? targetProperty, string? nodeKey, bool newScope, IServiceProvider? outer = null,
         IReadOnlyDictionary<Type, object>? namespaces = null)
     {
+        _useTypeDescriptorStubs = parent._useTypeDescriptorStubs;
         _outer = outer ?? parent._outer;
         _services = parent._services;
         _innerFactory = parent._innerFactory;
@@ -64,10 +67,10 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
     public string? NodeKey { get; }
     public Uri? BaseUri { get; set; }
     public IContainer? Container => null;
-    public object? Instance => TargetObject;
+    public object? Instance => _useTypeDescriptorStubs ? null : TargetObject;
     public PropertyDescriptor? PropertyDescriptor => null;
-    public bool OnComponentChanging() => true;
-    public void OnComponentChanged() { }
+    public bool OnComponentChanging() => _useTypeDescriptorStubs ? throw new NotSupportedException() : true;
+    public void OnComponentChanged() { if (_useTypeDescriptorStubs) throw new NotSupportedException(); }
 
     public IEnumerable<object> Parents
     {
@@ -110,8 +113,8 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
 
     public object? GetService(Type serviceType)
     {
-        var local = GetLocalService(serviceType);
-        if (local != null) return local;
+        if (serviceType == null) throw new ArgumentNullException(nameof(serviceType));
+        if (serviceType == typeof(IServiceProvider) || serviceType == typeof(XamlRuntimeContext) || serviceType == typeof(ITypeDescriptorContext)) return this;
         if (_innerFactory != null && !_resolvingInner)
         {
             _resolvingInner = true;
@@ -123,7 +126,7 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
             }
             finally { _resolvingInner = false; }
         }
-        return GetExternalService(serviceType);
+        return GetLocalService(serviceType) ?? GetExternalService(serviceType);
     }
 
     private object? GetLocalService(Type serviceType)

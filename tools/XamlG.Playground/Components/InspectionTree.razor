@@ -1,0 +1,25 @@
+<ul class="inspection-tree" role="tree">
+@foreach (var node in Items)
+{
+    <li @key="node.Id" role="treeitem">
+        @if (node.Children.Length != 0)
+        {
+            <details open="@(Depth < 2)">
+                <summary><button title="@(node.TypeName ?? node.Kind)" @onclick="() => Selected.InvokeAsync(node)"><span class="node-kind">@KindGlyph(node.Kind)</span><span>@node.Label</span><small>@node.Kind</small></button></summary>
+                <InspectionTree Items="node.Children" Selected="Selected" Depth="@(Depth + 1)" />
+            </details>
+        }
+        else
+        {
+            <button class="leaf" title="@(node.TypeName ?? node.Kind)" @onclick="() => Selected.InvokeAsync(node)"><span class="node-kind">@KindGlyph(node.Kind)</span><span>@node.Label</span><small>@node.Kind</small></button>
+        }
+    </li>
+}
+</ul>
+
+@code {
+    [Parameter] public IEnumerable<XamlInspectionNode> Items { get; set; } = Array.Empty<XamlInspectionNode>();
+    [Parameter] public EventCallback<XamlInspectionNode> Selected { get; set; }
+    [Parameter] public int Depth { get; set; }
+    private static string KindGlyph(string kind) => kind switch { "Element" or "Object" => "◇", "Attribute" => "·", "Namespace" => "#", _ => "▫" };
+}

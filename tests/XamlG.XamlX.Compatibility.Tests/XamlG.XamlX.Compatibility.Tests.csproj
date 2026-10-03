@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>XamlParserTests</AssemblyName>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../XamlG.XamlX.Reference/XamlG.XamlX.Reference.csproj" />
+    <ProjectReference Include="../../src/XamlG.CSharp/XamlG.CSharp.csproj" />
+    <ProjectReference Include="../../src/XamlG.Runtime/XamlG.Runtime.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <UpstreamFixture Include="BasicCompilerTests;ContentAttributeTests;ConvertersTests;DeferredContentTests;DictionaryTests;GenericTypeWithPropertyElement;InitializationTests;IntrinsicsTests;ListTests;MarkupExtensionTests;ServiceProviderTests;SpecialPropertiesTests;StandardWarningsTests;WhitespaceTests;TestXamlLanguage;Helpers;XamlParser" />
+    <Compile Include="@(UpstreamFixture->'../../external/XamlX/tests/XamlParserTests/%(Identity).cs')" LinkBase="Upstream" />
+    <ProjectReference Include="../XamlG.UpstreamAdapterGenerator/XamlG.UpstreamAdapterGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <AdditionalFiles Include="../../external/XamlX/tests/XamlParserTests/DynamicSettersTests.cs" />
+  </ItemGroup>
+</Project>
