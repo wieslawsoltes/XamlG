@@ -44,8 +44,12 @@ public sealed class BrowserCompilerService(HttpClient http)
         _references = references.ToImmutableArray();
     }
 
-    public BrowserCompilation Analyze(string xaml, string code, string framework = "Avalonia", CancellationToken cancellationToken = default)
+    public BrowserCompilation Analyze(string xaml, string code, string framework = "Avalonia", CancellationToken cancellationToken = default) =>
+        Analyze(XamlSyntaxTree.Parse(xaml, "View.axaml", cancellationToken), code, framework, cancellationToken);
+
+    public BrowserCompilation Analyze(XamlSyntaxTree syntax, string code, string framework = "Avalonia", CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(syntax);
         if (!IsReady) throw new InvalidOperationException("Compiler metadata has not finished loading.");
         var clock = Stopwatch.StartNew();
         var name = "XamlG.Playground.Generated_" + Interlocked.Increment(ref _assemblySequence);
@@ -57,13 +61,13 @@ public sealed class BrowserCompilerService(HttpClient http)
         var profile = KnownFrameworkProfiles.Select(compilation, framework);
         var session = new XamlCompilationSession(compilation, profile,
             new XamlCompilerOptions { DocumentId = "View.axaml", BaseUri = "avares://" + name + "/View.axaml" });
-        var analysis = session.Analyze(XamlSyntaxTree.Parse(xaml, "View.axaml", cancellationToken), cancellationToken);
+        var analysis = session.Analyze(syntax, cancellationToken);
         var diagnostics = ImmutableArray.CreateBuilder<PlaygroundDiagnostic>();
         foreach (var item in analysis.Output.Diagnostics)
         {
-            var start = analysis.Syntax.Lines.GetPosition(Math.Min(item.Span.Start, xaml.Length));
-            var end = analysis.Syntax.Lines.GetPosition(Math.Min(item.Span.End, xaml.Length));
-            diagnostics.Add(new(item.Code, item.Message, item.Severity.ToString(), "View.axaml", start.Line + 1, start.Character + 1, end.Line + 1, end.Character + 1));
+            var start = syntax.Lines.GetPosition(Math.Min(item.Span.Start, syntax.Text.Length));
+            var end = syntax.Lines.GetPosition(Math.Min(item.Span.End, syntax.Text.Length));
+            diagnostics.Add(new(item.Code, item.Message, item.Severity.ToString(), syntax.Path, start.Line + 1, start.Character + 1, end.Line + 1, end.Character + 1));
         }
         if (analysis.Output.Success)
             compilation = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(analysis.Output.Source, parseOptions, analysis.Output.HintName, cancellationToken: cancellationToken));

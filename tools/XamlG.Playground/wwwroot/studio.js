@@ -41,7 +41,7 @@ export async function createEditor(host, dotnet, text, language, readOnly) {
       timer = setTimeout(() => dotnet.invokeMethodAsync('Changed', editor.getValue()), 120);
     });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => dotnet.invokeMethodAsync('Run'));
-    editors.set(id, { editor, model, subscription, set: value => { applying = true; editor.setValue(value); applying = false; }, cleanup: () => clearTimeout(timer) });
+    editors.set(id, { editor, model, subscription, set: value => { applying = true; try { editor.setValue(value); } finally { applying = false; } }, cleanup: () => clearTimeout(timer) });
   } catch (error) {
     const textarea = document.createElement('textarea');
     textarea.className = 'editor-fallback'; textarea.value = text; textarea.readOnly = readOnly;
@@ -54,9 +54,17 @@ export async function createEditor(host, dotnet, text, language, readOnly) {
   return id;
 }
 
+export function getEditorText(id) {
+  const item = editors.get(id);
+  if (!item) throw new Error('The source editor has been disposed.');
+  item.cleanup?.();
+  return item.editor ? item.editor.getValue() : item.textarea.value;
+}
 export function setEditorText(id, value) {
   const item = editors.get(id);
   if (!item) return;
+  // A programmatic document switch invalidates the old buffer's delayed notification.
+  item.cleanup?.();
   if (item.editor && item.editor.getValue() !== value) item.set(value);
   if (item.textarea && item.textarea.value !== value) item.textarea.value = value;
 }
@@ -73,7 +81,7 @@ export function setMarkers(id, diagnostics) {
   if (!item?.model) return;
   self.monaco.editor.setModelMarkers(item.model, 'xamlg', diagnostics.map(d => ({
     code: d.code, message: d.message, severity: d.severity === 'Error' ? 8 : 4,
-    startLineNumber: d.startLine, startColumn: d.startColumn, endLineNumber: d.endLine, endColumn: Math.max(d.endColumn, d.startColumn + 1)
+    startLineNumber: d.startLine, startColumn: d.startColumn, endLineNumber: d.endLine, endColumn: d.endLine === d.startLine ? Math.max(d.endColumn, d.startColumn + 1) : d.endColumn
   })));
 }
 export function disposeEditor(id) {

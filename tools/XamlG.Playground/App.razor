@@ -10,7 +10,7 @@
         <nav aria-label="Project links"><a href="https://github.com/wieslawsoltes/XamlG" target="_blank" rel="noopener">Source ↗</a><button class="icon-button" aria-label="Toggle color theme" @onclick="ToggleThemeAsync">◐</button></nav>
     </header>
     <div class="toolbar">
-        <label class="example-picker"><span>EXAMPLE</span><select aria-label="Example" value="@_exampleIndex" @onchange="SelectExampleAsync">@for (var i = 0; i < PlaygroundExamples.All.Count; i++) { <option value="@i">@PlaygroundExamples.All[i].Name</option> }</select></label>
+        <label class="example-picker"><span>EXAMPLE</span><select aria-label="Example" value="@_exampleIndex" @onchange="SelectExampleAsync" disabled="@_busy">@for (var i = 0; i < PlaygroundExamples.All.Count; i++) { <option value="@i">@PlaygroundExamples.All[i].Name</option> }</select></label>
         <span class="toolbar-divider"></span>
         <button @onclick="CompileAsync" disabled="@(!_ready || _busy)">Compile</button>
         <button class="primary" @onclick="RunAsync" disabled="@(!_ready || _busy)" data-testid="run-preview">▷ Run preview</button>
@@ -19,7 +19,7 @@
         <button @onclick="UndoAsync" disabled="@(!_document.CanUndo || _busy)" title="Undo source edit">↶ Undo</button>
         <button @onclick="RedoAsync" disabled="@(!_document.CanRedo || _busy)" title="Redo source edit">↷ Redo</button>
         <button @onclick="RestoreDraftAsync" disabled="@(!_ready || _busy)">Restore draft</button>
-        <button @onclick="ExportAsync" disabled="@(!_ready)">Export</button>
+        <button @onclick="ExportAsync" disabled="@(!_ready || _busy)">Export</button>
     </div>
     <main class="workspace">
         <aside class="explorer">
@@ -76,7 +76,7 @@
                             @foreach (var item in _selectedElement.Attributes.Where(a => !a.IsNamespace)) { <div class="property-readout"><code>@item.Name</code><span>@item.Value</span></div> }
                             <label>Property <input @bind="_propertyName" placeholder="Text" /></label>
                             <label>Value <input @bind="_propertyValue" placeholder="New value" /></label>
-                            <button class="primary" @onclick="ApplyPropertyAsync" disabled="@string.IsNullOrWhiteSpace(_propertyName)">Apply to XAML</button>
+                            <button class="primary" @onclick="ApplyPropertyAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_propertyName))">Apply to XAML</button>
                         }
                         @if (_selectedVisual != null) { <h3>Realized visual</h3><code>@_selectedVisual.TypeName</code><p>@($"Bounds: {_selectedVisual.X:0.##}, {_selectedVisual.Y:0.##} · {_selectedVisual.Width:0.##} × {_selectedVisual.Height:0.##}")</p><p>Visible: @_selectedVisual.IsVisible</p> }
                     </div>
@@ -85,10 +85,15 @@
                 {
                     <div class="pipeline"><h3>Inspect the real compilation</h3><p>All hosts consume the same immutable syntax and bound operations.</p>
                         <div><b>01</b><strong>Source-preserving syntax</strong><span>@(_result?.Analysis.Syntax.Root?.DescendantsAndSelf().Count() ?? 0) elements</span></div>
+                        @if (_result != null)
+                        {
+                            var statistics = _result.Analysis.Syntax.Statistics;
+                            <p>@(statistics.IsIncremental ? $"{statistics.ParsedCharacters} characters reparsed · {statistics.ReusedNodes} nodes reused" : $"Full parse · {statistics.ParsedCharacters} characters")</p>
+                        }
                         <div><b>02</b><strong>Roslyn semantic binding</strong><span>@(_result?.Analysis.Document.Symbols.Length ?? 0) symbol occurrences</span></div>
                         <div><b>03</b><strong>Typed C# lowering</strong><span>@(_result?.Analysis.Output.SourceMappings.Length ?? 0) source mappings</span></div>
                         <div><b>04</b><strong>Explicit execution</strong><span>Real Avalonia controls, not HTML approximations</span></div>
-                        <p class="muted">The current parser reparses edited text. Property transactions are available in the runtime; full structural hot reload and complete XamlX parity are not yet claimed.</p>
+                        <p class="muted">Local edits can reparse one complete element and retain unchanged syntax nodes. Recovery-sensitive edits use the full parser. These are parser-work counters, not end-to-end complexity claims. Full structural hot reload and complete framework parity remain separate work.</p>
                     </div>
                 }
             </div>

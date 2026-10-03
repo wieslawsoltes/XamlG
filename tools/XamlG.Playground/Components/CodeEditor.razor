@@ -11,6 +11,7 @@
     private ElementReference _host;
     private IJSObjectReference? _module;
     private DotNetObjectReference<CodeEditor>? _reference;
+    private string? _parameterText;
     private int _id;
     private bool _disposed;
 
@@ -25,11 +26,28 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        // An unrelated parent render must not replace a newer, still-debounced Monaco buffer.
+        if (_parameterText == Text) return;
+        _parameterText = Text;
         if (_module != null && _id != 0) await _module.InvokeVoidAsync("setEditorText", _id, Text);
     }
 
-    [JSInvokable] public Task Changed(string text) => TextChanged.InvokeAsync(text);
+    [JSInvokable] public Task Changed(string text)
+    {
+        _parameterText = text;
+        return TextChanged.InvokeAsync(text);
+    }
     [JSInvokable] public Task Run() => RunRequested.InvokeAsync();
+
+    public async Task<string> GetTextAsync()
+    {
+        var value = _module != null && _id != 0
+            ? await _module.InvokeAsync<string>("getEditorText", _id)
+            : Text;
+        _parameterText = value;
+        return value;
+    }
+
     public async Task RevealAsync(TextSpan span)
     {
         if (_module != null && _id != 0) await _module.InvokeVoidAsync("reveal", _id, span.Start, span.Length);
@@ -46,6 +64,7 @@
             try { if (_id != 0) await _module.InvokeVoidAsync("disposeEditor", _id); await _module.DisposeAsync(); }
             catch (JSDisconnectedException) { }
             _module = null;
+            _id = 0;
         }
         _reference?.Dispose();
         _reference = null;
