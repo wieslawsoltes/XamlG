@@ -1,0 +1,12 @@
+<StackPanel xmlns="https://github.com/avaloniaui"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            xmlns:local="clr-namespace:AvaloniaPackagingSmoke"
+            x:Class="AvaloniaPackagingSmoke.SmokeView"
+            x:DataType="local:SmokeModel" Spacing="8">
+  <StackPanel.Styles>
+    <Style Selector="Button.primary"><Setter Property="Width" Value="144" /></Style>
+  </StackPanel.Styles>
+  <TextBlock x:Name="output" Text="{Binding Name}" />
+  <TextBox x:Name="input" Text="{CompiledBinding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+  <Button x:Name="action" Classes="primary" Content="Generated without XamlX" />
+</StackPanel>

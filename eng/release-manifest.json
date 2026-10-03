@@ -1,0 +1,17 @@
+{
+  "packages": [
+    { "id": "XamlG.Syntax", "project": "src/XamlG.Syntax/XamlG.Syntax.csproj" },
+    { "id": "XamlG.Roslyn", "project": "src/XamlG.Roslyn/XamlG.Roslyn.csproj" },
+    { "id": "XamlG.Compiler", "project": "src/XamlG.Compiler/XamlG.Compiler.csproj" },
+    { "id": "XamlG.CSharp", "project": "src/XamlG.CSharp/XamlG.CSharp.csproj" },
+    { "id": "XamlG.Runtime", "project": "src/XamlG.Runtime/XamlG.Runtime.csproj" },
+    { "id": "XamlG.Frameworks", "project": "src/XamlG.Frameworks/XamlG.Frameworks.csproj" },
+    { "id": "XamlG.Generator", "project": "src/XamlG.Generator/XamlG.Generator.csproj" },
+    { "id": "XamlG.Tooling", "project": "src/XamlG.Tooling/XamlG.Tooling.csproj" },
+    { "id": "XamlG.Workspaces", "project": "src/XamlG.Workspaces/XamlG.Workspaces.csproj" },
+    { "id": "XamlG.LanguageServer", "project": "src/XamlG.LanguageServer/XamlG.LanguageServer.csproj" },
+    { "id": "XamlG.AvaloniaRuntime", "project": "src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" },
+    { "id": "XamlG.Cli", "project": "tools/XamlG.Cli/XamlG.Cli.csproj", "command": "xamlg" },
+    { "id": "XamlG.Lsp", "project": "tools/XamlG.Lsp/XamlG.Lsp.csproj", "command": "xamlg-lsp" }
+  ]
+}

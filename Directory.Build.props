@@ -7,12 +7,20 @@
     <Version>0.1.0-alpha.1</Version>
     <Authors>Wiesław Šoltés</Authors>
     <RepositoryUrl>https://github.com/wieslawsoltes/XamlG</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>xaml;roslyn;compiler;source-generator;avalonia</PackageTags>
     <Description>Modular Roslyn-backed XAML compiler and tooling.</Description>
     <DebugType>portable</DebugType>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
     <NoWarn>$(NoWarn);RS2008;RS1036</NoWarn>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="/" Visible="false" />
+  </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
     <Compile Include="$(MSBuildThisFileDirectory)src/Shared/IsExternalInit.cs" Link="Compatibility/IsExternalInit.cs" />
   </ItemGroup>
