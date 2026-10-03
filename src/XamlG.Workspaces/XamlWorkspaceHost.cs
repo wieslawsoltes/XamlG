@@ -12,12 +12,13 @@ public sealed class XamlWorkspaceHost : IDisposable
     private readonly MSBuildWorkspace _workspace;
     private readonly XamlWorkspaceOptions _options;
     private readonly ConcurrentQueue<WorkspaceDiagnostic> _diagnostics = new();
+    private readonly WorkspaceEventRegistration _failureRegistration;
 
     private XamlWorkspaceHost(MSBuildWorkspace workspace, XamlWorkspaceOptions options)
     {
         _workspace = workspace;
         _options = options;
-        _workspace.WorkspaceFailed += OnWorkspaceFailed;
+        _failureRegistration = _workspace.RegisterWorkspaceFailedHandler(OnWorkspaceFailed);
     }
 
     public ImmutableArray<WorkspaceDiagnostic> Diagnostics => _diagnostics.ToImmutableArray();
@@ -59,10 +60,10 @@ public sealed class XamlWorkspaceHost : IDisposable
         return result.ToImmutable();
     }
 
-    private void OnWorkspaceFailed(object? sender, WorkspaceDiagnosticEventArgs args) => _diagnostics.Enqueue(args.Diagnostic);
+    private void OnWorkspaceFailed(WorkspaceDiagnosticEventArgs args) => _diagnostics.Enqueue(args.Diagnostic);
     public void Dispose()
     {
-        _workspace.WorkspaceFailed -= OnWorkspaceFailed;
+        _failureRegistration.Dispose();
         _workspace.Dispose();
     }
 }
