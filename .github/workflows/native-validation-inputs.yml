@@ -1,0 +1,24 @@
+name: Native validation input
+on:
+  push:
+    paths: ['.github/workflows/native-validation-inputs.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Package the exact native app host
+        run: |
+          test -d "$DOTNET_ROOT/packs/Microsoft.NETCore.App.Host.linux-x64"
+          tar -czf /tmp/native-host.tar.gz -C "$DOTNET_ROOT" packs/Microsoft.NETCore.App.Host.linux-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-app-host
+          path: /tmp/native-host.tar.gz
+          retention-days: 3
