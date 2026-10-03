@@ -1,0 +1,49 @@
+name: Pinned upstream compatibility
+on:
+  push:
+    branches: [main, feat/tooling-and-playground]
+    paths: ['src/**', 'tests/**', '.github/workflows/upstream-compatibility.yml']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: upstream-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [Baseline, Compatibility]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read pinned upstream revision
+        id: revision
+        run: |
+          python - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          revision=ET.parse('tests/Upstream.props').findtext('.//XamlXRevision')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('xamlx='+revision+'\n')
+          PY
+      - uses: actions/checkout@v4
+        with:
+          repository: AvaloniaUI/XamlX
+          ref: ${{ steps.revision.outputs.xamlx }}
+          path: external/XamlX
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Execute unchanged upstream assertions
+        run: dotnet test tests/XamlG.XamlX.${{ matrix.suite }}.Tests -c Release -p:NuGetAudit=false --logger 'trx;LogFileName=${{ matrix.suite }}.trx' --results-directory artifacts/tests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upstream-${{ matrix.suite }}
+          path: artifacts/tests
+          retention-days: 14

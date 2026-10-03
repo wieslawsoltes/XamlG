@@ -1,12 +1,10 @@
 # Third-party notices
 
-## Avalonia selector grammar
+## XamlX compatibility and baseline tests
 
-`src/XamlG.Frameworks/Avalonia/Syntax/Internal` includes the selector grammar, character reader, identifier parser and parse exception adapted from the Avalonia project, commit `17350180c33b063f0e98abbfd19aa3cae63f5d56`.
+The optional upstream test projects link source from AvaloniaUI/XamlX revision `7ef6aef496ab6e8dcf3df04bef697be49db37c04`. `tests/XamlG.XamlX.Baseline.Tests/CompilerTestBase.Sre.cs` is adapted from the same revision; only runtime assembly resolution is changed. The test-only adapter generator preserves upstream runtime test bodies while replacing the IL-specific test setup. See `docs/upstream-validation.md` for the exact comparison boundary.
 
-Changes: isolated namespace, nested syntax types split into individual files, internal visibility, and an invariant numeric parsing helper. The framework binder and C# code generator are XamlG implementations and do not use XamlX.
-
-Copyright (c) the Avalonia Project contributors.
+Copyright (c) 2019 Nikita Tsukanov
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,6 +24,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-## Compatibility tests
+No upstream IL compiler or reflection type system is included in XamlG production packages. The XamlX test-reference assembly is not packable.
 
-The optional upstream test projects link the original XamlX and Avalonia sources at the exact revisions recorded in `tests/Upstream.props` and the CI workflow. Their original licenses remain applicable. No upstream IL compiler or reflection type system is part of XamlG production packages.
+## Package dependencies
+
+Roslyn, Avalonia, Monaco Editor, Playwright and other package dependencies retain their own licenses and notices. The browser asset build copies Monaco from its pinned npm package with its license files. Avalonia Browser assets are published from the NuGet package without removing its package attribution. The compiler's Avalonia adapter uses public metadata contracts; its production source is not a copy of XamlX's IL compiler.
