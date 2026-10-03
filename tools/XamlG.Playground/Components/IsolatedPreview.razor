@@ -8,34 +8,76 @@
 @code {
     private ElementReference _host;
     private IJSObjectReference? _module;
-    private Task? _initialization;
+    private Task<IJSObjectReference>? _moduleLoad;
+    private Task<int>? _initialization;
+    private long _generation;
     private int _handle;
     private bool _disposed;
+
     public async Task<SandboxRunResult> RunAsync(SandboxRunRequest request)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        await (_initialization ??= InitializeAsync());
-        return await _module!.InvokeAsync<SandboxRunResult>("request", _handle, "execute", request);
+        var generation = _generation;
+        var handle = await (_initialization ??= InitializeAsync(generation));
+        EnsureCurrent(generation);
+        try
+        {
+            var result = await _module!.InvokeAsync<SandboxRunResult>("request", handle, "execute", request);
+            EnsureCurrent(generation);
+            return result;
+        }
+        catch (JSException) when (_disposed || generation != _generation)
+        {
+            throw new OperationCanceledException("The isolated preview was reset.");
+        }
     }
+
     public async Task<SandboxRunResult> InspectAsync()
     {
         if (_module == null || _handle == 0) throw new InvalidOperationException("The isolated preview has not been started.");
-        return await _module.InvokeAsync<SandboxRunResult>("request", _handle, "inspect", new { });
+        var generation = _generation;
+        var result = await _module.InvokeAsync<SandboxRunResult>("request", _handle, "inspect", new { });
+        EnsureCurrent(generation);
+        return result;
     }
-    private async Task InitializeAsync()
+
+    private async Task<int> InitializeAsync(long generation)
     {
-        _module ??= await JavaScript.InvokeAsync<IJSObjectReference>("import", "./sandbox-client.js");
-        _handle = await _module.InvokeAsync<int>("create", _host, new Uri(new Uri(Navigation.BaseUri), "sandbox.html").AbsoluteUri);
+        _module = await (_moduleLoad ??= JavaScript.InvokeAsync<IJSObjectReference>("import", "./sandbox-client.js").AsTask());
+        EnsureCurrent(generation);
+        var handle = await _module.InvokeAsync<int>("create", _host, new Uri(new Uri(Navigation.BaseUri), "sandbox.html").AbsoluteUri);
+        if (_disposed || generation != _generation)
+        {
+            await _module.InvokeVoidAsync("dispose", handle);
+            throw new OperationCanceledException("The isolated preview was reset during initialization.");
+        }
+        _handle = handle;
+        return handle;
     }
+
+    private void EnsureCurrent(long generation)
+    {
+        if (_disposed || generation != _generation) throw new OperationCanceledException("The isolated preview generation is no longer current.");
+    }
+
     public async Task ResetAsync()
     {
-        if (_module != null && _handle != 0) await _module.InvokeVoidAsync("dispose", _handle);
-        _handle = 0; _initialization = null;
+        _generation = checked(_generation + 1);
+        var handle = _handle;
+        _handle = 0;
+        _initialization = null;
+        if (_module != null && handle != 0) await _module.InvokeVoidAsync("dispose", handle);
     }
+
     public async ValueTask DisposeAsync()
     {
+        if (_disposed) return;
         _disposed = true;
-        await ResetAsync();
-        if (_module != null) await _module.DisposeAsync();
+        try
+        {
+            await ResetAsync();
+            if (_moduleLoad != null) await (await _moduleLoad).DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
     }
 }
