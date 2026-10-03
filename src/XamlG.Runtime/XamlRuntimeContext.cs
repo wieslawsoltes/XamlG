@@ -2,10 +2,7 @@ using System.ComponentModel;
 
 namespace XamlG.Runtime;
 
-/// <summary>
-/// Persistent construction and service-provider frames. Target-specific adapters are cached on the
-/// frame which created them, never inherited from a frame with a different target object.
-/// </summary>
+/// <summary>Persistent construction frames with target-local adapters and non-reentrant provider fallback.</summary>
 public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvider, IXamlProvideValueTarget,
     IXamlParentStackProvider, IXamlUriContext, ITypeDescriptorContext
 {
@@ -19,6 +16,7 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
     private Dictionary<Type, object>? _localServices;
     private Dictionary<Type, object>? _adapterCache;
     private IServiceProvider? _inner;
+    private bool _resolvingInner;
     private object? _root;
     private object? _intermediateRoot;
 
@@ -96,20 +94,39 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
         return new(this, value, TargetObject, TargetProperty, key, false);
     }
 
-    public XamlRuntimeContext ForTarget(object target, object? property) =>
-        new(this, null, target, property, NodeKey, false);
+    public XamlRuntimeContext ForTarget(object target, object? property) => new(this, null, target, property, NodeKey, false);
 
     public XamlRuntimeContext WithNamespaces(IReadOnlyDictionary<Type, object> namespaces) =>
         ReferenceEquals(namespaces, _namespaces) ? this : new(this, null, TargetObject, TargetProperty, NodeKey, false, namespaces: namespaces);
 
-    public XamlRuntimeContext CreateDeferredScope(IServiceProvider? services = null) =>
-        new(this, null, TargetObject, TargetProperty, null, true, services);
+    public XamlRuntimeContext CreateDeferredScope(IServiceProvider? services = null) => new(this, null, TargetObject, TargetProperty, null, true, services);
 
     public object? GetExternalService(Type serviceType) => _outer?.GetService(serviceType);
+
     public object? GetNamespaceValue(Type contractType) =>
         _namespaces != null && _namespaces.TryGetValue(contractType, out var value) ? value : null;
 
+    internal object? GetFallbackService(Type serviceType) => GetLocalService(serviceType) ?? GetExternalService(serviceType);
+
     public object? GetService(Type serviceType)
+    {
+        var local = GetLocalService(serviceType);
+        if (local != null) return local;
+        if (_innerFactory != null && !_resolvingInner)
+        {
+            _resolvingInner = true;
+            try
+            {
+                _inner ??= _innerFactory(this);
+                var provided = ReferenceEquals(_inner, this) ? null : _inner?.GetService(serviceType);
+                if (provided != null) return provided;
+            }
+            finally { _resolvingInner = false; }
+        }
+        return GetExternalService(serviceType);
+    }
+
+    private object? GetLocalService(Type serviceType)
     {
         if (serviceType == null) throw new ArgumentNullException(nameof(serviceType));
         if (serviceType == typeof(IServiceProvider) || serviceType == typeof(XamlRuntimeContext) ||
@@ -121,18 +138,8 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
             if (frame._localServices != null && frame._localServices.TryGetValue(serviceType, out var local)) return local;
         if (_adapterCache != null && _adapterCache.TryGetValue(serviceType, out var cached)) return cached;
         var adapter = _services?.Invoke(this, serviceType);
-        if (adapter != null)
-        {
-            (_adapterCache ??= new())[serviceType] = adapter;
-            return adapter;
-        }
-        if (_innerFactory != null)
-        {
-            _inner ??= _innerFactory(this);
-            var provided = _inner.GetService(serviceType);
-            if (provided != null) return provided;
-        }
-        return GetExternalService(serviceType);
+        if (adapter != null) (_adapterCache ??= new())[serviceType] = adapter;
+        return adapter;
     }
 
     public void AddService(Type contract, object instance)
