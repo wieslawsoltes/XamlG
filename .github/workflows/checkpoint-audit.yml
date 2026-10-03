@@ -1,0 +1,94 @@
+name: Checkpoint audit
+on:
+  push:
+    paths: ['.github/workflows/checkpoint-audit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Decode complete checkpoint records into isolated directory
+        run: |
+          python - <<'PY'
+          import base64, hashlib, json, re, zlib
+          from pathlib import Path, PurePosixPath
+          files = sorted(Path('.bootstrap').glob('checkpoint-01-*.b64'))
+          texts = [p.read_text().strip() for p in files]
+          print('PARTS', [(p.name,len(t)) for p,t in zip(files,texts)])
+          text = ''.join(texts)
+          print('ENCODED_PREFIX', repr(text[:80]), 'SUFFIX', repr(text[-100:]))
+          for p,t in zip(files,texts):
+              invalid = [(m.start(),repr(m.group())) for m in re.finditer(r'[^A-Za-z0-9+/=\s]',t)]
+              print('INVALID',p.name,invalid[:12])
+          prefix = re.match(r'[A-Za-z0-9+/=\s]*',text).group()
+          prefix = ''.join(prefix.split()); prefix = prefix[:len(prefix)//4*4]
+          data = base64.b64decode(prefix)
+          decoder = zlib.decompressobj(31)
+          try:
+              payload = decoder.decompress(data,16_000_001)
+          except zlib.error as error:
+              print('DECODE_ERROR',error)
+              raise
+          print('ARCHIVE', hashlib.sha256(data).hexdigest(), 'BYTES',len(data),'DECODED',len(payload),'COMPLETE',decoder.eof,'UNUSED',len(decoder.unused_data))
+          if len(payload)>16_000_000: raise RuntimeError('Checkpoint too large')
+          raw = payload.decode('utf8',errors='strict')
+          print('PAYLOAD_PREFIX', raw[:1000])
+          print('PAYLOAD_SUFFIX', raw[-300:])
+          root = Path('/tmp/xamlg-recovered'); root.mkdir()
+          import shutil
+          for path in Path('.').iterdir():
+              if path.name in {'.git','.bootstrap'}: continue
+              if path.is_dir(): shutil.copytree(path,root/path.name)
+              else: shutil.copy2(path,root/path.name)
+          try:
+              document = json.loads(raw)
+              print('PAYLOAD_KEYS',list(document) if isinstance(document,dict) else 'list')
+              entries = document['files'] if isinstance(document,dict) else document
+          except json.JSONDecodeError:
+              entries=[]; reader=json.JSONDecoder(); position=raw.index('[')+1
+              while position<len(raw):
+                  while position<len(raw) and raw[position] in ', \r\n\t': position+=1
+                  try: entry,position=reader.raw_decode(raw,position)
+                  except json.JSONDecodeError: break
+                  entries.append(entry)
+          report=[]
+          for entry in entries:
+              if not isinstance(entry,dict) or 'path' not in entry: raise RuntimeError('Unexpected record')
+              relative=PurePosixPath(entry['path'])
+              if relative.is_absolute() or '..' in relative.parts or any(s in {'.git','.bootstrap','bin','obj'} for s in relative.parts): raise RuntimeError('Invalid path')
+              target=root/relative
+              content=entry.get('content')
+              if content is None: target.unlink(missing_ok=True); continue
+              content=base64.b64decode(content) if entry.get('encoding')=='base64' else content.encode('utf8')
+              target.parent.mkdir(parents=True,exist_ok=True); target.write_bytes(content)
+              report.append({'path':str(relative),'bytes':len(content),'sha256':hashlib.sha256(content).hexdigest()})
+          Path('/tmp/checkpoint-audit.json').write_text(json.dumps({'complete':decoder.eof,'files':report},indent=2))
+          print('RECOVERED',len(report))
+          for item in report: print(item['path'],item['bytes'])
+          PY
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Compile recovered source and run available tests
+        working-directory: /tmp/xamlg-recovered
+        run: |
+          dotnet build src/XamlG.Generator/XamlG.Generator.csproj -c Release -p:NuGetAudit=false
+          for project in tests/*/*.csproj; do
+            echo "PROJECT $project"
+            if grep -q 'external/' "$project"; then continue; fi
+            dotnet test "$project" -c Release -p:NuGetAudit=false --logger "trx;LogFileName=$(basename "$(dirname "$project")").trx" --results-directory /tmp/test-results
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkpoint-audit
+          path: |
+            /tmp/checkpoint-audit.json
+            /tmp/test-results
+          retention-days: 7
