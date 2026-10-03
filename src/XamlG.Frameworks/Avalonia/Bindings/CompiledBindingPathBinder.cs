@@ -31,7 +31,7 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
                     builder = _expressions.Call(builder, "Not", segment.Span); break;
                 case BindingPathKind.Self:
                     builder = _expressions.Call(builder, "Self", segment.Span);
-                    type = target.Type;
+                    type = BindingTargetTypeResolver.Resolve(context, target);
                     rootedDataType = target.Annotations.TryGet(AvaloniaBindingScope.Key, out var own) ? own.DataType : null;
                     break;
                 case BindingPathKind.Parent:

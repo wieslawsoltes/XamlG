@@ -9,14 +9,14 @@ public static class KnownFrameworkProfiles
 {
     public static XamlFrameworkProfile Select(Compilation compilation, string? framework = null, bool compileBindingsByDefault = true)
     {
-        if (string.IsNullOrWhiteSpace(framework) || framework.Equals("Auto", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(framework) || string.Equals(framework, "Auto", StringComparison.OrdinalIgnoreCase))
             return compilation.GetTypeByMetadataName(AvaloniaMetadata.Object) != null
                 ? AvaloniaFrameworkProfile.Create(compileBindingsByDefault)
                 : XamlFrameworkProfile.Portable;
 
-        if (framework.Equals("Portable", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(framework, "Portable", StringComparison.OrdinalIgnoreCase))
             return XamlFrameworkProfile.Portable;
-        if (framework.Equals("Avalonia", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(framework, "Avalonia", StringComparison.OrdinalIgnoreCase))
             return AvaloniaFrameworkProfile.Create(compileBindingsByDefault);
 
         throw new ArgumentException($"Unknown framework profile '{framework}'. Supported built-in profiles: Auto, Portable, Avalonia.", nameof(framework));

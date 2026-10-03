@@ -1,5 +1,6 @@
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
+using XamlG.Frameworks.Avalonia.Bindings;
 using XamlG.Roslyn;
 using XamlG.Syntax;
 
@@ -10,6 +11,11 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
     public void Initialize(BindingContext context, ObjectBindingBuilder target)
     {
         var inherited = FindTarget(context, target);
+        if (target.Scope.Directive(target.Syntax, AvaloniaStyleMetadata.SetterTargetType) is { } declared)
+        {
+            inherited = AvaloniaBindingScopeRule.ResolveDataType(context, declared.Value, target.Scope, declared.ValueSpan);
+            if (inherited != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, inherited);
+        }
         if (target.Type.HasMetadataName(AvaloniaStyleMetadata.Style))
         {
             target.Annotations.Set(AvaloniaStyleAnnotations.AssignedProperties, new HashSet<ISymbol>(SymbolEqualityComparer.Default));
@@ -27,6 +33,8 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
         }
         else if (target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) || target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate))
         {
+            if (inherited == null && target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate))
+                inherited = BindingTargetTypeResolver.FindTemplateOwner(context, target);
             var source = TextMember(target.Syntax, AvaloniaStyleMetadata.TargetTypeMember);
             var type = source is { } explicitType
                 ? (context.Values.BindText(explicitType.Text, context.Types.Find(ClrNames.Type)!, target.Scope, explicitType.Span) as BoundTypeExpression)?.ReferencedType as INamedTypeSymbol

@@ -3,6 +3,10 @@ namespace XamlG.Frameworks.Avalonia.Styling;
 /// <summary>Metadata contracts used only by the Avalonia styling adapter.</summary>
 internal static class AvaloniaStyleMetadata
 {
+    public const string ClassAdapter = "XamlG.AvaloniaRuntime.AvaloniaClassAdapter";
+    public const string StyledElementExtensions = "Avalonia.StyledElementExtensions";
+    public const string ClassPropertyFactory = "GetClassProperty";
+    public const string SetterTargetType = "SetterTargetType";
     public const string Selector = "Avalonia.Styling.Selector";
     public const string Selectors = "Avalonia.Styling.Selectors";
     public const string Style = "Avalonia.Styling.Style";

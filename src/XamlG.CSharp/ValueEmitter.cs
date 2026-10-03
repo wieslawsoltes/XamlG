@@ -61,6 +61,7 @@ internal sealed class ValueEmitter
         var returnType = deferred.FactoryReturnType?.CSharpName() ?? "object";
         writer.Open((deferred.UsesFunctionPointer ? "static " : string.Empty) + returnType + " " + name + "(" + CSharpNames.Provider + "? " + incoming + ")");
         _objects.EmitDeferredContext(frame, parentFrame, incoming, deferred.UsesFunctionPointer);
+        writer.Open("try");
         writer.Line("var " + root + " = (" + _context.Document.Root!.Type.CSharpName() + ")" + frame + ".RootObject!;");
         var saved = _context.RootVariable; _context.RootVariable = root;
         try
@@ -70,6 +71,8 @@ internal sealed class ValueEmitter
             _objects.Complete(frame, result); writer.Line("return " + result + ";");
         }
         finally { _context.RootVariable = saved; }
+        writer.Close();
+        ConstructionFailureEmitter.Emit(_context, frame);
         writer.Close();
         if (deferred.Customizer == null) return "(" + deferred.TargetType.CSharpName() + ")" + name;
         var factory = deferred.UsesFunctionPointer

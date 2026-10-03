@@ -58,9 +58,12 @@ public sealed class CSharpEmitter
         {
             writer.Open("public static " + root.Type.CSharpName() + " Build(" + CSharpNames.Provider + "? __services = null)");
             flow.EmitContext("__context", "__services", "null");
+            writer.Open("try");
             var value = flow.Emit(root, "__context", null, null);
             flow.Complete("__context", value);
             writer.Line("return " + value + ";");
+            writer.Close();
+            ConstructionFailureEmitter.Emit(context, "__context");
             writer.Close();
         }
 
@@ -68,8 +71,11 @@ public sealed class CSharpEmitter
         if (root.Type.IsReferenceType)
             writer.Line("if (__root is null) throw new global::System.ArgumentNullException(nameof(__root));");
         flow.EmitContext("__context", "__services", "__root");
+        writer.Open("try");
         flow.Emit(root, "__context", "__root", null);
         flow.Complete("__context", "__root");
+        writer.Close();
+        ConstructionFailureEmitter.Emit(context, "__context");
         writer.Close();
 
         if (document.ClassSymbol != null && document.Options.GenerateInitializeComponent && !document.ClassSymbol.GetMembers("InitializeComponent").Any())
@@ -91,4 +97,5 @@ public sealed class CSharpEmitter
         return new(context.Id + ".xaml.g.cs", writer.ToString(), typeName, build, populate,
             context.Diagnostics.ToImmutableArray(), context.Mappings.ToImmutableArray());
     }
+
 }
