@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
-using Avalonia.Themes.Simple;
 using AvaloniaPackagingSmoke;
 using XamlG.Runtime;
 
@@ -30,9 +29,4 @@ finally { window.Close(); }
 static void Require(bool value, string message)
 {
     if (!value) throw new InvalidOperationException(message);
-}
-
-internal sealed class SmokeApplication : Application
-{
-    public override void Initialize() => Styles.Add(new SimpleTheme());
 }
