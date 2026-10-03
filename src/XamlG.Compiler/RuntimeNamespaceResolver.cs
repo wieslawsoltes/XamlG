@@ -26,19 +26,14 @@ internal static class RuntimeNamespaceResolver
             {
                 var parts = uri.Substring(14).Split(';');
                 var assembly = parts.Skip(1).FirstOrDefault(p => p.StartsWith("assembly=", StringComparison.Ordinal))?.Substring(9)
-                    ?? context.Types.Compilation.AssemblyName;
+                    ?? context.Types.Configuration.DefaultAssemblyName ?? context.Types.Compilation.AssemblyName;
                 mappings.Add(new(uri, parts[0], assembly));
             }
             else if (uri.StartsWith("using:", StringComparison.Ordinal))
             {
-                var clrNamespace = uri.Substring(6);
-                foreach (var assembly in assemblies)
-                {
-                    INamespaceSymbol? scope = assembly.GlobalNamespace;
-                    foreach (var part in clrNamespace.Split('.'))
-                        if (part.Length != 0) scope = scope?.GetNamespaceMembers().FirstOrDefault(n => n.Name == part);
-                    if (scope != null) mappings.Add(new(uri, clrNamespace, assembly.Identity.Name));
-                }
+                // "using:" records a namespace independent of a particular assembly.
+                // Preserve that meaning instead of expanding it into loaded assemblies.
+                mappings.Add(new(uri, uri.Substring(6)));
             }
         }
         return mappings.Distinct().ToImmutableArray();

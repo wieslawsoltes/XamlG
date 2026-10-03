@@ -5,17 +5,18 @@ namespace XamlG.Syntax;
 public sealed class NamespaceScope
 {
     public static NamespaceScope Empty { get; } = new(ImmutableDictionary<string, string>.Empty.WithComparers(StringComparer.Ordinal).Add("xml", XamlNames.Xml), ImmutableHashSet<string>.Empty.WithComparer(StringComparer.Ordinal), false);
-    private NamespaceScope(ImmutableDictionary<string, string> bindings, ImmutableHashSet<string> ignored, bool preserve)
-    { Bindings = bindings; IgnoredNamespaces = ignored; PreserveSpace = preserve; }
+    private NamespaceScope(ImmutableDictionary<string, string> bindings, ImmutableHashSet<string> ignored, bool preserve, ImmutableHashSet<string>? declared = null)
+    { Bindings = bindings; IgnoredNamespaces = ignored; PreserveSpace = preserve; DeclaredPrefixes = declared ?? ImmutableHashSet<string>.Empty.WithComparer(StringComparer.Ordinal); }
     public ImmutableDictionary<string, string> Bindings { get; }
     public ImmutableHashSet<string> IgnoredNamespaces { get; }
     public bool PreserveSpace { get; }
+    public ImmutableHashSet<string> DeclaredPrefixes { get; }
     public NamespaceScope Push(XamlElementSyntax element)
     {
-        var bindings = Bindings; var ignored = IgnoredNamespaces; var preserve = PreserveSpace;
+        var bindings = Bindings; var ignored = IgnoredNamespaces; var preserve = PreserveSpace; var declared = DeclaredPrefixes;
         foreach (var a in element.Attributes)
-            if (a.IsNamespace) bindings = bindings.SetItem(a.Name == "xmlns" ? string.Empty : a.Name.Substring(6), a.Value);
-        var result = new NamespaceScope(bindings, ignored, preserve);
+            if (a.IsNamespace) { var prefix = a.Name == "xmlns" ? string.Empty : a.Name.Substring(6); bindings = bindings.SetItem(prefix, a.Value); declared = declared.Add(prefix); }
+        var result = new NamespaceScope(bindings, ignored, preserve, declared);
         foreach (var a in element.Attributes)
         {
             var name = result.Expand(a.Name, true);
@@ -24,7 +25,7 @@ public sealed class NamespaceScope
                 foreach (var prefix in a.Value.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
                     if (bindings.TryGetValue(prefix, out var ns)) ignored = ignored.Add(ns);
         }
-        return new NamespaceScope(bindings, ignored, preserve);
+        return new NamespaceScope(bindings, ignored, preserve, declared);
     }
     public ExpandedName Expand(string name, bool attribute = false)
     {

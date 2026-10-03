@@ -4,6 +4,8 @@ namespace XamlG.Compiler;
 
 public sealed record XamlRuntimeConfiguration
 {
+    public XamlTargetPropertyMode TargetPropertyMode { get; init; } = XamlTargetPropertyMode.ReflectionMember;
+    public bool ProtectNamespaceDictionaries { get; init; } = true;
     public ImmutableArray<XamlServiceMapping> Services { get; init; } = ImmutableArray<XamlServiceMapping>.Empty;
     public XamlMethodReference? RootServiceProviderFactory { get; init; }
     public XamlMethodReference? InnerServiceProviderFactory { get; init; }

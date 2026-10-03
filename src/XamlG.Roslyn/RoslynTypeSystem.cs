@@ -38,14 +38,14 @@ public sealed class RoslynTypeSystem
         if (XamlNames.IsLanguage(xmlNamespace))
         {
             var special = XamlIntrinsicTypes.GetSpecialType(name);
-            var intrinsic = special == SpecialType.None ? name == "Uri" ? Find(ClrNames.Uri) : name == "Type" ? Find(ClrNames.Type) : null : Special(special);
+            var intrinsic = special == SpecialType.None ? name == "Uri" ? Find(ClrNames.Uri) : name == "Type" ? Find(ClrNames.Type) : name == "TimeSpan" ? Find(ClrNames.TimeSpan) : name == "DateTime" ? Find(ClrNames.DateTime) : name == "Guid" ? Find(ClrNames.Guid) : null : Special(special);
             return intrinsic != null && intrinsic.Arity == arity ? new(intrinsic, ImmutableArray.Create(intrinsic)) : TypeResolution.Missing;
         }
         var mappings = new List<XmlNamespaceMapping>();
         if (xmlNamespace.StartsWith("clr-namespace:", StringComparison.Ordinal))
         {
             var pieces = xmlNamespace.Substring(14).Split(';');
-            var assembly = pieces.Skip(1).FirstOrDefault(p => p.StartsWith("assembly=", StringComparison.Ordinal))?.Substring(9) ?? Compilation.AssemblyName;
+            var assembly = pieces.Skip(1).FirstOrDefault(p => p.StartsWith("assembly=", StringComparison.Ordinal))?.Substring(9) ?? Configuration.DefaultAssemblyName ?? Compilation.AssemblyName;
             mappings.Add(new(xmlNamespace, pieces[0], assembly));
         }
         else if (xmlNamespace.StartsWith("using:", StringComparison.Ordinal)) mappings.Add(new(xmlNamespace, xmlNamespace.Substring(6)));
@@ -56,7 +56,10 @@ public sealed class RoslynTypeSystem
             foreach (var assembly in _assemblies)
             {
                 if (mapping.AssemblyName != null && !string.Equals(mapping.AssemblyName.Split(',')[0].Trim(), assembly.Identity.Name, StringComparison.Ordinal)) continue;
-                var type = assembly.GetTypeByMetadataName(string.IsNullOrEmpty(mapping.ClrNamespace) ? metadata : mapping.ClrNamespace + "." + metadata);
+                var qualified = string.IsNullOrEmpty(mapping.ClrNamespace) ? metadata : mapping.ClrNamespace + "." + metadata;
+                // Facades such as netstandard carry forwarders rather than definitions.
+                // Preserve the resolved destination symbol's actual assembly identity.
+                var type = assembly.GetTypeByMetadataName(qualified) ?? assembly.ResolveForwardedType(qualified);
                 if (type != null && IsAccessible(type)) candidates.Add(type);
             }
         var result = candidates.OrderBy(c => c.ContainingAssembly.Identity.ToString(), StringComparer.Ordinal).ThenBy(c => c.MetadataName(), StringComparer.Ordinal).ToImmutableArray();
@@ -105,6 +108,19 @@ public sealed class RoslynTypeSystem
             var addChild = Configuration.AddChildInterfaces.Contains(contract.OriginalDefinition.MetadataName());
             foreach (var method in contract.GetMembers(addChild ? Configuration.AddChildMethod : Configuration.CollectionAddMethod).OfType<IMethodSymbol>())
                 if (method.Parameters.Length is 1 or 2 && !method.IsStatic && !method.IsGenericMethod && IsAccessible(contract)) methods.Add(method);
+        }
+        if (methods.Count == 0 && type is INamedTypeSymbol declared)
+        {
+            foreach (var projection in Configuration.CollectionProjections)
+            {
+                if (!declared.OriginalDefinition.HasMetadataName(projection.DeclaredMetadataName)) continue;
+                var mutation = Find(projection.MutationMetadataName);
+                if (mutation == null || mutation.Arity != declared.Arity) continue;
+                if (mutation.Arity != 0) mutation = mutation.Construct(declared.TypeArguments.ToArray());
+                foreach (var method in mutation.Members(Configuration.CollectionAddMethod).OfType<IMethodSymbol>())
+                    if (!method.IsStatic && !method.IsGenericMethod && method.Parameters.Length == 1)
+                        methods.Add(method);
+            }
         }
         return methods.OrderBy(m => m.ContainingType.TypeKind == TypeKind.Interface ? 1 : 0).ThenBy(m => m.ToDisplayString(), StringComparer.Ordinal).ToImmutableArray();
     }

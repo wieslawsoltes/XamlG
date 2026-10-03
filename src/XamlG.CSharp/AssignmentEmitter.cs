@@ -68,7 +68,7 @@ internal sealed class AssignmentEmitter
                 var args = call.Arguments.Select(a => _values.Emit(a, frame)).ToList(); if (call.IncludeTarget) args.Insert(0, target);
                 writer.Line((call.Method.IsStatic ? call.Method.ContainingType.CSharpName() : target) + "." + CSharpNames.Method(call.Method) + "(" + string.Join(", ", args) + ");"); break;
             }
-            case BoundDynamicSetAssignment dynamicSet: Dynamic(dynamicSet, target, frame); break;
+            case BoundDynamicSetAssignment dynamicSet: Dynamic(dynamicSet, owner.Type, target, frame); break;
             case BoundAdaptedSetAssignment adapted:
             {
                 var value = _context.Temporary("adapted"); writer.Line("object? " + value + " = " + _values.Emit(adapted.Value, ForTarget(adapted.Member, target, frame)) + ";");
@@ -86,26 +86,13 @@ internal sealed class AssignmentEmitter
             default: _context.Error("The backend does not recognize assignment '" + assignment.GetType().Name + "'.", assignment.Span); break;
         }
     }
-    private void Dynamic(BoundDynamicSetAssignment assignment, string target, string frame)
+    private void Dynamic(BoundDynamicSetAssignment assignment, INamedTypeSymbol ownerType, string target, string frame)
     {
-        var writer = _context.Writer; var value = _context.Temporary("dynamic"); writer.Line("object? " + value + " = " + _values.Emit(assignment.Value, ForTarget(assignment.Target, target, frame)) + ";");
-        var first = true;
-        foreach (var candidate in assignment.Candidates)
-        {
-            var local = _context.Temporary("candidate");
-            writer.Open((first ? "if" : "else if") + " (" + value + " is " + candidate.ValueType.CSharpName() + " || " + (candidate.AllowRuntimeNull ? value + " is null" : "false") + ")");
-            writer.Line("var " + local + " = (" + candidate.ValueType.CSharpName() + ")" + value + "!;");
-            if (candidate is BoundPropertyValueSetter property) Set(property.Member, target, local);
-            else if (candidate is BoundMethodValueSetter method)
-            {
-                var receiver = target; foreach (var propertySymbol in method.ReceiverPath) receiver += "." + CSharpNames.Identifier(propertySymbol.Name);
-                var args = method.IncludeTarget ? target + ", " + local : local;
-                writer.Line((method.Method.IsStatic ? method.Method.ContainingType.CSharpName() : "((" + method.Method.ContainingType.CSharpName() + ")" + receiver + ")") + "." + CSharpNames.Method(method.Method) + "(" + args + ");");
-            }
-            writer.Close(); first = false;
-        }
-        writer.Line((first ? string.Empty : "else ") + "throw new global::System.InvalidCastException(\"No XAML setter accepts the runtime value.\");");
+        var value = _values.Emit(assignment.Value, ForTarget(assignment.Target, target, frame));
+        var helper = _context.DynamicSetters.Register(ownerType, assignment.Candidates);
+        _context.Writer.Line(helper + "(" + target + ", " + value + ");");
     }
+
     private string ForTarget(BoundMember member, string target, string parent)
     {
         var descriptor = member.TargetDescriptor == null ? _context.Descriptor(member) : _values.Emit(member.TargetDescriptor, parent);
