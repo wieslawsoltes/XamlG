@@ -13,13 +13,13 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
     private readonly BindingExpressionFactory _expressions = new(context);
     private readonly BindingAccessorBuilder _accessors = new(context);
 
-    public CompiledPathResult? Bind(BindingPathSyntax syntax, ITypeSymbol? sourceType, bool commandTarget = false)
+    public CompiledPathResult? Bind(BindingPathSyntax syntax, ITypeSymbol? sourceType, bool commandTarget = false, BoundBindingSource? initialSource = null)
     {
-        BoundExpression? builder = _expressions.New(AvaloniaBindingMetadata.PathBuilder, syntax.Span);
+        BoundExpression? builder = initialSource?.Builder ?? _expressions.New(AvaloniaBindingMetadata.PathBuilder, syntax.Span);
         if (builder == null) return null;
-        var type = sourceType;
+        var type = initialSource?.SourceType ?? sourceType;
         var writable = false;
-        INamedTypeSymbol? rootedDataType = null;
+        INamedTypeSymbol? rootedDataType = initialSource?.DataType;
         var resolver = new BindingSourceResolver(context, target);
         for (var index = 0; index < syntax.Segments.Length; index++)
         {

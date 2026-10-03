@@ -24,6 +24,21 @@ public sealed class AvaloniaBindingScopeRule(bool compileBindingsByDefault = tru
         }
         if (source != null)
             dataType = ResolveDataType(context, source, target.Scope, span);
+        else if (!target.Type.HasMetadataName(AvaloniaBindingMetadata.DataTemplate) &&
+                 !target.Type.HasMetadataName(AvaloniaBindingMetadata.TreeDataTemplate))
+        {
+            var contextElement = target.Syntax.Children.OfType<XamlElementSyntax>().FirstOrDefault(e =>
+                e.LocalName.EndsWith("." + AvaloniaBindingMetadata.DataContext, StringComparison.Ordinal));
+            var values = contextElement?.Children.OfType<XamlElementSyntax>().ToArray();
+            if (contextElement != null && values is { Length: 1 })
+            {
+                var contextScope = target.Scope.Push(contextElement);
+                var inferred = context.Values.PeekNodeType(values[0], contextScope);
+                var binding = context.Types.Find(AvaloniaMetadata.BindingBase);
+                if (inferred is INamedTypeSymbol named && (binding == null || !context.Types.Compilation.ClassifyCommonConversion(named, binding).IsImplicit))
+                    dataType = named;
+            }
+        }
         var compile = inherited.CompileBindings;
         var directive = target.Scope.Directive(target.Syntax, AvaloniaBindingMetadata.CompileBindings);
         if (directive != null)

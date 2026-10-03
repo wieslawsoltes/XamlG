@@ -21,6 +21,9 @@ internal static class AvaloniaBindingMetadata
     public const string Source = "Source";
     public const string ElementName = "ElementName";
     public const string RelativeSource = "RelativeSource";
+    public const string RelativeSourceType = "Avalonia.Data.RelativeSource";
+    public const string RelativeSourceExtension = "Avalonia.Markup.Xaml.MarkupExtensions.RelativeSourceExtension";
+    public const string TemplatedControl = "Avalonia.Controls.Primitives.TemplatedControl";
     public const string Mode = "Mode";
     public const string Task = "System.Threading.Tasks.Task`1";
     public const string Observable = "System.IObservable`1";

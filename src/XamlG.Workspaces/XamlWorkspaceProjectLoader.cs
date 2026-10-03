@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlG.Compiler;
 using XamlG.Frameworks;
+using XamlG.Frameworks.Avalonia;
 using XamlG.Syntax;
 using XamlG.Tooling;
 
@@ -25,7 +26,9 @@ public static class XamlWorkspaceProjectLoader
         project = project.WithAnalyzerReferences(generators);
         var compilation = await project.GetCompilationAsync(cancellationToken) as CSharpCompilation
             ?? throw new InvalidOperationException("Roslyn did not provide a C# compilation for this project.");
-        var profile = KnownFrameworkProfiles.Select(compilation, options.Framework);
+        var defaults = options.CompileBindingsByDefault ?? AvaloniaBuildOptions.ReadCompileBindingsByDefault(
+            project.AnalyzerOptions.AnalyzerConfigOptionsProvider.GlobalOptions);
+        var profile = KnownFrameworkProfiles.Select(compilation, options.Framework, defaults);
         var documents = ImmutableDictionary.CreateBuilder<string, XamlSyntaxTree>(StringComparer.Ordinal);
         var root = Path.GetDirectoryName(project.FilePath);
         foreach (var document in project.AdditionalDocuments)

@@ -70,18 +70,9 @@ internal sealed class AssignmentEmitter
             }
             case BoundDynamicSetAssignment dynamicSet: Dynamic(dynamicSet, owner.Type, target, frame); break;
             case BoundAdaptedSetAssignment adapted:
-            {
-                var value = _context.Temporary("adapted"); writer.Line("object? " + value + " = " + _values.Emit(adapted.Value, ForTarget(adapted.Member, target, frame)) + ";");
-                var first = true;
-                foreach (var type in adapted.AdaptedTypes)
-                {
-                    var typed = _context.Temporary("value"); writer.Open((first ? "if" : "else if") + " (" + value + " is " + type.CSharpName() + " " + typed + ")");
-                    var args = new List<string> { target };
-                    if (adapted.Adapter.Parameters.Length == 3) args.Add(adapted.Member.TargetDescriptor == null ? _context.Descriptor(adapted.Member) : _values.Emit(adapted.Member.TargetDescriptor, frame));
-                    args.Add(typed); writer.Line(adapted.Adapter.ContainingType.CSharpName() + "." + CSharpNames.Method(adapted.Adapter) + "(" + string.Join(", ", args) + ");"); writer.Close(); first = false;
-                }
-                writer.Open(first ? "" : "else"); Set(adapted.Member, target, "(" + adapted.Member.ValueType.CSharpName() + ")" + value + "!"); writer.Close(); break;
-            }
+                new AdaptedAssignmentEmitter(_context, _values).Emit(adapted, target, frame,
+                    ForTarget(adapted.Member, target, frame), Set);
+                break;
             case BoundRawAssignment raw: writer.Line(_values.ExpandTrusted(raw.CSharp, frame, target)); break;
             default: _context.Error("The backend does not recognize assignment '" + assignment.GetType().Name + "'.", assignment.Span); break;
         }

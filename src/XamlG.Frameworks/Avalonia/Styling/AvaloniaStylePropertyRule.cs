@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
+using XamlG.Frameworks.Avalonia.Bindings;
 using XamlG.Roslyn;
 using XamlG.Syntax;
 
@@ -37,13 +38,15 @@ public sealed class AvaloniaStylePropertyRule : IXamlPropertyBindingRule
         if (!target.Annotations.TryGet(AvaloniaStyleAnnotations.SetterProperty, out var registered))
         { context.Report("XG3102", "Setter.Value requires a statically resolved Setter.Property.", span); return true; }
         if (values.Length != 1) { context.Report("XG3108", "A setter requires exactly one value.", span); return true; }
+        using var expected = new AvaloniaBindingTargetScope(target, registered.ValueType);
         var node = values[0];
         BoundExpression? value;
         if (node is XamlTextSyntax text && (!text.Value.StartsWith("{", StringComparison.Ordinal) || text.Value.StartsWith("{}", StringComparison.Ordinal)))
             value = context.Values.BindText(text.Value, registered.ValueType, scope, text.Span, registered.Field);
         else
         {
-            value = context.Values.BindNode(node, context.Types.Special(SpecialType.System_Object), scope, target.NameScopeId, normalizeText: false);
+            if (node is XamlElementSyntax bindingElement && new AvaloniaCompiledBindingRule().TryBindElement(context, bindingElement, registered.ValueType, scope, out var compiled)) value = compiled;
+            else value = context.Values.BindNode(node, context.Types.Special(SpecialType.System_Object), scope, target.NameScopeId, normalizeText: false);
             if (value?.Type != null && value.Type.SpecialType != SpecialType.System_Object && !IsSpecialValue(context, value.Type))
                 value = context.Values.Coerce(value, registered.ValueType, span);
         }
