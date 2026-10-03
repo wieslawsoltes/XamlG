@@ -64,10 +64,8 @@ internal sealed class AssignmentEmitter
                 break;
             }
             case BoundCallAssignment call:
-            {
-                var args = call.Arguments.Select(a => _values.Emit(a, frame)).ToList(); if (call.IncludeTarget) args.Insert(0, target);
-                writer.Line((call.Method.IsStatic ? call.Method.ContainingType.CSharpName() : target) + "." + CSharpNames.Method(call.Method) + "(" + string.Join(", ", args) + ");"); break;
-            }
+                new CallAssignmentEmitter(_context, _values).Emit(call, target, frame);
+                break;
             case BoundDynamicSetAssignment dynamicSet: Dynamic(dynamicSet, owner.Type, target, frame); break;
             case BoundAdaptedSetAssignment adapted:
                 new AdaptedAssignmentEmitter(_context, _values).Emit(adapted, target, frame,

@@ -58,7 +58,7 @@ internal sealed class RelativeBindingSourceBinder(BindingContext context, Object
                 sourceType = dataType;
                 break;
             case "Self":
-                sourceType = target.Type;
+                sourceType = BindingTargetTypeResolver.Resolve(context, target);
                 rootedDataType = target.Annotations.TryGet(AvaloniaBindingScope.Key, out var current) ? current.DataType : null;
                 builder = _expressions.Call(builder, "Self", span);
                 break;
