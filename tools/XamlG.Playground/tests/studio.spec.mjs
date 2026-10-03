@@ -1,5 +1,13 @@
 import { test, expect } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  page.on('pageerror', error => console.log('BROWSER ERROR:', error.stack ?? error.message));
+  page.on('console', message => { if (message.type() === 'error') console.log('BROWSER CONSOLE:', message.text()); });
+});
+test.afterEach(async ({ page }, info) => {
+  if (info.status !== info.expectedStatus) console.log('STUDIO STATE:', (await page.locator('body').innerText()).slice(-15000));
+});
+
 test('compiles and runs the production compiler with a real Avalonia canvas', async ({ page }) => {
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');

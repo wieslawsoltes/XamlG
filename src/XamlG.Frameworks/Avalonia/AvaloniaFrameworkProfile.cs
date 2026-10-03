@@ -40,6 +40,7 @@ public static class AvaloniaFrameworkProfile
         },
         TextConversionRules = ImmutableArray.Create<IXamlTextConversionRule>(new AvaloniaTextConversionRule()),
         MemberBindingRules = ImmutableArray.Create<IXamlMemberBindingRule>(new AvaloniaPropertyDescriptorRule()),
-        PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(new AvaloniaBindingRule())
+        PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(new AvaloniaBindingRule()),
+        MarkupBindingRules = ImmutableArray.Create<IXamlMarkupBindingRule>(new AvaloniaBindingMarkupRule())
     };
 }

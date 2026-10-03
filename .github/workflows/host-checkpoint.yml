@@ -1,0 +1,43 @@
+name: Host checkpoint and language server
+on:
+  push:
+    branches: [main, feat/tooling-and-playground]
+    paths: ['src/**', 'tests/**', 'tools/**', '.github/workflows/host-checkpoint.yml']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: |
+          git archive --format=tar.gz -o /tmp/xamlg-source.tar.gz HEAD
+          git rev-parse HEAD > /tmp/source-commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compiler-source
+          path: |
+            /tmp/xamlg-source.tar.gz
+            /tmp/source-commit.txt
+          retention-days: 7
+  language-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - run: dotnet test tests/XamlG.LanguageServer.Tests/XamlG.LanguageServer.Tests.csproj -c Release -p:NuGetAudit=false --logger 'trx;LogFileName=lsp.trx' --results-directory artifacts/tests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: language-server-tests
+          path: artifacts/tests
