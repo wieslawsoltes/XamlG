@@ -14,11 +14,12 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
-      - name: Archive exact source revision
+      - name: Archive exact source revision and integrity
         run: |
           git archive --format=tar.gz -o /tmp/xamlg-source.tar.gz HEAD
           git rev-parse HEAD > /tmp/source-commit.txt
           git ls-tree -r HEAD > /tmp/source-tree.txt
+          sha256sum /tmp/xamlg-source.tar.gz > /tmp/source-sha256.txt
       - uses: actions/upload-artifact@v4
         with:
           name: source-snapshot
@@ -27,3 +28,4 @@ jobs:
             /tmp/xamlg-source.tar.gz
             /tmp/source-commit.txt
             /tmp/source-tree.txt
+            /tmp/source-sha256.txt
