@@ -84,12 +84,14 @@ public sealed class CompiledBindingTests
     [Fact]
     public void MissingMembersAndReadOnlyWritePathsHaveCompileDiagnostics()
     {
+        var cancellation = TestContext.Current.CancellationToken;
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator).Append(typeof(BindingFixtureModel).Assembly.Location).Distinct().Select(p => MetadataReference.CreateFromFile(p));
         var compilation = CSharpCompilation.Create("BindingDiagnostic", references: references, options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         foreach (var test in new[] { ("Missing", "XG3205"), ("ReadOnly, Mode=TwoWay", "XG3212") })
         {
             var source = "<TextBlock " + Ns + Typed + " Text='{CompiledBinding " + test.Item1 + "}'/>";
-            var bound = new XamlCompiler().Bind(XamlSyntaxTree.Parse(source), compilation, AvaloniaFrameworkProfile.Create());
+            var bound = new XamlCompiler().Bind(XamlSyntaxTree.Parse(source, cancellationToken: cancellation), compilation,
+                AvaloniaFrameworkProfile.Create(), cancellationToken: cancellation);
             Assert.Contains(bound.Diagnostics, d => d.Code == test.Item2);
         }
     }
@@ -104,7 +106,7 @@ public sealed class CompiledBindingTests
     public void InvalidPathsAreRecoveredAsDiagnostics(string path)
     {
         var diagnostics = new List<XamlDiagnostic>();
-        Assert.Null(BindingPathParser.Parse(path, new(0, path.Length), diagnostics.Add));
+        Assert.Null(BindingPathParser.Parse(path, new(0, path.Length), diagnostics.Add, TestContext.Current.CancellationToken));
         Assert.NotEmpty(diagnostics);
     }
 }

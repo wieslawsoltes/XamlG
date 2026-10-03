@@ -61,6 +61,7 @@ public sealed class StyleCompilationTests
     [Fact]
     public void SetterDiagnosticsAreProducedByTheCompiler()
     {
+        var cancellation = TestContext.Current.CancellationToken;
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator).Select(p => MetadataReference.CreateFromFile(p));
         var compilation = CSharpCompilation.Create("StyleDiagnostic", references: references, options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         foreach (var test in new[]
@@ -70,9 +71,10 @@ public sealed class StyleCompilationTests
             ("<Style " + Ns + " Selector='Button'><Setter Property='Width' Value='1'/><Setter Property='Width' Value='2'/></Style>", "XG3107")
         })
         {
-            var bound = new XamlCompiler().Bind(XamlSyntaxTree.Parse(test.Item1), compilation, AvaloniaFrameworkProfile.Create());
+            var bound = new XamlCompiler().Bind(XamlSyntaxTree.Parse(test.Item1, cancellationToken: cancellation), compilation,
+                AvaloniaFrameworkProfile.Create(), cancellationToken: cancellation);
             Assert.Contains(bound.Diagnostics, d => d.Code == test.Item2);
-            Assert.False(new CSharpEmitter().Emit(bound).Success);
+            Assert.False(new CSharpEmitter().Emit(bound, cancellation).Success);
         }
     }
 
@@ -87,7 +89,7 @@ public sealed class StyleCompilationTests
     public void InvalidSelectorsProduceLocatedDiagnostics(string source)
     {
         var diagnostics = new List<XamlDiagnostic>();
-        Assert.Null(AvaloniaSelectorParser.Parse(source, new(20, source.Length), diagnostics.Add));
+        Assert.Null(AvaloniaSelectorParser.Parse(source, new(20, source.Length), diagnostics.Add, TestContext.Current.CancellationToken));
         Assert.NotEmpty(diagnostics);
         Assert.All(diagnostics, d => Assert.InRange(d.Span.Start, 20, 20 + source.Length));
     }
