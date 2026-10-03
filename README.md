@@ -53,7 +53,7 @@ Core compiler/tooling libraries target .NET Standard 2.0. Workspace, language-se
 
 ## Compile as a library
 
-The caller supplies a `CSharpCompilation` containing the application's source and metadata references, including the appropriate XamlG runtime and framework dependencies.
+The caller supplies a `CSharpCompilation` containing the application's source and metadata references, including the appropriate XamlG runtime and framework dependencies. Pass the same `CSharpParseOptions` used by that project, including its feature switches, preprocessor symbols and language version. With a Roslyn `Project`, use its `ParseOptions`; do not replace evaluated options with a fresh preview-language configuration.
 
 ```csharp
 using System;
@@ -68,6 +68,7 @@ public static class XamlCompilation
 {
     public static CSharpCompilation AddDocument(
         CSharpCompilation compilation,
+        CSharpParseOptions parseOptions,
         string source,
         string path,
         CancellationToken cancellationToken = default)
@@ -84,7 +85,7 @@ public static class XamlCompilation
 
         var generated = CSharpSyntaxTree.ParseText(
             output.Source,
-            new CSharpParseOptions(Microsoft.CodeAnalysis.CSharp.LanguageVersion.Preview),
+            parseOptions,
             output.HintName,
             cancellationToken: cancellationToken);
 
@@ -126,7 +127,7 @@ Run is explicit and executes trusted code in the current browser tab. There is n
 
 The upstream comparison runs **222 pinned XamlX baseline cases** with its original backend and **217 XamlG compatibility cases** through generated C# execution. These are distinct suites. CI checks exact executed counts and rejects skipped cases. Five baseline cases are explicitly outside the source-backend comparison: four internal AST-shape tests and one IL-helper-name assertion.
 
-Additional validation covers compiler/source-generator behavior, packaged MSBuild consumption, designer and language-service operations, real Avalonia controls, stdio protocol exchanges, standalone CLI emission, and browser interactions. See [validation and provenance](docs/validation.md).
+Additional validation covers compiler/source-generator behavior, packaged MSBuild consumption, designer and language-service operations, real Avalonia controls, stdio protocol exchanges, standalone and project-based CLI emission, and browser interactions. See [validation and provenance](docs/validation.md).
 
 ## License
 
