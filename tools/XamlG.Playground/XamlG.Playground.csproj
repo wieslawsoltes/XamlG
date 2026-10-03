@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PublishTrimmed>false</PublishTrimmed>
+    <RunAOTCompilation>false</RunAOTCompilation>
+    <WasmEnableThreads>false</WasmEnableThreads>
+    <EnableAvaloniaXamlCompilation>false</EnableAvaloniaXamlCompilation>
+    <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/XamlG.Tooling/XamlG.Tooling.csproj" />
+    <ProjectReference Include="../../src/XamlG.Frameworks/XamlG.Frameworks.csproj" />
+    <ProjectReference Include="../../src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
+    <PackageReference Include="Avalonia.Browser" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Avalonia.Themes.Simple" />
+  </ItemGroup>
+  <!-- Reference assemblies are deliberately separate from executable browser assemblies. Roslyn
+       consumes these metadata images without loading user code into the compiler. -->
+  <Target Name="PublishCompilerMetadata" AfterTargets="Publish" DependsOnTargets="ResolveReferences">
+    <ItemGroup>
+      <CompilerMetadata Include="@(ReferencePath)" Condition="'%(ReferencePath.Extension)' == '.dll'" />
+    </ItemGroup>
+    <MakeDir Directories="$(PublishDir)wwwroot/references" />
+    <Copy SourceFiles="@(CompilerMetadata)" DestinationFiles="@(CompilerMetadata->'$(PublishDir)wwwroot/references/%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <WriteLinesToFile File="$(PublishDir)wwwroot/references/index.txt" Lines="@(CompilerMetadata->'%(Filename)%(Extension)')" Overwrite="true" Encoding="UTF-8" />
+  </Target>
+</Project>
