@@ -17,16 +17,18 @@ public sealed class XamlLanguageServer : IAsyncDisposable
     private readonly SemaphoreSlim _parallelism = new(8);
     private readonly CancellationTokenSource _lifetime = new();
     private readonly TextWriter _log;
+    private readonly object _diagnosticGate = new();
     private LspCompilationSnapshot _project;
     private long _taskId;
-    private volatile bool _initialized;
+    private int _initialized;
     private volatile bool _shutdown;
+    private volatile bool _stopping;
     private volatile bool _disposed;
 
     public XamlLanguageServer(XamlCompilationSession compiler, Stream input, Stream output, TextWriter? log = null)
     {
         _project = new(0, compiler);
-        _connection = new(input, output);
+        _connection = new(input, output, lifetimeToken: _lifetime.Token);
         _log = log ?? TextWriter.Null;
     }
     public long ProjectRevision => Volatile.Read(ref _project).Revision;
@@ -34,7 +36,7 @@ public sealed class XamlLanguageServer : IAsyncDisposable
     public void UpdateCompilation(XamlCompilationSession compiler)
     {
         ArgumentNullException.ThrowIfNull(compiler);
-        if (_disposed || _shutdown || _lifetime.IsCancellationRequested) return;
+        if (_disposed || _shutdown || _stopping) return;
         LspCompilationSnapshot before, after;
         do
         {
@@ -49,7 +51,7 @@ public sealed class XamlLanguageServer : IAsyncDisposable
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token, _connection.Closed);
         try
         {
             while (!linked.IsCancellationRequested)
@@ -89,25 +91,28 @@ public sealed class XamlLanguageServer : IAsyncDisposable
         catch (OperationCanceledException) when (linked.IsCancellationRequested) { }
         finally
         {
+            lock (_diagnosticGate) _stopping = true;
             _lifetime.Cancel();
             foreach (var request in _requests.Values) Cancel(request);
             foreach (var diagnostic in _diagnostics.Values) Cancel(diagnostic);
             try { await Task.WhenAll(_tasks.Values); } catch (OperationCanceledException) { }
         }
+        if (_connection.Failure is { } failure) throw failure;
     }
 
     private async Task ProcessRequestAsync(string key, JsonElement id, string method, JsonElement parameters, CancellationTokenSource source)
     {
         var acquired = false;
         LspCompilationSnapshot? snapshot = null;
+        LspDocumentSnapshot? document = null;
         try
         {
             await _parallelism.WaitAsync(source.Token); acquired = true;
             object? result;
             if (method == LspMethods.Initialize)
             {
-                if (_initialized) throw new LspRequestException(-32600, "The server is already initialized.");
-                _initialized = true;
+                if (Interlocked.CompareExchange(ref _initialized, 1, 0) != 0)
+                    throw new LspRequestException(-32600, "The server is already initialized.");
                 result = new
                 {
                     capabilities = new
@@ -122,29 +127,38 @@ public sealed class XamlLanguageServer : IAsyncDisposable
                     serverInfo = new { name = "XamlG", version = "0.1.0-alpha.1" }
                 };
             }
-            else if (!_initialized) throw new LspRequestException(-32002, "The server has not been initialized.");
-            else if (method == LspMethods.Shutdown) { _shutdown = true; result = null; }
+            else if (Volatile.Read(ref _initialized) == 0) throw new LspRequestException(-32002, "The server has not been initialized.");
+            else if (method == LspMethods.Shutdown)
+            {
+                _shutdown = true;
+                foreach (var diagnostic in _diagnostics.Values) Cancel(diagnostic);
+                result = null;
+            }
             else if (_shutdown) throw new LspRequestException(-32600, "The server is shutting down.");
             else
             {
                 snapshot = Volatile.Read(ref _project);
+                document = _documents.Get(LspConversions.DocumentUri(parameters));
                 _requestProjects[key] = snapshot;
                 result = new LspRequestHandler(snapshot.Compiler, _documents).Handle(method, parameters, source.Token);
-                if (!ReferenceEquals(snapshot, Volatile.Read(ref _project))) throw new LspRequestException(-32801, "The project changed while this request was being processed.");
-                source.Token.ThrowIfCancellationRequested();
             }
-            await _connection.WriteAsync(new { jsonrpc = "2.0", id, result }, _lifetime.Token);
+            bool IsCurrent() => snapshot == null || !_shutdown &&
+                ReferenceEquals(snapshot, Volatile.Read(ref _project)) && document != null && _documents.IsCurrent(document);
+            if (!await _connection.TryWriteAsync(new { jsonrpc = "2.0", id, result }, IsCurrent, source.Token))
+                await ErrorAsync(id, -32801, "The document or project changed before this result could be published.");
         }
-        catch (OperationCanceledException) when (source.IsCancellationRequested)
+        catch (OperationCanceledException) when (source.IsCancellationRequested || _connection.Closed.IsCancellationRequested)
         {
-            if (!_lifetime.IsCancellationRequested)
-                await ErrorAsync(id, snapshot != null && !ReferenceEquals(snapshot, Volatile.Read(ref _project)) ? -32801 : -32800, "The request was cancelled or its project snapshot was superseded.");
+            if (!_lifetime.IsCancellationRequested && !_connection.Closed.IsCancellationRequested)
+                await ErrorAsync(id, snapshot != null && !ReferenceEquals(snapshot, Volatile.Read(ref _project)) ? -32801 : -32800,
+                    "The request was cancelled or its project snapshot was superseded.");
         }
-        catch (LspRequestException error) { if (!_lifetime.IsCancellationRequested) await ErrorAsync(id, error.Code, error.Message); }
+        catch (LspTransportException error) { await _log.WriteLineAsync("transport: " + error.Message); }
+        catch (LspRequestException error) { await ErrorAsync(id, error.Code, error.Message); }
         catch (Exception error)
         {
             await _log.WriteLineAsync(error.ToString());
-            if (!_lifetime.IsCancellationRequested) await ErrorAsync(id, error is JsonException or KeyNotFoundException or InvalidOperationException ? -32602 : -32603, error.Message);
+            await ErrorAsync(id, error is JsonException or KeyNotFoundException or InvalidOperationException ? -32602 : -32603, error.Message);
         }
         finally
         {
@@ -161,7 +175,7 @@ public sealed class XamlLanguageServer : IAsyncDisposable
             if (parameters.TryGetProperty("id", out var id) && _requests.TryGetValue(id.GetRawText(), out var source)) Cancel(source);
             return;
         }
-        if (!_initialized || _shutdown) return;
+        if (Volatile.Read(ref _initialized) == 0 || _shutdown) return;
         LspDocumentSnapshot? document = null;
         if (method == LspMethods.Open)
         {
@@ -186,34 +200,41 @@ public sealed class XamlLanguageServer : IAsyncDisposable
 
     private void ScheduleDiagnostics(LspDocumentSnapshot document)
     {
-        if (_disposed || _shutdown || _lifetime.IsCancellationRequested) return;
-        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-        _diagnostics.AddOrUpdate(document.Uri, cancellation, (_, old) => { Cancel(old); return cancellation; });
-        Track(PublishDiagnosticsAsync(document, Volatile.Read(ref _project), cancellation));
+        lock (_diagnosticGate)
+        {
+            if (_disposed || _shutdown || _stopping) return;
+            var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, _connection.Closed);
+            if (_diagnostics.TryGetValue(document.Uri, out var previous)) Cancel(previous);
+            _diagnostics[document.Uri] = cancellation;
+            Track(PublishDiagnosticsAsync(document, Volatile.Read(ref _project), cancellation));
+        }
     }
 
     private async Task PublishDiagnosticsAsync(LspDocumentSnapshot document, LspCompilationSnapshot project, CancellationTokenSource cancellation)
     {
+        bool IsCurrent() => !_shutdown && !_stopping && _documents.IsCurrent(document) &&
+            ReferenceEquals(project, Volatile.Read(ref _project));
         try
         {
             await _parallelism.WaitAsync(cancellation.Token);
             XamlAnalysis analysis;
             try
             {
-                if (!_documents.IsCurrent(document) || !ReferenceEquals(project, Volatile.Read(ref _project))) return;
+                if (!IsCurrent()) return;
                 analysis = await Task.Run(() => project.Compiler.Analyze(document.Syntax, cancellation.Token), cancellation.Token);
             }
             finally { _parallelism.Release(); }
-            if (!_documents.IsCurrent(document) || !ReferenceEquals(project, Volatile.Read(ref _project))) return;
             var diagnostics = analysis.Output.Diagnostics.Select(d => new
             {
                 range = LspConversions.Range(document.Syntax, d.Span),
                 severity = d.Severity switch { XamlSeverity.Error => 1, XamlSeverity.Warning => 2, XamlSeverity.Info => 3, _ => 4 },
                 code = d.Code, source = "XamlG", message = d.Message
             }).ToArray();
-            await _connection.WriteAsync(new { jsonrpc = "2.0", method = LspMethods.Diagnostics, @params = new { uri = document.Uri, version = document.Version, diagnostics } }, cancellation.Token);
+            await _connection.TryWriteAsync(new { jsonrpc = "2.0", method = LspMethods.Diagnostics,
+                @params = new { uri = document.Uri, version = document.Version, diagnostics } }, IsCurrent, cancellation.Token);
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (LspTransportException error) { await _log.WriteLineAsync("transport: " + error.Message); }
         catch (Exception error) { await _log.WriteLineAsync("diagnostics: " + error.Message); }
         finally
         {
@@ -223,7 +244,13 @@ public sealed class XamlLanguageServer : IAsyncDisposable
     }
 
     private static void Cancel(CancellationTokenSource source) { try { source.Cancel(); } catch (ObjectDisposedException) { } }
-    private ValueTask ErrorAsync(JsonElement? id, int code, string message) => _connection.WriteAsync(new { jsonrpc = "2.0", id, error = new { code, message } }, _lifetime.Token);
+    private async ValueTask ErrorAsync(JsonElement? id, int code, string message)
+    {
+        if (_stopping || _connection.Closed.IsCancellationRequested) return;
+        try { await _connection.WriteAsync(new { jsonrpc = "2.0", id, error = new { code, message } }, _lifetime.Token); }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested || _connection.Closed.IsCancellationRequested) { }
+        catch (LspTransportException error) { await _log.WriteLineAsync("transport: " + error.Message); }
+    }
     private void Track(Task task)
     {
         var id = Interlocked.Increment(ref _taskId); _tasks[id] = task;
@@ -231,7 +258,11 @@ public sealed class XamlLanguageServer : IAsyncDisposable
     }
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return; _disposed = true;
+        lock (_diagnosticGate)
+        {
+            if (_disposed) return;
+            _disposed = true; _stopping = true;
+        }
         _lifetime.Cancel();
         try { await Task.WhenAll(_tasks.Values); } catch (OperationCanceledException) { }
         await _connection.DisposeAsync(); _parallelism.Dispose(); _lifetime.Dispose();
