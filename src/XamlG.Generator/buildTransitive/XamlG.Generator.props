@@ -9,7 +9,7 @@
     <AvaloniaNameGeneratorIsEnabled Condition="'$(XamlGEnabled)' == 'true'">false</AvaloniaNameGeneratorIsEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <CompilerVisibleProperty Include="XamlGEnabled;XamlGFramework;XamlGGenerateInitializeComponent;XamlGGenerateNamedFields;MSBuildProjectDirectory" />
+    <CompilerVisibleProperty Include="XamlGEnabled;XamlGFramework;XamlGGenerateInitializeComponent;XamlGGenerateNamedFields;XamlGCompileBindingsByDefault;AvaloniaUseCompiledBindingsByDefault;MSBuildProjectDirectory" />
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="XamlGCompile" />
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="XamlGLogicalPath" />
   </ItemGroup>

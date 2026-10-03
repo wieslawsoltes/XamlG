@@ -8,52 +8,34 @@ internal sealed class ValueEmitter
 {
     private readonly EmissionContext _context;
     private readonly ObjectEmitter _objects;
-
-    public ValueEmitter(EmissionContext context, ObjectEmitter objects)
-    {
-        _context = context;
-        _objects = objects;
-    }
+    public ValueEmitter(EmissionContext context, ObjectEmitter objects) { _context = context; _objects = objects; }
 
     public string Emit(BoundExpression value, string frame)
     {
         _context.Cancellation.ThrowIfCancellationRequested();
         switch (value)
         {
-            case BoundConstantExpression constant:
-                return CSharpNames.Constant(constant.Value);
+            case BoundConstantExpression constant: return CSharpNames.Constant(constant.Value);
             case BoundEnumExpression enumeration:
                 return "(" + string.Join(" | ", enumeration.Fields.Select(f => f.ContainingType.CSharpName() + "." + CSharpNames.Identifier(f.Name))) + ")";
-            case BoundCastExpression cast:
-                return "((" + cast.TargetType.CSharpName() + ")(" + Emit(cast.Value, frame) + "))";
-            case BoundTypeExpression type:
-                return "typeof(" + type.ReferencedType.CSharpName() + ")";
-            case BoundStaticExpression field:
-                return field.Member.ContainingType.CSharpName() + "." + CSharpNames.Identifier(field.Member.Name);
+            case BoundCastExpression cast: return "((" + cast.TargetType.CSharpName() + ")(" + Emit(cast.Value, frame) + "))";
+            case BoundTypeExpression type: return "typeof(" + type.ReferencedType.CSharpName() + ")";
+            case BoundStaticExpression field: return field.Member.ContainingType.CSharpName() + "." + CSharpNames.Identifier(field.Member.Name);
+            case BoundParameterExpression or BoundLambdaExpression or BoundPropertyAccessExpression or BoundFieldAccessExpression or BoundAssignmentExpression or BoundMethodGroupExpression:
+                return new FunctionalExpressionEmitter(_context, this).Emit(value, frame);
             case BoundServiceExpression service:
                 return service.ServiceType.HasMetadataName(ClrNames.IServiceProvider)
                     ? frame : "((" + service.ServiceType.CSharpName() + ")" + frame + ".GetService(typeof(" + service.ServiceType.CSharpName() + "))!)";
             case BoundReferenceExpression reference:
                 return frame + ".ResolveName<" + (reference.Type?.CSharpName() ?? "object") + ">(" + CSharpNames.Literal(reference.Name) + ")";
-            case BoundObjectExpression obj:
-                return _objects.Emit(obj.Object, frame, null, null);
+            case BoundObjectExpression obj: return _objects.Emit(obj.Object, frame, null, null);
             case BoundArrayExpression array:
-            {
-                var items = array.Values.Select(v => Emit(v, frame)).ToArray();
-                return "new " + array.ArrayType.ElementType.CSharpName() + "[] { " + string.Join(", ", items) + " }";
-            }
+                return "new " + array.ArrayType.ElementType.CSharpName() + "[] { " + string.Join(", ", array.Values.Select(v => Emit(v, frame))) + " }";
             case BoundNewExpression creation:
-            {
-                var arguments = creation.Arguments.Select(a => Emit(a, frame)).ToArray();
-                return "new " + creation.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", arguments) + ")";
-            }
+                return "new " + creation.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", creation.Arguments.Select(a => Emit(a, frame))) + ")";
             case BoundCallExpression call:
-            {
-                var receiver = call.Method.IsStatic ? call.Method.ContainingType.CSharpName()
-                    : call.Receiver == null ? _context.RootVariable : Emit(call.Receiver, frame);
-                var arguments = call.Arguments.Select(a => Emit(a, frame)).ToArray();
-                return receiver + "." + CSharpNames.Method(call.Method) + "(" + string.Join(", ", arguments) + ")";
-            }
+                var receiver = call.Method.IsStatic ? call.Method.ContainingType.CSharpName() : call.Receiver == null ? _context.RootVariable : "(" + Emit(call.Receiver, frame) + ")";
+                return receiver + "." + CSharpNames.Method(call.Method) + "(" + string.Join(", ", call.Arguments.Select(a => Emit(a, frame))) + ")";
             case BoundParseExpression parse:
                 return parse.Method.ContainingType.CSharpName() + "." + CSharpNames.Method(parse.Method) + "(" + CSharpNames.Literal(parse.Text) +
                     (parse.Method.Parameters.Length == 2 ? ", " + CSharpNames.InvariantCulture : string.Empty) + ")";
@@ -61,62 +43,44 @@ internal sealed class ValueEmitter
                 return "((" + converter.ValueType.CSharpName() + ")new " + converter.Converter.CSharpName() + "().ConvertFrom(" + frame + ", " +
                     CSharpNames.InvariantCulture + ", " + CSharpNames.Literal(converter.Text) + ")!)";
             case BoundMarkupExpression markup:
-            {
                 var extension = _objects.Emit(markup.Extension, frame, null, null);
                 return extension + "." + CSharpNames.Method(markup.Method) + "(" + (markup.Method.Parameters.Length == 0 ? string.Empty : frame) + ")";
-            }
-            case BoundDeferredExpression deferred:
-                return Deferred(deferred, frame);
-            case BoundRawExpression raw:
-                return ExpandTrusted(raw.CSharp, frame, frame + ".TargetObject!");
-            default:
-                _context.Error("The backend does not recognize expression '" + value.GetType().Name + "'.", value.Span);
-                return "default!";
+            case BoundDeferredExpression deferred: return Deferred(deferred, frame);
+            case BoundRawExpression raw: return ExpandTrusted(raw.CSharp, frame, frame + ".TargetObject!");
+            default: _context.Error("The backend does not recognize expression '" + value.GetType().Name + "'.", value.Span); return "default!";
         }
     }
 
-    public string ExpandTrusted(string source, string frame, string target) =>
-        source.Replace("$context", frame).Replace("$target", target).Replace("$root", _context.RootVariable);
+    public string ExpandTrusted(string source, string frame, string target) => source.Replace("$context", frame).Replace("$target", target).Replace("$root", _context.RootVariable);
 
     private string Deferred(BoundDeferredExpression deferred, string parentFrame)
     {
         var writer = _context.Writer;
-        var name = _context.Temporary("factory");
-        var frame = _context.Temporary("deferredContext");
-        var incoming = _context.Temporary("incoming");
-        var root = _context.Temporary("ownerRoot");
+        var name = _context.Temporary("factory"); var frame = _context.Temporary("deferredContext");
+        var incoming = _context.Temporary("incoming"); var root = _context.Temporary("ownerRoot");
         var returnType = deferred.FactoryReturnType?.CSharpName() ?? "object";
         writer.Open((deferred.UsesFunctionPointer ? "static " : string.Empty) + returnType + " " + name + "(" + CSharpNames.Provider + "? " + incoming + ")");
         _objects.EmitDeferredContext(frame, parentFrame, incoming, deferred.UsesFunctionPointer);
+        writer.Open("try");
         writer.Line("var " + root + " = (" + _context.Document.Root!.Type.CSharpName() + ")" + frame + ".RootObject!;");
-        var saved = _context.RootVariable;
-        _context.RootVariable = root;
+        var saved = _context.RootVariable; _context.RootVariable = root;
         try
         {
-            var content = Emit(deferred.Content, frame);
-            var result = _context.Temporary("template");
+            var content = Emit(deferred.Content, frame); var result = _context.Temporary("template");
             writer.Line(returnType + " " + result + " = " + content + ";");
-            _objects.Complete(frame, result);
-            writer.Line("return " + result + ";");
+            _objects.Complete(frame, result); writer.Line("return " + result + ";");
         }
-        finally
-        {
-            _context.RootVariable = saved;
-        }
+        finally { _context.RootVariable = saved; }
         writer.Close();
-
+        ConstructionFailureEmitter.Emit(_context, frame);
+        writer.Close();
         if (deferred.Customizer == null) return "(" + deferred.TargetType.CSharpName() + ")" + name;
         var factory = deferred.UsesFunctionPointer
             ? "(global::System.IntPtr)(delegate* managed<" + CSharpNames.Provider + ", " + returnType + ">)&" + name
             : "(" + deferred.Customizer.Parameters[0].Type.CSharpName() + ")" + name;
         var call = deferred.Customizer.ContainingType.CSharpName() + "." + CSharpNames.Method(deferred.Customizer) + "(" + factory + ", " + parentFrame + ")";
         if (!deferred.UsesFunctionPointer) return call;
-
-        var value = _context.Temporary("deferred");
-        writer.Line(deferred.TargetType.CSharpName() + " " + value + ";");
-        writer.Open("unsafe");
-        writer.Line(value + " = " + call + ";");
-        writer.Close();
-        return value;
+        var value = _context.Temporary("deferred"); writer.Line(deferred.TargetType.CSharpName() + " " + value + ";");
+        writer.Open("unsafe"); writer.Line(value + " = " + call + ";"); writer.Close(); return value;
     }
 }

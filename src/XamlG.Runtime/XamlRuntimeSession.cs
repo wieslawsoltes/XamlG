@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Threading;
+
 namespace XamlG.Runtime;
 
 /// <summary>Owns generated-object inspection and reversible setters without rooting application windows globally.</summary>
@@ -7,31 +8,55 @@ public sealed class XamlRuntimeSession : IDisposable
 {
     private static readonly ConditionalWeakTable<object, XamlRuntimeSession> Sessions = new();
     private readonly Dictionary<string, XamlRuntimeNode> _nodes = new(StringComparer.Ordinal);
+    private readonly Dictionary<object, string> _instances = new(XamlObjectIdentityComparer.Instance);
     private readonly Dictionary<(string Node, string Member), XamlRuntimeProperty> _properties = new();
     private readonly List<Action> _cleanup = new();
     private readonly int _threadId = Thread.CurrentThread.ManagedThreadId;
     private bool _disposed;
     private bool _applying;
     public long Revision { get; private set; }
+    public bool IsDisposed => _disposed;
     public IReadOnlyCollection<XamlRuntimeNode> Nodes => _nodes.Values;
-    public static bool TryGet(object root, out XamlRuntimeSession? session) => Sessions.TryGetValue(root, out session);
+
+    public static bool TryGet(object root, out XamlRuntimeSession? session)
+    {
+        if (Sessions.TryGetValue(root, out session) && !session._disposed) return true;
+        session = null; return false;
+    }
     public void Attach(object root)
     {
         CheckThread();
-        if (Sessions.TryGetValue(root, out var previous) && !ReferenceEquals(previous, this)) { previous.Dispose(); Sessions.Remove(root); }
+        if (Sessions.TryGetValue(root, out var previous) && !ReferenceEquals(previous, this))
+        { previous.Dispose(); Sessions.Remove(root); }
         if (!Sessions.TryGetValue(root, out _)) Sessions.Add(root, this);
     }
     public void Register(string key, object instance, string? parentKey)
     {
         CheckThread();
-        if (_nodes.TryGetValue(key, out var old) && !ReferenceEquals(old.Instance, instance)) throw new InvalidOperationException($"Duplicate generated node key '{key}'.");
+        if (_nodes.TryGetValue(key, out var old) && !ReferenceEquals(old.Instance, instance))
+            throw new InvalidOperationException($"Duplicate generated node key '{key}'.");
         _nodes[key] = new(key, instance, parentKey);
+        if (!_instances.ContainsKey(instance)) _instances.Add(instance, key);
+    }
+    public void RegisterSource(string key, XamlSourceInfo source)
+    {
+        CheckThread();
+        if (!_nodes.TryGetValue(key, out var node)) throw new ArgumentException("The source mapping requires an existing generated node.", nameof(key));
+        _nodes[key] = node with { Source = source ?? throw new ArgumentNullException(nameof(source)) };
+    }
+    public XamlRuntimeNode? FindNode(object instance)
+    {
+        CheckThread();
+        return _instances.TryGetValue(instance, out var key) ? _nodes[key] : null;
     }
     public void RegisterProperty<T>(string key, string member, Func<T> getter, Action<T> setter)
     {
         CheckThread(); _properties[(key, member)] = new(typeof(T), () => getter(), value => setter((T)value!));
     }
-    public void TrackCleanup(Action action) { CheckThread(); _cleanup.Add(action ?? throw new ArgumentNullException(nameof(action))); }
+    public void TrackCleanup(Action action)
+    {
+        CheckThread(); _cleanup.Add(action ?? throw new ArgumentNullException(nameof(action)));
+    }
     public XamlMutationResult Apply(long expectedRevision, IReadOnlyList<XamlPropertyUpdate> updates)
     {
         CheckThread();
@@ -47,11 +72,13 @@ public sealed class XamlRuntimeSession : IDisposable
             try { pending.Add((property, property.Get(), update.Value)); }
             catch (Exception error) { return new(false, Revision, "A property getter failed: " + error.Message); }
         }
+        if (pending.Count == 0) return new(true, Revision, null);
+        var nextRevision = checked(Revision + 1);
         _applying = true; var applied = 0;
         try
         {
             for (; applied < pending.Count; applied++) pending[applied].Property.Set(pending[applied].After);
-            Revision = checked(Revision + 1); return new(true, Revision, null);
+            Revision = nextRevision; return new(true, Revision, null);
         }
         catch (Exception error)
         {
@@ -65,9 +92,11 @@ public sealed class XamlRuntimeSession : IDisposable
     }
     public void Dispose()
     {
-        if (_disposed) return; CheckThread(); _disposed = true; var errors = new List<Exception>();
-        for (var i = _cleanup.Count - 1; i >= 0; i--) try { _cleanup[i](); } catch (Exception error) { errors.Add(error); }
-        _cleanup.Clear(); _properties.Clear(); _nodes.Clear();
+        if (_disposed) return; CheckThread(); _disposed = true;
+        var errors = new List<Exception>();
+        for (var i = _cleanup.Count - 1; i >= 0; i--)
+            try { _cleanup[i](); } catch (Exception error) { errors.Add(error); }
+        _cleanup.Clear(); _properties.Clear(); _instances.Clear(); _nodes.Clear();
         if (errors.Count != 0) throw new AggregateException("Generated event cleanup failed.", errors);
     }
     private void CheckThread()

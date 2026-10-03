@@ -1,37 +1,37 @@
 # Language server
 
-`XamlG.LanguageServer` is an embeddable protocol library. `tools/XamlG.Lsp` is the executable stdio host and can be packed as the `xamlg-lsp` .NET tool. It uses the same `XamlCompilationSession` as the compiler CLI and designer, without a generator-driver shim.
-
-## Metadata-only mode
+`XamlG.LanguageServer` is the embeddable protocol library; `tools/XamlG.Lsp` supplies the packable `xamlg-lsp` stdio executable. Both use `XamlCompilationSession`, without a generator-driver shim.
 
 ```sh
 dotnet build tools/XamlG.Lsp -c Release
 dotnet tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll \
-  --code /absolute/path/Model.cs \
-  --reference /absolute/path/Controls.dll \
-  --framework Portable
+  --code /absolute/path/Model.cs --reference /absolute/path/Controls.dll --framework Portable
 ```
 
-The process reads UTF-8, Content-Length-framed JSON-RPC on stdin and writes only framed responses to stdout. Diagnostics from the host go to stderr. Source and reference options are repeatable. C# inputs are parsed and assembly inputs are inspected as metadata; they are not executed in this mode.
+Source/reference options are repeatable. Metadata-only mode parses C# and reads assembly metadata without executing application code. The process reserves stdout for framed JSON-RPC; host logs go to stderr.
 
-## Trusted project mode
+## Trusted projects and automatic refresh
 
 ```sh
 dotnet tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll \
-  --project /absolute/path/App.csproj \
-  --trust-project \
-  --target-framework net10.0 \
-  --framework Avalonia
+  --project /absolute/path/App.csproj --trust-project \
+  --target-framework net10.0 --framework Avalonia
 ```
 
-Project evaluation and application source generators may execute project-defined code. The host rejects `--project` without `--trust-project`, before opening the project. Project mode and metadata-only input mode are deliberately mutually exclusive.
+MSBuild evaluation and application source generators may execute project-defined code. `--project` is rejected without `--trust-project` before evaluation. It cannot be combined with metadata-only source/reference inputs.
 
-## Implemented protocol surface
+Automatic watching is enabled by default; `--no-watch` disables it. The evaluated project supplies source/additional/configuration documents, project references, metadata/analyzer files, restore assets and relevant directory-level build configuration. Source roots allow newly created files to trigger reevaluation; unrelated build outputs are excluded. `XamlWatchInputs` can supply an explicit set for embedding hosts. Unlisted arbitrary external MSBuild imports are not discovered by a general filesystem scan.
 
-Initialization and shutdown; open/change/close synchronization with sequential UTF-16 ranges; versioned compiler diagnostics; hover; element/member/value completion; source definitions; references among open XAML documents; document highlights and symbols; folding; full semantic tokens; cancellation; and the `xamlg/inspect` extension for syntax, typed operations, source mappings and generated C#.
+The refresh pump allows one active loader and a coalesced pending signal. Supersession cancels active loading; a loader that ignores cancellation still cannot publish an old revision. Failed evaluation retains the last published compiler snapshot. Atomic saves/renames and watcher overflow request refresh. The LSP cancels affected requests, recomputes diagnostics for open documents and tracks project revision separately from the client's XAML revision.
 
-The protocol advertises only implemented capabilities. Rename, code actions, formatting, semantic-token deltas and C#-side references are not advertised. Go-to-definition currently returns source locations, not decompiled metadata. Compilation reflects the project snapshot loaded at startup. An embedding host can call `UpdateCompilation`; the stdio executable does not yet watch C# files, project files or NuGet restore changes automatically.
+## Protocol
+
+Implemented: initialize/shutdown, open/change/close synchronization with sequential UTF-16 ranges, versioned diagnostics, hover, element/member/value completion, source definitions, open-XAML references/highlights, symbols, folding, full semantic tokens, cancellation and `xamlg/inspect` for syntax/bound operations/source maps/C#.
+
+Rename, code actions, formatting, semantic-token deltas, C#-side reference search and decompiled metadata navigation are not advertised. Editors can add host-specific capabilities through the reusable tooling layer.
+
+Publication rechecks project/document freshness under the output gate. Request cancellation cannot truncate an admitted Content-Length frame. Partial writes, flush errors and frame deadlines permanently close the transport rather than allowing another message to corrupt it. See [publication invariants and tests](lsp-publication.md).
 
 ## Validation
 
-`python scripts/test-lsp-host.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll` launches the real executable and exchanges framed messages. It checks the trust boundary, stdout integrity, semantic requests, source diagnostics, malformed-source recovery, sequential Unicode edits, closing and shutdown. Separate library tests exercise malformed/oversized headers, truncated payloads, document budgets and stale revisions.
+`test-lsp-host.py` launches the actual executable and exchanges framed messages. `test-lsp-watch.py` changes its C# input and verifies updated diagnostics without changing the XAML version. Library tests exercise framing, bounds, stale revisions, queued-message cancellation, partial writes, deadlines and shutdown. Release validation repeats process tests against the installed tool, not just the repository build.

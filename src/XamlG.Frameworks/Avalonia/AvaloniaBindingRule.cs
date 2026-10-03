@@ -1,12 +1,12 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
+using XamlG.Frameworks.Avalonia.Bindings;
 using XamlG.Roslyn;
 using XamlG.Syntax;
 
 namespace XamlG.Frameworks.Avalonia;
 
-/// <summary>Retains assignment-target services when a markup extension yields a binding rather than a CLR property value.</summary>
 public sealed class AvaloniaBindingRule : IXamlPropertyBindingRule
 {
     public bool TryBind(BindingContext context, ObjectBindingBuilder target, BoundMember member,
@@ -25,11 +25,20 @@ public sealed class AvaloniaBindingRule : IXamlPropertyBindingRule
             context.Report("XG3002", "Avalonia binding compilation requires a reference to XamlG.AvaloniaRuntime.", span);
             return true;
         }
-        var value = context.Values.BindNode(values[0], context.Types.Special(SpecialType.System_Object), scope, target.NameScopeId, normalizeText: false);
+        using var expected = new AvaloniaBindingTargetScope(target, member.ValueType);
+        BoundExpression? value;
+        if (values[0] is XamlElementSyntax element && new AvaloniaCompiledBindingRule().TryBindElement(context, element, member.ValueType, scope, out var compiled))
+            value = compiled;
+        else
+            value = context.Values.BindNode(values[0], context.Types.Special(SpecialType.System_Object), scope, target.NameScopeId, normalizeText: false);
         if (value == null) return true;
         if (!target.AssignedScalars.Add(member.Symbol.ToDisplayString()))
-        { context.Report("XG1014", $"Property '{member.Name}' is assigned more than once.", span); return true; }
-        target.Assignments.Add(new BoundAdaptedSetAssignment(member, value, ImmutableArray.Create<ITypeSymbol>(bindingType), adapter, span));
+        {
+            context.Report("XG1014", $"Property '{member.Name}' is assigned more than once.", span);
+            return true;
+        }
+        target.Assignments.Add(new BoundAdaptedSetAssignment(member, value, ImmutableArray.Create<ITypeSymbol>(bindingType), adapter, span)
+        { OwnAdapterResult = true });
         return true;
     }
 }

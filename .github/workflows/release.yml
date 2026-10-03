@@ -1,0 +1,165 @@
+name: Release packages
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths: ['eng/**', 'scripts/*release*.py', 'tests/*PackagingSmoke/**', 'tests/PackagingSmoke/**', 'src/**', 'tools/XamlG.Cli/**', 'tools/XamlG.Lsp/**', 'Directory.*', '.github/workflows/release.yml']
+  workflow_dispatch:
+    inputs:
+      publish_nuget:
+        description: 'Publish NuGet packages from an existing version tag (requires the nuget environment and NUGET_API_KEY).'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  packages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve version and enforce release ancestry
+        id: identity
+        env:
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          python - <<'PY'
+          import os, re, subprocess
+          tagged=os.environ['REF'].startswith('refs/tags/')
+          version=os.environ['REF_NAME'][1:] if tagged else '0.1.0-ci.'+os.environ['RUN_NUMBER']
+          if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?',version): raise RuntimeError('Invalid release version')
+          if tagged: subprocess.run(['git','merge-base','--is-ancestor','HEAD','origin/main'],check=True)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('version='+version+'\n')
+          PY
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Build and test shipping solution
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          dotnet build XamlG.slnx -c Release -p:Version="$RELEASE_VERSION" -p:PackageVersion="$RELEASE_VERSION" -p:NuGetAudit=false
+          dotnet test XamlG.slnx -c Release --no-build --no-restore --logger trx --results-directory artifacts/release-tests
+      - name: Build and inspect all shipping packages
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+        run: python scripts/build-release.py --version "$RELEASE_VERSION" --no-build
+      - name: Install and execute clean package consumers
+        env:
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+        run: python scripts/test-release-packages.py --packages artifacts/release --version "$RELEASE_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate
+          path: artifacts/release
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-test-results
+          path: artifacts/release-tests
+  upstream:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Resolve pinned upstream revision
+        id: pin
+        run: |
+          python - <<'PY'
+          import os, re, xml.etree.ElementTree as ET
+          revision=ET.parse('tests/Upstream.props').findtext('.//XamlXRevision')
+          assert re.fullmatch('[0-9a-f]{40}',revision)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f: f.write('revision='+revision+'\n')
+          PY
+      - uses: actions/checkout@v4
+        with:
+          repository: AvaloniaUI/XamlX
+          ref: ${{ steps.pin.outputs.revision }}
+          path: external/XamlX
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - run: |
+          dotnet test tests/XamlG.XamlX.Baseline.Tests -c Release -p:NuGetAudit=false --logger 'trx;LogFileName=Baseline.trx' --results-directory artifacts/upstream
+          dotnet test tests/XamlG.XamlX.Compatibility.Tests -c Release -p:NuGetAudit=false --logger 'trx;LogFileName=Compatibility.trx' --results-directory artifacts/upstream
+          python scripts/verify-test-results.py artifacts/upstream/Baseline.trx --expected 222
+          python scripts/verify-test-results.py artifacts/upstream/Compatibility.trx --expected 217
+  browser:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: dotnet workload install wasm-tools --skip-manifest-update
+      - working-directory: tools/XamlG.Playground
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run prepare-assets
+          npx playwright install --with-deps chromium
+      - run: dotnet publish tools/XamlG.Playground -c Release -p:NuGetAudit=false -o artifacts/playground
+      - working-directory: tools/XamlG.Playground
+        run: npm test
+  github-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [packages, upstream, browser]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: release
+      - name: Publish or verify the immutable versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/publish-release.py --directory release
+  nuget:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_nuget && startsWith(github.ref, 'refs/tags/v')
+    needs: [packages, upstream, browser]
+    runs-on: ubuntu-latest
+    environment: nuget
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: release
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - working-directory: release
+        run: sha256sum --check SHA256SUMS
+      - name: Publish explicitly requested NuGet release
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          test -n "$NUGET_API_KEY" || { echo 'The nuget environment must provide NUGET_API_KEY.'; exit 1; }
+          dotnet nuget push 'release/*.nupkg' --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate

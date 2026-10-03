@@ -4,12 +4,13 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <XamlGPackageVersion Condition="'$(XamlGPackageVersion)' == ''">0.1.0-alpha.1</XamlGPackageVersion>
     <XamlGFramework>Portable</XamlGFramework>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <CompilerGeneratedFilesOutputPath>obj/generated</CompilerGeneratedFilesOutputPath>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="XamlG.Generator" Version="0.1.0-alpha.1" />
-    <PackageReference Include="XamlG.Runtime" Version="0.1.0-alpha.1" />
+    <PackageReference Include="XamlG.Generator" Version="$(XamlGPackageVersion)" />
+    <PackageReference Include="XamlG.Runtime" Version="$(XamlGPackageVersion)" />
   </ItemGroup>
 </Project>

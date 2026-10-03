@@ -1,0 +1,41 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JavaScript
+@inject NavigationManager Navigation
+@using XamlG.Playground.Isolation
+
+<div @ref="_host" class="isolated-preview-host" aria-label="Isolated preview container"></div>
+
+@code {
+    private ElementReference _host;
+    private IJSObjectReference? _module;
+    private Task? _initialization;
+    private int _handle;
+    private bool _disposed;
+    public async Task<SandboxRunResult> RunAsync(SandboxRunRequest request)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        await (_initialization ??= InitializeAsync());
+        return await _module!.InvokeAsync<SandboxRunResult>("request", _handle, "execute", request);
+    }
+    public async Task<SandboxRunResult> InspectAsync()
+    {
+        if (_module == null || _handle == 0) throw new InvalidOperationException("The isolated preview has not been started.");
+        return await _module.InvokeAsync<SandboxRunResult>("request", _handle, "inspect", new { });
+    }
+    private async Task InitializeAsync()
+    {
+        _module ??= await JavaScript.InvokeAsync<IJSObjectReference>("import", "./sandbox-client.js");
+        _handle = await _module.InvokeAsync<int>("create", _host, new Uri(new Uri(Navigation.BaseUri), "sandbox.html").AbsoluteUri);
+    }
+    public async Task ResetAsync()
+    {
+        if (_module != null && _handle != 0) await _module.InvokeVoidAsync("dispose", _handle);
+        _handle = 0; _initialization = null;
+    }
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        await ResetAsync();
+        if (_module != null) await _module.DisposeAsync();
+    }
+}

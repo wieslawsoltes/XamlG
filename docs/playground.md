@@ -1,39 +1,37 @@
 # Browser Compiler Studio
 
-The studio hosts `XamlG.Tooling`, framework profiles and the production Roslyn/C# backend in Blazor WebAssembly. JavaScript supplies Monaco and browser integration; it does not reimplement the XAML binder. The preview renders actual Avalonia controls.
+The studio hosts the production Roslyn/XamlG compiler in WebAssembly with Monaco source editors and actual Avalonia controls. JavaScript provides editor/browser integration, not an imitation binder or HTML recreation of the view.
 
 ## Build and serve
-
-From the repository root:
 
 ```sh
 dotnet workload install wasm-tools
 npm --prefix tools/XamlG.Playground install --ignore-scripts --no-audit --no-fund
 npm --prefix tools/XamlG.Playground run prepare-assets
 dotnet publish tools/XamlG.Playground -c Release -o artifacts/playground
-python3 -m http.server 8765 --directory artifacts/playground/wwwroot
+python scripts/serve-playground.py --port 8765 --directory artifacts/playground/wwwroot
 ```
 
-Open `http://localhost:8765/`. Publishing copies compiler reference metadata separately from executable WebAssembly assets and preserves the stable Avalonia JavaScript module URLs required by static hosting.
+Open `http://localhost:8765/`. The supplied development server enables public cross-origin asset reads needed by the opaque-origin preview. Production hosting must likewise allow its static runtime assets to be fetched from the isolated frame. Metadata images used by Roslyn are separate from runtime assemblies. Publication preserves Avalonia's required stable JavaScript asset URLs.
 
-## Editing and inspection
+## Source, semantics and pixels
 
-XAML and C# have separate editor models. Compile and Run read both current buffers explicitly, so an immediate command cannot compile the previous debounced text. Unrelated UI renders do not overwrite in-flight editor text. Programmatic document changes cancel pending change notifications. Designer edits and undo/redo compile their managed snapshot rather than recapturing a superseded editor model.
+The studio includes XAML/C# editors, compiler and generated-C# diagnostics, source mappings, source-preserving syntax, typed bound operations (including delegate bodies), realized visual-tree inspection, property/structure editing, undo/redo, drafts/export and dark/light responsive layouts.
 
-Full-buffer notifications are converted to a minimal UTF-16 replacement by `XamlTextDiffer`. Eligible local edits reparse one complete element; unaffected, unmoved nodes retain their identity. Recovery-sensitive edits use the full parser. The existing syntax snapshot is passed directly into browser compilation. The Pipeline panel reports reparsed character and reused node counts, not an end-to-end performance claim: full text construction and line indexing still process document-sized data.
+Compile and Run capture the current editor buffers rather than trusting delayed notifications. Unrelated renders do not overwrite pending edits. Buffer changes are converted to minimal UTF-16-safe replacements; eligible local edits reparse one complete element and reuse unaffected nodes. The existing snapshot reaches semantic analysis unchanged. Parser-work counters are not an end-to-end complexity claim: text construction, line indexing and binding have their own costs.
 
-Syntax and bound-tree nodes can reveal source spans. Selecting a stale analysis after a newer source edit is rejected. Visual inspection reports realized framework visuals, their names, bounds and visibility, including children produced by control templates. Source-based property editing is not yet a general drag/resize visual designer.
+The Design control enables real drag/eight-handle resize, snapping, aspect locking, keyboard nudging and cancellation. Property and structure commands operate on source transactions. See [design and reload](hot-reload.md) for transaction rules and state preservation.
 
-## Execution boundary
+## Explicit execution modes
 
-Nothing is sent to a compiler service: source is analyzed inside the browser. The browser still downloads application assets and reference metadata from the static host.
+**Run preview** executes trusted generated code in the editor tab and enables local visual design. It has the same browser-origin capabilities as the studio. Review code before using this mode. Restoring a draft does not execute it.
 
-Run executes the resulting assembly in the same browser tab and origin as the studio. It is **not** a security sandbox. Run only trusted code. Arbitrary user code can consume memory, block the UI or invoke browser APIs available to the application. Restoring a draft does not run it. The host caps loaded preview assemblies at 64 because collectible browser load contexts are not assumed; export and reload to reclaim them.
+**Run isolated** emits the assembly as data in the editor and loads it in a separate WebAssembly host inside an iframe with `sandbox="allow-scripts"`, without `allow-same-origin`. The frame has an opaque origin and cannot read the editor DOM, cookies or local storage through same-origin APIs. A dedicated MessageChannel uses source/origin checks and a nonce handshake; payloads and responses are bounded, and requests have deadlines. A restrictive content-security policy limits resource fetches to required assets. Reset discards the frame and its runtime.
 
-The current preview uses complete recompilation/replacement on Run. Runtime graph/reload primitives exist, but structural state-preserving hot reload, isolated preview execution and project-scale browser workspaces are not claimed.
+Isolated execution is not an operating-system process/resource quota. Untrusted code can still consume CPU/memory or stop responding, and browser scheduling does not guarantee that every infinite loop is independently preemptible. The policy permits the public static assets necessary to start .NET/Avalonia, not an absolute no-network environment. Do not describe this as universally safe arbitrary-code execution.
 
-## Deployment and tests
+Both runtime hosts cap loaded preview assemblies because collectible browser load contexts are not assumed. Local trusted preview requires exporting/reloading the page to reclaim loaded code; the isolated host can be discarded separately. Local visual gestures are disabled while isolated mode is active; source-based edits continue through the isolated execution path rather than silently loading code into the editor.
 
-`pages.yml` deploys only `main`, preserving the repository's deployment environment protections. It publishes the site, runs acceptance tests, sets the `/XamlG/` base URI and writes `build.json` containing the exact source commit. After Pages deployment, CI checks that public identity and reruns the same browser tests against the public URL.
+## Deployment and acceptance
 
-Browser acceptance checks cover compiling and running controls, code-behind, visual/syntax inspectors, mobile layout and theme switching, immediate-edit Run, document switching and undo/redo. They are behavioral tests, not comprehensive pixel-parity or browser-engine certification.
+Pages deployment runs only from `main`, retains its environment protections, verifies browser behavior, writes `build.json` with the exact source commit and tests the public deployment after confirming that identity. Acceptance tests include real controls/code-behind, source/visual inspection, immediate-edit Run, undo/redo, responsive themes, canvas drag/resize/cancellation and opaque-origin DOM/storage separation. They are behavioral tests, not exhaustive pixel/browser-engine certification.
