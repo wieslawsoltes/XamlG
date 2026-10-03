@@ -73,7 +73,7 @@
                         <h3>@(_selectedElement?.Name ?? "Select a syntax node")</h3>
                         @if (_selectedElement != null)
                         {
-                            @foreach (var attribute in _selectedElement.Attributes.Where(a => !a.IsNamespace)) { <div class="property-readout"><code>@attribute.Name</code><span>@attribute.Value</span></div> }
+                            @foreach (var item in _selectedElement.Attributes.Where(a => !a.IsNamespace)) { <div class="property-readout"><code>@item.Name</code><span>@item.Value</span></div> }
                             <label>Property <input @bind="_propertyName" placeholder="Text" /></label>
                             <label>Value <input @bind="_propertyValue" placeholder="New value" /></label>
                             <button class="primary" @onclick="ApplyPropertyAsync" disabled="@string.IsNullOrWhiteSpace(_propertyName)">Apply to XAML</button>
