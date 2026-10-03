@@ -6,8 +6,9 @@ namespace XamlG.Syntax;
 /// <summary>An immutable, source-preserving snapshot. Semantic work never changes the source tree.</summary>
 public sealed class XamlSyntaxTree
 {
-    private XamlSyntaxTree(string text, string path, long version, XamlParseOptions options, ImmutableArray<XamlSyntaxNode> nodes, ImmutableArray<XamlDiagnostic> diagnostics)
-    { Text = text; Path = path; Version = version; Options = options; Nodes = nodes; Diagnostics = diagnostics; Root = nodes.OfType<XamlElementSyntax>().FirstOrDefault(); Lines = new(text); }
+    internal XamlSyntaxTree(string text, string path, long version, XamlParseOptions options, ImmutableArray<XamlSyntaxNode> nodes, ImmutableArray<XamlDiagnostic> diagnostics, XamlParseStatistics? statistics = null)
+    { Text = text; Path = path; Version = version; Options = options; Nodes = nodes; Diagnostics = diagnostics; Root = nodes.OfType<XamlElementSyntax>().FirstOrDefault(); Lines = new(text); Statistics = statistics ?? new(text.Length, 0, false); }
+    public XamlParseStatistics Statistics { get; }
     public string Text { get; }
     public string Path { get; }
     public long Version { get; }
@@ -39,7 +40,7 @@ public sealed class XamlSyntaxTree
         var output = new StringBuilder(Text.Length); var offset = 0;
         foreach (var change in ordered) { cancellationToken.ThrowIfCancellationRequested(); output.Append(Text, offset, change.Span.Start - offset); output.Append(change.NewText); offset = change.Span.End; }
         output.Append(Text, offset, Text.Length - offset); var text = output.ToString();
-        return text == Text ? this : Parse(text, Path, cancellationToken, Options, checked(Version + 1));
+        return text == Text ? this : XamlIncrementalParser.Parse(this, text, ordered, cancellationToken);
     }
     public XamlElementSyntax? FindElement(int position) => Root?.DescendantsAndSelf().Where(n => n.Span.Start <= position && n.Span.End >= position).OrderBy(n => n.Span.Length).FirstOrDefault();
     public override string ToString() => Text;

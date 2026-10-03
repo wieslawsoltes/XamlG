@@ -26,7 +26,17 @@ public static class MarkupExtensionParser
                 var c = text[position];
                 if (escaped) { escaped = false; position++; continue; }
                 if (c == '\\' && quote != '\0') { escaped = true; position++; continue; }
-                if (quote != '\0') { if (c == quote) quote = '\0'; position++; continue; }
+                if (quote != '\0')
+                {
+                    if (c == quote)
+                    {
+                        quote = '\0';
+                        position++;
+                        if (depth == 0 && equals >= 0 && NextIsNamedArgument(text, position, end)) break;
+                    }
+                    else position++;
+                    continue;
+                }
                 if (c is '\'' or '"') quote = c;
                 else if (c == '{' || c == '(' || c == '[') depth++;
                 else if (c == '}' || c == ')' || c == ']') depth--;
@@ -45,6 +55,17 @@ public static class MarkupExtensionParser
             if (position < end && text[position] == ',') position++;
         }
         return new(name, arguments.ToImmutable(), span);
+    }
+    private static bool NextIsNamedArgument(string text, int position, int end)
+    {
+        var start = position;
+        while (position < end && char.IsWhiteSpace(text[position])) position++;
+        if (position == start) return false;
+        var nameStart = position;
+        while (position < end && (char.IsLetterOrDigit(text[position]) || text[position] is '_' or ':' or '.' or '-')) position++;
+        if (position == nameStart) return false;
+        while (position < end && char.IsWhiteSpace(text[position])) position++;
+        return position < end && text[position] == '=';
     }
     private static string Unquote(string value)
     {
