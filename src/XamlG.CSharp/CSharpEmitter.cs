@@ -84,7 +84,7 @@ public sealed class CSharpEmitter
 
         flow.EmitNamespaceMaps();
         new ServiceContractEmitter(context).Emit();
-        context.EmitMetadataHelpers();
+        context.DynamicSetters.Emit(); context.EmitMetadataHelpers();
         if (nesting == 0) writer.Close();
         else for (var i = 0; i < nesting; i++) writer.Close();
         if (namespaceName.Length != 0) writer.Close();

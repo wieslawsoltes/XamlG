@@ -16,7 +16,7 @@ internal sealed class NamespaceMapEmitter
     public string GetMap(NamespaceScope scope)
     {
         if (!_context.Document.Runtime.Services.Any(s => s.Mapping.Kind == XamlServiceKind.XmlNamespaces)) return "null";
-        var key = string.Join("\n", scope.Bindings.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value));
+        var key = string.Join("\n", scope.Bindings.Where(p => scope.DeclaredPrefixes.Contains(p.Key)).OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value));
         if (_maps.TryGetValue(key, out var existing)) return existing.Name;
         var name = "__namespaces_" + _context.Id + "_" + _maps.Count;
         _maps.Add(key, (name, scope));
@@ -39,15 +39,21 @@ internal sealed class NamespaceMapEmitter
                 var dictionary = "__map" + index++;
                 var listType = "global::System.Collections.Generic.IReadOnlyList<" + item + ">";
                 writer.Line("var " + dictionary + " = new global::System.Collections.Generic.Dictionary<string, " + listType + ">(global::System.StringComparer.Ordinal);");
-                foreach (var alias in entry.Scope.Bindings.OrderBy(p => p.Key, StringComparer.Ordinal))
+                foreach (var alias in entry.Scope.Bindings.Where(p => entry.Scope.DeclaredPrefixes.Contains(p.Key)).OrderBy(p => p.Key, StringComparer.Ordinal))
                 {
                     var mappings = _context.Document.Runtime.NamespaceMappings.Where(m => m.XmlNamespace == alias.Value).ToArray();
                     var items = mappings.Select(m => "new " + item + " { " +
                         CSharpNames.Identifier(contract.NamespaceNameProperty.Name) + " = " + CSharpNames.Literal(m.ClrNamespace) + ", " +
-                        CSharpNames.Identifier(contract.AssemblyNameProperty.Name) + " = " + CSharpNames.Literal(m.AssemblyName ?? _context.Document.Runtime.LocalAssemblyName) + " }");
-                    writer.Line(dictionary + ".Add(" + CSharpNames.Literal(alias.Key) + ", global::System.Array.AsReadOnly(new " + item + "[] { " + string.Join(", ", items) + " }));");
+                        CSharpNames.Identifier(contract.AssemblyNameProperty.Name) + " = " + (m.AssemblyName == null ? "null" : CSharpNames.Literal(m.AssemblyName)) + " }");
+                    var values = "new " + item + "[] { " + string.Join(", ", items) + " }";
+                    if (_context.Document.Profile.Runtime.ProtectNamespaceDictionaries)
+                        values = "global::System.Array.AsReadOnly(" + values + ")";
+                    writer.Line(dictionary + ".Add(" + CSharpNames.Literal(alias.Key) + ", " + values + ");");
                 }
-                writer.Line("__services.Add(typeof(" + contract.InterfaceType.CSharpName() + "), new global::System.Collections.ObjectModel.ReadOnlyDictionary<string, " + listType + ">(" + dictionary + "));");
+                var exposed = _context.Document.Profile.Runtime.ProtectNamespaceDictionaries
+                    ? "new global::System.Collections.ObjectModel.ReadOnlyDictionary<string, " + listType + ">(" + dictionary + ")"
+                    : dictionary;
+                writer.Line("__services.Add(typeof(" + contract.InterfaceType.CSharpName() + "), " + exposed + ");");
             }
             writer.Line("return new global::System.Collections.ObjectModel.ReadOnlyDictionary<global::System.Type, object>(__services);");
             writer.Close();

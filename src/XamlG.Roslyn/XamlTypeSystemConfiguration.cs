@@ -4,6 +4,11 @@ namespace XamlG.Roslyn;
 /// <summary>Immutable framework policy; values are exact metadata names, never simple-name matches.</summary>
 public sealed record XamlTypeSystemConfiguration
 {
+    public string? DefaultAssemblyName { get; init; }
+    public bool AllowImplicitNumericConversions { get; init; }
+    public ImmutableArray<XamlCollectionProjection> CollectionProjections { get; init; } = ImmutableArray.Create(
+        new XamlCollectionProjection(ClrNames.IEnumerable, ClrNames.IList),
+        new XamlCollectionProjection(ClrNames.IEnumerableOfT, ClrNames.ICollectionOfT));
     public ImmutableArray<XmlNamespaceMapping> NamespaceMappings { get; init; } = ImmutableArray<XmlNamespaceMapping>.Empty;
     public ImmutableArray<string> XmlnsDefinitionAttributes { get; init; } = ImmutableArray.Create("XamlG.Runtime.XmlnsDefinitionAttribute");
     public ImmutableArray<string> ContentAttributes { get; init; } = ImmutableArray.Create("XamlG.Runtime.ContentAttribute");

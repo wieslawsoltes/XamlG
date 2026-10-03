@@ -26,6 +26,10 @@ public sealed class ValueBinder
     }
     public BoundExpression? TryText(string text, ITypeSymbol target, NamespaceScope scope, TextSpan span, ISymbol? member = null)
     {
+        // A property converter explicitly overrides the property's CLR type converter,
+        // including intrinsic numeric parsing. No user converter executes during binding.
+        var propertyConverter = FindConverter(member);
+        if (propertyConverter != null) return new BoundConverterExpression(text, propertyConverter, target, span);
         foreach (var rule in _context.Profile.TextConversionRules)
             if (rule.TryConvert(_context, text, target, scope, span, member, out var result)) return result;
         if (target is INamedTypeSymbol nullable && nullable.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
@@ -163,7 +167,7 @@ public sealed class ValueBinder
             _context.Report("XG1022", $"Null cannot be assigned to '{target}'.", span); return null;
         }
         var conversion = _context.Types.Compilation.ClassifyConversion(value.Type, target);
-        if (conversion.IsImplicit) return value;
+        if (conversion.IsImplicit && (!conversion.IsNumeric || _context.Types.Configuration.AllowImplicitNumericConversions)) return value;
         if (conversion.Exists && value.Type.SpecialType == SpecialType.System_Object) return new BoundCastExpression(value, target, span);
         if (value is BoundConstantExpression { Value: string text } && TryText(text, target, NamespaceScope.Empty, span) is { } converted) return converted;
         _context.Report("XG1023", $"Value of type '{value.Type}' cannot be assigned to '{target}'.", span); return null;

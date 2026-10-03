@@ -14,6 +14,8 @@ internal sealed class EmissionContext
     public BoundDocument Document { get; }
     public string Id { get; }
     public CancellationToken Cancellation { get; }
+    private DynamicSetterEmitter? _dynamicSetters;
+    public DynamicSetterEmitter DynamicSetters => _dynamicSetters ??= new(this);
     public CSharpWriter Writer { get; } = new();
     public List<XamlDiagnostic> Diagnostics { get; } = new();
     public List<XamlSourceMapping> Mappings { get; } = new();
@@ -30,6 +32,8 @@ internal sealed class EmissionContext
     }
     public string Descriptor(BoundMember member)
     {
+        if (Document.Profile.Runtime.TargetPropertyMode == XamlTargetPropertyMode.Name)
+            return CSharpNames.Literal(member.Name);
         if (_descriptors.TryGetValue(member.Symbol, out var name)) return name;
         name = "__descriptor_" + Id + "_" + _descriptors.Count; _descriptors.Add(member.Symbol, name); return name;
     }
