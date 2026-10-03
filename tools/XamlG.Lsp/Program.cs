@@ -1,18 +1,11 @@
-using System.Collections.Immutable;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using XamlG.Frameworks;
 using XamlG.LanguageServer;
 using XamlG.Lsp;
-using XamlG.Tooling;
-using XamlG.Workspaces;
+using XamlG.Workspaces.Watching;
 
-// Reserve stdout for framed JSON-RPC before any project-defined code can run.
 using var output = Console.OpenStandardOutput();
 Console.SetOut(Console.Error);
 using var cancellation = new CancellationTokenSource();
-Console.CancelKeyPress += (_, eventArgs) => { eventArgs.Cancel = true; cancellation.Cancel(); };
-XamlWorkspaceHost? workspace = null;
+Console.CancelKeyPress += (_, args) => { args.Cancel = true; cancellation.Cancel(); };
 try
 {
     var options = ServerOptions.Parse(args);
@@ -25,50 +18,33 @@ try
             xamlg-lsp --project App.csproj --trust-project --target-framework net10.0
 
             --code and --reference may be repeated. --framework defaults to Auto.
-            Project evaluation and application source generators execute project code:
-            --trust-project is required for --project. No project is evaluated implicitly.
-            Metadata-only mode reads C# and assemblies without executing their code.
-            Diagnostics and host logs are written to stderr; stdout is JSON-RPC only.
+            Project evaluation and source generators may execute project code; --trust-project is mandatory.
+            Compiler inputs are watched automatically. --no-watch disables automatic refresh.
+            Failed or superseded refreshes retain the last published project snapshot.
+            Stdout is reserved for framed JSON-RPC; logs are written to stderr.
             """);
         return 0;
     }
-
-    XamlCompilationSession compiler;
-    if (options.Project != null)
-    {
-        var properties = ImmutableDictionary<string, string>.Empty;
-        if (options.TargetFramework != null) properties = properties.Add("TargetFramework", options.TargetFramework);
-        workspace = XamlWorkspaceHost.Create(new()
-        {
-            AllowProjectEvaluation = options.TrustProject,
-            Framework = options.Framework,
-            GlobalProperties = properties
-        });
-        var project = await workspace.OpenProjectAsync(options.Project, cancellation.Token);
-        foreach (var diagnostic in workspace.Diagnostics) await Console.Error.WriteLineAsync("workspace: " + diagnostic.Message);
-        compiler = project.Compiler;
-    }
-    else
-    {
-        var paths = ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? string.Empty)
-            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Concat(options.References.Select(Path.GetFullPath));
-        var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-        var references = paths.Distinct(pathComparer).Select(path => MetadataReference.CreateFromFile(path)).ToArray();
-        var syntax = new List<SyntaxTree>();
-        foreach (var path in options.CodeFiles)
-            syntax.Add(CSharpSyntaxTree.ParseText(await File.ReadAllTextAsync(path, cancellation.Token),
-                new CSharpParseOptions(LanguageVersion.Preview), Path.GetFullPath(path), cancellationToken: cancellation.Token));
-        var compilation = CSharpCompilation.Create("XamlG.LanguageServer.Project", syntax, references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
-        compiler = new(compilation, KnownFrameworkProfiles.Select(compilation, options.Framework));
-    }
-
+    var loader = new ServerCompilationLoader(options);
+    var initial = await loader.LoadAsync(cancellation.Token);
     using var input = Console.OpenStandardInput();
-    await using var server = new XamlLanguageServer(compiler, input, output, Console.Error);
-    await server.RunAsync(cancellation.Token);
+    await using var server = new XamlLanguageServer(initial.Compiler, input, output, Console.Error);
+    XamlFileMonitor? monitor = null;
+    await using var refresh = new LatestRevisionWorker<ServerCompilationState>(
+        (_, token) => loader.LoadAsync(token),
+        result =>
+        {
+            monitor?.Update(result.Value.Inputs);
+            server.UpdateCompilation(result.Value.Compiler);
+            Console.Error.WriteLine("workspace refreshed: " + result.Revision);
+        }, error => Console.Error.WriteLine("workspace refresh retained the previous snapshot: " + error.Message));
+    try
+    {
+        if (options.Watch) monitor = new(initial.Inputs, refresh.Signal, error => Console.Error.WriteLine("workspace watcher: " + error.Message));
+        await server.RunAsync(cancellation.Token);
+    }
+    finally { monitor?.Dispose(); }
     return 0;
 }
 catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return 130; }
 catch (Exception error) { await Console.Error.WriteLineAsync("xamlg-lsp: " + error.Message); return 2; }
-finally { workspace?.Dispose(); }
