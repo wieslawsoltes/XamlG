@@ -30,7 +30,8 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
             string.Join(", ", declarations.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => "{ " + CSharpNames.Literal(p.Key) + ", " + CSharpNames.Literal(p.Value) + " }")) + " }";
         var identity = value.Name == null ? "null" : CSharpNames.Literal(value.Key);
         context.Writer.Line(frame + ".Session.RegisterSource(" + CSharpNames.Literal(value.Key) + ", new global::XamlG.Runtime.XamlSourceInfo(" +
-            CSharpNames.Literal(syntax.Path) + ", " + span.Start + ", " + span.Length + ", " + identity + ", " + CSharpNames.Literal(fingerprint) + ", " + map + "));");
+            CSharpNames.Literal(syntax.Path) + ", " + span.Start + ", " + span.Length + ", " + identity + ", " + CSharpNames.Literal(fingerprint) + ", " + map +
+            ", version: " + syntax.Version.ToString(System.Globalization.CultureInfo.InvariantCulture) + "L));");
     }
     private static TextSpan Clamp(TextSpan span, int length)
     {

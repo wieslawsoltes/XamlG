@@ -4,6 +4,7 @@
 @inject IJSRuntime JavaScript
 @inject NavigationManager Navigation
 
+<link rel="stylesheet" href="designer.css" />
 <div class="studio" data-ready="@(_ready ? "true" : "false")">
     <header class="titlebar">
         <div class="brand"><span class="brand-mark">X</span><strong>XamlG</strong><span class="brand-divider"></span><span>Compiler Studio</span><span class="badge">PREVIEW</span></div>
@@ -54,7 +55,11 @@
             </section>
         </section>
         <section class="inspection-pane">
-            <div class="preview-heading"><h2>LIVE PREVIEW <span class="badge subtle">AVALONIA</span></h2><button @onclick="RefreshVisuals" disabled="@(Preview.Root == null)" title="Refresh the realized visual tree">↻ Inspect</button></div>
+            <div class="preview-heading">
+                <h2>LIVE PREVIEW <span class="badge subtle">AVALONIA</span></h2>
+                <DesignerCommands Enabled="_designMode" Disabled="@(_busy || Preview.Root == null)" Toggle="ToggleDesignMode" />
+                <button @onclick="RefreshVisuals" disabled="@(Preview.Root == null)" title="Refresh the realized visual tree">↻ Inspect</button>
+            </div>
             <div class="preview-surface"><div id="avalonia-preview" class="avalonia-preview"></div>@if (!_previewShown) { <div class="preview-placeholder"><span>◇</span><strong>From source to pixels.</strong><p>Run the compiled document to see its actual Avalonia controls.</p></div> }</div>
             <div class="tabbar inspector-tabs" role="tablist">
                 @foreach (var tab in InspectorTabs)
@@ -76,7 +81,10 @@
                             @foreach (var item in _selectedElement.Attributes.Where(a => !a.IsNamespace)) { <div class="property-readout"><code>@item.Name</code><span>@item.Value</span></div> }
                             <label>Property <input @bind="_propertyName" placeholder="Text" /></label>
                             <label>Value <input @bind="_propertyValue" placeholder="New value" /></label>
-                            <button class="primary" @onclick="ApplyPropertyAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_propertyName))">Apply to XAML</button>
+                            <button class="primary" @onclick="ApplyDesignerPropertyAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_propertyName))">Apply to XAML</button>
+                            <StructureEditor Destinations="ReparentDestinations" @bind-Destination="_reparentDestination" @bind-Markup="_newElementMarkup"
+                                Disabled="_busy" IsRoot="@ReferenceEquals(_selectedElement, _document.Current.Root)"
+                                Reparent="ReparentSelectedAsync" Insert="InsertSelectedAsync" Remove="RemoveSelectedAsync" />
                         }
                         @if (_selectedVisual != null) { <h3>Realized visual</h3><code>@_selectedVisual.TypeName</code><p>@($"Bounds: {_selectedVisual.X:0.##}, {_selectedVisual.Y:0.##} · {_selectedVisual.Width:0.##} × {_selectedVisual.Height:0.##}")</p><p>Visible: @_selectedVisual.IsVisible</p> }
                     </div>
@@ -92,8 +100,9 @@
                         }
                         <div><b>02</b><strong>Roslyn semantic binding</strong><span>@(_result?.Analysis.Document.Symbols.Length ?? 0) symbol occurrences</span></div>
                         <div><b>03</b><strong>Typed C# lowering</strong><span>@(_result?.Analysis.Output.SourceMappings.Length ?? 0) source mappings</span></div>
-                        <div><b>04</b><strong>Explicit execution</strong><span>Real Avalonia controls, not HTML approximations</span></div>
-                        <p class="muted">Local edits can reparse one complete element and retain unchanged syntax nodes. Recovery-sensitive edits use the full parser. These are parser-work counters, not end-to-end complexity claims. Full structural hot reload and complete framework parity remain separate work.</p>
+                        <div><b>04</b><strong>State-preserving replacement</strong><span>Reload revision @Preview.Revision · named identities and unchanged declarations</span></div>
+                        @foreach (var warning in Preview.LastWarnings) { <p class="muted">@warning</p> }
+                        <p class="muted">Local syntax edits can reuse unchanged nodes. Structural reload builds a detached candidate, transfers eligible interaction state, then swaps roots. It does not preserve arbitrary object identities or copy application fields.</p>
                     </div>
                 }
             </div>
