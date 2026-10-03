@@ -6,12 +6,13 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <NoWarn>$(NoWarn);CS0618;CS0612;CS8632</NoWarn>
+    <XamlXSourceRoot>$(MSBuildProjectDirectory)/../../external/XamlX</XamlXSourceRoot>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../external/XamlX/src/XamlX/**/*.cs" Exclude="../../external/XamlX/src/XamlX/**/obj/**/*.cs;../../external/XamlX/src/XamlX/**/bin/**/*.cs" LinkBase="Upstream/XamlX" />
-    <Compile Include="../../external/XamlX/src/XamlX.Runtime/**/*.cs" Exclude="../../external/XamlX/src/XamlX.Runtime/**/obj/**/*.cs;../../external/XamlX/src/XamlX.Runtime/**/bin/**/*.cs" LinkBase="Upstream/Runtime" />
+    <Compile Include="$(XamlXSourceRoot)/src/XamlX/**/*.cs" Exclude="$(XamlXSourceRoot)/src/XamlX/**/obj/**/*.cs;$(XamlXSourceRoot)/src/XamlX/**/bin/**/*.cs" LinkBase="Upstream/XamlX" />
+    <Compile Include="$(XamlXSourceRoot)/src/XamlX.Runtime/**/*.cs" Exclude="$(XamlXSourceRoot)/src/XamlX.Runtime/**/obj/**/*.cs;$(XamlXSourceRoot)/src/XamlX.Runtime/**/bin/**/*.cs" LinkBase="Upstream/Runtime" />
   </ItemGroup>
   <Target Name="ValidateUpstreamCheckout" BeforeTargets="CoreCompile">
-    <Error Condition="!Exists('../../external/XamlX/src/XamlX/XamlLoadException.cs')" Text="Checkout the pinned AvaloniaUI/XamlX revision into external/XamlX before building the optional upstream suites. See tests/Upstream.props." />
+    <Error Condition="!Exists('$(XamlXSourceRoot)/src/XamlX/Exceptions.cs')" Text="Checkout the pinned AvaloniaUI/XamlX revision into external/XamlX before building the optional upstream suites. See tests/Upstream.props." />
   </Target>
 </Project>
