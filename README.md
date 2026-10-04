@@ -127,13 +127,15 @@ dotnet tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll \
 
 Project CLI compilation retains all required generated factories. The LSP watches compiler inputs, combines open XAML buffers into a coherent project overlay and rejects stale project/buffer-set results. Editing an included resource can diagnose its caller without fabricating a new caller version; closing the resource restores its loaded source snapshot. Identical duplicate MSBuild inputs are coalesced, conflicting buffers rejected.
 
-The server advertises prepare/rename for statically resolved XAML names, document/range formatting, structural and member-spelling code actions, resource links/completions, workspace symbols, and semantic-token full/delta/range support. Root-name rename includes actual C# field uses and `nameof`, while leaving strings, comments, and unrelated locals unchanged. Name references follow template namescopes, not text matching. Analysis is shared once per project/open-buffer snapshot across diagnostics and requests. [Authoring APIs and limits](docs/authoring.md) describe these contracts.
+Open C# buffers are included in XAML compilation and name-refactoring snapshots without executing code or writing files; their client versions are preserved in returned edits. Closing a buffer restores loaded source. The server advertises prepare/rename for statically resolved XAML names, document/range formatting, structural and member-spelling code actions, resource links/completions, workspace symbols, and semantic-token full/delta/range support. Root-name rename includes actual C# field uses and `nameof`, while leaving strings, comments, and unrelated locals unchanged. Name references follow template namescopes, not text matching. Analysis is shared once per project/open-buffer snapshot across diagnostics and requests. [Authoring APIs and limits](docs/authoring.md) describe these contracts.
 
 Stdout is protocol-only. `--trust-project` is mandatory because MSBuild/source generators can execute project code. See [capabilities and publication rules](docs/language-server.md).
 
 ## Browser Studio
 
 Monaco XAML/C# editing, generated-code diagnostics, syntax/typed-operation inspection, realized visuals, designer commands, themes and responsive layouts use the actual compiler/framework. The **Resources** tab adds, edits, removes and inspects reusable project dictionaries/styles. Compile/Run capture pending source edits, and project drafts/exports include resource documents and all generated output. Restore never executes code.
+
+Monaco authoring commands expose **Rename (F2)** with cross-file preview, **Format (Shift+Alt+F)**, and **Actions (Ctrl+.)**. Project undo/redo restores XAML, resources and C# together. Edits validate the entire captured source snapshot; newer typing invalidates stale refactoring plans. None of these source commands runs the preview.
 
 **Run preview** executes trusted code in the editor tab for visual design. **Run isolated** emits without loading application code in the editor and executes the complete project inside an opaque-origin iframe. It blocks editor DOM/storage access, not arbitrary CPU/memory consumption. See [browser setup and boundaries](docs/playground.md).
 

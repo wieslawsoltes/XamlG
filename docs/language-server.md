@@ -57,3 +57,9 @@ Publication rechecks project and buffer-set freshness under the output gate. Can
 `test-lsp-features.py` exercises versioned/legacy edit negotiation, namescope rename with C# references, no implicit disk writes, formatting/idempotence, code-action filtering, symbols and semantic-token full/delta/range behavior. The package validation script invokes it against the installed LSP tool.
 
 Library tests cover framing, bounds, stale/aliased documents, coherent buffer sets, queued cancellation, partial writes, deadlines and shutdown. Release validation repeats protocol/watch process tests against an installed tool package; the resource-overlay process test runs in the LSP host workflow.
+
+## Coordinated C# overlays
+
+C# didOpen/didChange/didClose notifications update the same revisioned source set as XAML. Their content is kept as Roslyn SourceText, not parsed as XML. Shared analysis uses an immutable C# compiler overlay, retaining evaluated parse options, and passes that same compiler to XAML navigation/refactoring. Unsaved member changes can update XAML diagnostics at the unchanged XAML client version. Rename edits targeting an open C# document use its actual client version and original URI. Closing restores the loaded source compilation. No client buffer is written to disk and this path does not run source generators.
+
+The open-document count/size and duplicate-URI checks apply to both languages. The XamlG server is still a XAML server: direct C# semantic requests should be routed to the application's C# language server. `scripts/test-lsp-csharp.py` tests the real stdio executable, including versioned rename at unsaved UTF-16 offsets, dependent diagnostics and close recovery; release validation repeats it with the installed tool package.

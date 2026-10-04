@@ -53,3 +53,9 @@ Both hosts bound loaded preview assemblies because collectible browser load cont
 Pages deploys only from `main`, retains environment protections, validates browser behavior, records the exact source commit in `build.json` and reruns tests against the public URL after verifying that identity.
 
 Acceptance covers real controls/code-behind, inspections, immediate edits, undo/redo, mobile themes, canvas gestures, isolation/reset, resource projects, exports/drafts and dependency errors. These are behavioral tests, not exhaustive pixel or browser-engine certification.
+
+## Semantic authoring commands
+
+Use Rename, Format and Actions in the source toolbar or Monaco command palette/context menu. F2 opens a scoped name-rename dialog with XAML/C# edit preview; applying it is one project undo step. Shift+Alt+F formats the source/selection while preserving literal XML content. Ctrl+. displays applicable source actions. Resource editors expose the same commands. Invoke rename from a XAML name/reference; generated-field C# references are included automatically.
+
+The project-wide transaction history covers XAML, C#, resource edits and resource additions/removals. Toolbar Undo/Redo and Monaco project shortcuts use that history. New typing is captured before commands, conflicting or stale previews are rejected atomically, and source commands never execute the preview. The main syntax revision remains monotonic across undo so stale visuals cannot be mistaken for the current source.

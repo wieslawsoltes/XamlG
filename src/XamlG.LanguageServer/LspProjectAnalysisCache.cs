@@ -7,7 +7,7 @@ namespace XamlG.LanguageServer;
 /// Cancelling one waiter never cancels other consumers; invalidation retires the shared work.</summary>
 public sealed class LspProjectAnalysisCache : IAsyncDisposable
 {
-    private sealed record Entry(XamlCompilationSession Compiler, LspDocumentSetSnapshot Buffers, CancellationTokenSource Cancellation, Task<ImmutableArray<XamlAnalysis>> Task);
+    private sealed record Entry(XamlCompilationSession Compiler, LspDocumentSetSnapshot Buffers, CancellationTokenSource Cancellation, Task<LspWorkspaceAnalysis> Task);
     private readonly object _gate = new();
     private readonly CancellationToken _lifetime;
     private readonly List<Entry> _entries = new();
@@ -16,7 +16,10 @@ public sealed class LspProjectAnalysisCache : IAsyncDisposable
     public LspProjectAnalysisCache(CancellationToken lifetime = default) => _lifetime = lifetime;
     public long ComputationCount => Interlocked.Read(ref _computations);
 
-    public Task<ImmutableArray<XamlAnalysis>> GetAsync(XamlCompilationSession compiler, LspDocumentSetSnapshot buffers, CancellationToken waiter = default)
+    public async Task<ImmutableArray<XamlAnalysis>> GetAsync(XamlCompilationSession compiler, LspDocumentSetSnapshot buffers, CancellationToken waiter = default) =>
+        (await GetWorkspaceAsync(compiler, buffers, waiter).ConfigureAwait(false)).Documents;
+
+    public Task<LspWorkspaceAnalysis> GetWorkspaceAsync(XamlCompilationSession compiler, LspDocumentSetSnapshot buffers, CancellationToken waiter = default)
     {
         waiter.ThrowIfCancellationRequested();
         Entry entry;
@@ -24,12 +27,17 @@ public sealed class LspProjectAnalysisCache : IAsyncDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            entry = _entries.FirstOrDefault(e => ReferenceEquals(e.Compiler, compiler) && e.Buffers.Revision == buffers.Revision && e.Buffers.Documents.SequenceEqual(buffers.Documents))!;
+            entry = _entries.FirstOrDefault(e => ReferenceEquals(e.Compiler, compiler) && e.Buffers.Revision == buffers.Revision && e.Buffers.Documents.SequenceEqual(buffers.Documents) && e.Buffers.CSharpDocuments.SequenceEqual(buffers.CSharpDocuments))!;
             if (entry == null)
             {
                 var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime);
                 Interlocked.Increment(ref _computations);
-                var task = Task.Run(() => compiler.AnalyzeWorkspace(buffers.Documents.Select(d => d.Syntax), cancellation.Token), cancellation.Token);
+                var task = Task.Run(() =>
+                {
+                    var overlay = XamlCSharpOverlay.Apply(compiler, buffers.CSharpDocuments.Select(d =>
+                        new KeyValuePair<string, string>(d.Path, d.Text.ToString())), cancellation.Token);
+                    return new LspWorkspaceAnalysis(overlay, overlay.AnalyzeWorkspace(buffers.Documents.Select(d => d.Syntax), cancellation.Token));
+                }, cancellation.Token);
                 entry = new(compiler, buffers, cancellation, task);
                 _entries.Add(entry);
                 if (_entries.Count > 2) { retired = _entries[0]; _entries.RemoveAt(0); }

@@ -6,7 +6,8 @@
 
 <link rel="stylesheet" href="designer.css" />
 <link rel="stylesheet" href="resources.css" />
-<div class="studio" data-ready="@(_ready ? "true" : "false")">
+<link rel="stylesheet" href="authoring.css" />
+<div class="studio" inert="@(_renameVisible || _actionsVisible)" data-ready="@(_ready ? "true" : "false")">
     <header class="titlebar">
         <div class="brand"><span class="brand-mark">X</span><strong>XamlG</strong><span class="brand-divider"></span><span>Compiler Studio</span><span class="badge">PREVIEW</span></div>
         <nav aria-label="Project links"><a href="https://github.com/wieslawsoltes/XamlG" target="_blank" rel="noopener">Source ↗</a><button class="icon-button" aria-label="Toggle color theme" @onclick="ToggleThemeAsync">◐</button></nav>
@@ -19,8 +20,8 @@
         <button @onclick="RunIsolatedAsync" disabled="@(!_ready || _busy)" data-testid="run-isolated" title="Executes in a separate opaque-origin sandbox without editor DOM or storage access">◇ Run isolated</button>
         @if (_isolationVisible) { <button @onclick="ResetIsolationAsync" data-testid="reset-isolation">Reset isolation</button> }
         <div class="toolbar-spacer"></div>
-        <button @onclick="UndoAsync" disabled="@(!_document.CanUndo || _busy)" title="Undo source edit">↶ Undo</button>
-        <button @onclick="RedoAsync" disabled="@(!_document.CanRedo || _busy)" title="Redo source edit">↷ Redo</button>
+        <button @onclick="UndoAsync" disabled="@(!_workspaceEdits.CanUndo || _busy)" title="Undo source edit">↶ Undo</button>
+        <button @onclick="RedoAsync" disabled="@(!_workspaceEdits.CanRedo || _busy)" title="Redo source edit">↷ Redo</button>
         <button @onclick="RestoreDraftAsync" disabled="@(!_ready || _busy)">Restore draft</button>
         <button @onclick="ExportAsync" disabled="@(!_ready || _busy)">Export</button>
     </div>
@@ -38,11 +39,15 @@
             <div class="tabbar" role="tablist">
                 <button class="@(_editorTab == "xaml" ? "active" : "")" @onclick='() => _editorTab = "xaml"' role="tab" aria-selected="@(_editorTab == "xaml")">◇ &nbsp; View.axaml</button>
                 <button class="@(_editorTab == "code" ? "active" : "")" @onclick='() => _editorTab = "code"' role="tab" aria-selected="@(_editorTab == "code")"># &nbsp; Code.cs</button>
-                <span class="tab-spacer"></span><small>revision @_document.Current.Version</small>
+                <span class="tab-spacer"></span><div class="authoring-shortcuts">
+                    <button @onclick='() => RequestMainCommandAsync("rename")' disabled="@(!_ready || _busy)" title="Rename XAML name (F2)">Rename</button>
+                    <button @onclick='() => RequestMainCommandAsync("format")' disabled="@(!_ready || _busy)" title="Format XAML (Shift+Alt+F)">Format</button>
+                    <button @onclick='() => RequestMainCommandAsync("actions")' disabled="@(!_ready || _busy)" title="XAML code actions (Ctrl+.)">Actions</button>
+                </div><small>revision @_document.Current.Version</small>
             </div>
             <div class="editor-stack">
-                <div class="editor-page @(_editorTab == "xaml" ? "visible" : "")"><CodeEditor @ref="_xamlEditor" Text="@_document.Current.Text" TextChanged="XamlChangedAsync" Language="xml" RunRequested="RunCurrentModeAsync" /></div>
-                <div class="editor-page @(_editorTab == "code" ? "visible" : "")"><CodeEditor @ref="_codeEditor" Text="@_code" TextChanged="CodeChangedAsync" Language="csharp" RunRequested="RunCurrentModeAsync" /></div>
+                <div class="editor-page @(_editorTab == "xaml" ? "visible" : "")"><CodeEditor @ref="_xamlEditor" Text="@_document.Current.Text" TextChanged="XamlChangedAsync" Language="xml" DocumentPath="View.axaml" AuthoringRequested="AuthoringCommandAsync" RunRequested="RunCurrentModeAsync" /></div>
+                <div class="editor-page @(_editorTab == "code" ? "visible" : "")"><CodeEditor @ref="_codeEditor" Text="@_code" TextChanged="CodeChangedAsync" Language="csharp" DocumentPath="Code.cs" AuthoringRequested="AuthoringCommandAsync" RunRequested="RunCurrentModeAsync" /></div>
             </div>
             <section class="diagnostics" aria-label="Compiler diagnostics">
                 <div class="panel-heading"><h2>PROBLEMS <span class="count">@(_result?.Diagnostics.Length ?? 0)</span></h2><small>@(_result == null ? "Compile to inspect" : $"{_result.ElapsedMilliseconds:0.0} ms · semantic analysis + C# diagnostics")</small></div>
@@ -77,7 +82,7 @@
             <div class="inspector-body">
                 <div class="inspector-page @(_inspectorTab == "C# output" ? "visible" : "")"><CodeEditor Text="@(_result?.Analysis.Output.Source ?? "// Generated C# appears here after compilation.\n")" Language="csharp" ReadOnly="true" /></div>
                 <div class="resource-container" style="display:@(_inspectorTab == "Resources" ? "block" : "none")">
-                    <ProjectResources @ref="_resourceEditor" Documents="Compiler.Resources" Result="_result" Busy="_busy" Changed="ResourceChangedAsync" LoadExample="LoadResourceExampleAsync" RunRequested="RunCurrentModeAsync" />
+                    <ProjectResources @ref="_resourceEditor" Documents="Compiler.Resources" Result="_result" Busy="_busy" Changed="ResourceChangedAsync" LoadExample="LoadResourceExampleAsync" RunRequested="RunCurrentModeAsync" AuthoringRequested="AuthoringCommandAsync" />
                 </div>
                 @if (_inspectorTab == "Syntax") { <div class="tree-scroll"><InspectionTree Items="@(_result == null ? Array.Empty<XamlInspectionNode>() : XamlInspector.Syntax(_result.Analysis.Syntax))" Selected="SelectSyntaxAsync" /></div> }
                 @if (_inspectorTab == "Bound tree") { <div class="tree-scroll">@if (_result != null && XamlInspector.Bound(_result.Analysis.Document) is { } bound) { <InspectionTree Items="@(new[] { bound })" Selected="SelectSyntaxAsync" /> }</div> }
@@ -120,3 +125,8 @@
     </main>
     <footer class="statusbar"><span><i class="@(_error == null ? "success-dot" : "error-dot")"></i>@_status</span><span>@Compiler.ReferenceCount references <span class="status-divider">│</span> UTF-16 <span class="status-divider">│</span> Roslyn · .NET 10</span></footer>
 </div>
+
+<AuthoringDialog RenameVisible="_renameVisible" ActionsVisible="_actionsVisible" Busy="_busy"
+    OriginalName="@_renameOriginal" NewName="@_renameName" NewNameChanged="RenameNameChanged"
+    Plan="_renamePlan" Actions="_codeActions" Error="@_authoringError" Preview="PreviewRenameAsync"
+    Apply="ApplyRenameAsync" Cancel="CloseAuthoring" ActionSelected="ApplyCodeActionAsync" />

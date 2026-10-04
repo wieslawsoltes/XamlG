@@ -150,8 +150,8 @@ public sealed class XamlLanguageServer : IAsyncDisposable
             {
                 project = Volatile.Read(ref _project); buffers = _documents.Capture();
                 _requestProjects[key] = project; _requestDocumentSets[key] = buffers.Revision;
-                var workspace = await _analysisCache.GetAsync(project.Compiler, buffers, source.Token);
-                result = new LspRequestHandler(project.Compiler, _documents, _semanticTokens, _versionedEdits).Handle(method, parameters, source.Token, buffers, workspace);
+                var workspace = await _analysisCache.GetWorkspaceAsync(project.Compiler, buffers, source.Token);
+                result = new LspRequestHandler(workspace.Compiler, _documents, _semanticTokens, _versionedEdits).Handle(method, parameters, source.Token, buffers, workspace.Documents);
             }
             bool IsCurrent() => project == null || !_shutdown && ReferenceEquals(project, Volatile.Read(ref _project)) && buffers != null && _documents.IsCurrent(buffers);
             if (!await _connection.TryWriteAsync(new { jsonrpc = "2.0", id, result }, IsCurrent, source.Token))
@@ -191,13 +191,20 @@ public sealed class XamlLanguageServer : IAsyncDisposable
         if (method == LspMethods.Open)
         {
             var value = parameters.GetProperty("textDocument");
-            _documents.Open(value.GetProperty("uri").GetString()!, value.GetProperty("version").GetInt32(), value.GetProperty("text").GetString()!);
+            var uri = value.GetProperty("uri").GetString()!;
+            var isCSharp = value.TryGetProperty("languageId", out var language) && language.GetString() == "csharp" ||
+                System.Uri.TryCreate(uri, UriKind.Absolute, out var address) && address.AbsolutePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
+            if (isCSharp) _documents.OpenCSharp(uri, value.GetProperty("version").GetInt32(), value.GetProperty("text").GetString()!);
+            else _documents.Open(uri, value.GetProperty("version").GetInt32(), value.GetProperty("text").GetString()!);
         }
         else if (method == LspMethods.Change)
         {
             var changes = parameters.GetProperty("contentChanges").EnumerateArray().Select(change =>
                 new LspTextChange(change.TryGetProperty("range", out var range) ? LspConversions.Range(range) : null, change.GetProperty("text").GetString()!)).ToArray();
-            _documents.Change(LspConversions.DocumentUri(parameters), parameters.GetProperty("textDocument").GetProperty("version").GetInt32(), changes);
+            var uri = LspConversions.DocumentUri(parameters);
+            var version = parameters.GetProperty("textDocument").GetProperty("version").GetInt32();
+            if (_documents.IsCSharp(uri)) _documents.ChangeCSharp(uri, version, changes);
+            else _documents.Change(uri, version, changes);
         }
         else if (method == LspMethods.Close)
         {

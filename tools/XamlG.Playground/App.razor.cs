@@ -115,6 +115,7 @@ public partial class App
         Compiler.Resources.ReplaceAll(new Dictionary<string, string>());
         _document = new(example.Xaml, "View.axaml"); _code = example.Code;
         _selectedElement = null; _error = null; _result = null;
+        ResetWorkspaceHistory();
         await CompileSnapshotAsync();
     }
     private async Task SelectSyntaxAsync(XamlInspectionNode node)
@@ -143,18 +144,8 @@ public partial class App
         }
         catch (Exception error) { Report(error); }
     }
-    private async Task UndoAsync()
-    {
-        if (_busy) return;
-        await CaptureEditorsAsync(); _document.Undo(_document.Current.Version); _selectedElement = null;
-        await SaveDraftAsync(); await CompileSnapshotAsync();
-    }
-    private async Task RedoAsync()
-    {
-        if (_busy) return;
-        await CaptureEditorsAsync(); _document.Redo(_document.Current.Version); _selectedElement = null;
-        await SaveDraftAsync(); await CompileSnapshotAsync();
-    }
+    private Task UndoAsync() => NavigateWorkspaceAsync(true);
+    private Task RedoAsync() => NavigateWorkspaceAsync(false);
     private async Task ToggleThemeAsync()
     {
         _theme = _theme == "dark" ? "light" : "dark";
@@ -163,6 +154,7 @@ public partial class App
     private Dictionary<string, string> ResourceTexts() => Compiler.Resources.Snapshot.ToDictionary(p => p.Key, p => p.Value.Text, StringComparer.Ordinal);
     private async Task SaveDraftAsync()
     {
+        RecordWorkspace();
         if (_module != null) await _module.InvokeVoidAsync("saveDraft", _document.Current.Text, _code, ResourceTexts());
     }
     private async Task RestoreDraftAsync()
@@ -178,6 +170,7 @@ public partial class App
             Compiler.Resources.ReplaceAll(resources);
             _document = new(draft.GetProperty("xaml").GetString() ?? string.Empty, "View.axaml");
             _code = draft.GetProperty("code").GetString() ?? string.Empty; _selectedElement = null;
+            ResetWorkspaceHistory();
             await CompileSnapshotAsync();
             _status = "Draft restored without executing it · review the code before Run";
         }

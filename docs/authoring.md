@@ -87,3 +87,19 @@ Options support spaces/tabs, indentation, self-closing spacing, attribute splitt
 ## Validation
 
 Focused tests cover raw Unicode/entity mapping, nested/ignored namespaces, template shadowing, C# local capture and `nameof`, idempotent formatting with protected content, code actions, resource navigation, shared-analysis cancellation, token eviction/delta reconstruction, and real stdio capability negotiation. New capabilities are only advertised by the server when implemented; edit requests never silently write files.
+
+## Atomic project edits and Monaco integration
+
+`XamlWorkspaceEditSession` accepts immutable multi-language source snapshots and `XamlDocumentEdits`. It checks the workspace revision and every original buffer before publishing any changes. Overlapping ranges, duplicate document plans, invalid UTF-16 boundaries, and budget violations reject the whole plan. An optional validator runs outside the commit gate; concurrent or reentrant edits invalidate publication. No source files are written and no application code is executed.
+
+Undo/redo restores all affected XAML, resource, and C# buffers in one step while revision numbers continue increasing. Entry and retained-character budgets bound history. Capturing new typing invalidates redo; no-op captures retain snapshot identity. Project replacement can explicitly clear the old history.
+
+Compiler Studio invokes the same rename, format and code-action services through Monaco command-palette/context-menu actions. F2 opens a name-rename preview; Shift+Alt+F formats the document or selection; Ctrl+. opens source actions. Root toolbar commands are also available. Rename displays changed paths and edits before application. A newer edit to any project source invalidates a pending preview instead of overwriting it. Commands capture pending debounced text and do not Run the view. Toolbar/Monaco project undo and redo include changes to C# and resource buffers, rather than undoing just one half of a rename.
+
+## Unsaved C# semantic inputs
+
+`XamlCSharpOverlay.Apply` constructs an immutable pre-generation compiler snapshot from C# text. It preserves each loaded tree's parse options, encoding and path and the project profile/resource inputs. New supplied files use the project's parse options. It does not run generators or execute application code; the loaded base compilation is unchanged.
+
+The LSP separates XAML syntax snapshots from C# SourceText snapshots but gives both one open-buffer-set revision. Shared analysis returns the actual overlay compiler together with its XAML results so navigation/refactoring always uses matching Roslyn symbols. Rename results use an open C# document's client version and original URI; a closed source file has no fabricated client version. Closing an unsaved C# document returns to loaded on-disk content. C# notifications are compilation input only: direct C# completion/formatting/refactoring requests remain the C# language server's responsibility.
+
+Regression suites include atomic stale/invalid/reentrant plans, bounded history and Unicode edits; a real stdio test checks unsaved C# rename offsets, version negotiation, dependent XAML diagnostics, close recovery and no implicit writes. Browser tests exercise actual Monaco actions, rename preview/application/project undo, stale previews, formatting and quick fixes.

@@ -15,7 +15,8 @@ This is a capability map, not a declaration of universal XAML/Avalonia parity. A
 | Formatting/actions | Semantic-aware whitespace edits, full/range formatting, tag rewrites, unique property/event spelling fixes. |
 | Navigation | Local resource definitions/links, resource URI completion/hover, loaded C# source references, workspace symbols including loaded closed documents. |
 | LSP | Negotiated versioned/legacy workspace edits; full/delta/range semantic tokens; single-flight snapshot analysis; cancellation/freshness checks. |
-| Browser integration | Correct runtime metadata identity for nested code-behind factories. No new browser refactoring UI or project-wide undo is implied. |
+| Browser integration | Monaco command-palette/context-menu/keybindings for scoped rename, format and actions; rename preview; atomic XAML/C#/resource project undo/redo; stale-plan rejection; nested factory runtime metadata identity. |
+| Unsaved C# | Open C# buffers participate in the same XAML semantic snapshot; original parse options are preserved, refactor edits carry current C# versions, and closing restores loaded source without writes. |
 
 ## Deliberate runtime and compatibility boundaries
 
@@ -27,12 +28,12 @@ Structural hot reload builds replacement graphs with eligible state transfer; ar
 
 ## Authoring work still outside the implemented surface
 
-Arbitrary C# symbol rename, source-generating refactors, decompiled metadata navigation, XAML file-rename/refactoring edits, coordinated unsaved C# language-service buffers, semantic-token binding incrementality and pull-diagnostic result caching are not supplied. Name rename does not infer references embedded in runtime string lookups, selector strings or unknown framework-specific conventions. Clients requiring those usages must provide additional semantic reference policies.
+Arbitrary C# symbol rename, source-generating refactors, decompiled metadata navigation, XAML file-rename/refactoring edits, semantic-token binding incrementality and pull-diagnostic result caching are not supplied. Name rename does not infer references embedded in runtime string lookups, selector strings or unknown framework-specific conventions. Clients requiring those usages must provide additional semantic reference policies.
 
-Compiler Studio does not yet expose the new rename/format/action services through a complete Monaco refactoring UI with atomic XAML+C# multi-document undo/redo. Its existing visual designer and resource editor remain separate from LSP capability support.
+Compiler Studio exposes Rename (F2), Format (Shift+Alt+F), source actions (Ctrl+.), and project undo/redo through Monaco actions and toolbar controls. Rename previews all affected XAML and C# buffers; source transactions are atomic and do not execute preview code. Arbitrary C# refactoring and every Visual Studio/Monaco provider surface are not implied. The LSP consumes unsaved C# as XAML compilation input; it does not replace a full C# language server.
 
-## Delivery and evidence
+## Integration and evidence
 
-This continuation was implemented from upstream tree `bbb64416e02a0fa917f3d6db21f56ac5adc9ef40`, corresponding to main commit `9273227236612fe3f3914a5327a1a760a558ea8a`. The accompanying delivery verification report records actual local commands, test counts, package validation and environment caveats.
+PR #5 publishes the recovered 89-file authoring checkpoint and integrates its browser command UI, bounded multi-language transactions, and coordinated C# overlays. All recovered source trees were checked against the published commit before continuing. Compiler/library, LSP, and browser work use isolated worktrees; the normal online CI matrix and installed-package/browser gates must pass before merging.
 
-Current GitHub actions exposed to this session permit reads, not commit/branch/PR writes. The local implementation must not be described as pushed, merged, deployed, tagged or released. Prior main's successful CI/deployment belongs to that prior commit and is not substituted for verification of this continuation.
+Run evidence belongs to its exact commit. No NuGet publication or version tag is implied by a source merge. The historical downloadable verification report describes the original offline delivery, not the current repository's publication state.

@@ -64,7 +64,8 @@ public sealed class BrowserCompilerService(HttpClient http)
         var profile = KnownFrameworkProfiles.Select(compilation, framework);
         var resourceRevision = Resources.Revision;
         var inputs = Resources.Snapshot.Values.Select(s => new XamlProjectDocument(s, s.Path))
-            .Prepend(new XamlProjectDocument(syntax, "View.axaml"));
+            .Prepend(new XamlProjectDocument(syntax, "View.axaml")).ToArray();
+        var authoring = new XamlCompilationSession(compilation, profile, projectDocuments: inputs);
         var project = new XamlProjectCompiler().Compile(inputs, compilation, profile, cancellationToken: cancellationToken);
         var main = project.Documents.Single(d => d.Input.LogicalPath == "View.axaml");
         var analysis = new XamlAnalysis(syntax, main.Document, main.Output);
@@ -90,7 +91,7 @@ public sealed class BrowserCompilerService(HttpClient http)
         }
         clock.Stop();
         return new(analysis, compilation, diagnostics.ToImmutable(), clock.Elapsed.TotalMilliseconds)
-        { Project = project, ResourceRevision = resourceRevision };
+        { Project = project, ResourceRevision = resourceRevision, AuthoringCompiler = authoring };
     }
 
     public object Run(BrowserCompilation result)

@@ -55,9 +55,28 @@ internal sealed class LspEditingRequests(XamlCompilationSession compiler, LspDoc
     }
     private object WorkspaceEdit(ImmutableArray<XamlDocumentEdits> edits, LspDocumentSnapshot current)
     {
-        string Uri(string path) => path == current.Syntax.Path ? current.Uri : LspConversions.UriForPath(path);
+        long? OpenVersion(XamlDocumentEdits edit)
+        {
+            var snapshot = documents.Capture();
+            var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+            var csharp = snapshot.CSharpDocuments.FirstOrDefault(d => comparer.Equals(d.Path, edit.Path));
+            if (csharp != null)
+            {
+                if (csharp.Text.ToString() != edit.OriginalText) throw new LspRequestException(-32801, "The C# buffer changed during refactoring.");
+                return csharp.Version;
+            }
+            return snapshot.Documents.FirstOrDefault(d => comparer.Equals(d.Syntax.Path, edit.Path))?.Version;
+        }
+        string Uri(string path)
+        {
+            if (path == current.Syntax.Path) return current.Uri;
+            var snapshot = documents.Capture();
+            var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+            return snapshot.CSharpDocuments.FirstOrDefault(d => comparer.Equals(d.Path, path))?.Uri ??
+                snapshot.Documents.FirstOrDefault(d => comparer.Equals(d.Syntax.Path, path))?.Uri ?? LspConversions.UriForPath(path);
+        }
         if (versionedEdits)
-            return new { documentChanges = edits.Select(edit => new { textDocument = new { uri = Uri(edit.Path), version = edit.Version },
+            return new { documentChanges = edits.Select(edit => new { textDocument = new { uri = Uri(edit.Path), version = OpenVersion(edit) },
                 edits = TextEdits(edit.OriginalText, edit.Changes) }).ToArray() };
         return new { changes = edits.ToDictionary(edit => Uri(edit.Path), edit => TextEdits(edit.OriginalText, edit.Changes), StringComparer.Ordinal) };
     }
