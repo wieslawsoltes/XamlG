@@ -2,7 +2,15 @@
   "name": "xamlg-playground-assets",
   "private": true,
   "version": "0.1.0",
-  "dependencies": { "monaco-editor": "0.52.2" },
-  "devDependencies": { "@playwright/test": "1.56.1" },
-  "scripts": { "prepare-assets": "node prepare-assets.mjs", "test": "playwright test" }
+  "dependencies": {
+    "monaco-editor": "0.52.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  },
+  "scripts": {
+    "prepare-assets": "node prepare-assets.mjs",
+    "test": "playwright test",
+    "preprepare-assets": "node --test asset-tests/*.test.mjs"
+  }
 }

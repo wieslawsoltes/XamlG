@@ -1,4 +1,5 @@
 @using XamlG.Tooling.Refactoring
+@using XamlG.Playground.Editing
 @if (RenameVisible || ActionsVisible)
 {
     <div class="authoring-backdrop" @onkeydown="KeyDown" @onkeydown:stopPropagation="true">
@@ -50,12 +51,14 @@
     [Parameter] public EventCallback<XamlCodeAction> ActionSelected { get; set; }
     private ElementReference _nameInput;
     private ElementReference _dialog;
-    private bool _wasOpen;
+    private readonly DialogFocusState _focus = new();
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        var open = RenameVisible || ActionsVisible;
-        if (open && !_wasOpen) { if (RenameVisible) await _nameInput.FocusAsync(); else await _dialog.FocusAsync(); }
-        _wasOpen = open;
+        if (_focus.Observe(RenameVisible || ActionsVisible, Busy))
+        {
+            if (RenameVisible) await _nameInput.FocusAsync();
+            else await _dialog.FocusAsync();
+        }
     }
     private Task ChangeName(ChangeEventArgs args) => NewNameChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
     private Task KeyDown(KeyboardEventArgs args) => args.Key == "Escape" ? Cancel.InvokeAsync() : Task.CompletedTask;
