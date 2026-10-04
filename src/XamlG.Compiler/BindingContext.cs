@@ -88,12 +88,7 @@ public sealed class BindingContext
             }
             if (type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T && (bound[0].IsReferenceType || bound[0] is INamedTypeSymbol n && n.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T))
             { if (report) Report("XG1025", "Unable to construct generic type Nullable<T>: the type argument must be a non-nullable value type.", syntax.Span); return null; }
-            for (var index = 0; index < type.TypeParameters.Length; index++)
-            {
-                var parameter = type.TypeParameters[index]; var argument = bound[index];
-                if (parameter.HasReferenceTypeConstraint && !argument.IsReferenceType || parameter.HasValueTypeConstraint && !argument.IsValueType || parameter.HasUnmanagedTypeConstraint && !argument.IsUnmanagedType)
-                { if (report) Report("XG1025", $"Type argument '{argument}' does not satisfy the constraints on '{parameter}'.", syntax.Span); return null; }
-            }
+            if (!GenericConstraintValidator.Validate(this, type, bound, syntax.Span, report)) return null;
             try { type = type.Construct(bound.ToArray()); }
             catch (ArgumentException) { if (report) Report("XG1004", $"Invalid type arguments for '{syntax.Name}'.", syntax.Span); return null; }
         }

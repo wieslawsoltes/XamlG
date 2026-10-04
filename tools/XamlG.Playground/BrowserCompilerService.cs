@@ -64,7 +64,8 @@ public sealed class BrowserCompilerService(HttpClient http)
         var profile = KnownFrameworkProfiles.Select(compilation, framework);
         var resourceRevision = Resources.Revision;
         var inputs = Resources.Snapshot.Values.Select(s => new XamlProjectDocument(s, s.Path))
-            .Prepend(new XamlProjectDocument(syntax, "View.axaml"));
+            .Prepend(new XamlProjectDocument(syntax, "View.axaml")).ToArray();
+        var authoring = new XamlCompilationSession(compilation, profile, projectDocuments: inputs);
         var project = new XamlProjectCompiler().Compile(inputs, compilation, profile, cancellationToken: cancellationToken);
         var main = project.Documents.Single(d => d.Input.LogicalPath == "View.axaml");
         var analysis = new XamlAnalysis(syntax, main.Document, main.Output);
@@ -90,7 +91,7 @@ public sealed class BrowserCompilerService(HttpClient http)
         }
         clock.Stop();
         return new(analysis, compilation, diagnostics.ToImmutable(), clock.Elapsed.TotalMilliseconds)
-        { Project = project, ResourceRevision = resourceRevision };
+        { Project = project, ResourceRevision = resourceRevision, AuthoringCompiler = authoring };
     }
 
     public object Run(BrowserCompilation result)
@@ -102,7 +103,7 @@ public sealed class BrowserCompilerService(HttpClient http)
         if (!emitted.Success) throw new InvalidOperationException(string.Join("\n", emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)));
         var assembly = Assembly.Load(image.ToArray()); _loadedAssemblies++;
         var output = result.Analysis.Output;
-        var factory = assembly.GetType(output.FactoryTypeName, throwOnError: true)!;
+        var factory = assembly.GetType(output.FactoryMetadataName, throwOnError: true)!;
         if (output.BuildMethodName != null) return factory.GetMethod(output.BuildMethodName)!.Invoke(null, new object?[] { null })!;
         var instance = Activator.CreateInstance(factory) ?? throw new InvalidOperationException("The code-behind root could not be constructed.");
         if (!XamlG.Runtime.XamlRuntimeSession.TryGet(instance, out _))

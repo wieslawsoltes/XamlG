@@ -10,6 +10,9 @@ namespace XamlG.LanguageServer;
 public sealed class XamlLanguageServer : IAsyncDisposable
 {
     private readonly LspConnection _connection;
+    private readonly LspSemanticTokenCache _semanticTokens = new();
+    private readonly LspProjectAnalysisCache _analysisCache;
+    private bool _versionedEdits;
     private readonly LspDocumentStore _documents = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _requests = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, LspCompilationSnapshot> _requestProjects = new(StringComparer.Ordinal);
@@ -31,6 +34,7 @@ public sealed class XamlLanguageServer : IAsyncDisposable
     public XamlLanguageServer(XamlCompilationSession compiler, Stream input, Stream output, TextWriter? log = null)
     {
         _project = new(0, compiler);
+        _analysisCache = new(_lifetime.Token);
         _connection = new(input, output, lifetimeToken: _transportLifetime.Token);
         _log = log ?? TextWriter.Null;
     }
@@ -117,6 +121,10 @@ public sealed class XamlLanguageServer : IAsyncDisposable
             if (method == LspMethods.Initialize)
             {
                 if (Interlocked.CompareExchange(ref _initialized, 1, 0) != 0) throw new LspRequestException(-32600, "The server is already initialized.");
+                _versionedEdits = parameters.TryGetProperty("capabilities", out var capabilities) &&
+                    capabilities.TryGetProperty("workspace", out var workspaceCapabilities) &&
+                    workspaceCapabilities.TryGetProperty("workspaceEdit", out var editCapabilities) &&
+                    editCapabilities.TryGetProperty("documentChanges", out var documentChanges) && documentChanges.ValueKind == JsonValueKind.True;
                 result = new
                 {
                     capabilities = new
@@ -124,7 +132,10 @@ public sealed class XamlLanguageServer : IAsyncDisposable
                         positionEncoding = "utf-16", textDocumentSync = new { openClose = true, change = 2 }, hoverProvider = true,
                         completionProvider = new { resolveProvider = false, triggerCharacters = new[] { "<", ":", " ", "=", "{" } },
                         definitionProvider = true, referencesProvider = true, documentHighlightProvider = true, documentSymbolProvider = true, foldingRangeProvider = true,
-                        semanticTokensProvider = new { legend = new { tokenTypes = LspSemanticTokens.Legend, tokenModifiers = Array.Empty<string>() }, full = true }
+                        renameProvider = new { prepareProvider = true }, documentFormattingProvider = true, documentRangeFormattingProvider = true,
+                        codeActionProvider = new { codeActionKinds = new[] { "quickfix", "refactor.rewrite", "source.format" }, resolveProvider = false },
+                        documentLinkProvider = new { resolveProvider = false }, workspaceSymbolProvider = true,
+                        semanticTokensProvider = new { legend = new { tokenTypes = LspSemanticTokens.Legend, tokenModifiers = Array.Empty<string>() }, full = new { delta = true }, range = true }
                     },
                     serverInfo = new { name = "XamlG", version = "0.1.0-alpha.1" }
                 };
@@ -139,13 +150,15 @@ public sealed class XamlLanguageServer : IAsyncDisposable
             {
                 project = Volatile.Read(ref _project); buffers = _documents.Capture();
                 _requestProjects[key] = project; _requestDocumentSets[key] = buffers.Revision;
-                result = new LspRequestHandler(project.Compiler, _documents).Handle(method, parameters, source.Token, buffers);
+                var workspace = await _analysisCache.GetWorkspaceAsync(project.Compiler, buffers, source.Token);
+                result = new LspRequestHandler(workspace.Compiler, _documents, _semanticTokens, _versionedEdits).Handle(method, parameters, source.Token, buffers, workspace.Documents);
             }
             bool IsCurrent() => project == null || !_shutdown && ReferenceEquals(project, Volatile.Read(ref _project)) && buffers != null && _documents.IsCurrent(buffers);
             if (!await _connection.TryWriteAsync(new { jsonrpc = "2.0", id, result }, IsCurrent, source.Token))
                 await ErrorAsync(id, -32801, "The project or open buffers changed before this result could be published.");
         }
-        catch (OperationCanceledException) when (source.IsCancellationRequested || _connection.Closed.IsCancellationRequested)
+        catch (OperationCanceledException) when (source.IsCancellationRequested || _connection.Closed.IsCancellationRequested ||
+            project != null && !ReferenceEquals(project, Volatile.Read(ref _project)) || buffers != null && !_documents.IsCurrent(buffers))
         {
             if (!_lifetime.IsCancellationRequested && !_connection.Closed.IsCancellationRequested)
             {
@@ -158,7 +171,7 @@ public sealed class XamlLanguageServer : IAsyncDisposable
         catch (Exception error)
         {
             await _log.WriteLineAsync(error.ToString());
-            await ErrorAsync(id, error is JsonException or KeyNotFoundException or InvalidOperationException ? -32602 : -32603, error.Message);
+            await ErrorAsync(id, error is JsonException or KeyNotFoundException or InvalidOperationException or ArgumentException ? -32602 : -32603, error.Message);
         }
         finally
         {
@@ -178,17 +191,24 @@ public sealed class XamlLanguageServer : IAsyncDisposable
         if (method == LspMethods.Open)
         {
             var value = parameters.GetProperty("textDocument");
-            _documents.Open(value.GetProperty("uri").GetString()!, value.GetProperty("version").GetInt32(), value.GetProperty("text").GetString()!);
+            var uri = value.GetProperty("uri").GetString()!;
+            var isCSharp = value.TryGetProperty("languageId", out var language) && language.GetString() == "csharp" ||
+                System.Uri.TryCreate(uri, UriKind.Absolute, out var address) && address.AbsolutePath.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
+            if (isCSharp) _documents.OpenCSharp(uri, value.GetProperty("version").GetInt32(), value.GetProperty("text").GetString()!);
+            else _documents.Open(uri, value.GetProperty("version").GetInt32(), value.GetProperty("text").GetString()!);
         }
         else if (method == LspMethods.Change)
         {
             var changes = parameters.GetProperty("contentChanges").EnumerateArray().Select(change =>
                 new LspTextChange(change.TryGetProperty("range", out var range) ? LspConversions.Range(range) : null, change.GetProperty("text").GetString()!)).ToArray();
-            _documents.Change(LspConversions.DocumentUri(parameters), parameters.GetProperty("textDocument").GetProperty("version").GetInt32(), changes);
+            var uri = LspConversions.DocumentUri(parameters);
+            var version = parameters.GetProperty("textDocument").GetProperty("version").GetInt32();
+            if (_documents.IsCSharp(uri)) _documents.ChangeCSharp(uri, version, changes);
+            else _documents.Change(uri, version, changes);
         }
         else if (method == LspMethods.Close)
         {
-            var uri = LspConversions.DocumentUri(parameters); _documents.Close(uri);
+            var uri = LspConversions.DocumentUri(parameters); _documents.Close(uri); _semanticTokens.Remove(uri);
             if (_diagnostics.TryRemove(uri, out var pending)) Cancel(pending);
             await _connection.WriteAsync(new { jsonrpc = "2.0", method = LspMethods.Diagnostics, @params = new { uri, diagnostics = Array.Empty<object>() } }, _lifetime.Token);
         }
@@ -197,6 +217,7 @@ public sealed class XamlLanguageServer : IAsyncDisposable
     }
     private void RefreshDocumentSet()
     {
+        _analysisCache.Invalidate();
         var buffers = _documents.Capture();
         foreach (var request in _requestDocumentSets)
             if (request.Value != buffers.Revision && _requests.TryGetValue(request.Key, out var cancellation)) Cancel(cancellation);
@@ -223,7 +244,7 @@ public sealed class XamlLanguageServer : IAsyncDisposable
             try
             {
                 if (!IsCurrent()) return;
-                var batch = await Task.Run(() => project.Compiler.AnalyzeOverlays(buffers.Documents.Select(d => d.Syntax), cancellation.Token), cancellation.Token);
+                var batch = await _analysisCache.GetAsync(project.Compiler, buffers, cancellation.Token);
                 analysis = batch.Single(a => ReferenceEquals(a.Syntax, document.Syntax));
             }
             finally { _parallelism.Release(); }
@@ -236,7 +257,7 @@ public sealed class XamlLanguageServer : IAsyncDisposable
             await _connection.TryWriteAsync(new { jsonrpc = "2.0", method = LspMethods.Diagnostics,
                 @params = new { uri = document.Uri, version = document.Version, diagnostics } }, IsCurrent, cancellation.Token);
         }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested || !IsCurrent()) { }
         catch (LspTransportException error) { await _log.WriteLineAsync("transport: " + error.Message); }
         catch (Exception error) { await _log.WriteLineAsync("diagnostics: " + error.Message); }
         finally
@@ -263,6 +284,7 @@ public sealed class XamlLanguageServer : IAsyncDisposable
         lock (_diagnosticGate) { if (_disposed) return; _disposed = true; _stopping = true; }
         _lifetime.Cancel(); Cancel(_transportLifetime);
         try { await Task.WhenAll(_tasks.Values); } catch (OperationCanceledException) { }
+        await _analysisCache.DisposeAsync();
         await _connection.DisposeAsync();
         _parallelism.Dispose(); _transportLifetime.Dispose(); _lifetime.Dispose();
     }

@@ -30,6 +30,7 @@ public sealed class XamlCompilationSession
         _documents = projectDocuments?.ToImmutableArray() ?? ImmutableArray<XamlProjectDocument>.Empty;
         _documentPaths = _documents.ToImmutableDictionary(d => Normalize(d.Syntax.Path), StringComparer.Ordinal);
     }
+    public ImmutableArray<XamlProjectDocument> ProjectDocuments => _documents;
     public RoslynTypeSystem Types { get; }
     public XamlFrameworkProfile Profile { get; }
     public XamlCompilerOptions Options { get; }
@@ -72,14 +73,23 @@ public sealed class XamlCompilationSession
     {
         if (overlays == null) throw new ArgumentNullException(nameof(overlays));
         var open = overlays.ToArray();
+        var workspace = AnalyzeWorkspace(open, cancellationToken).ToDictionary(a => Normalize(a.Syntax.Path), StringComparer.Ordinal);
+        return open.Select(d => workspace[Normalize(d.Path)]).ToImmutableArray();
+    }
+
+    /// <summary>Returns a coherent complete project, including loaded documents not currently open.
+    /// Source-editing hosts use this for cross-document references, factories and rename previews.</summary>
+    public ImmutableArray<XamlAnalysis> AnalyzeWorkspace(IEnumerable<XamlSyntaxTree> overlays, CancellationToken cancellationToken = default)
+    {
+        if (overlays == null) throw new ArgumentNullException(nameof(overlays));
+        var open = overlays.ToArray();
         cancellationToken.ThrowIfCancellationRequested();
         if (_documents.IsEmpty) return open.Select(d => Analyze(d, cancellationToken)).ToImmutableArray();
         var byPath = open.ToDictionary(d => Normalize(d.Path), StringComparer.Ordinal);
         var inputs = _documents.Select(d => byPath.TryGetValue(Normalize(d.Syntax.Path), out var syntax) ? d with { Syntax = syntax } : d);
         var result = _projectCompiler.Compile(inputs, Types.Compilation, Profile, Options, cancellationToken);
-        var analyses = result.Documents.ToDictionary(d => Normalize(d.Input.Syntax.Path),
-            d => new XamlAnalysis(d.Input.Syntax, d.Document, d.Output), StringComparer.Ordinal);
-        return open.Select(d => analyses.TryGetValue(Normalize(d.Path), out var analysis) ? analysis : Analyze(d, cancellationToken)).ToImmutableArray();
+        return result.Documents.Select(d => new XamlAnalysis(d.Input.Syntax, d.Document, d.Output))
+            .Concat(open.Where(d => !_documentPaths.ContainsKey(Normalize(d.Path))).Select(d => Analyze(d, cancellationToken))).ToImmutableArray();
     }
 
     public ImmutableArray<XamlAnalysis> AnalyzeProject(IEnumerable<XamlSyntaxTree> documents, CancellationToken cancellationToken = default)

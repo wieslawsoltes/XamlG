@@ -24,7 +24,7 @@
         <div class="resource-editor-stack">
             <div class="resource-editor-page @(_tab == "Source" ? "visible" : "")">
                 <CodeEditor @key="(document.Path, _editorEpoch)" @ref="_editor" Text="@document.Text" Language="xml"
-                    TextChanged="text => ChangeAsync(document, text)" RunRequested="RunRequested" />
+                    TextChanged="text => ChangeAsync(document, text)" RunRequested="RunRequested" DocumentPath="@document.Path" AuthoringRequested="AuthoringRequested" />
             </div>
             <div class="resource-editor-page @(_tab == "Generated" ? "visible" : "")">
                 <CodeEditor Text="@(Output?.Output.Source ?? "// Compile the project to inspect this resource factory.\n")" Language="csharp" ReadOnly="true" />
@@ -41,6 +41,7 @@
     [Parameter] public bool Busy { get; set; }
     [Parameter] public EventCallback Changed { get; set; }
     [Parameter] public EventCallback LoadExample { get; set; }
+    [Parameter] public EventCallback<EditorCommandRequest> AuthoringRequested { get; set; }
     [Parameter] public EventCallback RunRequested { get; set; }
     private string _activePath = string.Empty;
     private string _newPath = "Resources/Palette.axaml";

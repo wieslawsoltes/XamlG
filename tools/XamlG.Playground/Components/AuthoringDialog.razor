@@ -1,0 +1,62 @@
+@using XamlG.Tooling.Refactoring
+@if (RenameVisible || ActionsVisible)
+{
+    <div class="authoring-backdrop" @onkeydown="KeyDown" @onkeydown:stopPropagation="true">
+        <section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="@(RenameVisible ? "Rename XAML name" : "XAML code actions")" tabindex="-1" @ref="_dialog">
+            <header><h2>@(RenameVisible ? "Rename " + OriginalName : "XAML code actions")</h2><button aria-label="Close authoring dialog" @onclick="Cancel">✕</button></header>
+            @if (RenameVisible)
+            {
+                <p>Review changes across XAML and code-behind. Applying them creates one project undo step; it does not execute the preview.</p>
+                <label>New name <input aria-label="New name" value="@NewName" @oninput="ChangeName" @ref="_nameInput" /></label>
+                <button @onclick="Preview" disabled="@Busy">Preview rename</button>
+                @if (Plan != null)
+                {
+                    <div class="rename-files" data-testid="rename-files">
+                        @foreach (var file in Plan.Documents)
+                        {
+                            <article><strong>@file.Path</strong><small>@file.Changes.Length changes</small>
+                                @foreach (var edit in file.Changes.Take(8))
+                                { <div><code>@file.OriginalText.Substring(edit.Span.Start, edit.Span.Length)</code> → <code>@edit.NewText</code></div> }
+                            </article>
+                        }
+                    </div>
+                    <button class="primary" @onclick="Apply" disabled="@(Busy || Plan.Documents.IsEmpty)">Apply rename</button>
+                }
+            }
+            else
+            {
+                @if (!Actions.Any()) { <p>No source actions apply at this position.</p> }
+                @foreach (var action in Actions)
+                { <button class="source-action" @onclick="() => ActionSelected.InvokeAsync(action)" disabled="@Busy">@action.Title</button> }
+            }
+            @if (Error != null) { <p role="alert" class="runtime-error">@Error</p> }
+            <footer><button @onclick="Cancel">Cancel</button><small>Source changes only · no execution</small></footer>
+        </section>
+    </div>
+}
+@code {
+    [Parameter] public bool RenameVisible { get; set; }
+    [Parameter] public bool ActionsVisible { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public string OriginalName { get; set; } = string.Empty;
+    [Parameter] public string NewName { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> NewNameChanged { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public XamlRenamePlan? Plan { get; set; }
+    [Parameter] public IEnumerable<XamlCodeAction> Actions { get; set; } = Array.Empty<XamlCodeAction>();
+    [Parameter] public EventCallback Preview { get; set; }
+    [Parameter] public EventCallback Apply { get; set; }
+    [Parameter] public EventCallback Cancel { get; set; }
+    [Parameter] public EventCallback<XamlCodeAction> ActionSelected { get; set; }
+    private ElementReference _nameInput;
+    private ElementReference _dialog;
+    private bool _wasOpen;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var open = RenameVisible || ActionsVisible;
+        if (open && !_wasOpen) { if (RenameVisible) await _nameInput.FocusAsync(); else await _dialog.FocusAsync(); }
+        _wasOpen = open;
+    }
+    private Task ChangeName(ChangeEventArgs args) => NewNameChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+    private Task KeyDown(KeyboardEventArgs args) => args.Key == "Escape" ? Cancel.InvokeAsync() : Task.CompletedTask;
+}

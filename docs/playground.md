@@ -22,6 +22,12 @@ Compile and Run capture current buffers instead of relying on delayed notificati
 
 Design mode provides real drag/eight-handle resize, snapping, aspect locking, keyboard nudging and cancellation. Property/structure commands are source transactions; see [design and reload](hot-reload.md).
 
+## Code-behind factory identity
+
+The compiler can generate construction factories for eligible `x:Class` roots, including nested classes. Preview and isolated payload construction consume `FactoryMetadataName` when resolving runtime types; C# source generation continues to use `FactoryTypeName`. Construction invokes real user constructors and uses the generated initializer's idempotence guard. Caller-controlled/handwritten initialization and unsupported constructor shapes remain explicit boundaries.
+
+Authoring formatting, rename, code actions and token deltas are exposed through the reusable tooling/LSP libraries. This change does not add a Monaco F2 command or coordinated multi-document browser undo for C# plus XAML; those must not be inferred from LSP capability support.
+
 ## Multi-document resources
 
 The Resources tab manages reusable classless dictionaries/styles in the same project as `View.axaml`. It has a path selector, add/remove controls, source/generated/syntax views and a complete three-document example. Source remains local to the browser. Adding/removing files changes the compilation's resource catalog; unresolved dependencies appear as source diagnostics, not runtime loader failures.
@@ -47,3 +53,9 @@ Both hosts bound loaded preview assemblies because collectible browser load cont
 Pages deploys only from `main`, retains environment protections, validates browser behavior, records the exact source commit in `build.json` and reruns tests against the public URL after verifying that identity.
 
 Acceptance covers real controls/code-behind, inspections, immediate edits, undo/redo, mobile themes, canvas gestures, isolation/reset, resource projects, exports/drafts and dependency errors. These are behavioral tests, not exhaustive pixel or browser-engine certification.
+
+## Semantic authoring commands
+
+Use Rename, Format and Actions in the source toolbar or Monaco command palette/context menu. F2 opens a scoped name-rename dialog with XAML/C# edit preview; applying it is one project undo step. Shift+Alt+F formats the source/selection while preserving literal XML content. Ctrl+. displays applicable source actions. Resource editors expose the same commands. Invoke rename from a XAML name/reference; generated-field C# references are included automatically.
+
+The project-wide transaction history covers XAML, C#, resource edits and resource additions/removals. Toolbar Undo/Redo and Monaco project shortcuts use that history. New typing is captured before commands, conflicting or stale previews are rejected atomically, and source commands never execute the preview. The main syntax revision remains monotonic across undo so stale visuals cannot be mistaken for the current source.

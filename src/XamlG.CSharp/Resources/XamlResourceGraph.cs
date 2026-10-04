@@ -48,6 +48,40 @@ internal static class XamlResourceGraph
         }
         return documents;
     }
+    /// <summary>Backend-only failures can remove a factory after binding succeeded. Suppress the
+    /// complete caller closure without changing cached raw bindings or reusable emissions.</summary>
+    public static void ValidateEmissions(BoundDocument[] documents, XamlEmissionResult[] outputs, CancellationToken cancellationToken)
+    {
+        if (!outputs.Any(output => !output.Success)) return;
+        var local = documents.Select((document, index) => (Document: document, Index: index))
+            .Where(pair => pair.Document.Options.ResourceUri != null)
+            .GroupBy(pair => pair.Document.Options.ResourceUri!, StringComparer.Ordinal).Where(group => group.Count() == 1)
+            .ToDictionary(group => group.Key, group => group.Single().Index, StringComparer.Ordinal);
+        var reverse = Enumerable.Range(0, documents.Length).Select(_ => new List<(int Parent, BoundResourceExpression Edge)>()).ToArray();
+        for (var i = 0; i < documents.Length; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            foreach (var edge in References(documents[i]))
+                if (local.TryGetValue(edge.Resource.Uri, out var target)) reverse[target].Add((i, edge));
+        }
+        var queue = new Queue<int>(Enumerable.Range(0, outputs.Length).Where(i => !outputs[i].Success));
+        while (queue.Count != 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            foreach (var (parent, edge) in reverse[queue.Dequeue()])
+            {
+                if (!outputs[parent].Success) continue;
+                var diagnostic = new XamlDiagnostic("XG3305", "The included document failed code generation: " + edge.Resource.Uri, edge.Span);
+                documents[parent] = documents[parent] with { Diagnostics = documents[parent].Diagnostics.Add(diagnostic) };
+                outputs[parent] = outputs[parent] with
+                {
+                    Source = string.Empty, SourceMappings = ImmutableArray<XamlSourceMapping>.Empty,
+                    Diagnostics = outputs[parent].Diagnostics.Add(diagnostic)
+                };
+                queue.Enqueue(parent);
+            }
+        }
+    }
     internal static IEnumerable<BoundResourceExpression> References(BoundDocument document)
     {
         if (document.Root == null) yield break;

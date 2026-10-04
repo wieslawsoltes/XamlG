@@ -47,11 +47,16 @@ public static class MarkupExtensionParser
             if (quote != '\0' || depth != 0) report(new("XG0010", "Unbalanced markup-extension argument.", new(span.Start + start, position - start)));
             var argumentSpan = new TextSpan(span.Start + start, position - start);
             string? key = equals < 0 ? null : text.Substring(start, equals - start).Trim();
-            var value = text.Substring(equals < 0 ? start : equals + 1, position - (equals < 0 ? start : equals + 1)).Trim();
-            if (value.Length >= 2 && (value[0] is '\'' or '"') && value[value.Length - 1] == value[0]) value = Unquote(value);
+            var valueStart = equals < 0 ? start : equals + 1;
+            var valueEnd = position;
+            while (valueStart < valueEnd && char.IsWhiteSpace(text[valueStart])) valueStart++;
+            while (valueEnd > valueStart && char.IsWhiteSpace(text[valueEnd - 1])) valueEnd--;
+            var value = text.Substring(valueStart, valueEnd - valueStart);
+            if (value.Length >= 2 && (value[0] is '\'' or '"') && value[value.Length - 1] == value[0])
+            { value = Unquote(value); valueStart++; valueEnd--; }
             if (key != null) { sawNamed = true; if (key.Length == 0 || !names.Add(key)) report(new("XG0010", "A named markup argument is empty or duplicated.", argumentSpan)); }
             else if (sawNamed) report(new("XG0010", "Positional arguments must precede named arguments.", argumentSpan));
-            if (value.Length != 0 || key != null) arguments.Add(new(key, value, argumentSpan));
+            if (value.Length != 0 || key != null) arguments.Add(new(key, value, argumentSpan) { ValueSpan = TextSpan.FromBounds(span.Start + valueStart, span.Start + valueEnd) });
             if (position < end && text[position] == ',') position++;
         }
         return new(name, arguments.ToImmutable(), span);

@@ -18,6 +18,15 @@ internal static class LspMethods
     public const string Symbols = "textDocument/documentSymbol";
     public const string Folding = "textDocument/foldingRange";
     public const string SemanticTokens = "textDocument/semanticTokens/full";
+    public const string SemanticTokensDelta = "textDocument/semanticTokens/full/delta";
+    public const string SemanticTokensRange = "textDocument/semanticTokens/range";
+    public const string PrepareRename = "textDocument/prepareRename";
+    public const string Rename = "textDocument/rename";
+    public const string Formatting = "textDocument/formatting";
+    public const string RangeFormatting = "textDocument/rangeFormatting";
+    public const string CodeAction = "textDocument/codeAction";
+    public const string DocumentLinks = "textDocument/documentLink";
+    public const string WorkspaceSymbols = "workspace/symbol";
     public const string Diagnostics = "textDocument/publishDiagnostics";
     public const string Inspect = "xamlg/inspect";
 }

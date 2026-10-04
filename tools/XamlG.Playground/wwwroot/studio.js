@@ -22,11 +22,12 @@ function loadMonaco() {
   });
 }
 
-export async function createEditor(host, dotnet, text, language, readOnly) {
+export async function createEditor(host, dotnet, text, language, readOnly, path = null) {
   const id = ++sequence;
   try {
     const monaco = await loadMonaco();
-    const model = monaco.editor.createModel(text, language);
+    const model = monaco.editor.createModel(text, language, path ? monaco.Uri.from({ scheme: "xamlg", authority: "studio", path: "/" + id + "/" + path }) : undefined);
+    host.dataset.documentPath = path ?? "";
     const editor = monaco.editor.create(host, {
       model, readOnly, automaticLayout: true, theme: document.documentElement.dataset.theme === 'light' ? 'vs' : 'vs-dark',
       minimap: { enabled: false }, fontSize: 13, lineHeight: 21, padding: { top: 14 },
@@ -41,14 +42,28 @@ export async function createEditor(host, dotnet, text, language, readOnly) {
       timer = setTimeout(() => dotnet.invokeMethodAsync('Changed', editor.getValue()), 120);
     });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => dotnet.invokeMethodAsync('Run'));
-    editors.set(id, { editor, model, subscription, set: value => { applying = true; try { editor.setValue(value); } finally { applying = false; } }, cleanup: () => clearTimeout(timer) });
+    if (path && !readOnly) {
+      const actions = [
+        ['rename', 'XamlG: Rename XAML name', monaco.KeyCode.F2],
+        ['format', 'XamlG: Format XAML', monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF],
+        ['actions', 'XamlG: Source actions', monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period],
+        ['undo', 'XamlG: Undo project edit', monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ],
+        ['redo', 'XamlG: Redo project edit', monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ]
+      ];
+      for (const [command, label, keybinding] of actions) editor.addAction({
+        id: 'xamlg.' + command, label, keybindings: [keybinding], contextMenuGroupId: 'xamlg',
+        run: () => requestAuthoring(id, command)
+      });
+    }
+    editors.set(id, { editor, model, subscription, path, dotnet, set: value => { applying = true; try { editor.setValue(value); } finally { applying = false; } }, cleanup: () => clearTimeout(timer) });
   } catch (error) {
     const textarea = document.createElement('textarea');
     textarea.className = 'editor-fallback'; textarea.value = text; textarea.readOnly = readOnly;
     textarea.setAttribute('aria-label', language + ' source editor');
     textarea.oninput = () => dotnet.invokeMethodAsync('Changed', textarea.value);
     host.replaceChildren(textarea);
-    editors.set(id, { textarea });
+    host.dataset.documentPath = path ?? "";
+    editors.set(id, { textarea, path, dotnet });
     console.warn(error.message);
   }
   return id;
@@ -109,4 +124,19 @@ export function download(name, content, type = 'text/plain') {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const anchor = document.createElement('a'); anchor.href = url; anchor.download = name; anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Capture the invoking editor's selection and exact current text synchronously. The managed
+// host validates the complete project snapshot before any source transaction is published.
+export function requestAuthoring(id, command) {
+  const item = editors.get(id);
+  if (!item?.path) return;
+  let start = 0, length = 0;
+  if (item.editor) {
+    const selection = item.editor.getSelection();
+    start = item.model.getOffsetAt(selection.getStartPosition());
+    length = item.model.getOffsetAt(selection.getEndPosition()) - start;
+  } else { start = item.textarea.selectionStart; length = item.textarea.selectionEnd - start; }
+  const text = getEditorText(id);
+  return item.dotnet.invokeMethodAsync('Authoring', { command, path: item.path, text, start, length });
 }

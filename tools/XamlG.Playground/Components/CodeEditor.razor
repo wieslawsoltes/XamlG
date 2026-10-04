@@ -4,6 +4,8 @@
 
 @code {
     [Parameter] public string Text { get; set; } = string.Empty;
+    [Parameter] public string? DocumentPath { get; set; }
+    [Parameter] public EventCallback<EditorCommandRequest> AuthoringRequested { get; set; }
     [Parameter] public string Language { get; set; } = "xml";
     [Parameter] public bool ReadOnly { get; set; }
     [Parameter] public EventCallback<string> TextChanged { get; set; }
@@ -20,7 +22,7 @@
         if (!firstRender) return;
         _module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
         _reference = DotNetObjectReference.Create(this);
-        _id = await _module.InvokeAsync<int>("createEditor", _host, _reference, Text, Language, ReadOnly);
+        _id = await _module.InvokeAsync<int>("createEditor", _host, _reference, Text, Language, ReadOnly, DocumentPath);
         if (_disposed) await DisposeAsync();
     }
 
@@ -39,6 +41,11 @@
     }
     [JSInvokable] public Task Run() => RunRequested.InvokeAsync();
 
+    [JSInvokable] public Task Authoring(EditorCommandRequest request) => AuthoringRequested.InvokeAsync(request);
+    public async Task RequestCommandAsync(string command)
+    {
+        if (_module != null && _id != 0) await _module.InvokeVoidAsync("requestAuthoring", _id, command);
+    }
     public async Task<string> GetTextAsync()
     {
         var value = _module != null && _id != 0
