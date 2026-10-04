@@ -48,19 +48,23 @@ def main():
         lsp = list((tools / '.store').glob('**/tools/net10.0/any/XamlG.Lsp.dll'))
         if len(lsp) != 1:
             raise RuntimeError('Installed language-server entry point is missing or ambiguous.')
-        run('python', 'scripts/test-lsp-host.py', str(lsp[0]), env=environment)
-        run('python', 'scripts/test-lsp-watch.py', str(lsp[0]), env=environment)
-        run('python', 'scripts/test-lsp-features.py', str(lsp[0]), env=environment)
-        run('python', 'scripts/test-lsp-csharp.py', str(lsp[0]), env=environment)
+        run('git', 'ls-files', '-s', '--', 'scripts/test-lsp-*.py', env=environment)
+        for script in ('host', 'watch', 'features', 'csharp', 'diagnostic-contract'):
+            run('python', f'scripts/test-lsp-{script}.py', str(lsp[0]), env=environment)
+        # These fixture restores supply project metadata only. Every protocol interaction
+        # below still starts the installed candidate tool, never a repository-built LSP DLL.
+        for project in ('tests/ResourceWorkspaceSmoke/ResourceWorkspaceSmoke.csproj', 'tests/FileRenameSmoke/FileRenameSmoke.csproj'):
+            run('dotnet', 'restore', project, '--configfile', str(config), '-p:NuGetAudit=false', env=environment)
+        for script in ('resources', 'pull', 'file-moves'):
+            run('python', f'scripts/test-lsp-{script}.py', str(lsp[0]), env=environment)
         for project in ('tests/PackagingSmoke/PackagingSmoke.csproj', 'tests/AvaloniaPackagingSmoke/AvaloniaPackagingSmoke.csproj'):
             run('dotnet', 'restore', project, '--configfile', str(config), f'-p:XamlGPackageVersion={args.version}', '-p:NuGetAudit=false', env=environment)
             run('dotnet', 'run', '--project', project, '-c', 'Release', '--no-restore', f'-p:XamlGPackageVersion={args.version}', env=environment)
-        # The installed CLI must contain the Roslyn build host and MSBuild locator assets, not just compile in metadata-only mode.
         project = 'tests/WorkspaceSmoke/WorkspaceSmoke.csproj'
         run('dotnet', 'restore', project, '--configfile', str(config), '-p:NuGetAudit=false', env=environment)
         run(cli, 'compile', '--project', project, '--framework', 'Portable', '--output', str(work / 'project'),
             '--emit-assembly', str(work / 'project/WorkspaceSmoke.dll'), env=environment)
-        print('PASS: clean installed CLI/LSP, protocol/watch tests, portable/Avalonia package consumers, and installed MSBuild project compiler.')
+        print('PASS: clean installed CLI/LSP, all protocol/watch/pull/C#/file-refactoring suites, portable/Avalonia consumers and MSBuild project compilation.')
 
 
 if __name__ == '__main__':

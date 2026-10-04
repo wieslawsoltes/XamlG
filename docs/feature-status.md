@@ -2,7 +2,7 @@
 
 This is a capability map, not a declaration of universal XAML/Avalonia parity. A passing corpus proves the cases actually executed, not every possible application or custom extension.
 
-## Added by the authoring and code-behind continuation
+## Compiler and authoring capabilities
 
 | Area | Implementation |
 | --- | --- |
@@ -14,13 +14,23 @@ This is a capability map, not a declaration of universal XAML/Avalonia parity. A
 | Name refactoring | Scoped `x:Name`/`x:Reference`, Avalonia static binding name references, generated/explicit code-behind fields and source usages, collision/capture rejection. |
 | Formatting/actions | Semantic-aware whitespace edits, full/range formatting, tag rewrites, unique property/event spelling fixes. |
 | Navigation | Local resource definitions/links, resource URI completion/hover, loaded C# source references, workspace symbols including loaded closed documents. |
-| LSP | Negotiated versioned/legacy workspace edits; full/delta/range semantic tokens; single-flight snapshot analysis; cancellation/freshness checks. |
-| Browser integration | Monaco command-palette/context-menu/keybindings for scoped rename, format and actions; rename preview; atomic XAML/C#/resource project undo/redo; stale-plan rejection; nested factory runtime metadata identity. |
-| Unsaved C# | Open C# buffers participate in the same XAML semantic snapshot; original parse options are preserved, refactor edits carry current C# versions, and closing restores loaded source without writes. |
+| LSP | Negotiated versioned/legacy edits; full/delta/range semantic tokens; single-flight snapshot analysis; cancellation/freshness checks. |
+| Resource file refactoring | Simultaneous file/folder move planning, resolved incoming/outgoing include rewrites, candidate-project validation, source/identity collision checks, original-URI versioned or legacy edits. The client owns physical moves. |
+| Pull diagnostics | Document/workspace full and unchanged reports; loaded closed files and bounded related resources; removed-file clears; actual wire-value equality; bounded per-URI LRU retention; coalesced negotiated refresh and legacy push fallback. |
+| Browser integration | Monaco scoped rename/format/actions, multi-file previews, atomic XAML/C#/resource project undo/redo, stale-plan rejection, resource move preview/apply/cancel with typed dialog state. |
+| Unsaved C# | C# open buffers participate in the XAML semantic snapshot; original parse options are preserved, refactor edits carry current C# versions, and closing restores loaded source without writes. |
+
+## Diagnostic and publication contracts
+
+Previous diagnostic result IDs are bounded opaque strings. Empty, foreign, unknown or evicted IDs produce full reports, not an invalid-parameters error. URIs and provider identifiers still require valid nonempty values. Cached equality includes range, severity, code, source, message and ordering. Reports use immutable values; cache hits do not skip current project analysis.
+
+The cache validates required input fields and computes retention cost before mutation. Result-ID overflow occurs before eviction or replacement. Oversized reports remain complete, do not acquire tokens and retire only their own older entry. Character accounting is a retention estimate, not an exact managed heap byte count.
+
+Cancelling a shared-analysis consumer does not cancel its siblings. Publication rechecks the project and complete open-buffer snapshot under the serialized output gate. A dependency edit can supersede a queued caller report even if that caller's client version did not change. Once admitted, a frame completes or its connection fails; cancellation does not permit a partial frame to be followed by another message.
 
 ## Deliberate runtime and compatibility boundaries
 
-Legacy XamlX-only compiled resource assemblies are not translated automatically. Resource includes require XamlG export metadata. Eager dictionary merge is not IL-level flattening and can allocate transient dictionaries. Generic/abstract code-behind roots, handwritten initialization, explicit root construction directives and unsupported/required-member constructor shapes retain caller-controlled Populate support rather than a generated automatic factory.
+Legacy XamlX-only compiled resource assemblies are not translated automatically. Resource includes require XamlG export metadata. Eager dictionary merge is not IL-level flattening and can allocate transient dictionaries. Generic/abstract code-behind roots, handwritten initialization, explicit root construction directives and unsupported/required-member constructor shapes retain caller-controlled Populate support rather than an automatic factory.
 
 Generic nullable-annotation warning parity is not certified. Arbitrary custom markup extensions, framework version changes and the full Avalonia animation/transform corpus require additional compatibility coverage. Existing typed style/animation objects must not be assumed unsupported merely because they are outside the certification corpus.
 
@@ -28,12 +38,14 @@ Structural hot reload builds replacement graphs with eligible state transfer; ar
 
 ## Authoring work still outside the implemented surface
 
-Arbitrary C# symbol rename, source-generating refactors, decompiled metadata navigation, XAML file-rename/refactoring edits, semantic-token binding incrementality and pull-diagnostic result caching are not supplied. Name rename does not infer references embedded in runtime string lookups, selector strings or unknown framework-specific conventions. Clients requiring those usages must provide additional semantic reference policies.
+Arbitrary C# symbol rename, source-generating refactors, decompiled metadata navigation, semantic-token binding incrementality and partial-result diagnostic streaming are not supplied. Name rename does not infer references embedded in runtime string lookups, selector strings or unknown framework conventions. File moves rewrite recognized static compiled-resource include sites, not arbitrary project declarations or runtime resource strings. Linked physical paths need explicit logical mapping; unsupported CDATA/multi-fragment rewrites are rejected.
 
-Compiler Studio exposes Rename (F2), Format (Shift+Alt+F), source actions (Ctrl+.), and project undo/redo through Monaco actions and toolbar controls. Rename previews all affected XAML and C# buffers; source transactions are atomic and do not execute preview code. Arbitrary C# refactoring and every Visual Studio/Monaco provider surface are not implied. The LSP consumes unsaved C# as XAML compilation input; it does not replace a full C# language server.
+Compiler Studio's source transactions are atomic and do not execute preview code. Arbitrary C# refactoring and every Visual Studio/Monaco provider surface are not implied. The LSP consumes unsaved C# as XAML compilation input; it does not replace a full C# language server.
 
 ## Integration and evidence
 
-PR #5 publishes the recovered 89-file authoring checkpoint and integrates its browser command UI, bounded multi-language transactions, and coordinated C# overlays. All recovered source trees were checked against the published commit before continuing. Compiler/library, LSP, and browser work use isolated worktrees; the normal online CI matrix and installed-package/browser gates must pass before merging.
+PR #5 integrated semantic authoring, browser commands, bounded multi-language transactions and C# overlays. PR #6 adds resource-file refactoring and pull diagnostics, including typed file-move dialog state and final cache/protocol/package regression coverage. See [the PR6 validation contract](pull-diagnostic-validation.md).
 
-Run evidence belongs to its exact commit. No NuGet publication or version tag is implied by a source merge. The historical downloadable verification report describes the original offline delivery, not the current repository's publication state.
+The current completion was reconstructed directly against the latest published PR6 tree because the retained local archive could not be read in this execution session. This is not a byte-for-byte import of the historical offline completion tree. Fresh online build, process, installed-package and browser results are required for the actual final head.
+
+Run evidence belongs to its exact commit. No NuGet publication or version tag is implied by a source merge. Historical downloadable reports describe their original offline delivery, not the current repository's publication state.

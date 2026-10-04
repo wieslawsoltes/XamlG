@@ -21,12 +21,18 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.401'
+      - name: Record the exact protocol-test source identities
+        run: |
+          git rev-parse HEAD
+          git ls-files -s -- 'scripts/test-lsp-*.py'
       - run: dotnet build tools/XamlG.Lsp/XamlG.Lsp.csproj -c Release -p:NuGetAudit=false
       - run: python scripts/test-lsp-host.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
       - name: Validate editing, references and semantic-token deltas
         run: python scripts/test-lsp-features.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
       - name: Validate coordinated unsaved C# and XAML buffers
         run: python scripts/test-lsp-csharp.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
+      - name: Validate diagnostic contracts and legacy push/pull parity
+        run: python scripts/test-lsp-diagnostic-contract.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
       - name: Validate automatic compiler-input refresh
         run: python scripts/test-lsp-watch.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
       - name: Restore trusted resource and file-refactoring fixtures
