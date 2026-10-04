@@ -1,44 +1,52 @@
+@using XamlG.Tooling.Refactoring
 @if (Visible)
 {
-    <div class="authoring-overlay" @onclick="Cancel">
-        <section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Rename resource file" @onclick:stopPropagation="true">
-            <header><h2>Rename resource file</h2><button aria-label="Close dialog" @onclick="Cancel">×</button></header>
-            <p>Move a project resource and update incoming and outgoing include URIs atomically.</p>
-            <label>Current resource<input value="@OldPath" readonly /></label>
-            <label>New resource path<input value="@NewPath" @oninput="PathChanged" spellcheck="false" /></label>
-            @if (Error != null) { <div class="runtime-error" role="alert">@Error</div> }
-            @if (Plan is { Success: true } plan)
+    <div class="authoring-backdrop" @onkeydown="KeyDown" @onkeydown:stopPropagation="true">
+        <section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Move XAML resource" tabindex="-1">
+            <header><h2>Move or rename resource</h2><button aria-label="Close file move dialog" @onclick="Cancel" disabled="@Busy">✕</button></header>
+            <p>Move the document and update resolved references, including its outgoing relative links. Applying creates one project undo step and does not execute the preview.</p>
+            <p><code>@Source</code></p>
+            <label>Destination path <input aria-label="Destination resource path" value="@Destination" @oninput="ChangeDestination" disabled="@Busy" @ref="_input" /></label>
+            <button @onclick="Preview" disabled="@Busy">Preview file move</button>
+            @if (Plan is { } plan)
             {
-                <div class="authoring-preview">
-                    <h3>@plan.Files.Length affected document(s)</h3>
-                    @foreach (var file in plan.Files)
+                <div class="rename-files" data-testid="file-move-preview">
+                    @foreach (var move in plan.Moves)
+                    { <article><strong>@move.OldPath → @move.NewPath</strong><small>Document identity</small></article> }
+                    @foreach (var file in plan.Documents)
                     {
-                        <details open>
-                            <summary>@file.OldPath → @file.NewPath</summary>
-                            <pre>@file.NewText</pre>
-                        </details>
+                        <article><strong>@file.Path</strong><small>@file.Changes.Length source edits</small>
+                            @foreach (var edit in file.Changes.Take(8))
+                            { <div><code>@file.OriginalText.Substring(edit.Span.Start, edit.Span.Length)</code> → <code>@edit.NewText</code></div> }
+                        </article>
                     }
                 </div>
+                <button class="primary" @onclick="Apply" disabled="@Busy">Apply file move</button>
             }
-            <footer>
-                <button @onclick="Cancel">Cancel</button>
-                <button @onclick="Preview" disabled="@Busy">Preview changes</button>
-                <button class="primary" @onclick="Apply" disabled="@(Busy || Plan == null || !Plan.Success)">Apply rename</button>
-            </footer>
+            @if (Error != null) { <p role="alert" class="runtime-error">@Error</p> }
+            <footer><button @onclick="Cancel" disabled="@Busy">Cancel</button><small>Source and identity changes only · no execution</small></footer>
         </section>
     </div>
 }
-
 @code {
     [Parameter] public bool Visible { get; set; }
-    [Parameter] public string OldPath { get; set; } = string.Empty;
-    [Parameter] public string NewPath { get; set; } = string.Empty;
-    [Parameter] public EventCallback<string> NewPathChanged { get; set; }
-    [Parameter] public XamlG.Tooling.Resources.XamlResourceRefactoringResult? Plan { get; set; }
-    [Parameter] public string? Error { get; set; }
     [Parameter] public bool Busy { get; set; }
+    [Parameter] public string Source { get; set; } = string.Empty;
+    [Parameter] public string Destination { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> DestinationChanged { get; set; }
+    [Parameter] public XamlFileRenamePlan? Plan { get; set; }
+    [Parameter] public string? Error { get; set; }
     [Parameter] public EventCallback Preview { get; set; }
     [Parameter] public EventCallback Apply { get; set; }
     [Parameter] public EventCallback Cancel { get; set; }
-    private Task PathChanged(ChangeEventArgs args) => NewPathChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+    private ElementReference _input;
+    private bool _wasVisible;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var becameVisible = Visible && !_wasVisible;
+        _wasVisible = Visible;
+        if (becameVisible) await _input.FocusAsync();
+    }
+    private Task ChangeDestination(ChangeEventArgs args) => DestinationChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+    private Task KeyDown(KeyboardEventArgs args) => !Busy && args.Key == "Escape" ? Cancel.InvokeAsync() : Task.CompletedTask;
 }
