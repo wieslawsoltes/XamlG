@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="designer.css" />
 <link rel="stylesheet" href="resources.css" />
 <link rel="stylesheet" href="authoring.css" />
-<div class="studio" inert="@(_renameVisible || _actionsVisible)" data-ready="@(_ready ? "true" : "false")">
+<div class="studio" inert="@(_renameVisible || _actionsVisible || _fileMoveVisible)" data-ready="@(_ready ? "true" : "false")">
     <header class="titlebar">
         <div class="brand"><span class="brand-mark">X</span><strong>XamlG</strong><span class="brand-divider"></span><span>Compiler Studio</span><span class="badge">PREVIEW</span></div>
         <nav aria-label="Project links"><a href="https://github.com/wieslawsoltes/XamlG" target="_blank" rel="noopener">Source ↗</a><button class="icon-button" aria-label="Toggle color theme" @onclick="ToggleThemeAsync">◐</button></nav>
@@ -82,7 +82,7 @@
             <div class="inspector-body">
                 <div class="inspector-page @(_inspectorTab == "C# output" ? "visible" : "")"><CodeEditor Text="@(_result?.Analysis.Output.Source ?? "// Generated C# appears here after compilation.\n")" Language="csharp" ReadOnly="true" /></div>
                 <div class="resource-container" style="display:@(_inspectorTab == "Resources" ? "block" : "none")">
-                    <ProjectResources @ref="_resourceEditor" Documents="Compiler.Resources" Result="_result" Busy="_busy" Changed="ResourceChangedAsync" LoadExample="LoadResourceExampleAsync" RunRequested="RunCurrentModeAsync" AuthoringRequested="AuthoringCommandAsync" />
+                    <ProjectResources @ref="_resourceEditor" Documents="Compiler.Resources" Result="_result" Busy="@(_busy || _fileMoveWorking)" Changed="ResourceChangedAsync" LoadExample="LoadResourceExampleAsync" RunRequested="RunCurrentModeAsync" AuthoringRequested="AuthoringCommandAsync" RenameRequested="OpenFileMoveAsync" />
                 </div>
                 @if (_inspectorTab == "Syntax") { <div class="tree-scroll"><InspectionTree Items="@(_result == null ? Array.Empty<XamlInspectionNode>() : XamlInspector.Syntax(_result.Analysis.Syntax))" Selected="SelectSyntaxAsync" /></div> }
                 @if (_inspectorTab == "Bound tree") { <div class="tree-scroll">@if (_result != null && XamlInspector.Bound(_result.Analysis.Document) is { } bound) { <InspectionTree Items="@(new[] { bound })" Selected="SelectSyntaxAsync" /> }</div> }
@@ -130,3 +130,6 @@
     OriginalName="@_renameOriginal" NewName="@_renameName" NewNameChanged="RenameNameChanged"
     Plan="_renamePlan" Actions="_codeActions" Error="@_authoringError" Preview="PreviewRenameAsync"
     Apply="ApplyRenameAsync" Cancel="CloseAuthoring" ActionSelected="ApplyCodeActionAsync" />
+<FileRenameDialog Visible="_fileMoveVisible" Busy="@(_busy || _fileMoveWorking)"
+    State="@(new FileMoveDialogState(_fileMoveSource, _fileMoveDestination, _fileMoveError))" DestinationChanged="FileMoveDestinationChanged"
+    Plan="_fileMovePlan" Preview="PreviewFileMoveAsync" Apply="ApplyFileMoveAsync" Cancel="CloseFileMove" />

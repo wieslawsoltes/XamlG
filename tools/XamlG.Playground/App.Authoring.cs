@@ -35,7 +35,7 @@ public partial class App
         _workspaceEdits.ReplaceAll(_workspaceEdits.Current.Revision, WorkspaceTexts(), "Load project", false);
         _workspaceEdits.ClearHistory(); CloseAuthoring();
     }
-    private void RestoreWorkspace(XamlWorkspaceSnapshot snapshot)
+    private void RestoreWorkspace(XamlWorkspaceSnapshot snapshot, string? preferredResourcePath = null)
     {
         // Keep the main syntax revision monotonic so an old realized visual cannot target a new buffer.
         UpdateXaml(snapshot.Documents["View.axaml"]); _code = snapshot.Documents["Code.cs"];
@@ -44,6 +44,9 @@ public partial class App
         var current = Compiler.Resources.Snapshot;
         if (resources.Count != current.Count || resources.Any(p => !current.TryGetValue(p.Key, out var value) || value.Text != p.Value))
             Compiler.Resources.ReplaceAll(resources);
+        // Reconcile identity and editor ownership before SaveDraft/compilation can yield.
+        // Otherwise an old resource editor could be read into a renamed/restored document.
+        _resourceEditor?.SynchronizeDocuments(preferredResourcePath);
         _selectedElement = null; _selectedVisual = null; _result = null;
     }
     private async Task NavigateWorkspaceAsync(bool undo)
