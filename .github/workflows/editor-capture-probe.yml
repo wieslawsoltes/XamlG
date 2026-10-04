@@ -1,0 +1,66 @@
+name: Editor capture investigation
+on:
+  push:
+    branches: [ops/pr6-capture-probe]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: dotnet workload install wasm-tools --skip-manifest-update
+      - name: Add diagnostic instrumentation to this isolated checkout only
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('tools/XamlG.Playground/Components/ProjectResources.razor')
+          s=p.read_text().replace('if (document == null || editor == null || !Owns(editor, document, epoch)) return;', 'Console.WriteLine($"CAPTURE path={_activePath} epoch={epoch} editor={editor?.GetHashCode()} retired={editor?.IsRetired} editorPath={editor?.DocumentPath} version={document?.Version} owns={(document != null && editor != null && Owns(editor, document, epoch))}"); if (document == null || editor == null || !Owns(editor, document, epoch)) return;')
+          s=s.replace('if (text == null || !Owns(editor, document, epoch)) return;', 'Console.WriteLine($"READ path={_activePath} epoch={epoch} owns={Owns(editor, document, epoch)} changed={text != document.Text} value={text}"); if (text == null || !Owns(editor, document, epoch)) return;')
+          s=s.replace('var epoch = checked(_editorEpoch + 1);', 'Console.WriteLine($"ACTIVATE old={_activePath} new={path} epoch={_editorEpoch} before={_lastObserved?.Version} after={syntax?.Version}"); var epoch = checked(_editorEpoch + 1);')
+          p.write_text(s)
+          p=Path('tools/XamlG.Playground/Components/CodeEditor.razor.cs')
+          s=p.read_text().replace('if (_retired || _parameterText == Text) return;', 'Console.WriteLine($"PARAM editor={GetHashCode()} path={DocumentPath} retired={_retired} same={_parameterText == Text} value={Text}"); if (_retired || _parameterText == Text) return;')
+          s=s.replace('_parameterText = text;\n        return text;', 'Console.WriteLine($"CAPTURED editor={GetHashCode()} path={DocumentPath} value={text}"); _parameterText = text;\n        return text;')
+          s=s.replace('_retired = true;','Console.WriteLine($"RETIRE editor={GetHashCode()} path={DocumentPath}"); _retired = true;')
+          p.write_text(s)
+          for name in ['editor-lifetime.spec.mjs','file-moves.spec.mjs']:
+            p=Path('tools/XamlG.Playground/tests')/name
+            s=p.read_text()
+            s="import process from 'node:process';\n"+s
+            s += '\ntest.beforeEach(async ({page}) => { page.on("console", message => console.log("BROWSER", message.type(), message.text())); page.on("pageerror", error => console.log("PAGEERROR",error.message)); });\n'
+            p.write_text(s)
+          PY
+      - working-directory: tools/XamlG.Playground
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run prepare-assets
+          npx playwright install --with-deps chromium
+      - run: dotnet publish tools/XamlG.Playground/XamlG.Playground.csproj -c Release -p:NuGetAudit=false -o artifacts/playground
+      - name: Exercise the three failing paths (investigation, not acceptance gate)
+        working-directory: tools/XamlG.Playground
+        continue-on-error: true
+        run: npx playwright test editor-lifetime.spec.mjs file-moves.spec.mjs
+      - name: Preserve reproduction runtime and assets
+        if: always()
+        run: |
+          mkdir -p artifacts/reproduction
+          tar -czf artifacts/reproduction/aspnet-runtime.tar.gz -C "$DOTNET_ROOT" shared/Microsoft.AspNetCore.App
+          tar -czf artifacts/reproduction/browser-assets.tar.gz artifacts/playground tools/XamlG.Playground/node_modules
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: editor-capture-reproduction
+          path: |
+            artifacts/reproduction
+            tools/XamlG.Playground/test-results
+          retention-days: 3
