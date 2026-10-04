@@ -1,4 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { captureEditorState } from './editor-state.mjs';
+
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status !== testInfo.expectedStatus) await captureEditorState(page, 'failed: ' + testInfo.title);
+});
 
 async function ready(page) {
   await page.goto('./');
@@ -24,6 +29,7 @@ async function preview(page, destination = 'Themes/Colors.axaml') {
 test('resource identity and its source links move in one undoable non-executing transaction', async ({ page }) => {
   await ready(page);
   const original = await draft(page);
+  await captureEditorState(page, 'before move');
   const dialog = await preview(page);
   await expect(dialog.getByTestId('file-move-preview')).toContainText('View.axaml');
   expect(await mainSource(page)).toContain('Resources/Palette.axaml');
@@ -36,7 +42,9 @@ test('resource identity and its source links move in one undoable non-executing 
   expect(moved.resources['Resources/Palette.axaml']).toBeUndefined();
   expect(moved.resources['Themes/Colors.axaml']).toBe(original.resources['Resources/Palette.axaml']);
   await expect(page.locator('.preview-placeholder')).toBeVisible();
+  await captureEditorState(page, 'after move');
   await page.getByTitle('Undo source edit').click();
+  await captureEditorState(page, 'after undo');
   await expect.poll(() => mainSource(page)).toContain('Resources/Palette.axaml');
   expect((await draft(page)).resources).toEqual(original.resources);
   await page.getByTitle('Redo source edit').click();
