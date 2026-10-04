@@ -16,6 +16,9 @@ public sealed class XamlProjectCompiler
         if (documents == null) throw new ArgumentNullException(nameof(documents));
         if (compilation == null) throw new ArgumentNullException(nameof(compilation));
         profile ??= XamlFrameworkProfile.Portable; options ??= new();
+        // Referenced projects may contain the same logical path. Their generated factory types
+        // must not collide with local types during ordinary C# symbol resolution.
+        options = options with { GeneratedNamespace = options.GeneratedNamespace + ".Assembly_" + CSharpNames.StableId(compilation.Assembly.Identity.Name) };
         var inputs = documents.OrderBy(d => d.LogicalPath, StringComparer.Ordinal).ToArray();
         if (inputs.Length > 16384) throw new ArgumentException("A project cannot exceed 16384 XAML documents.", nameof(documents));
         var types = new RoslynTypeSystem(compilation, profile.TypeSystem);

@@ -1,5 +1,7 @@
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
+using XamlG.Compiler.Resources;
+using XamlG.CSharp.Resources;
 using XamlG.Roslyn;
 
 namespace XamlG.CSharp;
@@ -15,6 +17,7 @@ internal sealed class ValueEmitter
         _context.Cancellation.ThrowIfCancellationRequested();
         switch (value)
         {
+            case BoundResourceExpression resource: return new ResourceExpressionEmitter(_context).Emit(resource, frame);
             case BoundConstantExpression constant: return CSharpNames.Constant(constant.Value);
             case BoundEnumExpression enumeration:
                 return "(" + string.Join(" | ", enumeration.Fields.Select(f => f.ContainingType.CSharpName() + "." + CSharpNames.Identifier(f.Name))) + ")";
