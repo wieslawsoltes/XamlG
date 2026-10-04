@@ -1,8 +1,8 @@
 name: Language server process validation
 on:
   push:
-    branches: [main, feat/tooling-and-playground, feat/framework-designer-completion]
-    paths: ['src/**', 'tools/XamlG.Lsp/**', 'tests/CliSmoke/**', 'scripts/test-lsp-*.py', 'Directory.*', '.github/workflows/lsp-host.yml']
+    branches: [main, feat/tooling-and-playground, feat/framework-designer-completion, feat/worktree-completion]
+    paths: ['src/**', 'tools/XamlG.Lsp/**', 'tests/CliSmoke/**', 'tests/ResourceWorkspaceSmoke/**', 'scripts/test-lsp-*.py', 'Directory.*', '.github/workflows/lsp-host.yml']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -23,8 +23,12 @@ jobs:
           dotnet-version: '10.0.401'
       - run: dotnet build tools/XamlG.Lsp/XamlG.Lsp.csproj -c Release -p:NuGetAudit=false
       - run: python scripts/test-lsp-host.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
-      - name: Validate automatic compiler-input refresh in the real server process
+      - name: Validate automatic compiler-input refresh
         run: python scripts/test-lsp-watch.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
+      - name: Restore the trusted multi-document resource project
+        run: dotnet restore tests/ResourceWorkspaceSmoke/ResourceWorkspaceSmoke.csproj -p:NuGetAudit=false
+      - name: Validate coherent unsaved resource overlays
+        run: python scripts/test-lsp-resources.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
       - run: dotnet pack tools/XamlG.Lsp/XamlG.Lsp.csproj -c Release --no-build -o artifacts/packages -p:NuGetAudit=false
       - uses: actions/upload-artifact@v4
         with:

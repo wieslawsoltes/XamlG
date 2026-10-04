@@ -23,7 +23,7 @@
         </div>
         <div class="resource-editor-stack">
             <div class="resource-editor-page @(_tab == "Source" ? "visible" : "")">
-                <CodeEditor @key="document.Path" @ref="_editor" Text="@document.Text" Language="xml"
+                <CodeEditor @key="(document.Path, _editorEpoch)" @ref="_editor" Text="@document.Text" Language="xml"
                     TextChanged="text => ChangeAsync(document, text)" RunRequested="RunRequested" />
             </div>
             <div class="resource-editor-page @(_tab == "Generated" ? "visible" : "")">
@@ -47,11 +47,19 @@
     private string _tab = "Source";
     private string? _error;
     private CodeEditor? _editor;
+    private XamlSyntaxTree? _lastObserved;
+    private long _editorEpoch;
     private XamlSyntaxTree? Active => Documents.Snapshot.TryGetValue(_activePath, out var syntax) ? syntax : null;
     private XamlProjectDocumentResult? Output => Result?.Project?.Documents.FirstOrDefault(d => d.Input.LogicalPath == _activePath && ReferenceEquals(d.Input.Syntax, Active));
     protected override void OnParametersSet()
     {
         if (Active == null) _activePath = Documents.Snapshot.Keys.OrderBy(p => p, StringComparer.Ordinal).FirstOrDefault() ?? string.Empty;
+        // Replacing the project externally must retire even a same-path editor with a pending
+        // debounce. Updates originating in this component set _lastObserved before rendering.
+        if (!ReferenceEquals(Active, _lastObserved))
+        {
+            _lastObserved = Active; _editorEpoch++; _editor = null;
+        }
     }
     public async Task CaptureAsync()
     {
@@ -60,14 +68,14 @@
         var text = await _editor.GetTextAsync();
         if (text != document.Text)
         {
-            Documents.Update(document.Path, document.Version, text);
+            _lastObserved = Documents.Update(document.Path, document.Version, text);
             await Changed.InvokeAsync();
         }
     }
     private async Task ChangeAsync(XamlSyntaxTree snapshot, string text)
     {
         if (!Documents.Snapshot.TryGetValue(snapshot.Path, out var current) || !ReferenceEquals(current, snapshot)) return;
-        try { Documents.Update(snapshot.Path, snapshot.Version, text); _error = null; await Changed.InvokeAsync(); }
+        try { _lastObserved = Documents.Update(snapshot.Path, snapshot.Version, text); _error = null; await Changed.InvokeAsync(); }
         catch (Exception error) { _error = error.Message; }
     }
     private async Task SwitchAsync(ChangeEventArgs args)
