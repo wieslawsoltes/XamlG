@@ -7,11 +7,11 @@
 [![Upstream compatibility](https://github.com/wieslawsoltes/XamlG/actions/workflows/upstream-compatibility.yml/badge.svg)](https://github.com/wieslawsoltes/XamlG/actions/workflows/upstream-compatibility.yml)
 [![Packages](https://github.com/wieslawsoltes/XamlG/actions/workflows/release.yml/badge.svg)](https://github.com/wieslawsoltes/XamlG/actions/workflows/release.yml)
 
-**[Compiler Studio](https://wieslawsoltes.github.io/XamlG/)** · [Framework compiler](docs/framework-compilation.md) · [Designer and reload](docs/hot-reload.md) · [Language server](docs/language-server.md) · [Validation](docs/validation.md) · [Releases](docs/releasing.md)
+**[Compiler Studio](https://wieslawsoltes.github.io/XamlG/)** · [Project resources](docs/resources.md) · [Framework compiler](docs/framework-compilation.md) · [Designer/reload](docs/hot-reload.md) · [LSP](docs/language-server.md) · [Validation](docs/validation.md) · [Releases](docs/releasing.md)
 
-XamlG compiles XAML into inspectable, strongly typed C#. The portable compiler consumes Roslyn symbols directly: it does not execute application assemblies, rewrite IL or call XamlX as a production fallback. Build-time generation, designer editing, CLI, workspace, LSP and browser hosts share the same compiler.
+XamlG compiles XAML into inspectable, strongly typed C#. The compiler consumes Roslyn symbols directly: it does not execute application assemblies, rewrite IL or call XamlX as a production fallback. Build-time generation, project resource linking, designer editing, CLI, workspace, LSP and browser hosts share the compiler.
 
-> **Development preview.** Implemented framework transforms, visual manipulation, state-preserving reload, project watching and isolated preview have executable coverage. This is not unconditional drop-in compatibility with every Avalonia/XAML application or arbitrary custom framework extension.
+> **Development preview.** Implemented transforms, resource linking, visual manipulation, state-preserving reload, watching and isolated preview have executable coverage. This is not unconditional drop-in compatibility with every Avalonia/XAML application or arbitrary custom framework extension.
 
 ## Start from source
 
@@ -20,78 +20,97 @@ XamlG compiles XAML into inspectable, strongly typed C#. The portable compiler c
 ```sh
 git clone https://github.com/wieslawsoltes/XamlG.git
 cd XamlG
-dotnet build XamlG.slnx -c Release
+dotnet build XamlG.slnx -c Release -warnaserror
 dotnet test XamlG.slnx -c Release --no-build
 ```
 
-The default solution contains the libraries, CLI/LSP and local tests without requiring WebAssembly or an upstream checkout. `XamlG.Browser.slnx` and pinned upstream suites are separate opt-in builds.
+The default solution includes libraries, CLI/LSP and local tests without requiring WebAssembly or an upstream checkout. `XamlG.Browser.slnx` and pinned upstream suites are separate opt-in builds.
 
 ## One pipeline, multiple hosts
 
 ```text
-XAML → immutable source syntax → Roslyn binding → typed operations → C#
-                ↕                     ↑                 ↓
-       revisioned designer edits  framework profiles   runtime graph
-                ↑                                       ↓
-         editor / CLI / LSP                visual inspection + reload
+XAML project → immutable source syntax → Roslyn binding → typed operations → C#
+                     ↕                       ↑                ↓
+            revisioned editor buffers  framework profiles  factory linking
+                     ↑                                        ↓
+              designer / CLI / LSP               visual inspection + reload
 ```
 
 | Component | Responsibility |
 | --- | --- |
 | `XamlG.Syntax` | Source-preserving parsing/recovery, namespace scopes, spans and incremental subtree reparsing. |
 | `XamlG.Roslyn` | Compilation-scoped symbols, namespace metadata, generic/member resolution. |
-| `XamlG.Compiler` | Typed construction, conversion, directives, collections, services and delegate/accessor operations. |
-| `XamlG.CSharp` | C# lowering, partial classes, direct calls, source mapping and runtime metadata. |
-| `XamlG.Frameworks` | Symbol-based framework policies; Avalonia selector, setter and compiled-binding transforms. |
-| `XamlG.Runtime` | Scoped services/names, subscriptions, source identities, reversible property updates and structural replacement. |
-| `XamlG.Generator` | Incremental generator and transitive MSBuild integration. |
-| `XamlG.Tooling` | Analysis/navigation, AST/IR inspection, source-first designer transactions and history. |
-| `XamlG.Workspaces` | Project snapshots, trusted MSBuild evaluation, watched/cancellable refresh. |
-| `XamlG.LanguageServer` | Bounded JSON-RPC, versioned LSP semantics and cancellation-safe publication. |
-| `XamlG.AvaloniaRuntime` | Framework binding lifecycle, realized visuals, gesture surface and interaction-state transfer. |
+| `XamlG.Compiler` | Typed construction, conversion, directives, services, delegate/accessor operations and resource contracts. |
+| `XamlG.CSharp` | C# lowering, project linking, partial classes, source mapping and compilation-scoped binding/output reuse. |
+| `XamlG.Frameworks` | Symbol-based policies; Avalonia selectors, setters, bindings and resource/style includes. |
+| `XamlG.Runtime` | Scoped services/names, subscriptions, resource export metadata, source identities and reload primitives. |
+| `XamlG.Generator` | Incremental source generator and transitive MSBuild integration. |
+| `XamlG.Tooling` | Project/overlay analysis, navigation, AST/IR inspection, bounded documents and source-first designer transactions. |
+| `XamlG.Workspaces` | Project snapshots, trusted MSBuild evaluation and watched/cancellable refresh. |
+| `XamlG.LanguageServer` | Bounded JSON-RPC, coherent open-document overlays and cancellation-safe publication. |
+| `XamlG.AvaloniaRuntime` | Framework bindings/resources, realized visuals, gesture surface and state transfer. |
 
 Core compiler/tooling libraries target .NET Standard 2.0. Workspace/LSP, Avalonia integration and executable hosts target .NET 10; generated-code validation uses that runtime.
 
-## Compile as a library
+## Compile a project as a library
 
-Supply application source/metadata through Roslyn, including the runtime dependencies required by the selected framework profile. Reuse the evaluated project's parse options when adding generated source.
+Keep one `XamlProjectCompiler` for a project. Supply its **pre-generation** Roslyn compilation, unchanged syntax instances where possible, physical diagnostic paths, reproducible logical paths, and the selected framework profile. The compiler is not coupled to a generator driver, browser API or MSBuild host.
 
 ```csharp
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis.CSharp;
-using XamlG.Compiler;
-using XamlG.CSharp;
+using XamlG.CSharp.Resources;
 using XamlG.Frameworks.Avalonia;
-using XamlG.Syntax;
 
-public static class XamlCompilation
+public sealed class ProjectCompilation
 {
-    public static CSharpCompilation AddDocument(
-        CSharpCompilation compilation, CSharpParseOptions parseOptions,
-        string source, string path, CancellationToken cancellationToken = default)
+    private readonly XamlProjectCompiler _compiler = new();
+    private readonly XamlG.Compiler.XamlFrameworkProfile _profile =
+        AvaloniaFrameworkProfile.Create();
+
+    public CSharpCompilation AddGeneratedDocuments(
+        CSharpCompilation application,
+        CSharpParseOptions parseOptions,
+        IEnumerable<XamlProjectDocument> documents,
+        CancellationToken cancellationToken = default)
     {
-        var syntax = XamlSyntaxTree.Parse(source, path, cancellationToken);
-        var document = new XamlCompiler().Bind(syntax, compilation,
-            AvaloniaFrameworkProfile.Create(), cancellationToken: cancellationToken);
-        var output = new CSharpEmitter().Emit(document, cancellationToken);
-        if (!output.Success)
-            throw new InvalidOperationException(string.Join(Environment.NewLine, output.Diagnostics));
-        return compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(
-            output.Source, parseOptions, output.HintName, cancellationToken: cancellationToken));
+        var project = _compiler.Compile(
+            documents, application, _profile,
+            cancellationToken: cancellationToken);
+
+        if (!project.Success)
+            throw new InvalidOperationException(string.Join(
+                Environment.NewLine,
+                project.Documents.SelectMany(d => d.Output.Diagnostics)));
+
+        return application.AddSyntaxTrees(project.Documents.Select(document =>
+            CSharpSyntaxTree.ParseText(
+                document.Output.Source, parseOptions, document.Output.HintName,
+                cancellationToken: cancellationToken)));
     }
 }
 ```
 
-The library is independent of generator drivers, workspaces, browser APIs and MSBuild execution. Hosts choose framework profiles and compiler passes.
+Include application/framework/runtime references in the Roslyn compilation and preserve its evaluated parse options. The low-level `XamlCompiler.Bind` and `CSharpEmitter.Emit` APIs remain available for individual documents. Use project compilation when documents contain includes.
+
+## Compiled dictionaries and styles
+
+`ResourceInclude`, `StyleInclude` and `MergeResourceInclude` resolve to generated local factories or public factory exports from referenced XamlG assemblies. Relative/root-relative/assembly-qualified resource URIs are checked at compile time. Cycles and failed dependencies produce diagnostics before emission; unrelated documents can still compile. No generated include calls a runtime XAML parser or binary loader.
+
+Ordinary includes retain separate providers. Merge includes perform eager dictionary merging with later/local value precedence and same-variant theme merging. This is not XamlX's IL-level flattening and does not promise identical allocations. Existing binary-XamlX-only resources are not implicitly translated; referenced resources need XamlG export metadata. Classless resources are exported; `x:Class` roots continue to use generated initialization.
+
+The project cache reuses raw bindings and generated outputs for unchanged documents when export signatures and the Roslyn compilation remain stable. A value-only edit can bind/emit one document. Catalog/graph validation still performs project-wide work; counters are not end-to-end performance benchmarks. See [resource architecture, API and boundaries](docs/resources.md).
 
 ## Avalonia, designer and reload
 
-Selectors compile into public API calls; style setter values resolve the actual registered property type. Compiled bindings use Roslyn-resolved member paths and generated delegates, including object-element bindings, relative sources, indexers, two-way stores and command methods. Reflection binding requires an explicit scoped/build opt-out; it is not a fallback for failed static checking. See [framework compilation](docs/framework-compilation.md).
+Selectors lower to public API calls; setter values use the registered property's type. Compiled bindings use Roslyn-resolved paths and delegates, including object-element forms, relative sources, indexers, two-way stores and command methods. Reflection binding is an explicit opt-out, not an error-recovery fallback. See [framework compilation](docs/framework-compilation.md).
 
-The designer provides real visual hit testing, drag/eight-handle resize, snapping, keyboard movement, aspect locking, cancellation and source-driven structure edits. A validated gesture commits one revision-checked undo transaction. Reparenting preserves namespace/whitespace meaning or diagnoses an incompatible policy.
+The designer has real visual hit testing, drag/eight-handle resize, snapping, keyboard movement, aspect locking, cancellation and source-driven structure edits. Gestures commit revision-checked undo transactions. Reparenting preserves namespace/whitespace meaning or diagnoses an incompatible policy.
 
-Structural reload builds a detached candidate, transfers eligible state by explicit identity/unchanged declarations, publishes once and retires the previous graph's generated subscriptions. Changed source wins over preserved interaction state. It does not promise arbitrary instance-identity preservation or rollback of external side effects in user code.
+Structural reload constructs a detached candidate, transfers eligible state by explicit identities and unchanged declarations, publishes once and retires previous subscriptions. Changed source wins over interaction state. Arbitrary object identities and external side effects in user code are not transactionally preserved.
 
 ## CLI and LSP
 
@@ -104,19 +123,23 @@ dotnet tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll \
   --project /absolute/path/App.csproj --trust-project --framework Avalonia
 ```
 
-The LSP watches compiler inputs by default, coalesces refreshes and rejects stale project results. Its stdio host reserves stdout for protocol frames; `--trust-project` is required because MSBuild/source generators can execute project code. Read [protocol capabilities and publication rules](docs/language-server.md).
+Project CLI compilation retains all required generated factories. The LSP watches compiler inputs, combines open XAML buffers into a coherent project overlay and rejects stale project/buffer-set results. Editing an included resource can diagnose its caller without fabricating a new caller version; closing the resource restores its loaded source snapshot. Identical duplicate MSBuild inputs are coalesced, conflicting buffers rejected.
+
+Stdout is protocol-only. `--trust-project` is mandatory because MSBuild/source generators can execute project code. See [capabilities and publication rules](docs/language-server.md).
 
 ## Browser Studio
 
-Monaco XAML/C# editing, generated-code diagnostics, syntax/typed-operation inspection, realized visuals, designer commands, drafts/export, themes and responsive layouts run with the actual compiler/framework. Compile and Run capture current buffers, including immediately typed edits.
+Monaco XAML/C# editing, generated-code diagnostics, syntax/typed-operation inspection, realized visuals, designer commands, themes and responsive layouts use the actual compiler/framework. The **Resources** tab adds, edits, removes and inspects reusable project dictionaries/styles. Compile/Run capture pending source edits, and project drafts/exports include resource documents and all generated output. Restore never executes code.
 
-**Run preview** executes trusted code in the editor tab for visual design. **Run isolated** emits without loading application code in the editor and executes in an opaque-origin sandboxed frame with a bounded MessageChannel. That boundary blocks editor DOM/storage access, not arbitrary CPU/memory consumption. Read [setup and execution boundaries](docs/playground.md).
+**Run preview** executes trusted code in the editor tab for visual design. **Run isolated** emits without loading application code in the editor and executes the complete project inside an opaque-origin iframe. It blocks editor DOM/storage access, not arbitrary CPU/memory consumption. See [browser setup and boundaries](docs/playground.md).
 
 ## Validation and release
 
-The pinned comparison runs **222 original-XamlX baseline cases** separately from **217 XamlG compatibility cases**. Five internal AST/IL-specific assertions are explicitly outside the source-backend comparison; skipped tests are not counted as success. Additional suites validate framework behavior, source editing, reload, watches, stdio, package consumption and browser interactions. No production package depends on XamlX.
+The pinned comparison runs **222 original-XamlX baseline cases** separately from **217 XamlG compatibility cases**. Five internal AST/IL-specific assertions are explicitly outside the source-backend comparison; skipped cases are not successes. No production package depends on XamlX.
 
-Release CI builds **13 shipping packages**, installs clean tool/package consumers, verifies dependency layout and writes hashes plus exact source provenance. Version tags publish tested GitHub artifacts; NuGet publication is a separate explicit environment-protected action. See [release instructions](docs/releasing.md).
+Independent compiler, designer/tooling and host jobs create detached Git worktrees with separate build outputs. Additional gates cover Linux/Windows/macOS warning-free builds, native/runtime tests, cross-assembly resources, real stdio watch/overlay tests, installed-package consumers and browser behavior. See [validation](docs/validation.md).
+
+Release CI builds **13 shipping packages**, installs clean tool/package consumers, and writes hashes plus exact source provenance. Version tags publish tested GitHub artifacts; NuGet publication is a separate environment-protected action. See [releases](docs/releasing.md).
 
 ## License
 

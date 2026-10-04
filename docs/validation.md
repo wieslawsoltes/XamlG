@@ -1,25 +1,37 @@
 # Validation and provenance
 
-The SDK/package versions are pinned in `global.json` and `Directory.Packages.props`. Upstream source pins live in `tests/Upstream.props`: XamlX `7ef6aef496ab6e8dcf3df04bef697be49db37c04` and Avalonia `17350180c33b063f0e98abbfd19aa3cae63f5d56`. Runtime packages and inspected source revisions are tracked independently. Reading an implementation is not the same as executing its tests.
+SDK/package versions are pinned in `global.json` and `Directory.Packages.props`. Upstream source pins live in `tests/Upstream.props`: XamlX `7ef6aef496ab6e8dcf3df04bef697be49db37c04` and Avalonia `17350180c33b063f0e98abbfd19aa3cae63f5d56`. Runtime packages and inspected source are tracked independently. Reading an implementation is not evidence of passing its tests.
 
-## Local solution
+## Local solution and parallel worktrees
 
-`XamlG.slnx` includes compiler/generator execution tests, source-editing/tooling tests, workspace/watch tests, protocol/publication tests and focused real-Avalonia tests. The solution builds/tests on Linux, Windows and macOS. Test counts grow with the implementation; use the TRX artifacts for the exact revision rather than an outdated static total.
+`XamlG.slnx` includes compiler/generator execution, tooling/designer, workspace/watch, protocol/publication and real-Avalonia tests. Linux, Windows and macOS build with warnings treated as errors and execute the solution. Exact revision counts come from TRX artifacts rather than a stale static total.
 
-Compiler tests compile generated C# with Roslyn and execute it. Incremental syntax tests compare against full parses, including malformed edits. Tooling tests cover revisioned edits, namespace-safe moves, batch visual edits and typed expression inspection. Runtime tests cover detached replacement, state transfer, publication rollback and subscription cleanup. Avalonia tests cover styling/selectors, themes, compiled bindings, sources/indexers/commands, interactive state and realized visual provenance.
+`worktree-validation.yml` additionally splits validation into independent compiler/Avalonia, designer/tooling and workspace/protocol jobs. Each creates a detached Git worktree at its checked-out revision, uses separate build directories, writes separate test artifacts and removes its worktree afterward. This is parallel execution of validation jobs; it is not evidence of autonomous parallel coding agents.
 
-The source-preserving parser currently reparses eligible subtrees and retains unaffected positioned nodes; it is not claimed to be a complete position-independent red/green tree. Parser counters report reparsed characters/reused nodes, not whole-pipeline time or allocation superiority over XamlX.
+Compiler tests emit and execute C#. Syntax differential tests compare incremental and full parses, including malformed edits. Runtime tests exercise detached replacement, state transfer, publication rollback, failed construction and cleanup. Tooling tests cover source transactions, namespace-safe moves, visual edits, resource document budgets and typed-expression inspection. Avalonia tests exercise selectors, themes, compiled bindings, commands/indexers, interaction state and realized visual provenance.
 
-## Upstream comparison
+The parser reparses eligible subtrees and retains unaffected positioned nodes; it is not a complete position-independent red/green tree. Parser and project compiler work counters do not establish whole-pipeline latency or allocation superiority over XamlX.
 
-The original XamlX baseline runs 222 pinned cases. The XamlG adapter runs 217 of those runtime/diagnostic cases through XamlG binding, generated C#, Roslyn emission and execution. CI requires exact executed counts and no skipped cases. Four internal XamlX AST representation assertions and one IL-helper-name assertion are explicitly outside the source-backend comparison. See [the harness boundary](upstream-validation.md).
+## Resource linker coverage
 
-XamlX is test-only, not a production dependency. Passing this corpus does not certify all Avalonia extension transforms, all framework versions, every custom markup extension or every UI designer operation.
+Resource tests compile and execute relative, root-relative and referenced-assembly includes, style includes, eager merges, local/theme precedence, fresh instances and session ownership. Separate assemblies deliberately share a logical filename to check factory identity isolation. Tests also verify unresolved/dynamic sources, duplicate identities, incorrect include types, cycles, dependency failures and recovery.
 
-## Host, browser and packages
+Incrementality assertions inspect actual work counts: unchanged documents reuse binding/output, a value-only edit can compile one document, export signature changes invalidate assumptions, and dependency diagnostics do not poison cached bindings. Cancellation/explicit cache clearing and statement-emitting resource factories inside expression-only delegates are covered.
 
-The CLI smoke path emits assemblies in standalone and evaluated-project modes. LSP tests exchange real stdio messages and mutate source inputs to test automatic refresh. Package consumers build with the incremental generator and its transitive targets. The release candidate installs the shipped CLI/LSP with an empty cache and exercises a real Avalonia package-consuming application.
+Workspace tests coalesce identical duplicate MSBuild inputs and reject conflicting buffers. `test-lsp-resources.py` launches the actual trusted-project stdio process, introduces an unsaved dependency error, verifies the unchanged caller's diagnostics/inspection, closes the dependency and checks recovery. It does not modify the caller version to manufacture freshness.
 
-The browser runs the production compiler and actual framework view. Tests exercise rendering, code-behind, editor snapshots, source/visual inspection, themes/mobile layout, gestures and isolation. Pages deployment additionally verifies the exact public source identity and reruns the browser suite against the public URL.
+## Pinned upstream comparison
 
-Release validation creates 13 package artifacts, inventories dependencies and records checksums/source commit. PR validation does not publish NuGet packages or GitHub releases. A particular workflow's successful conclusion and artifacts are the evidence for its revision; a workflow definition alone is not evidence of success.
+The original XamlX baseline executes 222 pinned cases. The XamlG adapter executes 217 runtime/diagnostic cases through XamlG binding, generated C#, Roslyn emission and runtime execution. CI checks exact executed counts and rejects skips. Four XamlX AST-shape assertions and one IL-helper-name assertion are explicitly outside the source-backend comparison. See [the harness boundary](upstream-validation.md).
+
+XamlX is test-only, not a production dependency. These cases do not certify every framework extension, version, custom markup extension, binary-loader ABI or visual designer operation.
+
+## Host, browser and package gates
+
+CLI smoke tests emit assemblies in standalone and evaluated-project modes. LSP tests exchange real framed messages, edit C# inputs and verify automatic refresh; library tests exercise queued cancellation, write failures, deadlines, project/buffer-set freshness and clean shutdown.
+
+Release validation builds 13 shipping packages, validates analyzer/runtime dependency layout, installs CLI/LSP into a clean tool environment, and exercises actual portable and Avalonia package consumers. The Avalonia consumer compiles three XAML files with linked dictionary/style factories, checks assembly resource exports, compiled/two-way bindings, static resources, typed styles and subscription retirement.
+
+Browser tests execute the production compiler/Avalonia view, inspect source and visuals, verify immediate edits, undo/redo, mobile themes, designer gestures, isolated execution/reset, and multi-document resource projects. Resource tests include before-debounce edits, complete export, draft restoration, isolated assembly execution and missing dependencies. Pages verifies the exact public build identity and reruns the browser suite against the public URL.
+
+PR validation creates candidate artifacts and provenance, not a NuGet publication or version-tagged GitHub release. A workflow's successful conclusion and artifacts prove that specific revision; a workflow definition alone does not.

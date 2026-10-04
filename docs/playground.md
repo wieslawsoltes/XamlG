@@ -1,6 +1,6 @@
 # Browser Compiler Studio
 
-The studio hosts the production Roslyn/XamlG compiler in WebAssembly with Monaco source editors and actual Avalonia controls. JavaScript provides editor/browser integration, not an imitation binder or HTML recreation of the view.
+Compiler Studio hosts production Roslyn/XamlG in WebAssembly with Monaco source editors and actual Avalonia controls. JavaScript supplies editor/browser integration, not an imitation binder or HTML recreation of the view.
 
 ## Build and serve
 
@@ -12,26 +12,38 @@ dotnet publish tools/XamlG.Playground -c Release -o artifacts/playground
 python scripts/serve-playground.py --port 8765 --directory artifacts/playground/wwwroot
 ```
 
-Open `http://localhost:8765/`. The supplied development server enables public cross-origin asset reads needed by the opaque-origin preview. Production hosting must likewise allow its static runtime assets to be fetched from the isolated frame. Metadata images used by Roslyn are separate from runtime assemblies. Publication preserves Avalonia's required stable JavaScript asset URLs.
+Open `http://localhost:8765/`. The development server enables public cross-origin asset reads for the isolated preview. Production hosting must likewise allow its runtime assets to be fetched from the opaque-origin frame. Roslyn metadata images are separate from executable runtime assemblies. Publishing preserves Avalonia's stable JavaScript asset URLs.
 
 ## Source, semantics and pixels
 
-The studio includes XAML/C# editors, compiler and generated-C# diagnostics, source mappings, source-preserving syntax, typed bound operations (including delegate bodies), realized visual-tree inspection, property/structure editing, undo/redo, drafts/export and dark/light responsive layouts.
+The studio includes XAML/C# editors, compiler/generated-C# diagnostics, source mappings, syntax and typed-operation inspection, realized visual trees, property/structure editing, undo/redo, project drafts/export and responsive dark/light themes.
 
-Compile and Run capture the current editor buffers rather than trusting delayed notifications. Unrelated renders do not overwrite pending edits. Buffer changes are converted to minimal UTF-16-safe replacements; eligible local edits reparse one complete element and reuse unaffected nodes. The existing snapshot reaches semantic analysis unchanged. Parser-work counters are not an end-to-end complexity claim: text construction, line indexing and binding have their own costs.
+Compile and Run capture current buffers instead of relying on delayed notifications. Unrelated renders do not overwrite pending edits. Minimal UTF-16-safe changes permit eligible local subtree reparsing with unchanged-node reuse. Parser-work counters are not an end-to-end complexity claim: text construction, indexing, project linking and binding have separate costs.
 
-The Design control enables real drag/eight-handle resize, snapping, aspect locking, keyboard nudging and cancellation. Property and structure commands operate on source transactions. See [design and reload](hot-reload.md) for transaction rules and state preservation.
+Design mode provides real drag/eight-handle resize, snapping, aspect locking, keyboard nudging and cancellation. Property/structure commands are source transactions; see [design and reload](hot-reload.md).
+
+## Multi-document resources
+
+The Resources tab manages reusable classless dictionaries/styles in the same project as `View.axaml`. It has a path selector, add/remove controls, source/generated/syntax views and a complete three-document example. Source remains local to the browser. Adding/removing files changes the compilation's resource catalog; unresolved dependencies appear as source diagnostics, not runtime loader failures.
+
+Run emits the view, dictionaries and styles into one assembly. `ResourceInclude`, `StyleInclude` and `MergeResourceInclude` call compiled factories. Changing a resource before its debounce timer fires is captured by the next Compile/Run. Export format version 2 includes resource text and all current generated files; outdated output is omitted. Draft restoration accepts earlier single-document drafts and new project drafts without executing either.
+
+Resource document count/character limits, normalized relative paths, reserved root paths and revision checks bound the editor store. Replacing a project retires callbacks from previous same-path resource editors. See [resource semantics and export metadata](resources.md).
 
 ## Explicit execution modes
 
-**Run preview** executes trusted generated code in the editor tab and enables local visual design. It has the same browser-origin capabilities as the studio. Review code before using this mode. Restoring a draft does not execute it.
+**Run preview** executes trusted generated code in the editor tab for visual design, with the studio's browser-origin capabilities. Review code before using it.
 
-**Run isolated** emits the assembly as data in the editor and loads it in a separate WebAssembly host inside an iframe with `sandbox="allow-scripts"`, without `allow-same-origin`. The frame has an opaque origin and cannot read the editor DOM, cookies or local storage through same-origin APIs. A dedicated MessageChannel uses source/origin checks and a nonce handshake; payloads and responses are bounded, and requests have deadlines. A restrictive content-security policy limits resource fetches to required assets. Reset discards the frame and its runtime.
+**Run isolated** emits the complete assembly as data and executes it inside a separate WebAssembly host in an iframe with `sandbox="allow-scripts"`, without `allow-same-origin`. The opaque-origin frame cannot access editor DOM/storage through same-origin APIs. A dedicated MessageChannel validates source/origin/nonce and bounds requests/responses. Content-security policy limits fetches to required assets.
 
-Isolated execution is not an operating-system process/resource quota. Untrusted code can still consume CPU/memory or stop responding, and browser scheduling does not guarantee that every infinite loop is independently preemptible. The policy permits the public static assets necessary to start .NET/Avalonia, not an absolute no-network environment. Do not describe this as universally safe arbitrary-code execution.
+Frame ownership is established before startup completes. Reset disposes the frame and settles queued/active requests; generation checks discard superseded startup/execution results. The runtime can be restarted without reloading the editor.
 
-Both runtime hosts cap loaded preview assemblies because collectible browser load contexts are not assumed. Local trusted preview requires exporting/reloading the page to reclaim loaded code; the isolated host can be discarded separately. Local visual gestures are disabled while isolated mode is active; source-based edits continue through the isolated execution path rather than silently loading code into the editor.
+Isolation is not an operating-system resource quota. Code may consume CPU/memory or stop responding; browser scheduling does not guarantee independent preemption of every infinite loop. Required public assets remain network-accessible. This is not universally safe arbitrary-code execution.
+
+Both hosts bound loaded preview assemblies because collectible browser load contexts are not assumed. Trusted mode needs page reload to reclaim loaded code; isolated mode can discard its runtime independently. Local visual gestures are disabled in isolated mode, while source edits continue through isolated execution rather than silently loading code into the editor.
 
 ## Deployment and acceptance
 
-Pages deployment runs only from `main`, retains its environment protections, verifies browser behavior, writes `build.json` with the exact source commit and tests the public deployment after confirming that identity. Acceptance tests include real controls/code-behind, source/visual inspection, immediate-edit Run, undo/redo, responsive themes, canvas drag/resize/cancellation and opaque-origin DOM/storage separation. They are behavioral tests, not exhaustive pixel/browser-engine certification.
+Pages deploys only from `main`, retains environment protections, validates browser behavior, records the exact source commit in `build.json` and reruns tests against the public URL after verifying that identity.
+
+Acceptance covers real controls/code-behind, inspections, immediate edits, undo/redo, mobile themes, canvas gestures, isolation/reset, resource projects, exports/drafts and dependency errors. These are behavioral tests, not exhaustive pixel or browser-engine certification.

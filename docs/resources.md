@@ -26,84 +26,63 @@ Styles/Buttons.axaml
 </StackPanel>
 ```
 
-A resource include requires a ResourceDictionary root; a style include requires an IStyle root. Source must be static and specified once, either as an attribute or Source property element. Relative paths resolve against the including document, root-relative paths against its assembly, and `avares://Assembly/Path.axaml` identifies another assembly. Scheme and authority are case-insensitive; resource paths are ordinal and case-sensitive. Credentials, query strings, fragments, encoded path separators and ambiguous exported identities are rejected.
+A resource include requires a ResourceDictionary root; a style include requires an IStyle root. Source must be static and specified once, as an attribute or Source property element. Relative paths resolve against the including document, root-relative paths against its assembly, and `avares://Assembly/Path.axaml` identifies an assembly. Scheme/authority are case-insensitive; resource paths are ordinal. Credentials, query strings, fragments, encoded path separators and ambiguous exports are rejected.
 
 ## Reusable library API
 
-`XamlProjectCompiler` lives in `XamlG.CSharp`, not the source generator. Keep one instance for a project and supply a pre-generation `CSharpCompilation`, immutable syntax snapshots and a framework profile. The project descriptor separates physical diagnostic paths from reproducible logical resource paths.
+`XamlProjectCompiler` lives in `XamlG.CSharp`, not the generator. Keep one instance for a project and supply its pre-generation `CSharpCompilation`, immutable syntax and framework profile. `XamlProjectDocument` separates physical diagnostic paths from logical resource identity. The README contains a complete host example.
 
 ```csharp
-using System;
-using System.Collections.Generic;
-using System.Threading;
-using Microsoft.CodeAnalysis.CSharp;
-using XamlG.CSharp.Resources;
-using XamlG.Frameworks.Avalonia;
-
-public sealed class ProjectCompilerHost
+var compiler = new XamlG.CSharp.Resources.XamlProjectCompiler();
+var documents = new[]
 {
-    private readonly XamlProjectCompiler _compiler = new();
-    private readonly XamlG.Compiler.XamlFrameworkProfile _profile =
-        AvaloniaFrameworkProfile.Create();
-
-    public (CSharpCompilation Compilation, XamlProjectCompilation Xaml) Compile(
-        CSharpCompilation application,
-        CSharpParseOptions parseOptions,
-        IEnumerable<XamlProjectDocument> documents,
-        CancellationToken cancellationToken = default)
-    {
-        var result = _compiler.Compile(
-            documents, application, _profile,
-            cancellationToken: cancellationToken);
-
-        foreach (var document in result.Documents)
-        {
-            if (!document.Output.Success)
-                throw new InvalidOperationException(
-                    string.Join(Environment.NewLine, document.Output.Diagnostics));
-
-            application = application.AddSyntaxTrees(CSharpSyntaxTree.ParseText(
-                document.Output.Source, parseOptions, document.Output.HintName,
-                cancellationToken: cancellationToken));
-        }
-
-        return (application, result);
-    }
-}
+    new XamlG.CSharp.Resources.XamlProjectDocument(viewSyntax, "View.axaml"),
+    new XamlG.CSharp.Resources.XamlProjectDocument(paletteSyntax, "Resources/Palette.axaml"),
+    new XamlG.CSharp.Resources.XamlProjectDocument(stylesSyntax, "Styles/Buttons.axaml")
+};
+var result = compiler.Compile(documents, applicationCompilation,
+    XamlG.Frameworks.Avalonia.AvaloniaFrameworkProfile.Create(),
+    cancellationToken: cancellationToken);
 ```
 
-The caller provides actual application/framework/runtime references. Use the project's evaluated parse options, not an unrelated default language version. Keep the pre-generation compilation as the input for the next update; do not feed a previous generated output back as user source.
+The host provides the syntax variables, actual source/metadata references and cancellation token. Preserve evaluated C# parse options when adding the returned generated sources. Do not feed previous generated trees back as user source on the next update.
 
 ## Referenced assembly exports
 
-Public classless resources emit `XamlCompiledResourceAttribute` assembly metadata containing their canonical URI and factory type/method. Consumers discover this through Roslyn symbols, without loading the producer assembly into the compiler. Factory namespaces include an assembly identity component, so two assemblies can both contain `Resources/Palette.axaml` without C# type-name collisions.
+Public classless resources emit `XamlCompiledResourceAttribute` assembly metadata containing canonical URI and factory type/method. Consumers discover it through Roslyn symbols without executing producer code. Factory namespaces include an assembly identity component, so separate assemblies can both contain `Resources/Palette.axaml` without C# type-name collisions.
 
-Cross-assembly references need these exports. Legacy XamlX-compiled resources do not automatically acquire export metadata. Documents declaring `x:Class` are populated through their generated initializer and are not currently exported as resource factories; give reusable dictionaries/styles classless roots. Malformed, inaccessible or ambiguous exports do not become dynamic loader fallbacks.
+Cross-assembly references need these exports. Legacy XamlX-compiled resources do not automatically acquire export metadata. Documents declaring `x:Class` are populated through their generated initializer and are not currently exported as resource factories. Malformed, inaccessible or ambiguous exports do not become dynamic-loader fallbacks.
 
-## Merge and precedence semantics
+## Merge and precedence
 
-`MergeResourceInclude` entries must follow other entries in MergedDictionaries. The emitted code constructs each statically resolved source dictionary and merges its entries through typed runtime operations before applying local entries. Later merged entries override earlier merged entries; local entries override merged entries. Same-variant theme dictionaries combine their keys rather than discarding the earlier dictionary wholesale. Ordinary ResourceInclude retains a distinct merged provider.
+Merge includes must follow other entries in MergedDictionaries. Emitted code constructs each resolved source dictionary and merges through typed runtime operations before local entries. Later merged values override earlier values; local values override merged values. Same-variant theme dictionaries combine keys rather than discarding earlier entries. Ordinary ResourceInclude retains a distinct provider.
 
-This implementation performs **factory linking and eager dictionary merging**, not XamlX's IL-level manipulation flattening. It can construct transient source dictionaries. It does not claim identical allocation behavior or benchmark superiority to the IL backend.
+This is **factory linking and eager dictionary merging**, not XamlX's IL-level manipulation flattening. It can construct transient dictionaries and does not claim identical allocation behavior or performance superiority to the IL backend.
 
-Included factories create fresh instances. Their runtime sessions are owned by the calling construction session and are retired with it. A persistent service-provider include stack guards external recursion and excessive nesting without process-wide mutable registries.
+Factories create fresh instances. Included runtime sessions belong to the caller's construction session and are retired with it. A persistent include stack guards external recursion and excessive nesting without process-wide mutable registries. Resource operations cannot be hoisted into expression-only delegates, where eager construction would change lifetime semantics.
 
-## Errors and incremental work
+## Diagnostics and incremental work
 
-The linker builds a dependency graph and rejects cycles before emission. Documents depending on a cycle fail too, while unrelated documents can still emit. An invalid included document propagates a source-located error to its callers. XG3300–XG3308 cover address/identity errors, lookup, include syntax/type, cycles, dependency failures, merge order and missing runtime contracts.
+Dependency validation rejects cycles before emission, including callers that depend on a cycle. Unrelated documents can still emit. Invalid included documents propagate source-located diagnostics to callers. XG3300–XG3308 cover addresses/identities, lookup, include syntax/type, cycles, dependency failures, merge order and missing runtime contracts.
 
-Project caches retain one Roslyn compilation and one binding/output per logical path. Stable export signatures plus an unchanged syntax snapshot reuse the binding and source. A value-only edit rebinds and emits the changed document, while graph diagnostics are recomputed. Root/export signature changes conservatively invalidate binding assumptions; a new Roslyn compilation or profile/options clears the cache. Dependency errors are never written into the cached raw binding, so a corrected dependency cannot leave stale failure diagnostics in a caller.
+Project caches retain one Roslyn compilation and one binding/output per logical path. Stable export signatures plus unchanged syntax reuse binding and source. A value-only edit rebinds/emits the changed document while graph diagnostics are recomputed. Root/export signature changes conservatively invalidate binding assumptions; new compilation/profile/options clear the cache. Dependency errors are not written into cached raw bindings, so a corrected resource cannot leave a stale error in its caller.
 
-`XamlProjectCompilation.Statistics` reports actual bound/reused/emitted counts. These are not wall-clock benchmarks. Catalog indexing, signature comparison and graph validation still perform project-wide work. Cache reuse depends on retaining unchanged syntax and compilation instances.
+`XamlProjectCompilation.Statistics` reports bound/reused/emitted counts, not wall-clock benchmarks. Catalog indexing, signature comparison and graph validation still perform project-wide work. Reuse requires preserving unchanged syntax and compilation instances. `ClearCache` releases retained project state.
 
-## Hosts
+## Host consistency
 
-The source generator, workspace/CLI and browser use the same project compiler. The generator handles empty AdditionalFiles logical-path metadata by falling back to a project-relative file path. The workspace keeps physical paths for editor overlays and logical paths for generated identities. CLI project mode retains the complete document set even with `--file`, so emitted factories and code-behind initializers are not silently omitted.
+The source generator, workspace/CLI and browser share project compilation. Empty AdditionalFiles logical-path metadata falls back to a project-relative path. Workspace loading preserves physical paths for overlays and logical paths for generated identities. Identical duplicate AdditionalDocuments contributed by framework/explicit MSBuild items are coalesced; conflicting text for one physical path is rejected. CLI project mode retains the complete document set even with `--file`, avoiding missing factory/initializer output.
 
-Compiler Studio's Resources tab adds, edits, removes and inspects resource files. Run emits all documents into one assembly, both in trusted mode and inside the opaque-origin isolated preview. Compile/Run capture the current resource editor before a pending debounce can lose an edit. Project drafts and exports include resource text and all generated files; restoring a draft does not execute it.
+`XamlCompilationSession.AnalyzeOverlays` applies all open XAML buffers as one snapshot over loaded project documents. The stdio LSP uses this for semantic requests and diagnostics. An unsaved included-document edit can fail its caller at the caller's unchanged client version. Closing the edited dependency returns to its loaded on-disk snapshot. Project refresh and the complete open-buffer revision are checked again under the output publication gate, so queued older results cannot overwrite current cross-file analysis.
 
-The workspace's single-document Analyze API applies one unsaved overlay against its loaded project. Clients with multiple simultaneously edited documents should call AnalyzeProject with the complete overlay set. The stdio LSP does not yet coordinate all independently open overlays as one shared editable resource project.
+Unknown/untitled buffers not belonging to the loaded project remain standalone. Watching refreshes on-disk project inputs; LSP edits are unsaved overlays, not implicit file writes.
 
-## Validation
+## Compiler Studio
 
-Executable tests compile and run relative and cross-assembly includes, styles, precedence, theme merges, fresh instances and cleanup. Diagnostics tests cover unresolved/dynamic sources, type errors, cycles and dependent failures. Incrementality tests check exact work counts and recovery from failed dependencies. The release gate installs the actual generator package into a multi-file Avalonia application and verifies linked dictionaries/styles at runtime. Browser tests cover resource editing, immediate Run, project export/draft restoration and isolated project execution.
+The Resources tab adds, edits, removes and inspects resource files. Run emits all documents into one assembly in trusted or isolated mode. Compile/Run capture current resource editor text before a pending debounce can lose the latest edit. Replacing a project retires old same-path editor callbacks. Drafts and exports include resource text and all generated files; restoring a draft never executes it.
+
+## Executable validation
+
+Native tests compile/execute relative and cross-assembly includes, styles, precedence, theme merges, fresh instances and cleanup. Diagnostics cover unresolved/dynamic sources, type errors, cycles and dependent failures. Incrementality tests check exact work counts and dependency-failure recovery. The release gate installs the actual generator into a multi-file Avalonia app and verifies linked resources/styles.
+
+`test-lsp-resources.py` starts the real trusted-project host, edits an included resource without saving, verifies caller diagnostics/inspection consistency, closes the buffer and verifies recovery. Browser tests cover resource edits, immediate Run, export/draft restoration, isolated projects and missing dependencies.
