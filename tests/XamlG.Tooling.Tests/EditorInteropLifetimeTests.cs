@@ -138,9 +138,8 @@ public sealed class EditorInteropLifetimeTests
     {
         var js = new EditorInteropFixture { ReleaseCreation = EditorInteropFixture.NewBarrier() };
         await using var owner = new EditorInteropModule(js);
-        var editor = new TestCodeEditor { Editors = owner, Text = "source", DocumentPath = "Resource.axaml" };
-        await editor.ParametersAsync();
-        var render = editor.RenderAsync();
+        var editor = new TestCodeEditor(owner, "source", "Resource.axaml");
+        await editor.ParametersAsync(); var render = editor.RenderAsync();
         try
         {
             await js.CreationStarted.Task.WaitAsync(Deadline);
@@ -149,8 +148,7 @@ public sealed class EditorInteropLifetimeTests
             await Assert.ThrowsAsync<ObjectDisposedException>(() => editor.GetTextAsync());
             js.ReleaseCreation.TrySetResult();
             await Task.WhenAll(render, disposal).WaitAsync(Deadline);
-            await editor.DisposeAsync();
-            Assert.Empty(js.Buffers);
+            await editor.DisposeAsync(); Assert.Empty(js.Buffers);
         }
         finally { js.ReleaseCreation.TrySetResult(); }
     }
@@ -160,18 +158,17 @@ public sealed class EditorInteropLifetimeTests
     {
         var js = new EditorInteropFixture { ReleaseCreation = EditorInteropFixture.NewBarrier() };
         await using var owner = new EditorInteropModule(js);
-        await using var editor = new TestCodeEditor { Editors = owner, Text = "old", DocumentPath = "Resource.axaml" };
+        await using var editor = new TestCodeEditor(owner, "old", "Resource.axaml");
         await editor.ParametersAsync(); var render = editor.RenderAsync();
         try
         {
             await js.CreationStarted.Task.WaitAsync(Deadline);
-            editor.Text = "replacement";
-            var parameters = editor.ParametersAsync();
+            var parameters = editor.ParametersAsync(new Dictionary<string, object?> { [nameof(editor.Text)] = "replacement" });
             js.ReleaseCreation.TrySetResult();
             await Task.WhenAll(render, parameters).WaitAsync(Deadline);
             Assert.Equal("replacement", await editor.GetTextAsync());
             js.Buffers[1] = "not yet debounced";
-            await editor.ParametersAsync(); // Unrelated parent render, same source parameter.
+            await editor.ParametersAsync();
             Assert.Equal("not yet debounced", await editor.GetTextAsync());
         }
         finally { js.ReleaseCreation.TrySetResult(); }
@@ -181,10 +178,13 @@ public sealed class EditorInteropLifetimeTests
     public async Task AManagedCommandReleasesItsGateBeforeRecursivelyCapturingTheBuffer()
     {
         var js = new EditorInteropFixture(); await using var owner = new EditorInteropModule(js);
-        await using var editor = new TestCodeEditor { Editors = owner, Text = "source", DocumentPath = "Resource.axaml" };
+        await using var editor = new TestCodeEditor(owner, "source", "Resource.axaml");
         string? captured = null;
-        editor.AuthoringRequested = EventCallback.Factory.Create<EditorCommandRequest>(new object(), async _ => captured = await editor.GetTextAsync());
-        await editor.ParametersAsync(); await editor.RenderAsync();
+        await editor.ParametersAsync(new Dictionary<string, object?>
+        {
+            [nameof(editor.AuthoringRequested)] = EventCallback.Factory.Create<EditorCommandRequest>(new object(), async _ => captured = await editor.GetTextAsync())
+        });
+        await editor.RenderAsync();
         await editor.RequestCommandAsync("format").WaitAsync(Deadline);
         Assert.Equal("source", captured);
     }
@@ -193,9 +193,9 @@ public sealed class EditorInteropLifetimeTests
     public async Task RetiredCallbacksCannotUpdateTheSuccessorSource()
     {
         var js = new EditorInteropFixture(); await using var owner = new EditorInteropModule(js);
-        var editor = new TestCodeEditor { Editors = owner, Text = "source" };
-        var changes = 0;
-        editor.TextChanged = EventCallback.Factory.Create<string>(new object(), _ => changes++);
+        var editor = new TestCodeEditor(owner); var changes = 0;
+        await editor.ParametersAsync(new Dictionary<string, object?>
+        { [nameof(editor.TextChanged)] = EventCallback.Factory.Create<string>(new object(), _ => changes++) });
         await editor.DisposeAsync();
         await editor.Changed("stale callback"); await editor.RenderAsync();
         Assert.Equal(0, changes); Assert.Equal(0, js.Imports);
