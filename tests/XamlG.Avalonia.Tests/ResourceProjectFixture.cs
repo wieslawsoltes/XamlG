@@ -1,5 +1,5 @@
-using System.Collections.Immutable;
 using System.Reflection;
+using System.Runtime.Loader;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlG.CSharp.Resources;
@@ -27,14 +27,18 @@ internal sealed class ResourceProjectFixture
     {
         Assert.True(Result.Success, string.Join("\n", Result.Documents.SelectMany(d => d.Output.Diagnostics.Select(e => d.Input.LogicalPath + ": " + e))));
         var generated = Result.Documents.Select(d => CSharpSyntaxTree.ParseText(d.Output.Source, new CSharpParseOptions(LanguageVersion.Preview), d.Output.HintName));
-        using var output = new MemoryStream();
-        var emitted = Compilation.AddSyntaxTrees(generated).Emit(output);
+        using var output = new MemoryStream(); var emitted = Compilation.AddSyntaxTrees(generated).Emit(output);
         Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)) + "\n" + string.Join("\n", Result.Documents.Select(d => d.Output.Source)));
         return output.ToArray();
     }
+    public static Assembly Load(byte[] image)
+    {
+        using var stream = new MemoryStream(image);
+        return AssemblyLoadContext.Default.LoadFromStream(stream);
+    }
     public object Build(string path)
     {
-        var assembly = Assembly.Load(Emit());
+        var assembly = Load(Emit());
         var output = Result.Documents.Single(d => d.Input.LogicalPath == path).Output;
         return assembly.GetType(output.FactoryTypeName)!.GetMethod(output.BuildMethodName!)!.Invoke(null, new object?[] { null })!;
     }

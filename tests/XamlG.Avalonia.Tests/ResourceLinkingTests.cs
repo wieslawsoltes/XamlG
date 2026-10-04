@@ -1,10 +1,8 @@
-using System.Reflection;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Microsoft.CodeAnalysis;
-using XamlG.CSharp.Resources;
 using XamlG.Runtime;
 using Xunit;
 
@@ -15,7 +13,6 @@ public sealed class ResourceLinkingTests
     private const string Ns = ResourceProjectFixture.Namespace;
     private static string Dictionary(string body) => ResourceProjectFixture.Dictionary(body);
     private static string Include(string path, string kind = "ResourceInclude") => ResourceProjectFixture.Include(path, kind);
-
     [AvaloniaFact]
     public void RelativeResourceIncludesCallFactoriesAndResolveStaticResources()
     {
@@ -32,7 +29,6 @@ public sealed class ResourceLinkingTests
         Assert.DoesNotContain("new global::Avalonia.Markup.Xaml.Styling.ResourceInclude", source);
         Assert.DoesNotContain("AvaloniaXamlLoader", source);
     }
-
     [AvaloniaFact]
     public void StylesCanBeIncludedAndAppliedWithoutTheBinaryXamlLoader()
     {
@@ -41,12 +37,10 @@ public sealed class ResourceLinkingTests
             ("Styles.axaml", "<Styles " + Ns + "><Style Selector='Button'><Setter Property='Width' Value='137'/></Style></Styles>"),
             ("Main.axaml", "<StackPanel " + Ns + "><StackPanel.Styles><StyleInclude Source='Styles.axaml'/></StackPanel.Styles><Button/></StackPanel>")
         });
-        var root = (StackPanel)project.Build("Main.axaml");
-        var window = new Window { Content = root };
+        var root = (StackPanel)project.Build("Main.axaml"); var window = new Window { Content = root };
         try { window.Show(); window.UpdateLayout(); Assert.Equal(137, ((Button)root.Children[0]).Width); }
         finally { window.Close(); }
     }
-
     [AvaloniaFact]
     public void MergeIncludesPreserveOrderAndLocalOverrides()
     {
@@ -57,10 +51,8 @@ public sealed class ResourceLinkingTests
             ("Main.axaml", Dictionary("<ResourceDictionary.MergedDictionaries><MergeResourceInclude Source='First.axaml'/><MergeResourceInclude Source='Second.axaml'/></ResourceDictionary.MergedDictionaries><x:Int32 x:Key='shared'>3</x:Int32>"))
         });
         var root = (ResourceDictionary)project.Build("Main.axaml");
-        Assert.Equal(3, root["shared"]); Assert.Equal("retained", root["first"]);
-        Assert.Empty(root.MergedDictionaries);
+        Assert.Equal(3, root["shared"]); Assert.Equal("retained", root["first"]); Assert.Empty(root.MergedDictionaries);
     }
-
     [AvaloniaFact]
     public void ThemeDictionariesMergeByVariantWithoutDiscardingEarlierKeys()
     {
@@ -70,24 +62,21 @@ public sealed class ResourceLinkingTests
             ("Base.axaml", Dictionary(Theme("<x:Int32 x:Key='shared'>1</x:Int32><x:String x:Key='base'>kept</x:String>"))),
             ("Main.axaml", Dictionary(Include("Base.axaml", "MergeResourceInclude") + Theme("<x:Int32 x:Key='shared'>4</x:Int32>")))
         });
-        var root = (ResourceDictionary)project.Build("Main.axaml");
-        var dark = Assert.IsType<ResourceDictionary>(root.ThemeDictionaries[ThemeVariant.Dark]);
+        var root = (ResourceDictionary)project.Build("Main.axaml"); var dark = Assert.IsType<ResourceDictionary>(root.ThemeDictionaries[ThemeVariant.Dark]);
         Assert.Equal("kept", dark["base"]); Assert.Equal(4, dark["shared"]);
     }
-
     [AvaloniaFact]
     public void ReferencedExportsWithTheSameLogicalPathRemainUnambiguous()
     {
         var name = "ResourceLibrary_" + Guid.NewGuid().ToString("N");
         var library = new ResourceProjectFixture(new[] { ("Theme.axaml", Dictionary("<x:String x:Key='shared'>library</x:String>")) }, name);
-        var image = library.Emit(); Assembly.Load(image);
+        var image = library.Emit(); ResourceProjectFixture.Load(image);
         var app = new ResourceProjectFixture(new[] { ("Theme.axaml", Dictionary(Include("avares://" + name + "/Theme.axaml"))) }, references: new[] { MetadataReference.CreateFromImage(image) });
         var root = (ResourceDictionary)app.Build("Theme.axaml");
         Assert.True(root.TryGetResource("shared", null, out var value)); Assert.Equal("library", value);
         Assert.NotEqual(library.Result.Documents[0].Output.FactoryTypeName, app.Result.Documents[0].Output.FactoryTypeName);
         Assert.Contains(app.Result.Resources.Resources, r => r.ExternalFactory != null);
     }
-
     [AvaloniaFact]
     public void IncludeInstancesAreFreshAndOwnedByTheContainingSession()
     {
@@ -99,10 +88,8 @@ public sealed class ResourceLinkingTests
         var root = (ResourceDictionary)project.Build("Main.axaml");
         Assert.NotSame(root.MergedDictionaries[0], root.MergedDictionaries[1]);
         Assert.True(XamlRuntimeSession.TryGet(root.MergedDictionaries[0], out var included));
-        Assert.True(XamlRuntimeSession.TryGet(root, out var session)); session!.Dispose();
-        Assert.True(included!.IsDisposed);
+        Assert.True(XamlRuntimeSession.TryGet(root, out var session)); session!.Dispose(); Assert.True(included!.IsDisposed);
     }
-
     [Fact]
     public void CyclesAndTheirDependentsFailButIndependentDocumentsStillEmit()
     {
@@ -116,7 +103,6 @@ public sealed class ResourceLinkingTests
         foreach (var result in project.Result.Documents.Where(d => d.Input.LogicalPath != "Unrelated.axaml"))
         { Assert.Contains(result.Output.Diagnostics, d => d.Code == "XG3304"); Assert.Empty(result.Output.Source); }
     }
-
     [Fact]
     public void IncludesWithACompilationFailurePropagateADiagnosticToCallers()
     {
@@ -128,7 +114,6 @@ public sealed class ResourceLinkingTests
         Assert.False(project.Result.Success);
         Assert.Contains(project.Result.Documents.Single(d => d.Input.LogicalPath == "Main.axaml").Output.Diagnostics, d => d.Code == "XG3305");
     }
-
     [Theory]
     [InlineData("<ResourceInclude/>", "XG3302")]
     [InlineData("<ResourceInclude Source='Missing.axaml'/>", "XG3301")]

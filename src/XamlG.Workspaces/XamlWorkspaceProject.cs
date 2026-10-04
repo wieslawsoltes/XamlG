@@ -5,20 +5,12 @@ using XamlG.Tooling;
 
 namespace XamlG.Workspaces;
 
-/// <summary>An immutable evaluated project snapshot. All XAML documents share the same Roslyn symbol universe.</summary>
+/// <summary>An immutable evaluated project snapshot. XAML documents share symbols and resource-linking policy.</summary>
 public sealed record XamlWorkspaceProject(Project Project, XamlCompilationSession Compiler,
     ImmutableDictionary<string, XamlSyntaxTree> Documents)
 {
-    public ImmutableArray<XamlAnalysis> Analyze(CancellationToken cancellationToken = default)
-    {
-        var result = ImmutableArray.CreateBuilder<XamlAnalysis>();
-        foreach (var document in Documents.OrderBy(d => d.Key, StringComparer.Ordinal))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            result.Add(Compiler.Analyze(document.Value, cancellationToken));
-        }
-        return result.ToImmutable();
-    }
+    public ImmutableArray<XamlAnalysis> Analyze(CancellationToken cancellationToken = default) =>
+        Compiler.AnalyzeProject(Documents.OrderBy(d => d.Key, StringComparer.Ordinal).Select(d => d.Value), cancellationToken);
 
     public XamlWorkspaceProject WithDocumentText(string path, string text)
     {
