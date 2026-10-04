@@ -37,8 +37,9 @@ public sealed class DuplicateAdditionalDocumentTests
         Assert.Contains(path, error.Message);
     }
 
-    private static Project Create(AdhocWorkspace workspace) => workspace.AddProject("DuplicateInputs", LanguageNames.CSharp)
-        .WithFilePath(Path.GetFullPath("DuplicateInputs.csproj"))
+    private static Project Create(AdhocWorkspace workspace) => workspace.AddProject(ProjectInfo.Create(
+            ProjectId.CreateNewId(), VersionStamp.Default, "DuplicateInputs", "DuplicateInputs", LanguageNames.CSharp,
+            filePath: Path.GetFullPath("DuplicateInputs.csproj")))
         .WithCompilationOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary))
         .WithMetadataReferences(((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator).Select(path => MetadataReference.CreateFromFile(path)))
         .AddDocument("Model.cs", "namespace DuplicateInputs { public class View { public string Text {get;set;} } }").Project;
