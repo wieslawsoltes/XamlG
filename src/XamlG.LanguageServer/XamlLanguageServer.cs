@@ -6,7 +6,7 @@ using XamlG.Tooling;
 namespace XamlG.LanguageServer;
 
 /// <summary>JSON-RPC publication is guarded by project and complete open-buffer revisions.
-/// Admitted transport frames remain atomic even when newer buffers cancel queued analysis.</summary>
+/// Graceful input termination drains admitted frames before cancelling the transport lifetime.</summary>
 public sealed class XamlLanguageServer : IAsyncDisposable
 {
     private readonly LspConnection _connection;
@@ -18,6 +18,7 @@ public sealed class XamlLanguageServer : IAsyncDisposable
     private readonly ConcurrentDictionary<long, Task> _tasks = new();
     private readonly SemaphoreSlim _parallelism = new(8);
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly CancellationTokenSource _transportLifetime = new();
     private readonly TextWriter _log;
     private readonly object _diagnosticGate = new();
     private LspCompilationSnapshot _project;
@@ -29,7 +30,9 @@ public sealed class XamlLanguageServer : IAsyncDisposable
 
     public XamlLanguageServer(XamlCompilationSession compiler, Stream input, Stream output, TextWriter? log = null)
     {
-        _project = new(0, compiler); _connection = new(input, output, lifetimeToken: _lifetime.Token); _log = log ?? TextWriter.Null;
+        _project = new(0, compiler);
+        _connection = new(input, output, lifetimeToken: _transportLifetime.Token);
+        _log = log ?? TextWriter.Null;
     }
     public long ProjectRevision => Volatile.Read(ref _project).Revision;
     public void UpdateCompilation(XamlCompilationSession compiler)
@@ -48,6 +51,8 @@ public sealed class XamlLanguageServer : IAsyncDisposable
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token, _connection.Closed);
+        // Explicit host cancellation aborts transport I/O; ordinary exit/EOF does not.
+        using var abort = cancellationToken.Register(static state => Cancel((CancellationTokenSource)state!), _transportLifetime);
         try
         {
             while (!linked.IsCancellationRequested)
@@ -90,7 +95,12 @@ public sealed class XamlLanguageServer : IAsyncDisposable
             _lifetime.Cancel();
             foreach (var request in _requests.Values) Cancel(request);
             foreach (var diagnostic in _diagnostics.Values) Cancel(diagnostic);
-            try { await Task.WhenAll(_tasks.Values); } catch (OperationCanceledException) { }
+            // A client may receive the complete shutdown payload and send exit before our
+            // final FlushAsync returns. Queue/analysis cancellation must not abort that flush.
+            // Admitted writes retain their deadline; a stalled transport still terminates.
+            try { await Task.WhenAll(_tasks.Values); }
+            catch (OperationCanceledException) { }
+            finally { Cancel(_transportLifetime); }
         }
         if (_connection.Failure is { } failure) throw failure;
     }
@@ -251,8 +261,9 @@ public sealed class XamlLanguageServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         lock (_diagnosticGate) { if (_disposed) return; _disposed = true; _stopping = true; }
-        _lifetime.Cancel();
+        _lifetime.Cancel(); Cancel(_transportLifetime);
         try { await Task.WhenAll(_tasks.Values); } catch (OperationCanceledException) { }
-        await _connection.DisposeAsync(); _parallelism.Dispose(); _lifetime.Dispose();
+        await _connection.DisposeAsync();
+        _parallelism.Dispose(); _transportLifetime.Dispose(); _lifetime.Dispose();
     }
 }
