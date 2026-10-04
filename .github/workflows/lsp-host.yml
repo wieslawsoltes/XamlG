@@ -1,8 +1,8 @@
 name: Language server process validation
 on:
   push:
-    branches: [main, feat/tooling-and-playground, feat/framework-designer-completion, feat/worktree-completion]
-    paths: ['src/**', 'tools/XamlG.Lsp/**', 'tests/CliSmoke/**', 'tests/ResourceWorkspaceSmoke/**', 'scripts/test-lsp-*.py', 'Directory.*', '.github/workflows/lsp-host.yml']
+    branches: [main, feat/tooling-and-playground, feat/framework-designer-completion, feat/worktree-completion, feat/resource-moves-pull-diagnostics]
+    paths: ['src/**', 'tools/XamlG.Lsp/**', 'tests/CliSmoke/**', 'tests/ResourceWorkspaceSmoke/**', 'tests/FileRenameSmoke/**', 'scripts/test-lsp-*.py', 'Directory.*', '.github/workflows/lsp-host.yml']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -29,10 +29,16 @@ jobs:
         run: python scripts/test-lsp-csharp.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
       - name: Validate automatic compiler-input refresh
         run: python scripts/test-lsp-watch.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
-      - name: Restore the trusted multi-document resource project
-        run: dotnet restore tests/ResourceWorkspaceSmoke/ResourceWorkspaceSmoke.csproj -p:NuGetAudit=false
+      - name: Restore trusted resource and file-refactoring fixtures
+        run: |
+          dotnet restore tests/ResourceWorkspaceSmoke/ResourceWorkspaceSmoke.csproj -p:NuGetAudit=false
+          dotnet restore tests/FileRenameSmoke/FileRenameSmoke.csproj -p:NuGetAudit=false
       - name: Validate coherent unsaved resource overlays
         run: python scripts/test-lsp-resources.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
+      - name: Validate pull reports, result caching and refresh negotiation
+        run: python scripts/test-lsp-pull.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
+      - name: Validate file and folder refactoring through both edit encodings
+        run: python scripts/test-lsp-file-moves.py tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
       - run: dotnet pack tools/XamlG.Lsp/XamlG.Lsp.csproj -c Release --no-build -o artifacts/packages -p:NuGetAudit=false
       - uses: actions/upload-artifact@v4
         with:
