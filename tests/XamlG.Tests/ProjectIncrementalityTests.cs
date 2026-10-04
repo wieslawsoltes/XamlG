@@ -18,7 +18,6 @@ public sealed class ProjectIncrementalityTests
     }
     private static XamlProjectDocument Document(string path, string text, string type = "A") =>
         new(XamlSyntaxTree.Parse("<" + type + " xmlns='clr-namespace:Model' Text='" + text + "'/>", path), path);
-
     [Fact]
     public void ValueOnlyEditBindsAndEmitsExactlyOneDocument()
     {
@@ -36,19 +35,18 @@ public sealed class ProjectIncrementalityTests
     [Fact]
     public void ExportSignatureChangeInvalidatesDependentSymbolAssumptions()
     {
-        var compilation = Compilation(); var compiler = new XamlProjectCompiler();
-        var second = Document("Second.xaml", "second");
+        var compilation = Compilation(); var compiler = new XamlProjectCompiler(); var second = Document("Second.xaml", "second");
         compiler.Compile(new[] { Document("First.xaml", "first"), second }, compilation);
         var changed = compiler.Compile(new[] { Document("First.xaml", "first", "B"), second }, compilation);
-        Assert.Equal(2, changed.Statistics.BoundDocuments);
-        Assert.Equal(0, changed.Statistics.ReusedBindings);
+        Assert.Equal(2, changed.Statistics.BoundDocuments); Assert.Equal(0, changed.Statistics.ReusedBindings);
     }
     [Fact]
     public void NewRoslynCompilationAndExplicitClearReleaseCachedBindings()
     {
         var compilation = Compilation(); var compiler = new XamlProjectCompiler(); var document = Document("A.xaml", "a");
         compiler.Compile(new[] { document }, compilation);
-        var next = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText("internal class Added { }"));
+        var parseOptions = (CSharpParseOptions)compilation.SyntaxTrees.First().Options;
+        var next = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText("internal class Added { }", parseOptions));
         Assert.Equal(1, compiler.Compile(new[] { document }, next).Statistics.BoundDocuments);
         compiler.ClearCache();
         Assert.Equal(1, compiler.Compile(new[] { document }, next).Statistics.BoundDocuments);

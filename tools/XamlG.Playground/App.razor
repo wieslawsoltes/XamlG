@@ -5,6 +5,7 @@
 @inject NavigationManager Navigation
 
 <link rel="stylesheet" href="designer.css" />
+<link rel="stylesheet" href="resources.css" />
 <div class="studio" data-ready="@(_ready ? "true" : "false")">
     <header class="titlebar">
         <div class="brand"><span class="brand-mark">X</span><strong>XamlG</strong><span class="brand-divider"></span><span>Compiler Studio</span><span class="badge">PREVIEW</span></div>
@@ -29,6 +30,7 @@
             <div class="project-label">⌄ &nbsp; PLAYGROUND</div>
             <button class="file @(_editorTab == "xaml" ? "selected" : "")" @onclick='() => _editorTab = "xaml"'><span class="file-icon">◇</span> View.axaml <small>XAML</small></button>
             <button class="file @(_editorTab == "code" ? "selected" : "")" @onclick='() => _editorTab = "code"'><span class="file-icon">#</span> Code.cs <small>C#</small></button>
+            <button class="file" @onclick='() => _inspectorTab = "Resources"'><span class="file-icon">▤</span> Resources <small>@Compiler.Resources.Snapshot.Count</small></button>
             <div class="explorer-note"><span class="eyebrow">ONE COMPILER</span><p>Syntax → Roslyn symbols → typed operations → C#.</p><p>@PlaygroundExamples.All[_exampleIndex].Description</p></div>
             <div class="trust-note">Run preview and Design execute trusted code in this tab. Run isolated uses a separate opaque-origin frame. Compilation never sends source to a server.</div>
         </aside>
@@ -74,6 +76,9 @@
             </div>
             <div class="inspector-body">
                 <div class="inspector-page @(_inspectorTab == "C# output" ? "visible" : "")"><CodeEditor Text="@(_result?.Analysis.Output.Source ?? "// Generated C# appears here after compilation.\n")" Language="csharp" ReadOnly="true" /></div>
+                <div class="resource-container" style="display:@(_inspectorTab == "Resources" ? "block" : "none")">
+                    <ProjectResources @ref="_resourceEditor" Documents="Compiler.Resources" Result="_result" Busy="_busy" Changed="ResourceChangedAsync" LoadExample="LoadResourceExampleAsync" RunRequested="RunCurrentModeAsync" />
+                </div>
                 @if (_inspectorTab == "Syntax") { <div class="tree-scroll"><InspectionTree Items="@(_result == null ? Array.Empty<XamlInspectionNode>() : XamlInspector.Syntax(_result.Analysis.Syntax))" Selected="SelectSyntaxAsync" /></div> }
                 @if (_inspectorTab == "Bound tree") { <div class="tree-scroll">@if (_result != null && XamlInspector.Bound(_result.Analysis.Document) is { } bound) { <InspectionTree Items="@(new[] { bound })" Selected="SelectSyntaxAsync" /> }</div> }
                 @if (_inspectorTab == "Visual tree") { <div class="tree-scroll">@if (_visualTree != null) { <VisualTree Node="_visualTree" Selected="SelectVisual" /> } else { <p class="empty">Run a preview to inspect realized framework visuals.</p> }</div> }
@@ -103,11 +108,11 @@
                             var statistics = _result.Analysis.Syntax.Statistics;
                             <p>@(statistics.IsIncremental ? $"{statistics.ParsedCharacters} characters reparsed · {statistics.ReusedNodes} nodes reused" : $"Full parse · {statistics.ParsedCharacters} characters")</p>
                         }
-                        <div><b>02</b><strong>Roslyn semantic binding</strong><span>@(_result?.Analysis.Document.Symbols.Length ?? 0) symbol occurrences</span></div>
-                        <div><b>03</b><strong>Typed C# lowering</strong><span>@(_result?.Analysis.Output.SourceMappings.Length ?? 0) source mappings</span></div>
+                        <div><b>02</b><strong>Roslyn semantic binding</strong><span>@(_result?.Analysis.Document.Symbols.Length ?? 0) root symbol occurrences</span></div>
+                        <div><b>03</b><strong>Project resource linking</strong><span>@(_result?.Project?.Documents.Length ?? 0) compiled documents · direct factory references</span></div>
                         <div><b>04</b><strong>State-preserving replacement</strong><span>Named identities and unchanged declarations</span></div>
                         @foreach (var warning in Preview.LastWarnings) { <p class="muted">@warning</p> }
-                        <p class="muted">Local syntax edits reuse unchanged nodes. Structural reload builds a detached candidate, transfers eligible interaction state, then swaps roots. Opaque-origin isolation protects the editor DOM/storage; it is not an operating-system CPU or memory sandbox.</p>
+                        <p class="muted">Structural reload transfers eligible interaction state and swaps roots. Opaque-origin isolation protects editor DOM/storage, not CPU or memory quotas. Resource includes require project documents or exported compiled factories; no runtime XAML loader fallback.</p>
                     </div>
                 }
             </div>

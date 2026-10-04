@@ -1,0 +1,110 @@
+@using XamlG.CSharp.Resources
+<div class="project-resources">
+    <div class="resource-toolbar">
+        <select aria-label="Project resource" value="@_activePath" @onchange="SwitchAsync" disabled="@Busy">
+            <option value="">Select a resource document</option>
+            @foreach (var path in Documents.Snapshot.Keys.OrderBy(p => p, StringComparer.Ordinal)) { <option value="@path">@path</option> }
+        </select>
+        <button @onclick="RemoveAsync" disabled="@(Busy || Active == null)">Remove</button>
+    </div>
+    <div class="resource-toolbar">
+        <input aria-label="New resource path" @bind="_newPath" placeholder="Resources/Palette.axaml" disabled="@Busy" />
+        <button @onclick="AddAsync" disabled="@Busy">Add resource</button>
+        <button @onclick="LoadExample" disabled="@Busy" data-testid="resource-example">Load example</button>
+    </div>
+    @if (_error != null) { <p class="runtime-error" role="alert">@_error</p> }
+    @if (Active is { } document)
+    {
+        <div class="resource-tabs">
+            <button @onclick='() => _tab = "Source"' aria-pressed="@(_tab == "Source")">Source</button>
+            <button @onclick='() => _tab = "Generated"' aria-pressed="@(_tab == "Generated")">Generated</button>
+            <button @onclick='() => _tab = "Syntax"' aria-pressed="@(_tab == "Syntax")">Syntax</button>
+            <small>@document.Path · revision @document.Version</small>
+        </div>
+        <div class="resource-editor-stack">
+            <div class="resource-editor-page @(_tab == "Source" ? "visible" : "")">
+                <CodeEditor @key="document.Path" @ref="_editor" Text="@document.Text" Language="xml"
+                    TextChanged="text => ChangeAsync(document, text)" RunRequested="RunRequested" />
+            </div>
+            <div class="resource-editor-page @(_tab == "Generated" ? "visible" : "")">
+                <CodeEditor Text="@(Output?.Output.Source ?? "// Compile the project to inspect this resource factory.\n")" Language="csharp" ReadOnly="true" />
+            </div>
+            @if (_tab == "Syntax") { <div class="tree-scroll"><InspectionTree Items="XamlInspector.Syntax(document)" Selected="RevealNodeAsync" /></div> }
+        </div>
+    }
+    else { <p class="empty">Add reusable dictionaries and styles, then reference them from View.axaml with ResourceInclude, MergeResourceInclude or StyleInclude.</p> }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public XamlProjectDocumentStore Documents { get; set; } = default!;
+    [Parameter] public BrowserCompilation? Result { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback LoadExample { get; set; }
+    [Parameter] public EventCallback RunRequested { get; set; }
+    private string _activePath = string.Empty;
+    private string _newPath = "Resources/Palette.axaml";
+    private string _tab = "Source";
+    private string? _error;
+    private CodeEditor? _editor;
+    private XamlSyntaxTree? Active => Documents.Snapshot.TryGetValue(_activePath, out var syntax) ? syntax : null;
+    private XamlProjectDocumentResult? Output => Result?.Project?.Documents.FirstOrDefault(d => d.Input.LogicalPath == _activePath && ReferenceEquals(d.Input.Syntax, Active));
+    protected override void OnParametersSet()
+    {
+        if (Active == null) _activePath = Documents.Snapshot.Keys.OrderBy(p => p, StringComparer.Ordinal).FirstOrDefault() ?? string.Empty;
+    }
+    public async Task CaptureAsync()
+    {
+        var document = Active;
+        if (document == null || _editor == null) return;
+        var text = await _editor.GetTextAsync();
+        if (text != document.Text)
+        {
+            Documents.Update(document.Path, document.Version, text);
+            await Changed.InvokeAsync();
+        }
+    }
+    private async Task ChangeAsync(XamlSyntaxTree snapshot, string text)
+    {
+        if (!Documents.Snapshot.TryGetValue(snapshot.Path, out var current) || !ReferenceEquals(current, snapshot)) return;
+        try { Documents.Update(snapshot.Path, snapshot.Version, text); _error = null; await Changed.InvokeAsync(); }
+        catch (Exception error) { _error = error.Message; }
+    }
+    private async Task SwitchAsync(ChangeEventArgs args)
+    {
+        try { await CaptureAsync(); _activePath = args.Value?.ToString() ?? string.Empty; _tab = "Source"; _error = null; }
+        catch (Exception error) { _error = error.Message; }
+    }
+    private async Task AddAsync()
+    {
+        try
+        {
+            await CaptureAsync();
+            var syntax = Documents.Add(_newPath, "<ResourceDictionary xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n</ResourceDictionary>\n");
+            _activePath = syntax.Path; _tab = "Source"; _error = null;
+            await Changed.InvokeAsync();
+        }
+        catch (Exception error) { _error = error.Message; }
+    }
+    private async Task RemoveAsync()
+    {
+        try
+        {
+            await CaptureAsync();
+            if (Active is { } syntax) Documents.Remove(syntax.Path, syntax.Version);
+            _activePath = string.Empty; _editor = null; _error = null;
+            await Changed.InvokeAsync();
+        }
+        catch (Exception error) { _error = error.Message; }
+    }
+    public void SelectDocument(string path)
+    {
+        if (!Documents.Snapshot.ContainsKey(path)) return;
+        _activePath = path; _tab = "Source"; StateHasChanged();
+    }
+    private async Task RevealNodeAsync(XamlInspectionNode node)
+    {
+        _tab = "Source";
+        if (_editor != null) await _editor.RevealAsync(node.Span);
+    }
+}

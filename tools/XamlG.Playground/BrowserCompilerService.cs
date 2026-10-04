@@ -4,18 +4,21 @@ using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlG.Compiler;
+using XamlG.CSharp.Resources;
 using XamlG.Frameworks;
 using XamlG.Syntax;
 using XamlG.Tooling;
 
 namespace XamlG.Playground;
 
-/// <summary>The browser is a host of the production compiler, not a JavaScript imitation of its semantics.</summary>
+/// <summary>Browser host of the production compiler. All project documents emit into the same assembly;
+/// user code is loaded only by an explicit trusted Run or by the separate isolated execution host.</summary>
 public sealed class BrowserCompilerService(HttpClient http)
 {
     private ImmutableArray<MetadataReference> _references = ImmutableArray<MetadataReference>.Empty;
     private int _assemblySequence;
     private int _loadedAssemblies;
+    public XamlProjectDocumentStore Resources { get; } = new(new[] { "View.axaml" });
     public bool IsReady => !_references.IsEmpty;
     public int ReferenceCount => _references.Length;
 
@@ -59,18 +62,25 @@ public sealed class BrowserCompilerService(HttpClient http)
             _references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true,
                 optimizationLevel: OptimizationLevel.Release, nullableContextOptions: NullableContextOptions.Enable));
         var profile = KnownFrameworkProfiles.Select(compilation, framework);
-        var session = new XamlCompilationSession(compilation, profile,
-            new XamlCompilerOptions { DocumentId = "View.axaml", BaseUri = "avares://" + name + "/View.axaml" });
-        var analysis = session.Analyze(syntax, cancellationToken);
+        var resourceRevision = Resources.Revision;
+        var inputs = Resources.Snapshot.Values.Select(s => new XamlProjectDocument(s, s.Path))
+            .Prepend(new XamlProjectDocument(syntax, "View.axaml"));
+        var project = new XamlProjectCompiler().Compile(inputs, compilation, profile, cancellationToken: cancellationToken);
+        var main = project.Documents.Single(d => d.Input.LogicalPath == "View.axaml");
+        var analysis = new XamlAnalysis(syntax, main.Document, main.Output);
         var diagnostics = ImmutableArray.CreateBuilder<PlaygroundDiagnostic>();
-        foreach (var item in analysis.Output.Diagnostics)
+        foreach (var document in project.Documents)
         {
-            var start = syntax.Lines.GetPosition(Math.Min(item.Span.Start, syntax.Text.Length));
-            var end = syntax.Lines.GetPosition(Math.Min(item.Span.End, syntax.Text.Length));
-            diagnostics.Add(new(item.Code, item.Message, item.Severity.ToString(), syntax.Path, start.Line + 1, start.Character + 1, end.Line + 1, end.Character + 1));
+            var text = document.Input.Syntax;
+            foreach (var item in document.Output.Diagnostics)
+            {
+                var start = text.Lines.GetPosition(Math.Min(item.Span.Start, text.Text.Length));
+                var end = text.Lines.GetPosition(Math.Min(item.Span.End, text.Text.Length));
+                diagnostics.Add(new(item.Code, item.Message, item.Severity.ToString(), text.Path, start.Line + 1, start.Character + 1, end.Line + 1, end.Character + 1));
+            }
         }
-        if (analysis.Output.Success)
-            compilation = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(analysis.Output.Source, parseOptions, analysis.Output.HintName, cancellationToken: cancellationToken));
+        compilation = compilation.AddSyntaxTrees(project.Documents.Where(d => d.Output.Success).Select(d =>
+            CSharpSyntaxTree.ParseText(d.Output.Source, parseOptions, d.Output.HintName, cancellationToken: cancellationToken)));
         foreach (var item in compilation.GetDiagnostics(cancellationToken).Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning))
         {
             var location = item.Location.GetMappedLineSpan();
@@ -79,23 +89,21 @@ public sealed class BrowserCompilerService(HttpClient http)
                 location.EndLinePosition.Line + 1, location.EndLinePosition.Character + 1));
         }
         clock.Stop();
-        return new(analysis, compilation, diagnostics.ToImmutable(), clock.Elapsed.TotalMilliseconds);
+        return new(analysis, compilation, diagnostics.ToImmutable(), clock.Elapsed.TotalMilliseconds)
+        { Project = project, ResourceRevision = resourceRevision };
     }
 
-    /// <summary>Explicit execution only. Browser assemblies are bounded because collectible load contexts are not assumed.</summary>
     public object Run(BrowserCompilation result)
     {
-        if (!result.Success) throw new InvalidOperationException("Resolve the compiler errors before running this document.");
-        if (_loadedAssemblies >= 64) throw new InvalidOperationException("This tab has loaded 64 preview assemblies. Export the document and reload the page to reclaim the runtime.");
+        if (!result.Success) throw new InvalidOperationException("Resolve the compiler errors before running this project.");
+        if (_loadedAssemblies >= 64) throw new InvalidOperationException("This tab has loaded 64 preview assemblies. Export the project and reload to reclaim the runtime.");
         using var image = new MemoryStream();
         var emitted = result.Compilation.Emit(image);
         if (!emitted.Success) throw new InvalidOperationException(string.Join("\n", emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)));
-        var assembly = Assembly.Load(image.ToArray());
-        _loadedAssemblies++;
+        var assembly = Assembly.Load(image.ToArray()); _loadedAssemblies++;
         var output = result.Analysis.Output;
         var factory = assembly.GetType(output.FactoryTypeName, throwOnError: true)!;
-        if (output.BuildMethodName != null)
-            return factory.GetMethod(output.BuildMethodName)!.Invoke(null, new object?[] { null })!;
+        if (output.BuildMethodName != null) return factory.GetMethod(output.BuildMethodName)!.Invoke(null, new object?[] { null })!;
         var instance = Activator.CreateInstance(factory) ?? throw new InvalidOperationException("The code-behind root could not be constructed.");
         if (!XamlG.Runtime.XamlRuntimeSession.TryGet(instance, out _))
             factory.GetMethod(output.PopulateMethodName)!.Invoke(null, new object?[] { instance, null });
