@@ -28,12 +28,15 @@ public sealed class LspDiagnosticCache
         string? previousResultId = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(uri);
+        if (uri.Length > 8192) throw new ArgumentException("Diagnostic URI exceeds the cache limit.", nameof(uri));
         cancellationToken.ThrowIfCancellationRequested();
         if (items.IsDefault) items = ImmutableArray<LspDiagnosticItem>.Empty;
         long cost = uri.Length;
         foreach (var item in items)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (item == null || item.Code == null || item.Source == null || item.Message == null)
+                throw new ArgumentException("Diagnostics and their required text fields must not be null.", nameof(items));
             cost = checked(cost + item.Code.Length + item.Source.Length + item.Message.Length + 64L);
         }
         lock (_gate)
@@ -46,17 +49,29 @@ public sealed class LspDiagnosticCache
                     ? new(LspDiagnosticMethods.Unchanged, current.ResultId)
                     : new(LspDiagnosticMethods.Full, current.ResultId) { Items = current.Items };
             }
+            // Oversized results still clear any older report for this URI, but do not
+            // consume an identity or evict other documents just to return a full result.
+            if (cost > _maximumCharacters)
+            {
+                RemoveCore(uri);
+                return new(LspDiagnosticMethods.Full, null) { Items = items };
+            }
+            // Allocate the identity before changing cache contents. Overflow must not
+            // discard a valid entry or alter recency/retention for another consumer.
+            var sequence = checked(_sequence + 1);
+            var resultId = _identity + ":" + sequence.ToString(CultureInfo.InvariantCulture);
             RemoveCore(uri);
-            // Oversized reports are returned in full but are never retained and advertise no cache token.
-            if (cost > _maximumCharacters) return new(LspDiagnosticMethods.Full, null) { Items = items };
             while (_entries.Count >= _capacity || cost > _maximumCharacters - _characters) RemoveCore(_lru.First!.Value);
-            var resultId = _identity + ":" + checked(++_sequence).ToString(CultureInfo.InvariantCulture);
             var entry = new LspDiagnosticCacheEntry(resultId, items, cost, _lru.AddLast(uri));
-            _entries.Add(uri, entry); _characters += cost;
+            _entries.Add(uri, entry); _characters += cost; _sequence = sequence;
             return new(LspDiagnosticMethods.Full, resultId) { Items = items };
         }
     }
-    public void Remove(string uri) { lock (_gate) RemoveCore(uri); }
+    public void Remove(string uri)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        lock (_gate) RemoveCore(uri);
+    }
     public void Clear() { lock (_gate) { _entries.Clear(); _lru.Clear(); _characters = 0; } }
     private void RemoveCore(string uri)
     {

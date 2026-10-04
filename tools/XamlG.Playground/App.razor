@@ -131,5 +131,5 @@
     Plan="_renamePlan" Actions="_codeActions" Error="@_authoringError" Preview="PreviewRenameAsync"
     Apply="ApplyRenameAsync" Cancel="CloseAuthoring" ActionSelected="ApplyCodeActionAsync" />
 <FileRenameDialog Visible="_fileMoveVisible" Busy="@(_busy || _fileMoveWorking)"
-    Source="@_fileMoveSource" Destination="@_fileMoveDestination" DestinationChanged="FileMoveDestinationChanged"
-    Plan="_fileMovePlan" Error="@_fileMoveError" Preview="PreviewFileMoveAsync" Apply="ApplyFileMoveAsync" Cancel="CloseFileMove" />
+    State="@(new FileMoveDialogState(_fileMoveSource, _fileMoveDestination, _fileMoveError))" DestinationChanged="FileMoveDestinationChanged"
+    Plan="_fileMovePlan" Preview="PreviewFileMoveAsync" Apply="ApplyFileMoveAsync" Cancel="CloseFileMove" />

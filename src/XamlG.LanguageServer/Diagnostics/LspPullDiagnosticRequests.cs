@@ -16,7 +16,9 @@ internal sealed class LspPullDiagnosticRequests(LspDiagnosticCache cache, bool r
     public object Handle(string method, JsonElement parameters, LspWorkspaceAnalysis workspace,
         LspDocumentSetSnapshot buffers, CancellationToken token)
     {
-        if (parameters.TryGetProperty("identifier", out var identifier) && identifier.GetString() != LspDiagnosticMethods.Identifier)
+        if (parameters.ValueKind != JsonValueKind.Object)
+            throw new LspRequestException(-32602, "Diagnostic parameters must be an object.");
+        if (parameters.TryGetProperty("identifier", out _) && ReadString(parameters, "identifier", 256) != LspDiagnosticMethods.Identifier)
             throw new LspRequestException(-32602, "Unknown diagnostic provider identifier.");
         var byUri = workspace.Documents.ToDictionary(a => UriFor(a, buffers), StringComparer.Ordinal);
         if (method == LspDiagnosticMethods.Document)
@@ -25,7 +27,7 @@ internal sealed class LspPullDiagnosticRequests(LspDiagnosticCache cache, bool r
             ValidateUri(uri);
             var selected = byUri.TryGetValue(uri, out var exact) ? exact : workspace.Documents.FirstOrDefault(a => SamePath(a.Syntax.Path, uri));
             if (selected == null) throw new LspRequestException(-32602, "The diagnostic document is not part of the loaded XAML workspace.");
-            var previous = parameters.TryGetProperty("previousResultId", out _) ? ReadString(parameters, "previousResultId", 256) : null;
+            var previous = parameters.TryGetProperty("previousResultId", out _) ? ReadString(parameters, "previousResultId", 256, allowEmpty: true) : null;
             var report = cache.Report(uri, LspDiagnosticProjection.Create(selected, token), previous, token);
             if (relatedDocuments)
             {
@@ -49,7 +51,7 @@ internal sealed class LspPullDiagnosticRequests(LspDiagnosticCache cache, bool r
             {
                 token.ThrowIfCancellationRequested();
                 var uri = ReadString(item, "uri", 8192); ValidateUri(uri);
-                if (!previousResults.TryAdd(uri, ReadString(item, "value", 256))) throw new LspRequestException(-32602, "Duplicate previous diagnostic document URI.");
+                if (!previousResults.TryAdd(uri, ReadString(item, "value", 256, allowEmpty: true))) throw new LspRequestException(-32602, "Duplicate previous diagnostic document URI.");
             }
         }
         var reports = new List<LspWorkspaceDocumentDiagnosticReport>();
@@ -103,10 +105,10 @@ internal sealed class LspPullDiagnosticRequests(LspDiagnosticCache cache, bool r
         if (!Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("file" or "untitled") || uri.Query.Length != 0 || uri.Fragment.Length != 0)
             throw new LspRequestException(-32602, "Only file/untitled diagnostic URIs without query or fragment are accepted.");
     }
-    private static string ReadString(JsonElement parent, string property, int maximum)
+    private static string ReadString(JsonElement parent, string property, int maximum, bool allowEmpty = false)
     {
         if (parent.ValueKind != JsonValueKind.Object || !parent.TryGetProperty(property, out var node) || node.ValueKind != JsonValueKind.String ||
-            node.GetString() is not { Length: > 0 } value || value.Length > maximum)
+            node.GetString() is not { } value || (!allowEmpty && value.Length == 0) || value.Length > maximum)
             throw new LspRequestException(-32602, "Invalid or oversized diagnostic parameter: " + property);
         return value;
     }
