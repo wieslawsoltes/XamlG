@@ -1,0 +1,29 @@
+name: Import verified authoring snapshot
+on:
+  push:
+    branches: [ops/import-authoring-9760ab0d]
+    paths: ['.github/workflows/import-authoring-9760.yml']
+permissions:
+  contents: write
+concurrency:
+  group: xamlg-import-authoring-9760
+  cancel-in-progress: false
+jobs:
+  materialize:
+    if: github.ref == 'refs/heads/ops/import-authoring-9760ab0d'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the patch and upload only its exact Git objects
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .bootstrap/authoring-9760/import.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: authoring-import-result
+          path: ${{ runner.temp }}/authoring-import-result.json
+          retention-days: 7
