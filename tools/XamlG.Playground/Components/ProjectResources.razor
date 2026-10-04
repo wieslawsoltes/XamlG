@@ -5,6 +5,7 @@
             <option value="">Select a resource document</option>
             @foreach (var path in Documents.Snapshot.Keys.OrderBy(p => p, StringComparer.Ordinal)) { <option value="@path">@path</option> }
         </select>
+        <button @onclick="RenameAsync" disabled="@(Busy || Active == null)" data-testid="rename-resource-file">Move / rename</button>
         <button @onclick="RemoveAsync" disabled="@(Busy || Active == null)">Remove</button>
     </div>
     <div class="resource-toolbar">
@@ -42,6 +43,7 @@
     [Parameter] public EventCallback Changed { get; set; }
     [Parameter] public EventCallback LoadExample { get; set; }
     [Parameter] public EventCallback<EditorCommandRequest> AuthoringRequested { get; set; }
+    [Parameter] public EventCallback<string> RenameRequested { get; set; }
     [Parameter] public EventCallback RunRequested { get; set; }
     private string _activePath = string.Empty;
     private string _newPath = "Resources/Palette.axaml";
@@ -55,12 +57,8 @@
     protected override void OnParametersSet()
     {
         if (Active == null) _activePath = Documents.Snapshot.Keys.OrderBy(p => p, StringComparer.Ordinal).FirstOrDefault() ?? string.Empty;
-        // Replacing the project externally must retire even a same-path editor with a pending
-        // debounce. Updates originating in this component set _lastObserved before rendering.
         if (!ReferenceEquals(Active, _lastObserved))
-        {
-            _lastObserved = Active; _editorEpoch++; _editor = null;
-        }
+        { _lastObserved = Active; _editorEpoch++; _editor = null; }
     }
     public async Task CaptureAsync()
     {
@@ -68,10 +66,7 @@
         if (document == null || _editor == null) return;
         var text = await _editor.GetTextAsync();
         if (text != document.Text)
-        {
-            _lastObserved = Documents.Update(document.Path, document.Version, text);
-            await Changed.InvokeAsync();
-        }
+        { _lastObserved = Documents.Update(document.Path, document.Version, text); await Changed.InvokeAsync(); }
     }
     private async Task ChangeAsync(XamlSyntaxTree snapshot, string text)
     {
@@ -93,6 +88,11 @@
             _activePath = syntax.Path; _tab = "Source"; _error = null;
             await Changed.InvokeAsync();
         }
+        catch (Exception error) { _error = error.Message; }
+    }
+    private async Task RenameAsync()
+    {
+        try { await CaptureAsync(); if (Active is { } syntax) await RenameRequested.InvokeAsync(syntax.Path); }
         catch (Exception error) { _error = error.Message; }
     }
     private async Task RemoveAsync()

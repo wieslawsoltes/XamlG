@@ -1,0 +1,51 @@
+@using XamlG.Tooling.Refactoring
+@if (Visible)
+{
+    <div class="authoring-backdrop" @onkeydown="KeyDown" @onkeydown:stopPropagation="true">
+        <section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Move XAML resource" tabindex="-1">
+            <header><h2>Move or rename resource</h2><button aria-label="Close file move dialog" @onclick="Cancel">✕</button></header>
+            <p>Move the document and update resolved references, including its outgoing relative links. Applying creates one project undo step and does not execute the preview.</p>
+            <p><code>@Source</code></p>
+            <label>Destination path <input aria-label="Destination resource path" value="@Destination" @oninput="ChangeDestination" disabled="@Busy" @ref="_input" /></label>
+            <button @onclick="Preview" disabled="@Busy">Preview file move</button>
+            @if (Plan != null)
+            {
+                <div class="rename-files" data-testid="file-move-preview">
+                    @foreach (var move in Plan.Moves)
+                    { <article><strong>@move.OldPath → @move.NewPath</strong><small>Document identity</small></article> }
+                    @foreach (var file in Plan.Documents)
+                    {
+                        <article><strong>@file.Path</strong><small>@file.Changes.Length source edits</small>
+                            @foreach (var edit in file.Changes.Take(8))
+                            { <div><code>@file.OriginalText.Substring(edit.Span.Start, edit.Span.Length)</code> → <code>@edit.NewText</code></div> }
+                        </article>
+                    }
+                </div>
+                <button class="primary" @onclick="Apply" disabled="@Busy">Apply file move</button>
+            }
+            @if (Error != null) { <p role="alert" class="runtime-error">@Error</p> }
+            <footer><button @onclick="Cancel">Cancel</button><small>Source and identity changes only · no execution</small></footer>
+        </section>
+    </div>
+}
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public string Source { get; set; } = string.Empty;
+    [Parameter] public string Destination { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> DestinationChanged { get; set; }
+    [Parameter] public XamlFileRenamePlan? Plan { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback Preview { get; set; }
+    [Parameter] public EventCallback Apply { get; set; }
+    [Parameter] public EventCallback Cancel { get; set; }
+    private ElementReference _input;
+    private bool _wasVisible;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Visible && !_wasVisible) await _input.FocusAsync();
+        _wasVisible = Visible;
+    }
+    private Task ChangeDestination(ChangeEventArgs args) => DestinationChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+    private Task KeyDown(KeyboardEventArgs args) => args.Key == "Escape" ? Cancel.InvokeAsync() : Task.CompletedTask;
+}
