@@ -20,7 +20,10 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
 
     private ElementReference _host = default;
     private EditorInteropSession? _session;
+    // Incoming authoritative source and outgoing editor notifications are independent.
+    // A render may replay the previous parameter before the parent acknowledges a read.
     private string? _parameterText;
+    private string? _publishedText;
     private bool _retired;
     private Task? _disposal;
 
@@ -58,6 +61,14 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
     {
         if (_retired || _parameterText == Text) return;
         _parameterText = Text;
+        if (_publishedText == Text)
+        {
+            // Parent acknowledgement of our own capture/callback is not a write request.
+            // The browser may already contain input typed after that notification.
+            _publishedText = null;
+            return;
+        }
+        _publishedText = null;
         if (_session is { } session) await session.InvokeAsync("setEditorText", Text);
     }
 
@@ -65,7 +76,7 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
     public Task Changed(string text)
     {
         if (_retired) return Task.CompletedTask;
-        _parameterText = text;
+        _publishedText = text;
         return TextChanged.InvokeAsync(text);
     }
     [JSInvokable] public Task Run() => _retired ? Task.CompletedTask : RunRequested.InvokeAsync();
@@ -90,7 +101,7 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
         if (session == null) return Text;
         var text = await session.ReadAsync<string>("getEditorText");
         if (_retired || !ReferenceEquals(session, _session) || text == null) return null;
-        _parameterText = text;
+        _publishedText = text;
         return text;
     }
 
