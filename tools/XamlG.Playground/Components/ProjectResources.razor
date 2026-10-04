@@ -57,8 +57,6 @@
 
     protected override void OnParametersSet() => SynchronizeSelection(null);
 
-    /// <summary>Retires the old editor lease synchronously when the host restores a workspace.
-    /// No asynchronous capture can associate an old editor with a newly selected file.</summary>
     public void SynchronizeDocuments(string? preferredPath = null)
     {
         SynchronizeSelection(preferredPath);
@@ -78,19 +76,17 @@
         _activePath = path; _lastObserved = syntax; _editorEpoch = epoch; _editor = null;
     }
     private bool Owns(CodeEditor editor, XamlSyntaxTree document, long epoch) =>
-        epoch == _editorEpoch && ReferenceEquals(editor, _editor) && ReferenceEquals(document, Active) &&
+        !editor.IsRetired && epoch == _editorEpoch && ReferenceEquals(editor, _editor) && ReferenceEquals(document, Active) &&
         ReferenceEquals(document, _lastObserved) && StringComparer.Ordinal.Equals(editor.DocumentPath, document.Path);
 
     public async Task CaptureAsync()
     {
         var document = Active; var editor = _editor; var epoch = _editorEpoch;
         if (document == null || editor == null || !Owns(editor, document, epoch)) return;
-        string text;
-        try { text = await editor.GetTextAsync(); }
-        catch (Exception) when (!Owns(editor, document, epoch)) { return; }
-        // Selection, source replacement and editor disposal can occur during JS interop.
-        // Discard an obsolete read instead of creating a phantom edit in project history.
-        if (!Owns(editor, document, epoch)) return;
+        // The component lease serializes this read with retirement. Null denotes a retired
+        // editor, not permission to substitute stale parameter text into the current document.
+        var text = await editor.TryGetTextAsync();
+        if (text == null || !Owns(editor, document, epoch)) return;
         if (text != document.Text)
         { _lastObserved = Documents.Update(document.Path, document.Version, text); await Changed.InvokeAsync(); }
     }
@@ -104,6 +100,7 @@
     {
         try
         {
+            // Capture the outgoing live buffer before requesting a keyed component replacement.
             await CaptureAsync(); Activate(args.Value?.ToString() ?? string.Empty);
             _tab = "Source"; _error = null;
         }
@@ -144,6 +141,6 @@
     private async Task RevealNodeAsync(XamlInspectionNode node)
     {
         _tab = "Source";
-        if (_editor != null) await _editor.RevealAsync(node.Span);
+        if (_editor is { IsRetired: false } editor) await editor.RevealAsync(node.Span);
     }
 }

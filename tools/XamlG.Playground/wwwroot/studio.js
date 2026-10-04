@@ -22,12 +22,18 @@ function loadMonaco() {
   });
 }
 
+// Each application scope owns a distinct JS reference. Releasing it cannot invalidate an
+// unrelated component's import reference; editor IDs still share the module's monotonic registry.
+export function createEditorInterop() {
+  return { createEditor, getEditorText, setEditorText, reveal, setMarkers, disposeEditor, getAuthoringRequest };
+}
+
 export async function createEditor(host, dotnet, text, language, readOnly, path = null) {
   const id = ++sequence;
   try {
     const monaco = await loadMonaco();
-    const model = monaco.editor.createModel(text, language, path ? monaco.Uri.from({ scheme: "xamlg", authority: "studio", path: "/" + id + "/" + path }) : undefined);
-    host.dataset.documentPath = path ?? "";
+    const model = monaco.editor.createModel(text, language, path ? monaco.Uri.from({ scheme: 'xamlg', authority: 'studio', path: '/' + id + '/' + path }) : undefined);
+    host.dataset.documentPath = path ?? '';
     const editor = monaco.editor.create(host, {
       model, readOnly, automaticLayout: true, theme: document.documentElement.dataset.theme === 'light' ? 'vs' : 'vs-dark',
       minimap: { enabled: false }, fontSize: 13, lineHeight: 21, padding: { top: 14 },
@@ -39,7 +45,9 @@ export async function createEditor(host, dotnet, text, language, readOnly, path 
     const subscription = editor.onDidChangeModelContent(() => {
       if (applying || readOnly) return;
       clearTimeout(timer);
-      timer = setTimeout(() => dotnet.invokeMethodAsync('Changed', editor.getValue()), 120);
+      timer = setTimeout(() => {
+        if (editors.has(id)) return dotnet.invokeMethodAsync('Changed', editor.getValue());
+      }, 120);
     });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => dotnet.invokeMethodAsync('Run'));
     if (path && !readOnly) {
@@ -62,7 +70,7 @@ export async function createEditor(host, dotnet, text, language, readOnly, path 
     textarea.setAttribute('aria-label', language + ' source editor');
     textarea.oninput = () => dotnet.invokeMethodAsync('Changed', textarea.value);
     host.replaceChildren(textarea);
-    host.dataset.documentPath = path ?? "";
+    host.dataset.documentPath = path ?? '';
     editors.set(id, { textarea, path, dotnet });
     console.warn(error.message);
   }
@@ -100,8 +108,9 @@ export function setMarkers(id, diagnostics) {
 }
 export function disposeEditor(id) {
   const item = editors.get(id);
-  item?.cleanup?.(); item?.subscription?.dispose(); item?.editor?.dispose(); item?.model?.dispose();
+  // Stop dispatching callbacks before disposing models or the managed callback reference.
   editors.delete(id);
+  item?.cleanup?.(); item?.subscription?.dispose(); item?.editor?.dispose(); item?.model?.dispose();
 }
 export function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
@@ -126,17 +135,21 @@ export function download(name, content, type = 'text/plain') {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// Capture the invoking editor's selection and exact current text synchronously. The managed
-// host validates the complete project snapshot before any source transaction is published.
-export function requestAuthoring(id, command) {
+// Synchronous data capture is distinct from managed callback dispatch. A managed caller can
+// release its editor-operation gate before a command recursively captures all source buffers.
+export function getAuthoringRequest(id, command) {
   const item = editors.get(id);
-  if (!item?.path) return;
+  if (!item?.path) return null;
   let start = 0, length = 0;
   if (item.editor) {
     const selection = item.editor.getSelection();
     start = item.model.getOffsetAt(selection.getStartPosition());
     length = item.model.getOffsetAt(selection.getEndPosition()) - start;
   } else { start = item.textarea.selectionStart; length = item.textarea.selectionEnd - start; }
-  const text = getEditorText(id);
-  return item.dotnet.invokeMethodAsync('Authoring', { command, path: item.path, text, start, length });
+  return { command, path: item.path, text: getEditorText(id), start, length };
+}
+export function requestAuthoring(id, command) {
+  const item = editors.get(id);
+  const request = getAuthoringRequest(id, command);
+  if (item && request) return item.dotnet.invokeMethodAsync('Authoring', request);
 }

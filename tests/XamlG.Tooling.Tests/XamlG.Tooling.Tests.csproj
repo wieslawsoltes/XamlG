@@ -5,5 +5,13 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Exercise the actual host lifecycle sources without requiring the WebAssembly workload. -->
+    <Compile Include="../../tools/XamlG.Playground/Editing/*.cs" Link="Playground/Editing/%(Filename)%(Extension)" />
+    <Compile Include="../../tools/XamlG.Playground/Components/CodeEditor.razor.cs" Link="Playground/CodeEditor.cs" />
+    <Compile Include="../../tools/XamlG.Playground/EditorCommandRequest.cs" Link="Playground/EditorCommandRequest.cs" />
+    <Compile Include="../../tools/XamlG.Playground/PlaygroundDiagnostic.cs" Link="Playground/PlaygroundDiagnostic.cs" />
   </ItemGroup>
 </Project>
