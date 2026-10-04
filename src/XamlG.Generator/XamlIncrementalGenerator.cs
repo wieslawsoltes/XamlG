@@ -51,7 +51,7 @@ public sealed class XamlIncrementalGenerator : IIncrementalGenerator
                 GenerateNamedFields = environment.Options.GenerateNamedFields
             };
             var documents = inputs.Select(input => new XamlProjectDocument(input.Syntax, input.Input.LogicalPath));
-            var project = new XamlProjectCompiler().Compile(documents, environment.Compilation, environment.Profile, options, cancellationToken);
+            var project = environment.ProjectCompiler.Compile(documents, environment.Compilation, environment.Profile, options, cancellationToken);
             var bySyntax = inputs.ToDictionary(i => i.Syntax);
             return project.Documents.Select(result =>
             {
