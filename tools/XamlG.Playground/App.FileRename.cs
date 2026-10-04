@@ -82,12 +82,11 @@ public partial class App
                     .ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
                 new XamlProjectDocumentStore(new[] { "View.axaml" }).ReplaceAll(resources);
             });
-            var destination = plan.Moves.Single().NewPath;
-            RestoreWorkspace(snapshot); CloseFileMove();
+            // File identity, source and the selected editor change before the first await.
+            RestoreWorkspace(snapshot, plan.Moves.Single().NewPath); CloseFileMove();
             var completedGeneration = _fileMoveGeneration;
             await SaveDraftAsync(); await CompileSnapshotAsync();
             if (completedGeneration != _fileMoveGeneration) return;
-            _resourceEditor?.SelectDocument(destination);
             _status = "Resource moved · linked sources updated · one project undo step";
         }
         catch (Exception error) { if (generation == _fileMoveGeneration) _fileMoveError = error.Message; else Report(error); }

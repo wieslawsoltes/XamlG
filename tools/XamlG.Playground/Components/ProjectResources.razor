@@ -54,29 +54,59 @@
     private long _editorEpoch;
     private XamlSyntaxTree? Active => Documents.Snapshot.TryGetValue(_activePath, out var syntax) ? syntax : null;
     private XamlProjectDocumentResult? Output => Result?.Project?.Documents.FirstOrDefault(d => d.Input.LogicalPath == _activePath && ReferenceEquals(d.Input.Syntax, Active));
-    protected override void OnParametersSet()
+
+    protected override void OnParametersSet() => SynchronizeSelection(null);
+
+    /// <summary>Retires the old editor lease synchronously when the host restores a workspace.
+    /// No asynchronous capture can associate an old editor with a newly selected file.</summary>
+    public void SynchronizeDocuments(string? preferredPath = null)
     {
-        if (Active == null) _activePath = Documents.Snapshot.Keys.OrderBy(p => p, StringComparer.Ordinal).FirstOrDefault() ?? string.Empty;
-        if (!ReferenceEquals(Active, _lastObserved))
-        { _lastObserved = Active; _editorEpoch++; _editor = null; }
+        SynchronizeSelection(preferredPath);
+        StateHasChanged();
     }
+    private void SynchronizeSelection(string? preferredPath)
+    {
+        var path = preferredPath != null && Documents.Snapshot.ContainsKey(preferredPath) ? preferredPath :
+            Active != null ? _activePath : Documents.Snapshot.Keys.OrderBy(p => p, StringComparer.Ordinal).FirstOrDefault() ?? string.Empty;
+        Activate(path);
+    }
+    private void Activate(string path)
+    {
+        var syntax = Documents.Snapshot.TryGetValue(path, out var found) ? found : null;
+        if (_activePath == path && ReferenceEquals(_lastObserved, syntax)) return;
+        var epoch = checked(_editorEpoch + 1);
+        _activePath = path; _lastObserved = syntax; _editorEpoch = epoch; _editor = null;
+    }
+    private bool Owns(CodeEditor editor, XamlSyntaxTree document, long epoch) =>
+        epoch == _editorEpoch && ReferenceEquals(editor, _editor) && ReferenceEquals(document, Active) &&
+        ReferenceEquals(document, _lastObserved) && StringComparer.Ordinal.Equals(editor.DocumentPath, document.Path);
+
     public async Task CaptureAsync()
     {
-        var document = Active;
-        if (document == null || _editor == null) return;
-        var text = await _editor.GetTextAsync();
+        var document = Active; var editor = _editor; var epoch = _editorEpoch;
+        if (document == null || editor == null || !Owns(editor, document, epoch)) return;
+        string text;
+        try { text = await editor.GetTextAsync(); }
+        catch (Exception) when (!Owns(editor, document, epoch)) { return; }
+        // Selection, source replacement and editor disposal can occur during JS interop.
+        // Discard an obsolete read instead of creating a phantom edit in project history.
+        if (!Owns(editor, document, epoch)) return;
         if (text != document.Text)
         { _lastObserved = Documents.Update(document.Path, document.Version, text); await Changed.InvokeAsync(); }
     }
     private async Task ChangeAsync(XamlSyntaxTree snapshot, string text)
     {
-        if (!Documents.Snapshot.TryGetValue(snapshot.Path, out var current) || !ReferenceEquals(current, snapshot)) return;
+        if (!ReferenceEquals(Active, snapshot) || !ReferenceEquals(_lastObserved, snapshot)) return;
         try { _lastObserved = Documents.Update(snapshot.Path, snapshot.Version, text); _error = null; await Changed.InvokeAsync(); }
         catch (Exception error) { _error = error.Message; }
     }
     private async Task SwitchAsync(ChangeEventArgs args)
     {
-        try { await CaptureAsync(); _activePath = args.Value?.ToString() ?? string.Empty; _tab = "Source"; _error = null; }
+        try
+        {
+            await CaptureAsync(); Activate(args.Value?.ToString() ?? string.Empty);
+            _tab = "Source"; _error = null;
+        }
         catch (Exception error) { _error = error.Message; }
     }
     private async Task AddAsync()
@@ -85,7 +115,7 @@
         {
             await CaptureAsync();
             var syntax = Documents.Add(_newPath, "<ResourceDictionary xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\">\n</ResourceDictionary>\n");
-            _activePath = syntax.Path; _tab = "Source"; _error = null;
+            Activate(syntax.Path); _tab = "Source"; _error = null;
             await Changed.InvokeAsync();
         }
         catch (Exception error) { _error = error.Message; }
@@ -101,7 +131,7 @@
         {
             await CaptureAsync();
             if (Active is { } syntax) Documents.Remove(syntax.Path, syntax.Version);
-            _activePath = string.Empty; _editor = null; _error = null;
+            SynchronizeSelection(null); _error = null;
             await Changed.InvokeAsync();
         }
         catch (Exception error) { _error = error.Message; }
@@ -109,7 +139,7 @@
     public void SelectDocument(string path)
     {
         if (!Documents.Snapshot.ContainsKey(path)) return;
-        _activePath = path; _tab = "Source"; StateHasChanged();
+        Activate(path); _tab = "Source"; StateHasChanged();
     }
     private async Task RevealNodeAsync(XamlInspectionNode node)
     {
