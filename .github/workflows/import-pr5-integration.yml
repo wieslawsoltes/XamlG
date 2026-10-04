@@ -1,0 +1,26 @@
+name: Import verified PR5 integration
+on:
+  push:
+    branches: [ops/import-pr5-f56016f2]
+permissions:
+  contents: read
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the exact patch and upload Git blobs without moving refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .bootstrap/pr5-integration/import.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-pr5-integration-manifest
+          path: artifacts/import/manifest.json
+          retention-days: 3
