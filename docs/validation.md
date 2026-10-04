@@ -20,6 +20,16 @@ Incrementality assertions inspect actual work counts: unchanged documents reuse 
 
 Workspace tests coalesce identical duplicate MSBuild inputs and reject conflicting buffers. `test-lsp-resources.py` launches the actual trusted-project stdio process, introduces an unsaved dependency error, verifies the unchanged caller's diagnostics/inspection, closes the dependency and checks recovery. It does not modify the caller version to manufacture freshness.
 
+## Authoring and code-behind continuation
+
+The new suites cover generic constraint substitution and invalid constructor contracts; code-behind factories and nested metadata identities; normal/automatic initializer idempotence; constructor and cleanup failures; backend-only resource emission failures; and source-aware authoring APIs.
+
+Authoring cases include raw XML entities/UTF-16 mappings, nested markup, ignored namespaces, template scope shadowing, Roslyn field usage and `nameof`, local capture rejection, literal/CDATA/xml:space/whitespace-significant formatting, range edits, tag/member actions, resource links/completion and source-side C# reference inclusion. Protocol cases cover shared-analysis cancellation/retirement and token history delta reconstruction/eviction.
+
+`test-lsp-features.py` launches the real executable and tests negotiated versioned/legacy workspace edits, code-behind references, no implicit writes, formatting/idempotence, action filtering, workspace symbols and full/delta/range tokens. The installed-tool release consumer runs the same feature process test. Workspace input tests use actual analyzer configuration documents to verify linked logical paths and disabled files.
+
+Local delivery evidence is recorded separately from prior remote CI. Native Razor type-checking is not a WebAssembly publish or browser acceptance test. An offline transitive dependency substitution must be disclosed with exact versions rather than described as an exact clean pinned restore. See the accompanying delivery verification report.
+
 ## Pinned upstream comparison
 
 The original XamlX baseline executes 222 pinned cases. The XamlG adapter executes 217 runtime/diagnostic cases through XamlG binding, generated C#, Roslyn emission and runtime execution. CI checks exact executed counts and rejects skips. Four XamlX AST-shape assertions and one IL-helper-name assertion are explicitly outside the source-backend comparison. See [the harness boundary](upstream-validation.md).

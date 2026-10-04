@@ -34,14 +34,26 @@ The workspace coalesces identical AdditionalDocuments contributed by multiple MS
 
 ## Protocol and publication
 
-Implemented: initialize/shutdown, sequential UTF-16 open/change/close synchronization, diagnostics, hover, element/member/value completion, source definitions, open-XAML references/highlights, symbols, folding, full semantic tokens, cancellation and `xamlg/inspect` (syntax, typed operations, source mappings and C#).
+Implemented: initialize/shutdown; sequential UTF-16 open/change/close synchronization; diagnostics; hover; element/member/value and compiled-resource URI completion; XAML name/resource and C# source definitions; loaded-project XAML/C# references; highlights; document/workspace symbols; folding; document links; semantic tokens (full, delta, range); prepare/rename; document/range formatting; code actions; cancellation; and `xamlg/inspect` (syntax, typed operations, source mappings and C#).
 
-Rename, code actions, formatting, semantic-token deltas, C#-side references and decompiled metadata navigation are not advertised. Editors can add host-specific capabilities through reusable tooling.
+A bounded single-flight cache shares one semantic computation for a compiler/open-buffer-set snapshot between diagnostics and requests. Cancelling one waiter does not cancel other consumers. Snapshot invalidation retires shared work. Distinct document stores with the same numeric revision cannot alias cached work.
+
+Rename follows compiler namescope identities. It updates statically recognized `x:Reference`, Avalonia `ElementName` and `#name` binding paths; root code-behind names include Roslyn-resolved field uses, explicit field declarations and `nameof`. It rejects namescope/member collisions and C# local/parameter capture. It is not arbitrary C# symbol rename and does not rewrite selector strings, runtime string lookups or unknown extension conventions. C# source edits use the evaluated project snapshot; unsaved C# synchronization is not supplied by the XAML document store.
+
+`workspace.workspaceEdit.documentChanges` is negotiated: supporting clients receive versioned XAML edits and nullable-version loaded C# edits; legacy clients receive `changes`. The server never writes files on behalf of an edit request. The client must validate/apply the returned edits atomically.
+
+Formatting operates on source spans rather than XML serialization. It preserves original value spelling, entities, literal content, CDATA, `xml:space`, and resolved whitespace-significant collections. Code actions include expand-self-closing/collapse-truly-empty tags, source formatting and unambiguous one-edit-distance member-spelling fixes. Requested action kinds are filtered.
+
+Token histories retain at most two results per document within a document/integer budget. Deltas use common prefix/suffix edits aligned to complete five-integer tokens; unchanged results have no edits, and unknown/evicted/cross-document IDs return a full result. Range results use absolute document positions. Multiline source occurrences are split by line.
+
+Decompiled metadata navigation, arbitrary C# symbol rename, file-rename edits, project-wide generated-code refactoring and pull-diagnostic result IDs are not advertised. See [authoring APIs](authoring.md) and [feature status](feature-status.md).
 
 Publication rechecks project and buffer-set freshness under the output gate. Cancellation can discard queued work but cannot truncate an admitted Content-Length frame. Partial writes, flush failures and deadlines permanently close the transport. See [publication invariants](lsp-publication.md).
 
 ## Validation
 
 `test-lsp-host.py` launches the real process and exchanges framed requests. `test-lsp-watch.py` modifies C# input and verifies diagnostics without changing XAML versions. `test-lsp-resources.py` opens a trusted multi-document resource project, supplies an unsaved broken dependency, checks caller diagnostics and inspection, then closes the dependency to verify recovery.
+
+`test-lsp-features.py` exercises versioned/legacy edit negotiation, namescope rename with C# references, no implicit disk writes, formatting/idempotence, code-action filtering, symbols and semantic-token full/delta/range behavior. The package validation script invokes it against the installed LSP tool.
 
 Library tests cover framing, bounds, stale/aliased documents, coherent buffer sets, queued cancellation, partial writes, deadlines and shutdown. Release validation repeats protocol/watch process tests against an installed tool package; the resource-overlay process test runs in the LSP host workflow.

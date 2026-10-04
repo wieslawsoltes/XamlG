@@ -50,6 +50,7 @@ def main():
             raise RuntimeError('Installed language-server entry point is missing or ambiguous.')
         run('python', 'scripts/test-lsp-host.py', str(lsp[0]), env=environment)
         run('python', 'scripts/test-lsp-watch.py', str(lsp[0]), env=environment)
+        run('python', 'scripts/test-lsp-features.py', str(lsp[0]), env=environment)
         for project in ('tests/PackagingSmoke/PackagingSmoke.csproj', 'tests/AvaloniaPackagingSmoke/AvaloniaPackagingSmoke.csproj'):
             run('dotnet', 'restore', project, '--configfile', str(config), f'-p:XamlGPackageVersion={args.version}', '-p:NuGetAudit=false', env=environment)
             run('dotnet', 'run', '--project', project, '-c', 'Release', '--no-restore', f'-p:XamlGPackageVersion={args.version}', env=environment)

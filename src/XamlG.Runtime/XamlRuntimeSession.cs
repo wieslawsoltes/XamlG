@@ -27,7 +27,10 @@ public sealed class XamlRuntimeSession : IDisposable
     {
         CheckThread();
         if (Sessions.TryGetValue(root, out var previous) && !ReferenceEquals(previous, this))
-        { previous.Dispose(); Sessions.Remove(root); }
+        {
+            if (!XamlConstructionScope.AdoptPreviousSession(root, this, previous)) previous.Dispose();
+            Sessions.Remove(root);
+        }
         if (!Sessions.TryGetValue(root, out _)) Sessions.Add(root, this);
     }
     public void Register(string key, object instance, string? parentKey)

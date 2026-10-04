@@ -19,17 +19,21 @@ internal sealed class RuntimeContextEmitter
     {
         var runtime = _context.Document.Runtime;
         var writer = _context.Writer;
+        var rootLookup = outer;
         if (!deferred && runtime.RootServiceProviderFactory is { } rootFactory)
         {
             var provider = _context.Temporary("rootServices");
             writer.Line("var " + provider + " = " + rootFactory.ContainingType.CSharpName() + "." + CSharpNames.Method(rootFactory) + "(" + outer + ");");
-            outer = provider;
+            rootLookup = provider;
+            var inherited = _context.Temporary("inheritedServices");
+            writer.Line("var " + inherited + " = global::XamlG.Runtime.XamlServiceProviderChain.Combine(" + provider + ", " + outer + ");");
+            outer = inherited;
         }
         var rootContract = runtime.Services.FirstOrDefault(s => s.Properties.Any(p => p.Value == XamlServiceValue.RootObject));
         if (root == "null" && rootContract != null)
         {
             var property = rootContract.Properties.First(p => p.Value == XamlServiceValue.RootObject).Property;
-            root = "((" + rootContract.InterfaceType.CSharpName() + "?)" + outer + "?.GetService(typeof(" + rootContract.InterfaceType.CSharpName() + ")))? .".Replace("? .", "?.") + CSharpNames.Identifier(property.Name);
+            root = "((" + rootContract.InterfaceType.CSharpName() + "?)" + rootLookup + "?.GetService(typeof(" + rootContract.InterfaceType.CSharpName() + ")))? .".Replace("? .", "?.") + CSharpNames.Identifier(property.Name);
         }
         var baseUri = _context.Document.Options.BaseUri is { } uri
             ? "new global::System.Uri(" + CSharpNames.Literal(uri) + ", global::System.UriKind.RelativeOrAbsolute)" : "null";

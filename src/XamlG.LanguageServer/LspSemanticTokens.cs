@@ -8,7 +8,7 @@ internal static class LspSemanticTokens
 {
     public static readonly string[] Legend = { "class", "property", "event", "namespace", "string", "keyword", "comment", "typeParameter", "method" };
 
-    public static int[] Encode(XamlAnalysis analysis)
+    public static int[] Encode(XamlAnalysis analysis, TextSpan? selection = null)
     {
         var spans = new List<(TextSpan Span, int Type, int Priority)>();
         foreach (var occurrence in analysis.Document.Symbols)
@@ -32,13 +32,27 @@ internal static class LspSemanticTokens
         foreach (var token in spans.Where(t => t.Span.Length > 0).OrderBy(t => t.Span.Start).ThenBy(t => t.Priority).ThenBy(t => t.Span.Length))
         {
             if (token.Span.Start < previousEnd || token.Span.End > analysis.Syntax.Text.Length) continue;
-            var start = analysis.Syntax.Lines.GetPosition(token.Span.Start);
-            var end = analysis.Syntax.Lines.GetPosition(token.Span.End);
-            if (start.Line != end.Line) continue;
-            var deltaLine = start.Line - previousLine;
-            result.Add(deltaLine); result.Add(deltaLine == 0 ? start.Character - previousCharacter : start.Character);
-            result.Add(token.Span.Length); result.Add(token.Type); result.Add(0);
-            previousLine = start.Line; previousCharacter = start.Character; previousEnd = token.Span.End;
+            var cursor = token.Span.Start;
+            while (cursor < token.Span.End)
+            {
+                var line = analysis.Syntax.Lines.GetPosition(cursor).Line;
+                var next = line + 1 < analysis.Syntax.Lines.LineCount ? analysis.Syntax.Lines.GetOffset(new(line + 1, 0)) : analysis.Syntax.Text.Length;
+                var end = Math.Min(next, token.Span.End);
+                while (end > cursor && analysis.Syntax.Text[end - 1] is '\r' or '\n') end--;
+                var startOffset = selection == null ? cursor : Math.Max(cursor, selection.Value.Start);
+                var endOffset = selection == null ? end : Math.Min(end, selection.Value.End);
+                if (endOffset > startOffset)
+                {
+                    var start = analysis.Syntax.Lines.GetPosition(startOffset);
+                    var deltaLine = start.Line - previousLine;
+                    result.Add(deltaLine); result.Add(deltaLine == 0 ? start.Character - previousCharacter : start.Character);
+                    result.Add(endOffset - startOffset); result.Add(token.Type); result.Add(0);
+                    previousLine = start.Line; previousCharacter = start.Character;
+                }
+                if (next <= cursor) break;
+                cursor = next;
+            }
+            previousEnd = token.Span.End;
         }
         return result.ToArray();
     }

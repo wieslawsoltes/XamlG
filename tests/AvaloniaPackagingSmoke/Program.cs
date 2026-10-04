@@ -21,7 +21,7 @@ try
     Require(view.Action.Background is ISolidColorBrush brush && brush.Color == Color.Parse("#336699"),
         "The compiled MergeResourceInclude did not supply the static resource.");
     var exports = typeof(SmokeView).Assembly.GetCustomAttributes(typeof(XamlCompiledResourceAttribute), false);
-    Require(exports.Length == 2, "The library resource/style factories were not exported in assembly metadata.");
+    Require(exports.Length == 3, "The code-behind/resource/style factories were not exported in assembly metadata.");
     Require(XamlRuntimeSession.TryGet(view, out var session), "The generated root has no runtime session.");
     session!.Dispose();
     var retained = view.Output.Text;

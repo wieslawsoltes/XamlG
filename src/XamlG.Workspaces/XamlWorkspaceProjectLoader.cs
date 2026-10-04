@@ -2,6 +2,8 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlG.Compiler;
+using XamlG.Compiler.Resources;
+using Microsoft.CodeAnalysis.Text;
 using XamlG.CSharp.Resources;
 using XamlG.Frameworks;
 using XamlG.Frameworks.Avalonia;
@@ -27,7 +29,8 @@ public static class XamlWorkspaceProjectLoader
         project = project.WithAnalyzerReferences(generators);
         var compilation = await project.GetCompilationAsync(cancellationToken) as CSharpCompilation
             ?? throw new InvalidOperationException("Roslyn did not provide a C# compilation for this project.");
-        var defaults = options.CompileBindingsByDefault ?? AvaloniaBuildOptions.ReadCompileBindingsByDefault(project.AnalyzerOptions.AnalyzerConfigOptionsProvider.GlobalOptions);
+        var configuration = project.AnalyzerOptions.AnalyzerConfigOptionsProvider;
+        var defaults = options.CompileBindingsByDefault ?? AvaloniaBuildOptions.ReadCompileBindingsByDefault(configuration.GlobalOptions);
         var profile = KnownFrameworkProfiles.Select(compilation, options.Framework, defaults);
         var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         var documents = ImmutableDictionary.CreateBuilder<string, XamlSyntaxTree>(pathComparer);
@@ -39,6 +42,8 @@ public static class XamlWorkspaceProjectLoader
             var path = document.FilePath ?? document.Name;
             if (!path.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase) && !path.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase)) continue;
             if (Path.IsPathFullyQualified(path)) path = Path.GetFullPath(path);
+            var metadata = configuration.GetOptions(new MetadataInput(path));
+            if (!XamlInputMetadata.ShouldCompile(metadata)) continue;
             var source = (await document.GetTextAsync(cancellationToken)).ToString();
             // Framework targets and explicit AdditionalFiles can both contribute the same
             // physical input. Identical duplicates are one document, not duplicate exports.
@@ -49,12 +54,19 @@ public static class XamlWorkspaceProjectLoader
                     throw new InvalidOperationException("The project contains conflicting XAML AdditionalDocuments for '" + path + "'. Supply one consistent source buffer for each physical path.");
                 continue;
             }
-            var logicalPath = root != null && Path.IsPathFullyQualified(path) ? Path.GetRelativePath(root, path) : path;
+            var logicalPath = XamlInputMetadata.LogicalPath(path, metadata, configuration.GlobalOptions, root);
             var syntax = XamlSyntaxTree.Parse(source, path, cancellationToken);
             documents.Add(path, syntax);
             resources.Add(new(syntax, logicalPath.Replace('\\', '/')));
         }
         var compiler = new XamlCompilationSession(compilation, profile, new XamlCompilerOptions(), projectDocuments: resources);
         return new(project, compiler, documents.ToImmutable());
+    }
+    // Analyzer configuration lookup is keyed by path, not by AdditionalText object identity.
+    // Its content is intentionally unavailable: evaluating item policy never reads the file.
+    private sealed class MetadataInput(string path) : AdditionalText
+    {
+        public override string Path => path;
+        public override SourceText? GetText(CancellationToken cancellationToken = default) => null;
     }
 }

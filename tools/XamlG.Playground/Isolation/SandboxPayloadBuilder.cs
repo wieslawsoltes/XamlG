@@ -14,6 +14,6 @@ public static class SandboxPayloadBuilder
         if (!emitted.Success) throw new InvalidOperationException(string.Join("\n", emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)));
         if (stream.Length > MaximumAssemblyBytes) throw new InvalidOperationException("The isolated preview assembly exceeds the 8 MiB limit.");
         var output = compilation.Analysis.Output;
-        return new(Convert.ToBase64String(stream.ToArray()), output.FactoryTypeName, output.BuildMethodName, output.PopulateMethodName);
+        return new(Convert.ToBase64String(stream.ToArray()), output.FactoryMetadataName, output.BuildMethodName, output.PopulateMethodName);
     }
 }

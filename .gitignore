@@ -12,3 +12,7 @@ external/
 *.suo
 .vs/
 .DS_Store
+
+# Python validation helpers
+__pycache__/
+*.py[cod]

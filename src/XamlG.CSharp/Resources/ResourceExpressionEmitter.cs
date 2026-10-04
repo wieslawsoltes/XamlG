@@ -10,7 +10,9 @@ internal sealed class ResourceExpressionEmitter(EmissionContext context)
         var resource = expression.Resource;
         var target = resource.ExternalFactory is { } external
             ? external.ContainingType.CSharpName() + "." + CSharpNames.Method(external)
-            : "global::" + resource.GeneratedNamespace + ".Document_" + CSharpNames.StableId(resource.LocalDocumentId!) + ".Build";
+            : resource.LocalFactoryType is { } local
+                ? local.CSharpName() + "." + CSharpNames.Identifier(resource.LocalFactoryMethod!)
+                : "global::" + resource.GeneratedNamespace + ".Document_" + CSharpNames.StableId(resource.LocalDocumentId!) + ".Build";
         var value = context.Temporary("resource");
         var session = context.Temporary("resourceSession");
         context.Writer.Line("var " + value + " = " + target + "(global::XamlG.Runtime.XamlResourceServices.Enter(" + frame + ", " + CSharpNames.Literal(resource.Uri) + "));");

@@ -95,7 +95,7 @@ public sealed class XamlProjectCompiler
             foreach (var item in group) bound[item.Index] = AddError(item.Document, "XG2002", "More than one XAML document declares x:Class '" + group.Key + "'.");
         // Dependency diagnostics are snapshot-specific; never cache a propagated error into the raw binding.
         XamlResourceGraph.Validate(bound, cancellationToken);
-        var output = ImmutableArray.CreateBuilder<XamlProjectDocumentResult>(inputs.Length);
+        var emissions = new XamlEmissionResult[inputs.Length];
         var emittedCount = 0; var reusedOutputs = 0;
         for (var i = 0; i < inputs.Length; i++)
         {
@@ -109,9 +109,11 @@ public sealed class XamlProjectCompiler
                 emittedCount++;
                 if (ReferenceEquals(bound[i], entries[i].Document)) entries[i].Output = emission;
             }
-            output.Add(new(inputs[i], addresses[i], bound[i], emission));
+            emissions[i] = emission;
         }
-        return new(output.ToImmutable(), catalog) { Statistics = new(boundCount, reusedBindings, emittedCount, reusedOutputs) };
+        XamlResourceGraph.ValidateEmissions(bound, emissions, cancellationToken);
+        var output = inputs.Select((input, index) => new XamlProjectDocumentResult(input, addresses[index], bound[index], emissions[index])).ToImmutableArray();
+        return new(output, catalog) { Statistics = new(boundCount, reusedBindings, emittedCount, reusedOutputs) };
     }
     private static BoundDocument AddError(BoundDocument document, string code, string message) => document with
     { Diagnostics = document.Diagnostics.Add(new XamlDiagnostic(code, message, document.Syntax.Root?.NameSpan ?? new TextSpan(0, 0))) };

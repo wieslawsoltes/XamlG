@@ -20,7 +20,7 @@ internal sealed class CompiledXaml : IDisposable
     }
     public Assembly Assembly { get; }
     public XamlEmissionResult Emission { get; }
-    public object Build(IServiceProvider? services = null) => Assembly.GetType(Emission.FactoryTypeName)!.GetMethod(Emission.BuildMethodName!)!.Invoke(null, new object?[] { services })!;
+    public object Build(IServiceProvider? services = null) => Assembly.GetType(Emission.FactoryMetadataName)!.GetMethod(Emission.BuildMethodName!)!.Invoke(null, new object?[] { services })!;
     public static CompiledXaml Create(string xaml, string model, XamlFrameworkProfile? profile = null)
     {
         var compilation = CompilationFactory.Create(model).WithOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));

@@ -15,9 +15,10 @@ internal sealed class ResourceProjectFixture
     public const string Namespace = "xmlns='https://github.com/avaloniaui' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'";
     private static readonly MetadataReference[] References = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
         .Append(typeof(XamlCompiledResourceAttribute).Assembly.Location).Distinct(StringComparer.Ordinal).Select(p => MetadataReference.CreateFromFile(p)).ToArray();
-    public ResourceProjectFixture(IEnumerable<(string Path, string Source)> documents, string? assemblyName = null, IEnumerable<MetadataReference>? references = null)
+    public ResourceProjectFixture(IEnumerable<(string Path, string Source)> documents, string? assemblyName = null, IEnumerable<MetadataReference>? references = null, string? sourceCode = null)
     {
-        Compilation = CSharpCompilation.Create(assemblyName ?? "ResourceTest_" + Guid.NewGuid().ToString("N"), references: References.Concat(references ?? Array.Empty<MetadataReference>()),
+        Compilation = CSharpCompilation.Create(assemblyName ?? "ResourceTest_" + Guid.NewGuid().ToString("N"),
+            syntaxTrees: sourceCode == null ? null : new[] { CSharpSyntaxTree.ParseText(sourceCode, new CSharpParseOptions(LanguageVersion.Preview), "Code.cs") }, references: References.Concat(references ?? Array.Empty<MetadataReference>()),
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
         Result = new XamlProjectCompiler().Compile(documents.Select(d => new XamlProjectDocument(XamlSyntaxTree.Parse(d.Source, d.Path), d.Path)), Compilation, AvaloniaFrameworkProfile.Create());
     }
@@ -36,11 +37,11 @@ internal sealed class ResourceProjectFixture
         using var stream = new MemoryStream(image);
         return AssemblyLoadContext.Default.LoadFromStream(stream);
     }
-    public object Build(string path)
+    public object Build(string path, IServiceProvider? services = null)
     {
         var assembly = Load(Emit());
         var output = Result.Documents.Single(d => d.Input.LogicalPath == path).Output;
-        return assembly.GetType(output.FactoryTypeName)!.GetMethod(output.BuildMethodName!)!.Invoke(null, new object?[] { null })!;
+        return assembly.GetType(output.FactoryMetadataName)!.GetMethod(output.BuildMethodName!)!.Invoke(null, new object?[] { services })!;
     }
     public static string Dictionary(string content) => "<ResourceDictionary " + Namespace + ">" + content + "</ResourceDictionary>";
     public static string Include(string source, string kind = "ResourceInclude") =>

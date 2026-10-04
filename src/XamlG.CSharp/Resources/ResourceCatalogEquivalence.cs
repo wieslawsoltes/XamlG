@@ -14,6 +14,8 @@ internal static class ResourceCatalogEquivalence
         {
             var a = first[i]; var b = second[i];
             if (a.Uri != b.Uri || a.LocalDocumentId != b.LocalDocumentId || a.GeneratedNamespace != b.GeneratedNamespace ||
+                a.LocalFactoryMethod != b.LocalFactoryMethod ||
+                !SymbolEqualityComparer.Default.Equals(a.LocalFactoryType, b.LocalFactoryType) ||
                 !SymbolEqualityComparer.Default.Equals(a.RootType, b.RootType) ||
                 !SymbolEqualityComparer.Default.Equals(a.ExternalFactory, b.ExternalFactory)) return false;
         }

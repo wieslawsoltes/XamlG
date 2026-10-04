@@ -22,6 +22,12 @@ Compile and Run capture current buffers instead of relying on delayed notificati
 
 Design mode provides real drag/eight-handle resize, snapping, aspect locking, keyboard nudging and cancellation. Property/structure commands are source transactions; see [design and reload](hot-reload.md).
 
+## Code-behind factory identity
+
+The compiler can generate construction factories for eligible `x:Class` roots, including nested classes. Preview and isolated payload construction consume `FactoryMetadataName` when resolving runtime types; C# source generation continues to use `FactoryTypeName`. Construction invokes real user constructors and uses the generated initializer's idempotence guard. Caller-controlled/handwritten initialization and unsupported constructor shapes remain explicit boundaries.
+
+Authoring formatting, rename, code actions and token deltas are exposed through the reusable tooling/LSP libraries. This change does not add a Monaco F2 command or coordinated multi-document browser undo for C# plus XAML; those must not be inferred from LSP capability support.
+
 ## Multi-document resources
 
 The Resources tab manages reusable classless dictionaries/styles in the same project as `View.axaml`. It has a path selector, add/remove controls, source/generated/syntax views and a complete three-document example. Source remains local to the browser. Adding/removing files changes the compilation's resource catalog; unresolved dependencies appear as source diagnostics, not runtime loader failures.

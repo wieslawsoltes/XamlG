@@ -17,7 +17,12 @@ public static class AvaloniaFrameworkProfile
         return XamlFrameworkProfile.Portable with
         {
             Name = "Avalonia",
+            NameReferenceRules = XamlFrameworkProfile.Portable.NameReferenceRules.Add(new References.AvaloniaNameReferenceRule()),
             ResourceScheme = AvaloniaResourceMetadata.Scheme,
+            ResourceSourceMembers = ImmutableDictionary<string, string>.Empty.WithComparers(StringComparer.Ordinal)
+                .Add(AvaloniaResourceMetadata.ResourceInclude, AvaloniaResourceMetadata.Source)
+                .Add(AvaloniaResourceMetadata.MergeResourceInclude, AvaloniaResourceMetadata.Source)
+                .Add(AvaloniaResourceMetadata.StyleInclude, AvaloniaResourceMetadata.Source),
             ObjectExpressionRules = ImmutableArray.Create<IXamlObjectExpressionRule>(new AvaloniaResourceIncludeRule()),
             TypeSystem = new XamlTypeSystemConfiguration
             {

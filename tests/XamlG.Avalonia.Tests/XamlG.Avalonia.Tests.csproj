@@ -7,6 +7,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/XamlG.Tooling/XamlG.Tooling.csproj" />
     <ProjectReference Include="../../src/XamlG.Frameworks/XamlG.Frameworks.csproj" />
     <ProjectReference Include="../../src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" />
     <ProjectReference Include="../../src/XamlG.CSharp/XamlG.CSharp.csproj" />

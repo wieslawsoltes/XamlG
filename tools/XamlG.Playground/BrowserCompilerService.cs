@@ -102,7 +102,7 @@ public sealed class BrowserCompilerService(HttpClient http)
         if (!emitted.Success) throw new InvalidOperationException(string.Join("\n", emitted.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)));
         var assembly = Assembly.Load(image.ToArray()); _loadedAssemblies++;
         var output = result.Analysis.Output;
-        var factory = assembly.GetType(output.FactoryTypeName, throwOnError: true)!;
+        var factory = assembly.GetType(output.FactoryMetadataName, throwOnError: true)!;
         if (output.BuildMethodName != null) return factory.GetMethod(output.BuildMethodName)!.Invoke(null, new object?[] { null })!;
         var instance = Activator.CreateInstance(factory) ?? throw new InvalidOperationException("The code-behind root could not be constructed.");
         if (!XamlG.Runtime.XamlRuntimeSession.TryGet(instance, out _))

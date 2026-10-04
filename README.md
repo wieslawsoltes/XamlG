@@ -7,7 +7,7 @@
 [![Upstream compatibility](https://github.com/wieslawsoltes/XamlG/actions/workflows/upstream-compatibility.yml/badge.svg)](https://github.com/wieslawsoltes/XamlG/actions/workflows/upstream-compatibility.yml)
 [![Packages](https://github.com/wieslawsoltes/XamlG/actions/workflows/release.yml/badge.svg)](https://github.com/wieslawsoltes/XamlG/actions/workflows/release.yml)
 
-**[Compiler Studio](https://wieslawsoltes.github.io/XamlG/)** · [Project resources](docs/resources.md) · [Framework compiler](docs/framework-compilation.md) · [Designer/reload](docs/hot-reload.md) · [LSP](docs/language-server.md) · [Validation](docs/validation.md) · [Releases](docs/releasing.md)
+**[Compiler Studio](https://wieslawsoltes.github.io/XamlG/)** · [Authoring APIs](docs/authoring.md) · [Feature status](docs/feature-status.md) · [Project resources](docs/resources.md) · [Framework compiler](docs/framework-compilation.md) · [Designer/reload](docs/hot-reload.md) · [LSP](docs/language-server.md) · [Validation](docs/validation.md) · [Releases](docs/releasing.md)
 
 XamlG compiles XAML into inspectable, strongly typed C#. The compiler consumes Roslyn symbols directly: it does not execute application assemblies, rewrite IL or call XamlX as a production fallback. Build-time generation, project resource linking, designer editing, CLI, workspace, LSP and browser hosts share the compiler.
 
@@ -100,7 +100,9 @@ Include application/framework/runtime references in the Roslyn compilation and p
 
 `ResourceInclude`, `StyleInclude` and `MergeResourceInclude` resolve to generated local factories or public factory exports from referenced XamlG assemblies. Relative/root-relative/assembly-qualified resource URIs are checked at compile time. Cycles and failed dependencies produce diagnostics before emission; unrelated documents can still compile. No generated include calls a runtime XAML parser or binary loader.
 
-Ordinary includes retain separate providers. Merge includes perform eager dictionary merging with later/local value precedence and same-variant theme merging. This is not XamlX's IL-level flattening and does not promise identical allocations. Existing binary-XamlX-only resources are not implicitly translated; referenced resources need XamlG export metadata. Classless resources are exported; `x:Class` roots continue to use generated initialization.
+Ordinary includes retain separate providers. Merge includes perform eager dictionary merging with later/local value precedence and same-variant theme merging. This is not XamlX's IL-level flattening and does not promise identical allocations. Existing binary-XamlX-only resources are not implicitly translated; referenced resources need XamlG export metadata. Public classless resources and eligible concrete `x:Class` roots export factories. Code-behind factories invoke real constructors, provide initialization services, initialize once, and retire generated sessions on constructor failure. Roots requiring caller-controlled construction remain Populate-only.
+
+Backend-only code-generation failures also suppress dependent factories and recover without poisoning cached caller output.
 
 The project cache reuses raw bindings and generated outputs for unchanged documents when export signatures and the Roslyn compilation remain stable. A value-only edit can bind/emit one document. Catalog/graph validation still performs project-wide work; counters are not end-to-end performance benchmarks. See [resource architecture, API and boundaries](docs/resources.md).
 
@@ -124,6 +126,8 @@ dotnet tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll \
 ```
 
 Project CLI compilation retains all required generated factories. The LSP watches compiler inputs, combines open XAML buffers into a coherent project overlay and rejects stale project/buffer-set results. Editing an included resource can diagnose its caller without fabricating a new caller version; closing the resource restores its loaded source snapshot. Identical duplicate MSBuild inputs are coalesced, conflicting buffers rejected.
+
+The server advertises prepare/rename for statically resolved XAML names, document/range formatting, structural and member-spelling code actions, resource links/completions, workspace symbols, and semantic-token full/delta/range support. Root-name rename includes actual C# field uses and `nameof`, while leaving strings, comments, and unrelated locals unchanged. Name references follow template namescopes, not text matching. Analysis is shared once per project/open-buffer snapshot across diagnostics and requests. [Authoring APIs and limits](docs/authoring.md) describe these contracts.
 
 Stdout is protocol-only. `--trust-project` is mandatory because MSBuild/source generators can execute project code. See [capabilities and publication rules](docs/language-server.md).
 
