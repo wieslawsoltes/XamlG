@@ -9,18 +9,21 @@ internal sealed record GeneratorInput(string Path, string LogicalPath, string Te
     public static GeneratorInput Read(AdditionalText text, AnalyzerConfigOptionsProvider options, CancellationToken cancellationToken)
     {
         var metadata = options.GetOptions(text);
-        var logical = metadata.TryGetValue(GeneratorPropertyNames.LogicalPath, out var configured) ? configured : Normalize(text.Path);
-        if (!metadata.TryGetValue(GeneratorPropertyNames.LogicalPath, out _) &&
-            options.GlobalOptions.TryGetValue(GeneratorPropertyNames.ProjectDirectory, out var projectDirectory))
+        // CompilerVisibleItemMetadata emits empty entries for items contributed by other
+        // build targets. Presence alone does not make that entry a valid logical path.
+        var logical = metadata.TryGetValue(GeneratorPropertyNames.LogicalPath, out var configured) && !string.IsNullOrWhiteSpace(configured)
+            ? Normalize(configured) : Normalize(text.Path);
+        if (options.GlobalOptions.TryGetValue(GeneratorPropertyNames.ProjectDirectory, out var projectDirectory) && !string.IsNullOrWhiteSpace(projectDirectory))
         {
             var prefix = Normalize(projectDirectory).TrimEnd('/') + "/";
-            if (logical.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                logical = logical.Substring(prefix.Length);
+            // Windows drive/UNC paths are case-insensitive. Unix source identities are not.
+            var comparison = prefix.StartsWith("//", StringComparison.Ordinal) || prefix.Length > 1 && prefix[1] == ':'
+                ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (logical.StartsWith(prefix, comparison)) logical = logical.Substring(prefix.Length);
         }
-
-        return new(text.Path, Normalize(logical), text.GetText(cancellationToken)?.ToString() ?? string.Empty,
+        while (logical.StartsWith("./", StringComparison.Ordinal)) logical = logical.Substring(2);
+        return new(text.Path, logical, text.GetText(cancellationToken)?.ToString() ?? string.Empty,
             GeneratorOptions.ReadBoolean(metadata, GeneratorPropertyNames.Compile, true));
     }
-
     private static string Normalize(string path) => path.Replace('\\', '/');
 }

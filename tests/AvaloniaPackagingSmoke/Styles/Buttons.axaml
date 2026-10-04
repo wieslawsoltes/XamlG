@@ -1,0 +1,3 @@
+<Styles xmlns="https://github.com/avaloniaui">
+  <Style Selector="Button.primary"><Setter Property="Width" Value="144" /></Style>
+</Styles>
