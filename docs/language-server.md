@@ -8,7 +8,7 @@ dotnet tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll \
   --code /absolute/path/Model.cs --reference /absolute/path/Controls.dll --framework Portable
 ```
 
-Source/reference options are repeatable. Metadata-only mode parses C# and reads assembly metadata without executing application code. The process reserves stdout for framed JSON-RPC; host logs go to stderr.
+Source/reference options are repeatable. Metadata-only mode reads C# and assembly metadata without executing application code. Stdout contains only framed JSON-RPC; host logs go to stderr.
 
 ## Trusted projects and automatic refresh
 
@@ -18,20 +18,30 @@ dotnet tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll \
   --target-framework net10.0 --framework Avalonia
 ```
 
-MSBuild evaluation and application source generators may execute project-defined code. `--project` is rejected without `--trust-project` before evaluation. It cannot be combined with metadata-only source/reference inputs.
+MSBuild evaluation and source generators may execute project-defined code. `--project` requires `--trust-project` before evaluation and cannot be combined with metadata-only inputs.
 
-Automatic watching is enabled by default; `--no-watch` disables it. The evaluated project supplies source/additional/configuration documents, project references, metadata/analyzer files, restore assets and relevant directory-level build configuration. Source roots allow newly created files to trigger reevaluation; unrelated build outputs are excluded. `XamlWatchInputs` can supply an explicit set for embedding hosts. Unlisted arbitrary external MSBuild imports are not discovered by a general filesystem scan.
+Watching is enabled by default; `--no-watch` disables it. Evaluated inputs include source/additional/configuration documents, project references, metadata/analyzer files, restore assets and relevant directory-level configuration. Source roots admit newly created files; unrelated outputs are excluded. Embedders can provide an explicit `XamlWatchInputs`. Arbitrary external MSBuild imports not present in this input set are not discovered by a general filesystem scan.
 
-The refresh pump allows one active loader and a coalesced pending signal. Supersession cancels active loading; a loader that ignores cancellation still cannot publish an old revision. Failed evaluation retains the last published compiler snapshot. Atomic saves/renames and watcher overflow request refresh. The LSP cancels affected requests, recomputes diagnostics for open documents and tracks project revision separately from the client's XAML revision.
+Refresh permits one active loader and a coalesced pending signal. Supersession cancels loading; a noncooperative loader still cannot publish an obsolete revision. Failed evaluation retains the previous compiler snapshot. Atomic saves, renames and watcher overflow request refresh.
 
-## Protocol
+## Coherent unsaved resource projects
 
-Implemented: initialize/shutdown, open/change/close synchronization with sequential UTF-16 ranges, versioned diagnostics, hover, element/member/value completion, source definitions, open-XAML references/highlights, symbols, folding, full semantic tokens, cancellation and `xamlg/inspect` for syntax/bound operations/source maps/C#.
+The server maintains three distinct identities: the Roslyn project revision, each client's document version, and the complete open-buffer-set revision. Successful open/change/close notifications advance the set revision without fabricating versions for other documents. Identical file aliases cannot create two conflicting open buffers for one physical path.
 
-Rename, code actions, formatting, semantic-token deltas, C#-side reference search and decompiled metadata navigation are not advertised. Editors can add host-specific capabilities through the reusable tooling layer.
+`AnalyzeOverlays` combines all open project XAML buffers with the loaded text of closed documents. Semantic requests and diagnostics use the same dependency graph. Changing a resource can add/remove a diagnostic in an unchanged caller; closing its unsaved buffer restores the loaded on-disk source. The server refreshes affected open-document diagnostics and rejects requests superseded by project or buffer-set changes. Unrelated/untitled buffers remain standalone.
 
-Publication rechecks project/document freshness under the output gate. Request cancellation cannot truncate an admitted Content-Length frame. Partial writes, flush errors and frame deadlines permanently close the transport rather than allowing another message to corrupt it. See [publication invariants and tests](lsp-publication.md).
+The workspace coalesces identical AdditionalDocuments contributed by multiple MSBuild targets and rejects inconsistent text for a physical path. Logical resource identity remains distinct from the physical path used by LSP.
+
+## Protocol and publication
+
+Implemented: initialize/shutdown, sequential UTF-16 open/change/close synchronization, diagnostics, hover, element/member/value completion, source definitions, open-XAML references/highlights, symbols, folding, full semantic tokens, cancellation and `xamlg/inspect` (syntax, typed operations, source mappings and C#).
+
+Rename, code actions, formatting, semantic-token deltas, C#-side references and decompiled metadata navigation are not advertised. Editors can add host-specific capabilities through reusable tooling.
+
+Publication rechecks project and buffer-set freshness under the output gate. Cancellation can discard queued work but cannot truncate an admitted Content-Length frame. Partial writes, flush failures and deadlines permanently close the transport. See [publication invariants](lsp-publication.md).
 
 ## Validation
 
-`test-lsp-host.py` launches the actual executable and exchanges framed messages. `test-lsp-watch.py` changes its C# input and verifies updated diagnostics without changing the XAML version. Library tests exercise framing, bounds, stale revisions, queued-message cancellation, partial writes, deadlines and shutdown. Release validation repeats process tests against the installed tool, not just the repository build.
+`test-lsp-host.py` launches the real process and exchanges framed requests. `test-lsp-watch.py` modifies C# input and verifies diagnostics without changing XAML versions. `test-lsp-resources.py` opens a trusted multi-document resource project, supplies an unsaved broken dependency, checks caller diagnostics and inspection, then closes the dependency to verify recovery.
+
+Library tests cover framing, bounds, stale/aliased documents, coherent buffer sets, queued cancellation, partial writes, deadlines and shutdown. Release validation repeats protocol/watch process tests against an installed tool package; the resource-overlay process test runs in the LSP host workflow.

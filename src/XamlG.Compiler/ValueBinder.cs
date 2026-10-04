@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Roslyn;
 using XamlG.Syntax;
+
 namespace XamlG.Compiler;
 
 /// <summary>Resolves conversions to typed operations. Only framework-independent primitive parsing runs at compile time.</summary>
@@ -26,8 +27,6 @@ public sealed class ValueBinder
     }
     public BoundExpression? TryText(string text, ITypeSymbol target, NamespaceScope scope, TextSpan span, ISymbol? member = null)
     {
-        // A property converter explicitly overrides the property's CLR type converter,
-        // including intrinsic numeric parsing. No user converter executes during binding.
         var propertyConverter = FindConverter(member);
         if (propertyConverter != null) return new BoundConverterExpression(text, propertyConverter, target, span);
         foreach (var rule in _context.Profile.TextConversionRules)
@@ -36,7 +35,6 @@ public sealed class ValueBinder
         { var inner = TryText(text, nullable.TypeArguments[0], scope, span, member); return inner == null ? null : new BoundCastExpression(inner, target, span); }
         if (PrimitiveValueParser.TryParse(text, target.SpecialType, out var primitive))
             return new BoundConstantExpression(primitive, target.SpecialType == SpecialType.System_Object ? _context.Types.Special(SpecialType.System_String) : target, span);
-        // A malformed primitive is a compile-time error, not a deferred call to Int32.Parse.
         if (target.SpecialType is SpecialType.System_Boolean or SpecialType.System_Char or SpecialType.System_Byte or SpecialType.System_SByte or SpecialType.System_Int16 or SpecialType.System_UInt16 or SpecialType.System_Int32 or SpecialType.System_UInt32 or SpecialType.System_Int64 or SpecialType.System_UInt64 or SpecialType.System_Single or SpecialType.System_Double or SpecialType.System_Decimal) return null;
         if (target.TypeKind == TypeKind.Enum && target is INamedTypeSymbol enumeration)
         {
@@ -102,6 +100,9 @@ public sealed class ValueBinder
         _context.Cancellation.ThrowIfCancellationRequested();
         if (syntax is XamlTextSyntax text) return BindText(normalizeText ? XmlWhitespace.Normalize(text.Value, scope.PreserveSpace) : text.Value, target, scope, syntax.Span);
         if (syntax is not XamlElementSyntax element) return null;
+        foreach (var rule in _context.Profile.ObjectExpressionRules)
+            if (rule.TryBind(_context, element, target, scope, nameScope, out var replacement))
+                return replacement == null ? null : Coerce(replacement, target, element.Span);
         var nested = scope.Push(element); var name = nested.Expand(element.Name);
         if (name.Namespace != null && XamlNames.IsLanguage(name.Namespace))
         {

@@ -1,4 +1,7 @@
+using XamlG.Compiler.Resources;
+
 namespace XamlG.Compiler;
+
 public sealed record XamlCompilerOptions
 {
     public bool GenerateBuildMethod { get; init; } = true;
@@ -8,4 +11,6 @@ public sealed record XamlCompilerOptions
     public string? DocumentId { get; init; }
     public string? BaseUri { get; init; }
     public bool EmitLineDirectives { get; init; } = true;
+    public string? ResourceUri { get; init; }
+    public IXamlResourceResolver? Resources { get; init; }
 }

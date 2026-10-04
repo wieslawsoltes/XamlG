@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using XamlG.Compiler;
+using XamlG.Compiler.Resources;
 using XamlG.Syntax;
 
 namespace XamlG.Tooling;
@@ -8,7 +9,6 @@ public static class XamlInspector
 {
     public static ImmutableArray<XamlInspectionNode> Syntax(XamlSyntaxTree tree) =>
         tree.Nodes.Select((node, index) => SyntaxNode(node, index.ToString(System.Globalization.CultureInfo.InvariantCulture))).ToImmutableArray();
-
     public static XamlInspectionNode? Bound(BoundDocument document) => document.Root == null ? null : Object(document.Root);
 
     private static XamlInspectionNode SyntaxNode(XamlSyntaxNode node, string id)
@@ -23,14 +23,12 @@ public static class XamlInspector
         return new(id, node is XamlTextSyntax t && t.IsCData ? "CDATA" : node is XamlTextSyntax ? "Text" : "Trivia",
             node is XamlTextSyntax text ? text.Value : ((XamlTriviaSyntax)node).Kind, node.Span, null, ImmutableArray<XamlInspectionNode>.Empty);
     }
-
     private static XamlInspectionNode Object(BoundObject value)
     {
         var children = value.Arguments.Select((a, i) => Expression(a, value.Key + "/arg" + i))
             .Concat(value.Assignments.Select((a, i) => Assignment(a, value.Key + "/set" + i))).ToImmutableArray();
         return new(value.Key, "Object", value.Name ?? value.Type.Name, value.Syntax.Span, value.Type.ToDisplayString(), children);
     }
-
     private static XamlInspectionNode Assignment(BoundAssignment value, string id)
     {
         var label = value switch
@@ -55,8 +53,7 @@ public static class XamlInspector
         return new(id, value.GetType().Name, label, value.Span, null,
             expressions.Select((e, i) => Expression(e, id + "/" + i)).ToImmutableArray());
     }
-
-    /// <summary>Inspects a bound expression, including compiled delegate parameters and bodies.</summary>
+    /// <summary>Inspects typed delegates and resource references without executing their factories.</summary>
     public static XamlInspectionNode Expression(BoundExpression value, string id = "expression")
     {
         if (value is BoundObjectExpression obj) return Object(obj.Object);
@@ -64,6 +61,7 @@ public static class XamlInspector
             return new(id, "MarkupExtension", extension.Method.Name, value.Span, value.Type?.ToDisplayString(), ImmutableArray.Create(Object(extension.Extension)));
         var label = value switch
         {
+            BoundResourceExpression r => r.Resource.Uri + (r.Resource.ExternalFactory == null ? " (project factory)" : " (referenced factory)"),
             BoundConstantExpression c => c.Value is IFormattable formatted ? formatted.ToString(null, System.Globalization.CultureInfo.InvariantCulture) : c.Value?.ToString() ?? "null",
             BoundTypeExpression t => t.ReferencedType.ToDisplayString(),
             BoundReferenceExpression r => r.Name,

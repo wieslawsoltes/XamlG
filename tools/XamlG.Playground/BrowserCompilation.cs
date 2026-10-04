@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis.CSharp;
+using XamlG.CSharp.Resources;
 using XamlG.Tooling;
 
 namespace XamlG.Playground;
@@ -7,5 +8,7 @@ namespace XamlG.Playground;
 public sealed record BrowserCompilation(XamlAnalysis Analysis, CSharpCompilation Compilation,
     ImmutableArray<PlaygroundDiagnostic> Diagnostics, double ElapsedMilliseconds)
 {
-    public bool Success => Analysis.Output.Success && !Diagnostics.Any(d => d.Severity == "Error");
+    public XamlProjectCompilation? Project { get; init; }
+    public long ResourceRevision { get; init; }
+    public bool Success => Analysis.Output.Success && (Project?.Success ?? true) && !Diagnostics.Any(d => d.Severity == "Error");
 }

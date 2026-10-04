@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <EnableAvaloniaXamlCompilation>false</EnableAvaloniaXamlCompilation>
+    <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" />
+    <AdditionalFiles Include="Main.axaml;Values.axaml" />
+  </ItemGroup>
+</Project>

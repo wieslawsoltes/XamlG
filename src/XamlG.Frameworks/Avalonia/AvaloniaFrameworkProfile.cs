@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using XamlG.Compiler;
 using XamlG.Frameworks.Avalonia.Bindings;
+using XamlG.Frameworks.Avalonia.Resources;
 using XamlG.Frameworks.Avalonia.Styling;
 using XamlG.Roslyn;
 
@@ -12,9 +13,12 @@ public static class AvaloniaFrameworkProfile
     {
         var bindings = new AvaloniaBindingScopeRule(compileBindingsByDefault);
         var classes = new AvaloniaClassBindingRule();
+        var resources = new AvaloniaResourceMergeRule();
         return XamlFrameworkProfile.Portable with
         {
             Name = "Avalonia",
+            ResourceScheme = AvaloniaResourceMetadata.Scheme,
+            ObjectExpressionRules = ImmutableArray.Create<IXamlObjectExpressionRule>(new AvaloniaResourceIncludeRule()),
             TypeSystem = new XamlTypeSystemConfiguration
             {
                 XmlnsDefinitionAttributes = ImmutableArray.Create(AvaloniaMetadata.XmlnsDefinition),
@@ -43,9 +47,9 @@ public static class AvaloniaFrameworkProfile
             },
             BindingRules = ImmutableArray.Create<IXamlBindingRule>(bindings, new AvaloniaStyleDirectiveRule(), classes),
             TextConversionRules = ImmutableArray.Create<IXamlTextConversionRule>(new AvaloniaTextConversionRule()),
-            ObjectBindingRules = ImmutableArray.Create<IXamlObjectBindingRule>(new AvaloniaStyleObjectRule(), bindings, classes),
+            ObjectBindingRules = ImmutableArray.Create<IXamlObjectBindingRule>(new AvaloniaStyleObjectRule(), bindings, classes, resources),
             MemberBindingRules = ImmutableArray.Create<IXamlMemberBindingRule>(new AvaloniaPropertyDescriptorRule()),
-            PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(new AvaloniaStylePropertyRule(), new AvaloniaBindingRule()),
+            PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(resources, new AvaloniaStylePropertyRule(), new AvaloniaBindingRule()),
             MarkupBindingRules = ImmutableArray.Create<IXamlMarkupBindingRule>(new AvaloniaCompiledBindingRule(), new AvaloniaBindingMarkupRule())
         };
     }

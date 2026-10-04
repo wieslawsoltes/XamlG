@@ -4,27 +4,31 @@ using XamlG.Syntax;
 
 namespace XamlG.LanguageServer;
 
-/// <summary>Atomic UTF-16 document revisions. Changes in a batch are interpreted sequentially, as required by LSP.</summary>
+/// <summary>Atomic UTF-16 document edits and coherent open-buffer snapshots. Each edit batch is sequential.</summary>
 public sealed class LspDocumentStore(int maximumDocuments = 256, int maximumCharacters = 4_194_304)
 {
     private readonly object _gate = new();
     private ImmutableDictionary<string, LspDocumentSnapshot> _documents = ImmutableDictionary<string, LspDocumentSnapshot>.Empty.WithComparers(StringComparer.Ordinal);
-    public ImmutableArray<LspDocumentSnapshot> Snapshots { get { lock (_gate) return _documents.Values.ToImmutableArray(); } }
+    private long _revision;
+    public ImmutableArray<LspDocumentSnapshot> Snapshots => Capture().Documents;
+    public LspDocumentSetSnapshot Capture() { lock (_gate) return new(_revision, _documents.Values.ToImmutableArray()); }
+    public bool IsCurrent(LspDocumentSetSnapshot snapshot) { lock (_gate) return snapshot.Revision == _revision; }
 
     public LspDocumentSnapshot Open(string uri, int version, string text)
     {
-        ValidateSize(text);
-        var path = DocumentPath(uri);
+        ValidateSize(text); var path = DocumentPath(uri);
         lock (_gate)
         {
             if (_documents.ContainsKey(uri)) throw new LspRequestException(-32602, "The document is already open.");
+            var comparer = OperatingSystem.IsWindows() && uri.StartsWith("file:", StringComparison.OrdinalIgnoreCase) ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+            if (_documents.Values.Any(d => comparer.Equals(d.Syntax.Path, path))) throw new LspRequestException(-32602, "The same document is already open under another URI.");
             if (_documents.Count >= maximumDocuments) throw new LspRequestException(-32602, "The open-document limit has been reached.");
+            var nextRevision = checked(_revision + 1);
             var snapshot = new LspDocumentSnapshot(uri, version, XamlSyntaxTree.Parse(text, path, version: version));
-            _documents = _documents.Add(uri, snapshot);
+            _documents = _documents.Add(uri, snapshot); _revision = nextRevision;
             return snapshot;
         }
     }
-
     public LspDocumentSnapshot Change(string uri, int version, IReadOnlyList<LspTextChange> changes)
     {
         lock (_gate)
@@ -36,8 +40,7 @@ public sealed class LspDocumentStore(int maximumDocuments = 256, int maximumChar
             {
                 if (change.Range is { } range)
                 {
-                    var start = Offset(text, range.Start);
-                    var end = Offset(text, range.End);
+                    var start = Offset(text, range.Start); var end = Offset(text, range.End);
                     if (end < start) throw new LspRequestException(-32602, "The edit range is reversed.");
                     if ((long)text.Length - (end - start) + change.Text.Length > maximumCharacters)
                         throw new LspRequestException(-32602, "The document exceeds the source size limit.");
@@ -45,17 +48,24 @@ public sealed class LspDocumentStore(int maximumDocuments = 256, int maximumChar
                 }
                 else { ValidateSize(change.Text); text = SourceText.From(change.Text); }
             }
+            var nextRevision = checked(_revision + 1);
             var snapshot = new LspDocumentSnapshot(uri, version, XamlSyntaxTree.Parse(text.ToString(), previous.Syntax.Path, options: previous.Syntax.Options, version: version));
-            _documents = _documents.SetItem(uri, snapshot);
+            _documents = _documents.SetItem(uri, snapshot); _revision = nextRevision;
             return snapshot;
         }
     }
-
     public LspDocumentSnapshot Get(string uri) { lock (_gate) return GetCore(uri); }
     public bool IsCurrent(LspDocumentSnapshot snapshot) { lock (_gate) return _documents.TryGetValue(snapshot.Uri, out var current) && ReferenceEquals(current, snapshot); }
-    public void Close(string uri) { lock (_gate) _documents = _documents.Remove(uri); }
+    public void Close(string uri)
+    {
+        lock (_gate)
+        {
+            if (!_documents.ContainsKey(uri)) return;
+            var nextRevision = checked(_revision + 1);
+            _documents = _documents.Remove(uri); _revision = nextRevision;
+        }
+    }
     public int GetOffset(LspDocumentSnapshot document, LspPosition position) => Offset(SourceText.From(document.Syntax.Text), position);
-
     private LspDocumentSnapshot GetCore(string uri) => _documents.TryGetValue(uri, out var value) ? value : throw new LspRequestException(-32602, "The document is not open.");
     private void ValidateSize(string text)
     {
