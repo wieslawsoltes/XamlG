@@ -1,0 +1,44 @@
+name: Shipping compatibility inputs
+on:
+  push:
+    branches: [ops/shipping-inputs]
+    paths: ['.github/workflows/shipping-inputs.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NUGET_PACKAGES: ${{ github.workspace }}/packages
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: AvaloniaUI/Avalonia
+          ref: 8eeda4f6f546165b3f72e63c9f42247abb306905
+          path: avalonia
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Verify source and restore pinned metadata tooling
+        shell: bash
+        run: |
+          test "$(git -C avalonia rev-parse HEAD)" = 8eeda4f6f546165b3f72e63c9f42247abb306905
+          mkdir -p inputs
+          cat > inputs/Inputs.csproj <<'XML'
+          <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup><ItemGroup><PackageReference Include="Mono.Cecil" Version="0.11.6" /><PackageReference Include="Avalonia.Themes.Simple" Version="12.1.3" /><PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.3" /></ItemGroup></Project>
+          XML
+          dotnet restore inputs/Inputs.csproj -p:NuGetAudit=false
+          printf '%s\n' 'Avalonia 12.1.3 source: 8eeda4f6f546165b3f72e63c9f42247abb306905' 'Mono.Cecil: 0.11.6' > identity.txt
+          tar --exclude=avalonia/.git -czf shipping-inputs.tar.gz avalonia packages identity.txt
+          sha256sum shipping-inputs.tar.gz > shipping-inputs.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shipping-compatibility-inputs
+          path: |
+            shipping-inputs.tar.gz
+            shipping-inputs.sha256
+          compression-level: 0
+          retention-days: 7
