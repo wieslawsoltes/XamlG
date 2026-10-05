@@ -11,6 +11,7 @@
     { "id": "XamlG.Workspaces", "project": "src/XamlG.Workspaces/XamlG.Workspaces.csproj" },
     { "id": "XamlG.LanguageServer", "project": "src/XamlG.LanguageServer/XamlG.LanguageServer.csproj" },
     { "id": "XamlG.AvaloniaRuntime", "project": "src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" },
+    { "id": "XamlG.Avalonia", "project": "src/XamlG.Avalonia/XamlG.Avalonia.csproj" },
     { "id": "XamlG.Cli", "project": "tools/XamlG.Cli/XamlG.Cli.csproj", "command": "xamlg" },
     { "id": "XamlG.Lsp", "project": "tools/XamlG.Lsp/XamlG.Lsp.csproj", "command": "xamlg-lsp" }
   ]

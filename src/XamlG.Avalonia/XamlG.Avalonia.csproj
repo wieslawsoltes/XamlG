@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Single-reference Avalonia integration for the XamlG source compiler, build targets and runtime.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" />
+    <ProjectReference Include="../XamlG.Generator/XamlG.Generator.csproj" ReferenceOutputAssembly="false" PrivateAssets="none" IncludeAssets="all" />
+  </ItemGroup>
+</Project>
