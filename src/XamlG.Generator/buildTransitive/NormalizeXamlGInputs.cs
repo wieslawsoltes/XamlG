@@ -40,8 +40,6 @@ namespace XamlG.Build
                 Func<ITaskItem, string> identity = item =>
                 {
                     var path = fullPath(item);
-                    // The cache belongs to this project. In-project input identity is relative
-                    // to it, not dependent on checkout location or /var versus /private/var.
                     var relative = path.StartsWith(prefix, comparison);
                     path = (relative ? path.Substring(prefix.Length) : path).Replace('\\', '/');
                     return (relative ? "project:" : "external:") + (windows ? path.ToUpperInvariant() : path);
@@ -73,10 +71,10 @@ namespace XamlG.Build
                     var result = new TaskItem(pair.Key);
                     foreach (var item in pair.Value)
                     {
-                        foreach (DictionaryEntry metadata in item.CloneCustomMetadata())
+                        var metadata = item.CloneCustomMetadata();
+                        foreach (string key in metadata.Keys)
                         {
-                            var key = (string)metadata.Key;
-                            var value = (string)metadata.Value;
+                            var value = (string)metadata[key];
                             if (OwnedMetadata.Contains(key)) continue;
                             var previous = result.GetMetadata(key);
                             if (previous.Length != 0 && value.Length != 0 && previous != value)
@@ -120,11 +118,13 @@ namespace XamlG.Build
                 foreach (var item in results.OrderBy(identity, StringComparer.Ordinal))
                 {
                     Append(text, identity(item));
-                    foreach (DictionaryEntry metadata in item.CloneCustomMetadata().Cast<DictionaryEntry>()
-                        .OrderBy(m => (string)m.Key, StringComparer.OrdinalIgnoreCase))
+                    var metadata = item.CloneCustomMetadata();
+                    // IDictionary.Keys works for both Hashtable and generic dictionary-backed
+                    // MSBuild implementations; IEnumerable may yield incompatible entry types.
+                    foreach (var key in metadata.Keys.Cast<string>().OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
                     {
-                        Append(text, ((string)metadata.Key).ToUpperInvariant());
-                        Append(text, (string)metadata.Value);
+                        Append(text, key.ToUpperInvariant());
+                        Append(text, (string)metadata[key]);
                     }
                     text.Append('\n');
                 }

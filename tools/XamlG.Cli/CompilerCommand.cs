@@ -28,6 +28,7 @@ internal sealed class CompilerCommand
                          --framework Auto|Portable|Avalonia, --target-framework,
                          --output, --emit-assembly, --json
                 --project evaluates trusted MSBuild and runs its source generators.
+                --emit-assembly in project mode also prepares evaluated embedded resources.
                 Standalone compilation reads metadata only. Generated code is never executed.
                 Project compilation retains all resource factories and loader adapters.
                 """);
@@ -37,13 +38,15 @@ internal sealed class CompilerCommand
         try
         {
             XamlCompilationSession session;
+            XamlWorkspaceOptions? workspaceOptions = null;
             ImmutableArray<XamlSyntaxTree> documents;
             var parseOptions = new CSharpParseOptions(LanguageVersion.Preview);
             if (options.Project != null)
             {
                 var properties = ImmutableDictionary<string, string>.Empty;
                 if (options.TargetFramework != null) properties = properties.Add("TargetFramework", options.TargetFramework);
-                host = XamlWorkspaceHost.Create(new() { AllowProjectEvaluation = true, Framework = options.Framework, GlobalProperties = properties });
+                workspaceOptions = new() { AllowProjectEvaluation = true, Framework = options.Framework, GlobalProperties = properties };
+                host = XamlWorkspaceHost.Create(workspaceOptions);
                 var project = await host.OpenProjectAsync(options.Project, cancellationToken);
                 foreach (var diagnostic in host.Diagnostics) Console.Error.WriteLine("workspace: " + diagnostic.Message);
                 session = project.Compiler;
@@ -80,28 +83,40 @@ internal sealed class CompilerCommand
                 var position = diagnostic.Location.GetMappedLineSpan();
                 diagnostics.Add(new(diagnostic.Id, diagnostic.GetMessage(), diagnostic.Severity.ToString(), position.Path, position.StartLinePosition.Line + 1, position.StartLinePosition.Character + 1));
             }
+            // Preserve the existing inspect array shape; project adapter source is an additive field.
             if (options.Command == "inspect")
-                Console.WriteLine(JsonSerializer.Serialize(new
+                Console.WriteLine(JsonSerializer.Serialize(analyses.Select(a => new
                 {
-                    documents = analyses.Select(a => new { path = a.Syntax.Path, syntax = XamlInspector.Syntax(a.Syntax), bound = XamlInspector.Bound(a.Document), sourceMappings = a.Output.SourceMappings, generated = a.Output.Source }),
+                    path = a.Syntax.Path, syntax = XamlInspector.Syntax(a.Syntax), bound = XamlInspector.Bound(a.Document),
+                    sourceMappings = a.Output.SourceMappings, generated = a.Output.Source,
                     integration = compiledProject.SourceIntegration.Source, diagnostics
-                }, JsonOptions));
+                }), JsonOptions));
             else if (options.Json) Console.WriteLine(JsonSerializer.Serialize(diagnostics, JsonOptions));
             else foreach (var item in diagnostics) Console.Error.WriteLine($"{item.Path}({item.Line},{item.Column}): {item.Severity.ToLowerInvariant()} {item.Code}: {item.Message}");
             if (diagnostics.Any(d => d.Severity == "Error") || !compiledProject.Success) return 1;
+            // Complete emission in memory before modifying compiler-owned output files.
+            byte[]? emittedImage = null;
+            if (options.AssemblyOutput != null)
+            {
+                using var image = new MemoryStream();
+                var inputs = options.Project == null ? null : await XamlMSBuildEmissionCollector.CollectAsync(options.Project, workspaceOptions!, cancellationToken);
+                var result = inputs == null ? compilationWithOutput.Emit(image, cancellationToken: cancellationToken)
+                    : inputs.Emit(compilationWithOutput, image, cancellationToken);
+                if (!result.Success) throw new InvalidOperationException(string.Join("\n", result.Diagnostics));
+                emittedImage = image.ToArray();
+            }
             if (options.Command == "compile")
             {
                 await GeneratedOutputWriter.WriteAsync(options.Output, XamlCSharpCompilation.Sources(compiledProject), cancellationToken);
                 if (!options.Json) Console.WriteLine($"Generated {analyses.Length} document(s) and loader adapters into {Path.GetFullPath(options.Output)}.");
             }
-            if (options.AssemblyOutput != null)
+            if (emittedImage != null)
             {
-                using var image = new MemoryStream();
-                var result = compilationWithOutput.Emit(image, cancellationToken: cancellationToken);
-                if (!result.Success) throw new InvalidOperationException(string.Join("\n", result.Diagnostics));
-                var output = Path.GetFullPath(options.AssemblyOutput);
+                var output = Path.GetFullPath(options.AssemblyOutput!);
                 Directory.CreateDirectory(Path.GetDirectoryName(output)!);
-                await File.WriteAllBytesAsync(output, image.ToArray(), cancellationToken);
+                var temporary = output + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try { await File.WriteAllBytesAsync(temporary, emittedImage, cancellationToken); File.Move(temporary, output, overwrite: true); }
+                finally { if (File.Exists(temporary)) File.Delete(temporary); }
             }
             return 0;
         }
