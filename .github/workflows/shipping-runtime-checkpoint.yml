@@ -1,0 +1,29 @@
+name: Shipping runtime checkpoint
+on:
+  push:
+    branches: [ops/shipping-runtime-checkpoint]
+permissions:
+  contents: read
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Archive the matching shared framework for offline regression tests
+        shell: bash
+        run: |
+          dotnet --info > dotnet-info.txt
+          test -d "$DOTNET_ROOT/shared/Microsoft.AspNetCore.App/10.0.12"
+          tar -czf aspnet-runtime.tar.gz -C "$DOTNET_ROOT" shared/Microsoft.AspNetCore.App/10.0.12
+          sha256sum aspnet-runtime.tar.gz > aspnet-runtime.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shipping-runtime
+          path: |
+            aspnet-runtime.tar.gz
+            aspnet-runtime.sha256
+            dotnet-info.txt
+          retention-days: 3
