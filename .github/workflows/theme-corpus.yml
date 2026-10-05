@@ -17,7 +17,7 @@ jobs:
       matrix:
         include:
           - theme: Simple
-            documents: 82
+            documents: 81
           - theme: Fluent
             documents: 86
     runs-on: ubuntu-latest
@@ -38,9 +38,22 @@ jobs:
       - name: Verify pinned source and create an isolated compiler worktree
         env:
           THEME: ${{ matrix.theme }}
+          DOCUMENTS: ${{ matrix.documents }}
         run: |
           test "$(git -C artifacts/upstream-avalonia rev-parse HEAD)" = 8eeda4f6f546165b3f72e63c9f42247abb306905
           git -C artifacts/upstream-avalonia diff --exit-code
+          python - <<'PY'
+          import os, subprocess
+          from pathlib import Path
+          root = Path('artifacts/upstream-avalonia')
+          prefix = 'src/Avalonia.Themes.' + os.environ['THEME'] + '/'
+          tracked = subprocess.check_output(['git', '-C', str(root), 'ls-files', '-z', '--', prefix]).decode().split('\0')
+          inputs = sorted(path for path in tracked if Path(path).suffix.lower() in ('.xaml', '.axaml', '.paml'))
+          assert len(inputs) == int(os.environ['DOCUMENTS']), inputs
+          for path in inputs:
+              assert (root / path).is_file(), path
+              print('PINNED INPUT ' + path)
+          PY
           git worktree add --detach "$RUNNER_TEMP/xamlg-theme-$THEME" HEAD
           echo "CORPUS_WORKTREE=$RUNNER_TEMP/xamlg-theme-$THEME" >> "$GITHUB_ENV"
       - name: Compile original source and realize generated themes

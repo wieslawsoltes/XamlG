@@ -25,7 +25,7 @@ public static class AvaloniaFrameworkProfile
                 .Add(AvaloniaResourceMetadata.ResourceInclude, AvaloniaResourceMetadata.Source)
                 .Add(AvaloniaResourceMetadata.MergeResourceInclude, AvaloniaResourceMetadata.Source)
                 .Add(AvaloniaResourceMetadata.StyleInclude, AvaloniaResourceMetadata.Source),
-            ObjectExpressionRules = ImmutableArray.Create<IXamlObjectExpressionRule>(new AvaloniaResourceIncludeRule()),
+            ObjectExpressionRules = XamlFrameworkProfile.Portable.ObjectExpressionRules.Add(new AvaloniaResourceIncludeRule()),
             TypeSystem = new XamlTypeSystemConfiguration
             {
                 XmlnsDefinitionAttributes = ImmutableArray.Create(AvaloniaMetadata.XmlnsDefinition),
@@ -53,10 +53,10 @@ public static class AvaloniaFrameworkProfile
                     new XamlServiceMapping(AvaloniaMetadata.NamespaceProvider, XamlServiceKind.XmlNamespaces, AvaloniaMetadata.NamespaceItem))
             },
             BindingRules = ImmutableArray.Create<IXamlBindingRule>(bindings, new AvaloniaStyleDirectiveRule(), classes),
-            TextConversionRules = ImmutableArray.Create<IXamlTextConversionRule>(new AvaloniaTextConversionRule()),
+            TextConversionRules = ImmutableArray.Create<IXamlTextConversionRule>(new AvaloniaPropertyReferenceTextRule(), new AvaloniaFontFamilyTextRule(), new AvaloniaTextConversionRule()),
             ObjectBindingRules = ImmutableArray.Create<IXamlObjectBindingRule>(new AvaloniaStyleObjectRule(), bindings, classes, resources),
             MemberBindingRules = ImmutableArray.Create<IXamlMemberBindingRule>(new AvaloniaPropertyDescriptorRule()),
-            PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(resources, new AvaloniaStylePropertyRule(), new AvaloniaBindingRule()),
+            PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(new AvaloniaDesignPropertyRule(), resources, new AvaloniaStylePropertyRule(), new AvaloniaBindingRule()),
             MarkupBindingRules = ImmutableArray.Create<IXamlMarkupBindingRule>(new AvaloniaCompiledBindingRule(), new AvaloniaBindingMarkupRule())
         };
     }

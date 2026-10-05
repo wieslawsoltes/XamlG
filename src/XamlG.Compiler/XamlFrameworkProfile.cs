@@ -14,7 +14,7 @@ public sealed record XamlFrameworkProfile
     public ImmutableDictionary<string, string> ResourceSourceMembers { get; init; } = ImmutableDictionary<string, string>.Empty.WithComparers(StringComparer.Ordinal);
     public XamlTypeSystemConfiguration TypeSystem { get; init; } = new();
     public XamlRuntimeConfiguration Runtime { get; init; } = new();
-    public ImmutableArray<IXamlObjectExpressionRule> ObjectExpressionRules { get; init; } = ImmutableArray<IXamlObjectExpressionRule>.Empty;
+    public ImmutableArray<IXamlObjectExpressionRule> ObjectExpressionRules { get; init; } = ImmutableArray.Create<IXamlObjectExpressionRule>(new XamlTextObjectExpressionRule());
     public ImmutableArray<IXamlTypeBindingRule> TypeBindingRules { get; init; } = ImmutableArray<IXamlTypeBindingRule>.Empty;
     public ImmutableArray<IXamlBindingRule> BindingRules { get; init; } = ImmutableArray<IXamlBindingRule>.Empty;
     public ImmutableArray<IXamlObjectBindingRule> ObjectBindingRules { get; init; } = ImmutableArray<IXamlObjectBindingRule>.Empty;
