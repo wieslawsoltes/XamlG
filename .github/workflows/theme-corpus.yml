@@ -1,0 +1,66 @@
+name: Unmodified theme construction
+on:
+  pull_request:
+  push:
+    branches: [main, feat/shipping-loader-msbuild]
+    paths: ['src/**', 'tests/XamlG.ThemeCorpus/**', 'Directory.*', '.github/workflows/theme-corpus.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: theme-corpus-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  execute:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - theme: Simple
+            documents: 82
+          - theme: Fluent
+            documents: 86
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: AvaloniaUI/Avalonia
+          ref: 8eeda4f6f546165b3f72e63c9f42247abb306905
+          path: artifacts/upstream-avalonia
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Verify pinned source and create an isolated compiler worktree
+        env:
+          THEME: ${{ matrix.theme }}
+        run: |
+          test "$(git -C artifacts/upstream-avalonia rev-parse HEAD)" = 8eeda4f6f546165b3f72e63c9f42247abb306905
+          git -C artifacts/upstream-avalonia diff --exit-code
+          git worktree add --detach "$RUNNER_TEMP/xamlg-theme-$THEME" HEAD
+          echo "CORPUS_WORKTREE=$RUNNER_TEMP/xamlg-theme-$THEME" >> "$GITHUB_ENV"
+      - name: Compile original source and realize generated themes
+        env:
+          THEME: ${{ matrix.theme }}
+          DOCUMENTS: ${{ matrix.documents }}
+        run: |
+          cd "$CORPUS_WORKTREE"
+          dotnet build tests/XamlG.ThemeCorpus -c Release -warnaserror -p:NuGetAudit=false
+          dotnet run --project tests/XamlG.ThemeCorpus -c Release --no-build -- \
+            "$GITHUB_WORKSPACE/artifacts/upstream-avalonia" "$THEME" "$DOCUMENTS" "$GITHUB_WORKSPACE/artifacts/theme-$THEME"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: original-theme-${{ matrix.theme }}
+          path: artifacts/theme-${{ matrix.theme }}
+      - name: Remove this job's worktree
+        if: always()
+        run: |
+          if [ -n "$CORPUS_WORKTREE" ] && [ -d "$CORPUS_WORKTREE" ]; then
+            git -C "$CORPUS_WORKTREE" diff --exit-code
+            git worktree remove "$CORPUS_WORKTREE"
+          fi
