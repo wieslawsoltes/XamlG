@@ -13,6 +13,7 @@
     <ProjectReference Include="../XamlG.Runtime/XamlG.Runtime.csproj" />
     <Compile Remove="buildTransitive/**/*.cs" />
     <None Include="buildTransitive/*" Pack="true" PackagePath="buildTransitive" />
+    <None Include="PackageAssets/_._" Pack="true" PackagePath="lib/netstandard2.0/_._" />
   </ItemGroup>
   <Target Name="PackXamlGAnalyzerDependencies" BeforeTargets="_GetPackageFiles">
     <ItemGroup>

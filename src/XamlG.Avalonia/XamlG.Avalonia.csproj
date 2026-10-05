@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" />
-    <ProjectReference Include="../XamlG.Generator/XamlG.Generator.csproj" ReferenceOutputAssembly="false" PrivateAssets="none" IncludeAssets="all" />
+    <!-- This is a real package dependency, including transitive build/analyzer assets. -->
+    <ProjectReference Include="../XamlG.Generator/XamlG.Generator.csproj" PrivateAssets="none" IncludeAssets="all" />
   </ItemGroup>
 </Project>

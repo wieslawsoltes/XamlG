@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--version', required=True)
     args = parser.parse_args()
     packages = args.packages.resolve()
+    run('python', 'scripts/inspect-shipping-package.py', '--packages', str(packages), '--version', args.version)
     with tempfile.TemporaryDirectory(prefix='xamlg-release-') as temporary:
         work = Path(temporary)
         configuration = ET.Element('configuration')
