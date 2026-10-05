@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -10,9 +11,11 @@ using Microsoft.Build.Utilities;
 
 namespace XamlG.Build
 {
-    /// <summary>Metadata-only item normalization. Never reads or writes application source.</summary>
+    /// <summary>Metadata-only input ownership and stable build fingerprints. Never reads application source.</summary>
     public sealed class NormalizeXamlGInputs : Task
     {
+        private static readonly HashSet<string> OwnedMetadata = new HashSet<string>(new[]
+        { "XamlGDefaultItem", "XamlGLogicalPath", "XamlGCompile", "Link", "SourceItemGroup" }, StringComparer.OrdinalIgnoreCase);
         public ITaskItem[] AdditionalFiles { get; set; } = Array.Empty<ITaskItem>();
         public ITaskItem[] Sources { get; set; } = Array.Empty<ITaskItem>();
         public ITaskItem[] FrameworkSources { get; set; } = Array.Empty<ITaskItem>();
@@ -24,13 +27,25 @@ namespace XamlG.Build
 
         public override bool Execute()
         {
-            var paths = Path.DirectorySeparatorChar == '\\' ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+            var windows = Path.DirectorySeparatorChar == '\\';
+            var paths = windows ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+            var comparison = windows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
             var groups = new Dictionary<string, List<ITaskItem>>(paths);
             var unrelated = new List<ITaskItem>();
             try
             {
-                var root = Path.GetFullPath(ProjectDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var root = Path.GetFullPath(ProjectDirectory);
+                var prefix = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
                 Func<ITaskItem, string> fullPath = item => Path.GetFullPath(Path.IsPathRooted(item.ItemSpec) ? item.ItemSpec : Path.Combine(root, item.ItemSpec));
+                Func<ITaskItem, string> identity = item =>
+                {
+                    var path = fullPath(item);
+                    // The cache belongs to this project. In-project input identity is relative
+                    // to it, not dependent on checkout location or /var versus /private/var.
+                    var relative = path.StartsWith(prefix, comparison);
+                    path = (relative ? path.Substring(prefix.Length) : path).Replace('\\', '/');
+                    return (relative ? "project:" : "external:") + (windows ? path.ToUpperInvariant() : path);
+                };
                 var framework = new HashSet<string>(FrameworkSources.Where(IsXaml).Select(fullPath), paths);
                 Action<ITaskItem> add = item =>
                 {
@@ -58,13 +73,11 @@ namespace XamlG.Build
                     var result = new TaskItem(pair.Key);
                     foreach (var item in pair.Value)
                     {
-                        // Preserve custom metadata for other generators. Conflicting unrelated
-                        // metadata is diagnosed rather than silently becoming last-writer-wins.
                         foreach (DictionaryEntry metadata in item.CloneCustomMetadata())
                         {
                             var key = (string)metadata.Key;
                             var value = (string)metadata.Value;
-                            if (key == "XamlGDefaultItem" || key == "XamlGLogicalPath" || key == "XamlGCompile" || key == "Link" || key == "SourceItemGroup") continue;
+                            if (OwnedMetadata.Contains(key)) continue;
                             var previous = result.GetMetadata(key);
                             if (previous.Length != 0 && value.Length != 0 && previous != value)
                                 Error("Conflicting metadata '" + key + "' for " + pair.Key);
@@ -89,8 +102,6 @@ namespace XamlG.Build
                     }
                     if (logical == null)
                     {
-                        var prefix = root + Path.DirectorySeparatorChar;
-                        var comparison = Path.DirectorySeparatorChar == '\\' ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
                         if (!pair.Key.StartsWith(prefix, comparison))
                         { Error("External XAML requires Link or XamlGLogicalPath: " + pair.Key); continue; }
                         logical = NormalizeLogical(pair.Key.Substring(prefix.Length));
@@ -105,16 +116,25 @@ namespace XamlG.Build
                     results.Add(result);
                 }
                 NormalizedFiles = results.ToArray();
-                var text = new StringBuilder();
-                foreach (var item in results.OrderBy(i => i.ItemSpec, paths))
-                    text.Append(item.ItemSpec.Length).Append(':').Append(item.ItemSpec).Append('|')
-                        .Append(item.GetMetadata("XamlGLogicalPath")).Append('|').Append(item.GetMetadata("XamlGCompile")).Append('\n');
+                var text = new StringBuilder("XamlG.Inputs/2\n");
+                foreach (var item in results.OrderBy(identity, StringComparer.Ordinal))
+                {
+                    Append(text, identity(item));
+                    foreach (DictionaryEntry metadata in item.CloneCustomMetadata().Cast<DictionaryEntry>()
+                        .OrderBy(m => (string)m.Key, StringComparer.OrdinalIgnoreCase))
+                    {
+                        Append(text, ((string)metadata.Key).ToUpperInvariant());
+                        Append(text, (string)metadata.Value);
+                    }
+                    text.Append('\n');
+                }
                 using (var hash = SHA256.Create()) Fingerprint = BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(text.ToString()))).Replace("-", "");
                 return !Log.HasLoggedErrors;
             }
             catch (Exception error) when (error is ArgumentException || error is IOException || error is NotSupportedException)
             { Error(error.Message); return false; }
         }
+        private static void Append(StringBuilder text, string value) => text.Append(value.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(value);
         private static bool IsXaml(ITaskItem item)
         {
             var extension = Path.GetExtension(item.ItemSpec);

@@ -67,8 +67,6 @@ public sealed class XamlCompilationSession
         return analysis;
     }
 
-    /// <summary>Analyzes all open buffers as one coherent overlay on the immutable loaded project.
-    /// Closed project documents retain their loaded text; unrelated/untitled buffers remain standalone.</summary>
     public ImmutableArray<XamlAnalysis> AnalyzeOverlays(IEnumerable<XamlSyntaxTree> overlays, CancellationToken cancellationToken = default)
     {
         if (overlays == null) throw new ArgumentNullException(nameof(overlays));
@@ -77,8 +75,6 @@ public sealed class XamlCompilationSession
         return open.Select(d => workspace[Normalize(d.Path)]).ToImmutableArray();
     }
 
-    /// <summary>Returns a coherent complete project, including loaded documents not currently open.
-    /// Source-editing hosts use this for cross-document references, factories and rename previews.</summary>
     public ImmutableArray<XamlAnalysis> AnalyzeWorkspace(IEnumerable<XamlSyntaxTree> overlays, CancellationToken cancellationToken = default)
     {
         if (overlays == null) throw new ArgumentNullException(nameof(overlays));
@@ -92,14 +88,18 @@ public sealed class XamlCompilationSession
             .Concat(open.Where(d => !_documentPaths.ContainsKey(Normalize(d.Path))).Select(d => Analyze(d, cancellationToken))).ToImmutableArray();
     }
 
-    public ImmutableArray<XamlAnalysis> AnalyzeProject(IEnumerable<XamlSyntaxTree> documents, CancellationToken cancellationToken = default)
+    /// <summary>Retains project-level adapters and their C# diagnostics for emission hosts.</summary>
+    public XamlProjectCompilation CompileProject(IEnumerable<XamlSyntaxTree> documents, CancellationToken cancellationToken = default)
     {
         if (documents == null) throw new ArgumentNullException(nameof(documents));
         var inputs = documents.Select(syntax => _documentPaths.TryGetValue(Normalize(syntax.Path), out var known)
             ? known with { Syntax = syntax } : new XamlProjectDocument(syntax, syntax.Path)).ToArray();
-        var project = _projectCompiler.Compile(inputs, Types.Compilation, Profile, Options, cancellationToken);
-        return project.Documents.Select(d => new XamlAnalysis(d.Input.Syntax, d.Document, d.Output)).ToImmutableArray();
+        return _projectCompiler.Compile(inputs, Types.Compilation, Profile, Options, cancellationToken);
     }
+
+    public ImmutableArray<XamlAnalysis> AnalyzeProject(IEnumerable<XamlSyntaxTree> documents, CancellationToken cancellationToken = default) =>
+        CompileProject(documents, cancellationToken).Documents.Select(d => new XamlAnalysis(d.Input.Syntax, d.Document, d.Output)).ToImmutableArray();
+
     private XamlProjectCompilation Baseline(CancellationToken cancellationToken)
     {
         lock (_gate) if (_baseline != null) return _baseline;

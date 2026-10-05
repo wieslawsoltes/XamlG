@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Text.Json;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using XamlG.CSharp.Integration;
 using XamlG.Frameworks;
 using XamlG.Syntax;
 using XamlG.Tooling;
@@ -26,9 +27,9 @@ internal sealed class CompilerCommand
                 Options: --project, --file, --code (repeatable), --reference (repeatable),
                          --framework Auto|Portable|Avalonia, --target-framework,
                          --output, --emit-assembly, --json
-                --project evaluates a trusted MSBuild project and runs its source generators.
-                Standalone compilation reads metadata only; generated code is never executed.
-                Project compilation links all resource documents and validates include cycles.
+                --project evaluates trusted MSBuild and runs its source generators.
+                Standalone compilation reads metadata only. Generated code is never executed.
+                Project compilation retains all resource factories and loader adapters.
                 """);
             return 0;
         }
@@ -47,16 +48,10 @@ internal sealed class CompilerCommand
                 foreach (var diagnostic in host.Diagnostics) Console.Error.WriteLine("workspace: " + diagnostic.Message);
                 session = project.Compiler;
                 parseOptions = project.Project.ParseOptions as CSharpParseOptions
-                    ?? throw new InvalidOperationException("The evaluated C# project has no C# parse options.");
+                    ?? throw new InvalidOperationException("The evaluated project has no C# parse options.");
                 documents = project.Documents.Values.OrderBy(d => d.Path, StringComparer.Ordinal).ToImmutableArray();
-                if (options.File != null)
-                {
-                    var fullPath = Path.GetFullPath(options.File);
-                    if (!project.Documents.Keys.Any(path => Path.GetFullPath(path) == fullPath))
-                        throw new ArgumentException("The requested --file does not belong to the evaluated project.");
-                    // Retain the document closure: emitting only the selected file would omit
-                    // factories required by its compiled-resource references.
-                }
+                if (options.File != null && !project.Documents.Keys.Any(path => Path.GetFullPath(path) == Path.GetFullPath(options.File)))
+                    throw new ArgumentException("The requested --file does not belong to the evaluated project.");
             }
             else
             {
@@ -71,28 +66,33 @@ internal sealed class CompilerCommand
                 documents = ImmutableArray.Create(XamlSyntaxTree.Parse(await File.ReadAllTextAsync(options.File!, cancellationToken), options.File!, cancellationToken));
             }
             if (documents.IsEmpty) throw new InvalidOperationException("No XAML AdditionalFiles were found. Add XamlG.Generator to the project or use --file.");
-            var analyses = session.AnalyzeProject(documents, cancellationToken);
+            var compiledProject = session.CompileProject(documents, cancellationToken);
+            var analyses = compiledProject.Documents.Select(d => new XamlAnalysis(d.Input.Syntax, d.Document, d.Output)).ToImmutableArray();
             var diagnostics = analyses.SelectMany(a => a.Output.Diagnostics.Select(d =>
             {
                 var position = a.Syntax.Lines.GetPosition(Math.Min(d.Span.Start, a.Syntax.Text.Length));
                 return new CliDiagnostic(d.Code, d.Message, d.Severity.ToString(), a.Syntax.Path, position.Line + 1, position.Character + 1);
             })).ToList();
-            var compilationWithOutput = session.Types.Compilation.AddSyntaxTrees(analyses.Where(a => a.Output.Success)
-                .Select(a => CSharpSyntaxTree.ParseText(a.Output.Source, parseOptions, a.Output.HintName, cancellationToken: cancellationToken)));
-            foreach (var diagnostic in compilationWithOutput.GetDiagnostics(cancellationToken).Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning))
+            var compilationWithOutput = XamlCSharpCompilation.AddGeneratedSources(session.Types.Compilation, compiledProject, parseOptions, cancellationToken);
+            foreach (var diagnostic in compiledProject.SourceIntegration.Diagnostics.Concat(compilationWithOutput.GetDiagnostics(cancellationToken))
+                .Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning))
             {
                 var position = diagnostic.Location.GetMappedLineSpan();
                 diagnostics.Add(new(diagnostic.Id, diagnostic.GetMessage(), diagnostic.Severity.ToString(), position.Path, position.StartLinePosition.Line + 1, position.StartLinePosition.Character + 1));
             }
             if (options.Command == "inspect")
-                Console.WriteLine(JsonSerializer.Serialize(analyses.Select(a => new { path = a.Syntax.Path, syntax = XamlInspector.Syntax(a.Syntax), bound = XamlInspector.Bound(a.Document), sourceMappings = a.Output.SourceMappings, generated = a.Output.Source, diagnostics }), JsonOptions));
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    documents = analyses.Select(a => new { path = a.Syntax.Path, syntax = XamlInspector.Syntax(a.Syntax), bound = XamlInspector.Bound(a.Document), sourceMappings = a.Output.SourceMappings, generated = a.Output.Source }),
+                    integration = compiledProject.SourceIntegration.Source, diagnostics
+                }, JsonOptions));
             else if (options.Json) Console.WriteLine(JsonSerializer.Serialize(diagnostics, JsonOptions));
             else foreach (var item in diagnostics) Console.Error.WriteLine($"{item.Path}({item.Line},{item.Column}): {item.Severity.ToLowerInvariant()} {item.Code}: {item.Message}");
-            if (diagnostics.Any(d => d.Severity == "Error") || analyses.Any(a => !a.Output.Success)) return 1;
+            if (diagnostics.Any(d => d.Severity == "Error") || !compiledProject.Success) return 1;
             if (options.Command == "compile")
             {
-                await GeneratedOutputWriter.WriteAsync(options.Output, analyses, cancellationToken);
-                if (!options.Json) Console.WriteLine($"Generated {analyses.Length} document(s) into {Path.GetFullPath(options.Output)}.");
+                await GeneratedOutputWriter.WriteAsync(options.Output, XamlCSharpCompilation.Sources(compiledProject), cancellationToken);
+                if (!options.Json) Console.WriteLine($"Generated {analyses.Length} document(s) and loader adapters into {Path.GetFullPath(options.Output)}.");
             }
             if (options.AssemblyOutput != null)
             {

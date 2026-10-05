@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using XamlG.Compiler;
+using XamlG.CSharp.Integration;
 using XamlG.CSharp.Resources;
 using XamlG.Frameworks;
 using XamlG.Syntax;
@@ -11,8 +11,8 @@ using XamlG.Tooling;
 
 namespace XamlG.Playground;
 
-/// <summary>Browser host of the production compiler. All project documents emit into the same assembly;
-/// user code is loaded only by an explicit trusted Run or by the separate isolated execution host.</summary>
+/// <summary>All hosts consume the same project factories and loader adapters. Application code
+/// is loaded only by explicit trusted Run or inside the separate isolated execution host.</summary>
 public sealed class BrowserCompilerService(HttpClient http)
 {
     private ImmutableArray<MetadataReference> _references = ImmutableArray<MetadataReference>.Empty;
@@ -66,7 +66,7 @@ public sealed class BrowserCompilerService(HttpClient http)
         var inputs = Resources.Snapshot.Values.Select(s => new XamlProjectDocument(s, s.Path))
             .Prepend(new XamlProjectDocument(syntax, "View.axaml")).ToArray();
         var authoring = new XamlCompilationSession(compilation, profile, projectDocuments: inputs);
-        var project = new XamlProjectCompiler().Compile(inputs, compilation, profile, cancellationToken: cancellationToken);
+        var project = authoring.CompileProject(inputs.Select(d => d.Syntax), cancellationToken);
         var main = project.Documents.Single(d => d.Input.LogicalPath == "View.axaml");
         var analysis = new XamlAnalysis(syntax, main.Document, main.Output);
         var diagnostics = ImmutableArray.CreateBuilder<PlaygroundDiagnostic>();
@@ -80,9 +80,9 @@ public sealed class BrowserCompilerService(HttpClient http)
                 diagnostics.Add(new(item.Code, item.Message, item.Severity.ToString(), text.Path, start.Line + 1, start.Character + 1, end.Line + 1, end.Character + 1));
             }
         }
-        compilation = compilation.AddSyntaxTrees(project.Documents.Where(d => d.Output.Success).Select(d =>
-            CSharpSyntaxTree.ParseText(d.Output.Source, parseOptions, d.Output.HintName, cancellationToken: cancellationToken)));
-        foreach (var item in compilation.GetDiagnostics(cancellationToken).Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning))
+        compilation = XamlCSharpCompilation.AddGeneratedSources(compilation, project, parseOptions, cancellationToken);
+        foreach (var item in project.SourceIntegration.Diagnostics.Concat(compilation.GetDiagnostics(cancellationToken))
+            .Where(d => d.Severity is DiagnosticSeverity.Error or DiagnosticSeverity.Warning))
         {
             var location = item.Location.GetMappedLineSpan();
             diagnostics.Add(new(item.Id, item.GetMessage(), item.Severity.ToString(), location.Path,
@@ -106,8 +106,7 @@ public sealed class BrowserCompilerService(HttpClient http)
         var factory = assembly.GetType(output.FactoryMetadataName, throwOnError: true)!;
         if (output.BuildMethodName != null) return factory.GetMethod(output.BuildMethodName)!.Invoke(null, new object?[] { null })!;
         var instance = Activator.CreateInstance(factory) ?? throw new InvalidOperationException("The code-behind root could not be constructed.");
-        if (!XamlG.Runtime.XamlRuntimeSession.TryGet(instance, out _))
-            factory.GetMethod(output.PopulateMethodName)!.Invoke(null, new object?[] { instance, null });
+        factory.GetMethod(output.PopulateMethodName)!.Invoke(null, new object?[] { instance, null });
         return instance;
     }
 }
