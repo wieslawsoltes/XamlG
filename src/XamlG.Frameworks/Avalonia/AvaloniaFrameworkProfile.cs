@@ -17,6 +17,8 @@ public static class AvaloniaFrameworkProfile
         return XamlFrameworkProfile.Portable with
         {
             Name = "Avalonia",
+            SourceLoader = new(AvaloniaLoaderMetadata.Loader, AvaloniaLoaderMetadata.Load)
+            { ResourceScheme = AvaloniaResourceMetadata.Scheme, LegacyIndexMetadataName = AvaloniaLoaderMetadata.CompiledIndex },
             NameReferenceRules = XamlFrameworkProfile.Portable.NameReferenceRules.Add(new References.AvaloniaNameReferenceRule()),
             ResourceScheme = AvaloniaResourceMetadata.Scheme,
             ResourceSourceMembers = ImmutableDictionary<string, string>.Empty.WithComparers(StringComparer.Ordinal)
