@@ -19,10 +19,30 @@ public sealed class AvaloniaPropertyReferenceTextRule : IXamlTextConversionRule
         INamedTypeSymbol? owner = null;
         if (current?.Type.HasMetadataName(AvaloniaLiteralMetadata.TemplateBinding) == true)
         {
-            // TemplateBinding remains rooted at the nearest template's owner even
-            // when a nested style selects one of that template's visual children.
-            var template = context.Ancestors.FirstOrDefault(ancestor => ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate));
-            if (template != null && template.Annotations.TryGet(AvaloniaStyleAnnotations.TargetType, out var templateType)) owner = templateType;
+            INamedTypeSymbol? styleFallback = null;
+            foreach (var ancestor in context.Ancestors)
+            {
+                if (ReferenceEquals(ancestor, current)) continue;
+                // Use the closest semantic boundary, including a selector entering a
+                // nested template. An unknown selector owner must remain unknown.
+                if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector) && selector.HasTemplateScope)
+                { owner = selector.TemplateOwnerType; break; }
+                if (ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate) ||
+                    ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme))
+                {
+                    if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.TargetType, out var templateType)) owner = templateType;
+                    break;
+                }
+                if (styleFallback == null && ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.TargetType, out var styleType))
+                    styleFallback = styleType;
+            }
+            // A standalone Style has no enclosing theme or concrete ControlTemplate.
+            // Only use its target when there was no intervening template boundary.
+            if (owner == null && !context.Ancestors.Any(ancestor =>
+                ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate) ||
+                ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) ||
+                ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector) && selector.HasTemplateScope))
+                owner = styleFallback;
         }
         else if (current != null)
         {

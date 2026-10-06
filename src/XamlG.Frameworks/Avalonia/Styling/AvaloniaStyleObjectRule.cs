@@ -24,13 +24,15 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
             if (source is { } selector)
             {
                 var syntax = AvaloniaSelectorParser.Parse(selector.Text, selector.Span, context.Diagnostics.Add, context.Cancellation);
-                var bound = syntax == null ? null : new AvaloniaSelectorBinder(context, target.Scope, inherited).Bind(syntax);
+                var bound = syntax == null ? null : new AvaloniaSelectorBinder(context, target.Scope, inherited, FindNestingSelector(context, target)).Bind(syntax);
                 if (bound != null)
                 {
                     target.Annotations.Set(AvaloniaStyleAnnotations.Selector, bound);
                     if (bound.TargetType != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, bound.TargetType);
                 }
             }
+            else if (inherited != null)
+                target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, inherited);
         }
         else if (target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) || target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate))
         {
@@ -66,6 +68,18 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
         // observes the registered property when the Value setter is called.
         var property = target.Assignments.OfType<BoundSetAssignment>().FirstOrDefault(a => a.Member.Name == AvaloniaStyleMetadata.PropertyMember);
         if (property != null) { target.Assignments.Remove(property); target.Assignments.Insert(0, property); }
+    }
+
+    private static BoundSelector? FindNestingSelector(BindingContext context, ObjectBindingBuilder current)
+    {
+        foreach (var ancestor in context.Ancestors)
+        {
+            if (ReferenceEquals(current, ancestor)) continue;
+            if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector)) return selector;
+            if (ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) ||
+                ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate)) break;
+        }
+        return null;
     }
 
     internal static INamedTypeSymbol? FindTarget(BindingContext context, ObjectBindingBuilder current)

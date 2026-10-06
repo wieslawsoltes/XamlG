@@ -7,7 +7,8 @@ using XamlG.Syntax;
 namespace XamlG.Frameworks.Avalonia.Styling;
 
 /// <summary>Lowers selector syntax to public, symbol-resolved API calls rather than runtime parsing.</summary>
-internal sealed class AvaloniaSelectorBinder(BindingContext context, NamespaceScope scope, INamedTypeSymbol? nestingType)
+internal sealed class AvaloniaSelectorBinder(BindingContext context, NamespaceScope scope, INamedTypeSymbol? nestingType,
+    BoundSelector? nestingSelector = null)
 {
     public BoundSelector? Bind(SelectorListSyntax syntax)
     {
@@ -23,19 +24,32 @@ internal sealed class AvaloniaSelectorBinder(BindingContext context, NamespaceSc
         if (values.Count == 1) return values[0];
         var array = context.Types.Compilation.CreateArrayTypeSymbol(selectorType);
         var expression = Call("Or", syntax.Span, new BoundArrayExpression(values.Select(v => v.Expression).ToImmutableArray(), array, syntax.Span));
-        INamedTypeSymbol? common = values[0].TargetType;
-        foreach (var value in values.Skip(1))
+        var common = CommonType(values.Select(v => v.TargetType));
+        var hasTemplateScope = values.Any(v => v.HasTemplateScope);
+        var templateOwner = values.All(v => v.HasTemplateScope) ? CommonType(values.Select(v => v.TemplateOwnerType)) : null;
+        return expression == null ? null : new(expression, common, templateOwner, hasTemplateScope);
+    }
+
+    private INamedTypeSymbol? CommonType(IEnumerable<INamedTypeSymbol?> types)
+    {
+        using var iterator = types.GetEnumerator();
+        if (!iterator.MoveNext()) return null;
+        var common = iterator.Current;
+        while (iterator.MoveNext())
         {
-            if (value.TargetType == null) { common = null; break; }
-            while (common != null && !context.Types.Compilation.ClassifyCommonConversion(value.TargetType, common).IsImplicit) common = common.BaseType;
+            if (iterator.Current is not { } type) return null;
+            while (common != null && !context.Types.Compilation.ClassifyCommonConversion(type, common).IsImplicit)
+                common = common.BaseType;
         }
-        return expression == null ? null : new(expression, common);
+        return common;
     }
 
     private BoundSelector? Sequence(SelectorSequenceSyntax syntax, INamedTypeSymbol selectorType)
     {
         BoundExpression value = new BoundConstantExpression(null, selectorType, syntax.Span);
         INamedTypeSymbol? target = null;
+        INamedTypeSymbol? templateOwner = null;
+        var hasTemplateScope = false;
         foreach (var step in syntax.Steps)
         {
             context.Cancellation.ThrowIfCancellationRequested();
@@ -59,13 +73,22 @@ internal sealed class AvaloniaSelectorBinder(BindingContext context, NamespaceSc
                     break;
                 case SelectorStepKind.Child:
                 case SelectorStepKind.Descendant:
+                    result = Call(step.Kind.ToString(), step.Span, value);
+                    target = null;
+                    break;
                 case SelectorStepKind.Template:
+                    // Capture before resetting the selected type. Repeated traversals
+                    // replace the owner; nested pseudo-classes retain it through '^'.
+                    templateOwner = target;
+                    hasTemplateScope = true;
                     result = Call(step.Kind.ToString(), step.Span, value);
                     target = null;
                     break;
                 case SelectorStepKind.Nesting:
                     if (nestingType == null) { context.Report("XG3106", "A nesting selector requires an enclosing style or control theme target.", step.Span); return null; }
                     target = nestingType;
+                    templateOwner = nestingSelector?.TemplateOwnerType;
+                    hasTemplateScope = nestingSelector?.HasTemplateScope == true;
                     result = Call("Nesting", step.Span, value);
                     break;
                 case SelectorStepKind.PropertyEquals:
@@ -91,7 +114,7 @@ internal sealed class AvaloniaSelectorBinder(BindingContext context, NamespaceSc
             if (result == null) return null;
             value = result;
         }
-        return new(value, target);
+        return new(value, target, templateOwner, hasTemplateScope);
     }
 
     private BoundExpression Text(string value, TextSpan span) => new BoundConstantExpression(value, context.Types.Special(SpecialType.System_String), span);

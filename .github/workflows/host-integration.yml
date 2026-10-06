@@ -25,42 +25,64 @@ jobs:
         run: |
           git worktree add --detach "$RUNNER_TEMP/xamlg-hosts" HEAD
           echo "HOST_WORKTREE=$RUNNER_TEMP/xamlg-hosts" >> "$GITHUB_ENV"
-      - name: Build the real hosts and their sample assemblies once
+      - name: Build the real hosts and restore their trusted fixtures
         run: |
           cd "$HOST_WORKTREE"
           dotnet restore XamlG.slnx -p:NuGetAudit=false
           dotnet build XamlG.slnx -c Release --no-restore -warnaserror
-      - name: Run protocol and CLI acceptance suites
+          for project in ResourceWorkspaceSmoke FileRenameSmoke WorkspaceSmoke; do
+            dotnet restore "tests/$project/$project.csproj" -p:NuGetAudit=false
+          done
+      - name: Run every retained LSP process acceptance suite
         run: |
-          set -o pipefail
+          set -euo pipefail
           cd "$HOST_WORKTREE"
           mkdir -p artifacts/hosts
           git rev-parse HEAD > artifacts/hosts/commit.txt
           git rev-parse HEAD^{tree} > artifacts/hosts/tree.txt
-          scripts=(test-lsp-stdio.py test-lsp-process.py test-lsp-project.py test-lsp-resources.py test-lsp-csharp.py test-lsp-authoring.py test-lsp-pull-diagnostics.py test-lsp-file-refactoring.py test-cli-project.py test-cli-watch.py)
+          host=tools/XamlG.Lsp/bin/Release/net10.0/XamlG.Lsp.dll
+          scripts=(test-lsp-host.py test-lsp-features.py test-lsp-csharp.py test-lsp-diagnostic-contract.py test-lsp-watch.py test-lsp-resources.py test-lsp-pull.py test-lsp-file-moves.py)
+          test -f "$host"
+          for script in "${scripts[@]}"; do test -f "scripts/$script"; done
           failed=0
           for script in "${scripts[@]}"; do
             echo "::group::$script"
             git hash-object "scripts/$script" | tee "artifacts/hosts/$script.sha"
-            if ! python "scripts/$script" 2>&1 | tee "artifacts/hosts/$script.log"; then failed=1; fi
+            if ! python "scripts/$script" "$host" 2>&1 | tee "artifacts/hosts/$script.log"; then failed=1; fi
             echo '::endgroup::'
           done
           exit "$failed"
-      - name: Execute browser-component lifecycle tests without the browser toolchain
+      - name: Exercise CLI check, inspection, source and assembly output
         if: ${{ !cancelled() && env.HOST_WORKTREE != '' }}
         run: |
+          set -euo pipefail
           cd "$HOST_WORKTREE"
-          dotnet test tests/XamlG.Playground.Tests -c Release -p:NuGetAudit=false --logger trx --results-directory artifacts/hosts/components
-      - name: Exercise CLI check, inspection and source output on the sample
+          mkdir -p artifacts/hosts
+          cli=tools/XamlG.Cli/bin/Release/net10.0/XamlG.Cli.dll
+          fixture=(--file tests/CliSmoke/View.xaml --code tests/CliSmoke/Model.cs --framework Portable)
+          dotnet "$cli" check "${fixture[@]}" --json > artifacts/hosts/check.json
+          dotnet "$cli" inspect "${fixture[@]}" --json > artifacts/hosts/inspect.json
+          dotnet "$cli" compile "${fixture[@]}" --output artifacts/hosts/generated --emit-assembly artifacts/hosts/CliSmoke.dll
+          test -s artifacts/hosts/CliSmoke.dll
+          test -n "$(find artifacts/hosts/generated -type f -name '*.cs' -print -quit)"
+          dotnet "$cli" check --project tests/WorkspaceSmoke/WorkspaceSmoke.csproj --json > artifacts/hosts/project-check.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for name in ('check.json', 'inspect.json', 'project-check.json'):
+              with (Path('artifacts/hosts') / name).open(encoding='utf-8-sig') as source:
+                  json.load(source)
+          PY
+      - name: Pack the validated language server
         run: |
           cd "$HOST_WORKTREE"
-          dotnet run --project tools/XamlG.Cli --no-build -c Release -- check samples/XamlG.Sample/View.xaml -r samples/XamlG.Sample/bin/Release/net10.0/XamlG.Sample.dll
-          dotnet run --project tools/XamlG.Cli --no-build -c Release -- inspect samples/XamlG.Sample/View.xaml -r samples/XamlG.Sample/bin/Release/net10.0/XamlG.Sample.dll > artifacts/hosts/inspect.json
+          dotnet pack tools/XamlG.Lsp/XamlG.Lsp.csproj -c Release --no-build -o artifacts/hosts/packages -p:NuGetAudit=false
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: host-process-validation
           path: ${{ env.HOST_WORKTREE }}/artifacts/hosts
+          if-no-files-found: error
       - name: Verify source was not modified and remove this job's worktree
         if: ${{ always() && env.HOST_WORKTREE != '' }}
         run: |
