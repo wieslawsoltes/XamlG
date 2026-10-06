@@ -48,7 +48,7 @@ internal sealed class ObjectEmitter
         if (value.Name != null)
         {
             _runtime.RegisterName(frame, value.Name, variable);
-            if (_context.Document.ClassSymbol != null && _context.Document.Options.GenerateNamedFields && value.NameScopeId == _context.Document.Root!.NameScopeId)
+            if (_context.Document.ClassSymbol != null && _context.Document.CanAugmentClass && _context.Document.Options.GenerateNamedFields && value.NameScopeId == _context.Document.Root!.NameScopeId)
                 writer.Line(_context.RootVariable + "." + CSharpNames.Identifier(value.Name) + " = " + variable + ";");
         }
         if (value.SupportsInitialize) writer.Line("((global::System.ComponentModel.ISupportInitialize)" + variable + ").BeginInit();");

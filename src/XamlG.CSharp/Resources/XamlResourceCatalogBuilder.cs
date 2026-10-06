@@ -30,11 +30,14 @@ public static class XamlResourceCatalogBuilder
             var context = new BindingContext(input.Syntax, types, profile, options, cancellationToken);
             var type = context.ResolveType(root.Name, scope, root.NameSpan, scope.Directive(root, "TypeArguments")?.Value, report: false);
             if (type != null)
+            {
+                var localClass = classType != null && XamlClassAugmentation.IsAvailable(classType, cancellationToken) ? classType : null;
                 resources.Add(new(uri, classType ?? type, input.LogicalPath, options.GeneratedNamespace, null)
                 {
-                    LocalFactoryType = classType,
-                    LocalFactoryMethod = classType == null ? null : XamlClassFactory.Method(input.LogicalPath)
+                    LocalFactoryType = localClass,
+                    LocalFactoryMethod = localClass == null ? null : XamlClassFactory.Method(input.LogicalPath)
                 });
+            }
         }
         foreach (var assembly in types.Compilation.SourceModule.ReferencedAssemblySymbols)
         {

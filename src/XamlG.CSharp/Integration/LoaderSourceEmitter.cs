@@ -77,7 +77,7 @@ internal sealed class LoaderSourceEmitter(CSharpCompilation compilation, XamlPro
                 var document = project.Documents.FirstOrDefault(d => d.ResourceUri == resource.Uri);
                 if (document?.Output.Success == true && document.Output.BuildMethodName != null &&
                     (document.Document.ClassSymbol == null || XamlLoaderAdapterCompiler.CanReference(compilation, document.Document.ClassSymbol)))
-                    factory = (document.Document.ClassSymbol?.CSharpName() ?? "global::" + document.Output.FactoryTypeName) + "." + document.Output.BuildMethodName;
+                    factory = Factory(document) + "." + document.Output.BuildMethodName;
             }
             if (factory != null)
                 Line("case " + CSharpNames.Literal(resource.Uri) + ": return " + factory + "(global::XamlG.Runtime.XamlResourceServices.Enter(services ?? EmptyServices.Instance, key));");
@@ -106,7 +106,10 @@ internal sealed class LoaderSourceEmitter(CSharpCompilation compilation, XamlPro
         Line("}");
         Line("private sealed class EmptyServices : global::System.IServiceProvider { internal static readonly EmptyServices Instance = new EmptyServices(); public object? GetService(global::System.Type type) => null; }");
     }
-    internal static string Initializer(XamlProjectDocumentResult document) => document.Document.ClassSymbol!.CSharpName() + "." +
+    private static string Factory(XamlProjectDocumentResult document) =>
+        document.Document.ClassSymbol != null && document.Document.CanAugmentClass
+            ? document.Document.ClassSymbol.CSharpName() : "global::" + document.Output.FactoryTypeName;
+    internal static string Initializer(XamlProjectDocumentResult document) => Factory(document) + "." +
         ComponentInitializationEmitter.Method(document.Document.Options.DocumentId ?? document.Input.Syntax.Path);
     private static int Depth(INamedTypeSymbol type)
     {

@@ -26,8 +26,13 @@ internal static class XamlClassFactory
         var required = type.Members().Any(m => m is IPropertySymbol { IsRequired: true } or IFieldSymbol { IsRequired: true });
         return !required || constructor.GetAttributes().Any(a => a.AttributeClass?.HasMetadataName("System.Diagnostics.CodeAnalysis.SetsRequiredMembersAttribute") == true);
     }
-    public static IMethodSymbol? Constructor(INamedTypeSymbol type) =>
-        type.InstanceConstructors.FirstOrDefault(c => c.Parameters.Length == 0) ??
-        type.InstanceConstructors.FirstOrDefault(c => c.Parameters.Length == 1 && c.Parameters[0].RefKind == RefKind.None && c.Parameters[0].Type.HasMetadataName("System.IServiceProvider"));
+    public static IMethodSymbol? Constructor(INamedTypeSymbol type)
+    {
+        var augment = XamlClassAugmentation.IsAvailable(type);
+        var constructors = type.InstanceConstructors.Where(constructor => augment || constructor.DeclaredAccessibility is
+            Accessibility.Public or Accessibility.Internal or Accessibility.ProtectedOrInternal).ToArray();
+        return constructors.FirstOrDefault(c => c.Parameters.Length == 0) ??
+            constructors.FirstOrDefault(c => c.Parameters.Length == 1 && c.Parameters[0].RefKind == RefKind.None && c.Parameters[0].Type.HasMetadataName("System.IServiceProvider"));
+    }
     public static string Method(string documentId) => "__XamlGBuild_" + CSharpNames.StableId(documentId);
 }

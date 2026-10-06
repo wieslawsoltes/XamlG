@@ -29,16 +29,17 @@ internal static class ThemeCorpusRunner
         var files = Directory.GetFiles(directory, "*", SearchOption.AllDirectories)
             .Where(file => !Path.GetRelativePath(directory, file).Split(Path.DirectorySeparatorChar).Any(p => p is "bin" or "obj"))
             .OrderBy(file => Path.GetRelativePath(directory, file), StringComparer.Ordinal).ToArray();
-        var xaml = files.Where(XamlSourceFile.IsSupported).ToArray();
-        File.WriteAllText(Path.Combine(evidence, "input-manifest.json"), JsonSerializer.Serialize(files.Where(file =>
-            XamlSourceFile.IsSupported(file) || file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)).Select(file => new
+        var xaml = ThemeSourceCatalog.Read(checkout, directory, expectedCount);
+        File.WriteAllText(Path.Combine(evidence, "input-manifest.json"), JsonSerializer.Serialize(
+            xaml.Concat(files.Where(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))
+                .Select(file => new ThemeSourceInput(file, Path.GetRelativePath(directory, file).Replace('\\', '/'), false))).Select(input => new
             {
-                path = Path.GetRelativePath(directory, file).Replace('\\', '/'),
-                sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file)))
+                path = Path.GetRelativePath(checkout, input.PhysicalPath).Replace('\\', '/'),
+                logicalPath = input.LogicalPath,
+                linked = input.IsLinked,
+                sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(input.PhysicalPath)))
             }), new JsonSerializerOptions { WriteIndented = true }));
-        Console.WriteLine($"{assemblyName}: {xaml.Length} original XAML documents.");
-        if (xaml.Length != expectedCount)
-            throw new InvalidOperationException($"Expected {expectedCount} pinned {theme} documents, found {xaml.Length}. No files may be silently excluded.");
+        Console.WriteLine($"{assemblyName}: {expectedCount} physical and {xaml.Count(input => input.IsLinked)} declared linked XAML documents.");
 
         var parseOptions = new CSharpParseOptions(LanguageVersion.Preview, preprocessorSymbols: new[]
         { "NET", "NET10_0", "NET10_0_OR_GREATER", "NET9_0_OR_GREATER", "NET8_0_OR_GREATER", "NET7_0_OR_GREATER", "NET6_0_OR_GREATER" });
@@ -53,8 +54,8 @@ internal static class ThemeCorpusRunner
         var compilation = CSharpCompilation.Create(assemblyName, trees, references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true,
                 optimizationLevel: OptimizationLevel.Release, nullableContextOptions: NullableContextOptions.Enable));
-        var inputs = xaml.Select(file => new XamlProjectDocument(
-            XamlSyntaxTree.Parse(File.ReadAllText(file), file, cancellationToken), Path.GetRelativePath(directory, file).Replace('\\', '/'))).ToArray();
+        var inputs = xaml.Select(input => new XamlProjectDocument(
+            XamlSyntaxTree.Parse(File.ReadAllText(input.PhysicalPath), input.PhysicalPath, cancellationToken), input.LogicalPath)).ToArray();
         // Match the upstream theme projects' reflection-binding default. A compiled-binding
         // error is never retried through reflection or the original XamlX backend.
         var result = new XamlProjectCompiler().Compile(inputs, compilation,
@@ -93,11 +94,12 @@ internal static class ThemeCorpusRunner
             var realized = ThemeControlAcceptance.Realize(cancellationToken);
             File.WriteAllText(Path.Combine(evidence, "result.json"), JsonSerializer.Serialize(new
             {
-                theme, documents = inputs.Length, codeFiles = trees.Length, realized,
+                theme, documents = inputs.Length, physicalDocuments = expectedCount, linkedDocuments = xaml.Count(input => input.IsLinked),
+                codeFiles = trees.Length, realized,
                 assemblySha256 = Convert.ToHexString(SHA256.HashData(image.ToArray())),
                 sourceFactories = result.Documents.Length, success = true
             }, new JsonSerializerOptions { WriteIndented = true }));
-            Console.WriteLine($"PASS: {inputs.Length} unmodified {theme} documents, original code-behind, root construction, {realized} realized control/theme cases.");
+            Console.WriteLine($"PASS: {inputs.Length} unmodified {theme} documents including project links, original code-behind, root construction, {realized} realized control/theme cases.");
         }
         finally
         {

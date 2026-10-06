@@ -9,6 +9,8 @@ internal static class ComponentInitializationEmitter
     public static string Method(string documentId) => "__XamlGInitialize_" + CSharpNames.StableId(documentId);
     public static void Emit(EmissionContext context, string populate)
     {
+        if (!context.Document.CanAugmentClass)
+        { ExternalComponentInitializationEmitter.Emit(context, populate); return; }
         var type = context.Document.ClassSymbol!;
         var name = Method(context.Document.Options.DocumentId ?? context.Document.Syntax.Path);
         var state = "__xamlGInitializationState_" + context.Id;
