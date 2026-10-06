@@ -17,7 +17,7 @@ public sealed class TransformLiteralTests
     [InlineData("translate(10px, 20px)")]
     [InlineData("scale(2, 3) rotate(30deg)")]
     [InlineData("skew(15deg, 0deg)")]
-    [InlineData("matrix(1, 0, 0, 1, 12, 34)")]
+    [InlineData("matrix(1,0,0,1,12,34)")]
     public void AttributePreservesFrameworkOperationSemantics(string literal)
     {
         var fixture = Fixture("<Border " + ResourceProjectFixture.Namespace + " RenderTransform='" + literal + "'/>");
@@ -49,12 +49,19 @@ public sealed class TransformLiteralTests
         Assert.Equal(new Matrix(1, 0, 0, 1, 12, 34), Assert.IsType<MatrixTransform>(fixture.Build("View.axaml")).Matrix);
     }
 
-    [AvaloniaFact]
-    public void InvalidOperationIsNotReplacedWithIdentity()
+    [AvaloniaTheory]
+    [InlineData("rotate(not-an-angle)")]
+    [InlineData("matrix(1, 0, 0, 1, 12, 34)")]
+    public void RejectedOperationsPreserveThePinnedFrameworkParserFailure(string literal)
     {
-        var fixture = Fixture("<Border " + ResourceProjectFixture.Namespace + " RenderTransform='rotate(not-an-angle)'/>");
+        // The pinned upstream matrix parser does not trim its final comma-delimited
+        // value. Preserve that observable contract, including its diagnostic, rather
+        // than silently normalizing invalid input or returning an identity transform.
+        var expected = Assert.Throws<FormatException>(() => TransformOperations.Parse(literal));
+        var fixture = Fixture("<Border " + ResourceProjectFixture.Namespace + " RenderTransform='" + literal + "'/>");
         var error = Assert.Throws<TargetInvocationException>(() => fixture.Build("View.axaml"));
-        Assert.IsAssignableFrom<FormatException>(error.InnerException);
+        var actual = Assert.IsType<FormatException>(error.InnerException);
+        Assert.Equal(expected.Message, actual.Message);
     }
 
     private static ResourceProjectFixture Fixture(string source) => new(new[] { ("View.axaml", source) });

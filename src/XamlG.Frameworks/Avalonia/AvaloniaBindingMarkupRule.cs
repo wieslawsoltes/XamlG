@@ -28,7 +28,8 @@ public sealed class AvaloniaBindingMarkupRule : IXamlMarkupBindingRule, IXamlObj
         if (type == null || !IsReflectionValue(context, type)) return false;
         var extension = ReflectionProvider(context, syntax.Span);
         if (extension == null) return true;
-        var bound = context.Objects.Bind(syntax, parentScope, extension, false, nameScope);
+        var normalized = BindingPropertyOwnerRewriter.Rewrite(context, syntax, scope, type, extension);
+        var bound = context.Objects.Bind(normalized, parentScope, extension, false, nameScope);
         if (bound != null) expression = Provide(context, bound, targetType, syntax.Span);
         return true;
     }
