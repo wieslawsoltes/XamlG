@@ -2,7 +2,7 @@ name: Unmodified theme construction
 on:
   pull_request:
   push:
-    branches: [main, feat/shipping-loader-msbuild]
+    branches: [main]
     paths: ['src/**', 'tests/XamlG.ThemeCorpus/**', 'Directory.*', '.github/workflows/theme-corpus.yml']
   workflow_dispatch:
 permissions:

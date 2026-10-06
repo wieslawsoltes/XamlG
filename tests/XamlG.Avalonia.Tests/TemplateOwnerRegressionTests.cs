@@ -39,8 +39,13 @@ public sealed class TemplateOwnerRegressionTests
     [AvaloniaFact]
     public void LastTemplateTraversalSelectsTheNearestOwner()
     {
-        var theme = Build("<Style Selector='^ /template/ RepeatButton /template/ ContentPresenter'><Setter Property='Content' Value='{TemplateBinding ClickMode}'/></Style>");
-        var style = Assert.IsType<Style>(Assert.Single(theme.Children));
+        // Avalonia forbids multiple /template/ traversals inside a ControlTheme,
+        // but permits them in a standalone Style. Keep the owner assertion at runtime.
+        var fixture = new ResourceProjectFixture(new[]
+        {
+            ("Theme.axaml", "<Style " + ResourceProjectFixture.Namespace + " Selector='ButtonSpinner /template/ RepeatButton /template/ ContentPresenter'><Setter Property='Content' Value='{TemplateBinding ClickMode}'/></Style>")
+        });
+        var style = Assert.IsType<Style>(fixture.Build("Theme.axaml"));
         var binding = Assert.IsType<TemplateBinding>(Assert.IsType<Setter>(Assert.Single(style.Setters)).Value);
         Assert.Same(Button.ClickModeProperty, binding.Property);
     }

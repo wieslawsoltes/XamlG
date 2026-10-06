@@ -35,21 +35,47 @@ public sealed class AvaloniaResourceMergeRule : IXamlPropertyBindingRule, IXamlO
     }
     public void Complete(BindingContext context, ObjectBindingBuilder target)
     {
-        if (!target.Type.HasMetadataName(AvaloniaResourceMetadata.Dictionary)) return;
-        var merges = target.Assignments.OfType<BoundCallAssignment>().Where(a => a.Method.ContainingType.HasMetadataName(AvaloniaResourceMetadata.Operations) && a.Method.Name == AvaloniaResourceMetadata.Merge).ToArray();
-        if (merges.Length == 0) return;
-        var set = Method(context, AvaloniaResourceMetadata.SetResource, 3, target.Syntax.NameSpan);
-        var theme = Method(context, AvaloniaResourceMetadata.MergeTheme, 3, target.Syntax.NameSpan);
-        if (set == null || theme == null) return;
-        foreach (var merge in merges) target.Assignments.Remove(merge);
-        for (var i = 0; i < target.Assignments.Count; i++)
+        var dictionary = context.Types.Find(AvaloniaResourceMetadata.Dictionary);
+        if (dictionary == null || !context.Types.Compilation.ClassifyCommonConversion(target.Type, dictionary).IsImplicit) return;
+        var provider = context.Types.Find(AvaloniaResourceMetadata.ThemeVariantProvider);
+        var key = provider?.GetMembers(AvaloniaResourceMetadata.ThemeVariantKey).OfType<IPropertySymbol>()
+            .SingleOrDefault(property => property.SetMethod != null && context.Types.IsAccessible(property.SetMethod));
+        // Key expressions execute once as call arguments. The same local initializes the
+        // provider before its contents and is later used to insert it in ThemeDictionaries.
+        for (var index = 0; index < target.Assignments.Count; index++)
+            if (target.Assignments[index] is BoundAddAssignment { Arguments.Length: 2 } add &&
+                add.Collection?.Name == AvaloniaResourceMetadata.ThemeDictionaries &&
+                add.Arguments[1] is BoundObjectExpression value && provider != null &&
+                context.Types.Compilation.ClassifyCommonConversion(value.Object.Type, provider).IsImplicit)
+            {
+                if (key == null) { context.Report("XG3308", "The public theme-variant provider key contract is unavailable.", add.Span); continue; }
+                target.Assignments[index] = add with
+                { ValueInitializers = add.ValueInitializers.Add(new BoundArgumentInitialization(key, 0)) };
+            }
+
+        bool IsMerge(BoundAssignment assignment) => assignment is BoundCallAssignment call &&
+            call.Method.ContainingType.HasMetadataName(AvaloniaResourceMetadata.Operations) && call.Method.Name == AvaloniaResourceMetadata.Merge;
+        bool IsImport(BoundAssignment assignment) => IsMerge(assignment) ||
+            assignment is BoundAddAssignment add && add.Collection?.Name == AvaloniaResourceMetadata.MergedDictionaries;
+        var hasMerges = target.Assignments.Any(IsMerge);
+        var imports = target.Assignments.Where(IsImport).ToArray();
+        if (hasMerges)
         {
-            if (target.Assignments[i] is not BoundAddAssignment add || add.Arguments.Length != 2) continue;
-            if (add.Collection == null) target.Assignments[i] = new BoundCallAssignment(set, add.Arguments, true, add.Span);
-            else if (add.Collection.Name == AvaloniaResourceMetadata.ThemeDictionaries)
-                target.Assignments[i] = new BoundCallAssignment(theme, add.Arguments, true, add.Span);
+            var set = Method(context, AvaloniaResourceMetadata.SetResource, 3, target.Syntax.NameSpan);
+            var theme = Method(context, AvaloniaResourceMetadata.MergeTheme, 3, target.Syntax.NameSpan);
+            if (set == null || theme == null) return;
+            for (var index = 0; index < target.Assignments.Count; index++)
+            {
+                if (target.Assignments[index] is not BoundAddAssignment add || add.Arguments.Length != 2) continue;
+                var method = add.Collection == null ? set : add.Collection.Name == AvaloniaResourceMetadata.ThemeDictionaries ? theme : null;
+                if (method != null) target.Assignments[index] = new BoundCallAssignment(method, add.Arguments, true, add.Span)
+                { ValueInitializers = add.ValueInitializers };
+            }
         }
-        target.Assignments.InsertRange(0, merges);
+        // Ordinary imports and flattened merges form ONE ordered prelude. Moving only
+        // flattened merges would evaluate them before the palettes they depend on.
+        foreach (var import in imports) target.Assignments.Remove(import);
+        target.Assignments.InsertRange(0, imports);
     }
     private static IMethodSymbol? Method(BindingContext context, string name, int count, TextSpan span)
     {

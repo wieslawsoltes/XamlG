@@ -22,6 +22,7 @@ public static class AvaloniaCompiledResourceOperations
         if (previous is ResourceDictionary oldDictionary && value is ResourceDictionary newDictionary)
         {
             var combined = new ResourceDictionary();
+            ((IThemeVariantProvider)combined).Key = key;
             Merge(combined, oldDictionary); Merge(combined, newDictionary);
             target.ThemeDictionaries[key] = combined;
         }

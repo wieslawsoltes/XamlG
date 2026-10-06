@@ -41,6 +41,6 @@ internal sealed class FunctionalExpressionEmitter(EmissionContext context, Value
     // These nodes emit statements and own a construction lifetime. Hoisting them out of a
     // lambda would change when they execute and can capture locals in a static delegate.
     private static bool IsInline(BoundExpression expression) => expression is not
-        (BoundObjectExpression or BoundDeferredExpression or BoundMarkupExpression or BoundResourceExpression) &&
+        (BoundObjectExpression or BoundDeferredExpression or BoundMarkupExpression or BoundResourceExpression or BoundChoiceExpression) &&
         BoundTraversal.Children(expression, true).All(IsInline);
 }

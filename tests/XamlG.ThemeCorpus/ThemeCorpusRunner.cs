@@ -39,6 +39,15 @@ internal static class ThemeCorpusRunner
                 linked = input.IsLinked,
                 sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(input.PhysicalPath)))
             }), new JsonSerializerOptions { WriteIndented = true }));
+        // Retain the exact source inputs alongside their hashes so a CI failure is
+        // reproducible without relying on a moving checkout or generated C# alone.
+        foreach (var source in xaml.Select(input => input.PhysicalPath)
+            .Concat(files.Where(file => file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))))
+        {
+            var destination = Path.Combine(evidence, "input-source", Path.GetRelativePath(checkout, source));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(source, destination, overwrite: true);
+        }
         Console.WriteLine($"{assemblyName}: {expectedCount} physical and {xaml.Count(input => input.IsLinked)} declared linked XAML documents.");
 
         var parseOptions = new CSharpParseOptions(LanguageVersion.Preview, preprocessorSymbols: new[]
