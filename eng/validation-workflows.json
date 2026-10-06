@@ -1,0 +1,11 @@
+{
+  "pullRequest": [
+    "ci.yml",
+    "host-integration.yml",
+    "upstream-compatibility.yml",
+    "theme-corpus.yml",
+    "playground.yml",
+    "release.yml"
+  ],
+  "deployment": ["pages.yml"]
+}

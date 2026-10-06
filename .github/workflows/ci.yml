@@ -1,21 +1,23 @@
 name: Build and test
 on:
-  push:
-    branches: [main]
-    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
+  push:
     branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: xamlg-ci-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  compiler:
-    name: Compiler, generator and packaged MSBuild integration
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+  native:
+    name: Native and MSBuild (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,38 +25,66 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.401'
-      - name: Build generator
-        run: dotnet build src/XamlG.Generator/XamlG.Generator.csproj -c Release -p:NuGetAudit=false
-      - name: Execute compiler and incremental-generator tests
-        run: dotnet test tests/XamlG.Tests/XamlG.Tests.csproj -c Release -p:NuGetAudit=false --logger 'trx;LogFileName=compiler.trx' --results-directory artifacts/tests
-      - name: Package runtime and generator
+      - name: Create an isolated validation worktree
+        shell: bash
         run: |
-          dotnet pack src/XamlG.Runtime/XamlG.Runtime.csproj -c Release -p:NuGetAudit=false -o artifacts/packages
-          dotnet pack src/XamlG.Generator/XamlG.Generator.csproj -c Release --no-build -p:NuGetAudit=false -o artifacts/packages
-      - name: Inspect analyzer package dependencies
+          git worktree add --detach "$RUNNER_TEMP/xamlg-native" HEAD
+          echo "VALIDATION_WORKTREE=$RUNNER_TEMP/xamlg-native" >> "$GITHUB_ENV"
+      - name: Restore and build the complete native solution
+        shell: bash
         run: |
-          python - <<'PY'
-          import glob, zipfile
-          package = glob.glob('artifacts/packages/XamlG.Generator.*.nupkg')[0]
-          with zipfile.ZipFile(package) as archive:
-              names = archive.namelist()
-              for component in ('Generator', 'Syntax', 'Roslyn', 'Compiler', 'CSharp', 'Frameworks'):
-                  assert f'analyzers/dotnet/cs/XamlG.{component}.dll' in names, component
-              assert not any('/Microsoft.CodeAnalysis' in name for name in names), 'Do not shadow the compiler host Roslyn assemblies'
-              assert 'buildTransitive/XamlG.Generator.targets' in names
-              print('\n'.join(names))
-          PY
-      - name: Build and execute a clean package-consuming application
+          cd "$VALIDATION_WORKTREE"
+          dotnet restore XamlG.slnx -p:NuGetAudit=false
+          dotnet build XamlG.slnx -c Release --no-restore -warnaserror
+      - name: Execute compiler, runtime, tooling, workspace, LSP and Avalonia tests
+        shell: bash
         run: |
-          dotnet restore tests/PackagingSmoke/PackagingSmoke.csproj --source "$PWD/artifacts/packages" --source https://api.nuget.org/v3/index.json -p:NuGetAudit=false
-          dotnet run --project tests/PackagingSmoke/PackagingSmoke.csproj -c Release --no-restore
+          cd "$VALIDATION_WORKTREE"
+          dotnet test XamlG.slnx -c Release --no-build --logger trx --results-directory artifacts/native
+      - name: Execute input normalization and unchanged-build fingerprint contracts
+        if: ${{ !cancelled() && env.VALIDATION_WORKTREE != '' }}
+        shell: bash
+        run: |
+          set -o pipefail
+          cd "$VALIDATION_WORKTREE"
+          mkdir -p artifacts/msbuild
+          python scripts/test-msbuild-inputs.py 2>&1 | tee artifacts/msbuild/inputs.log
+          python scripts/test-msbuild-fingerprint.py 2>&1 | tee artifacts/msbuild/fingerprints.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: compiler-validation
-          path: artifacts/tests
-          if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
+          name: native-${{ matrix.os }}
+          path: |
+            ${{ env.VALIDATION_WORKTREE }}/artifacts/native
+            ${{ env.VALIDATION_WORKTREE }}/artifacts/msbuild
+      - name: Verify source was not modified and remove this job's worktree
+        if: ${{ always() && env.VALIDATION_WORKTREE != '' }}
+        shell: bash
+        run: |
+          git -C "$VALIDATION_WORKTREE" diff --exit-code
+          git -C "$VALIDATION_WORKTREE" diff --cached --exit-code
+          git worktree remove "$VALIDATION_WORKTREE"
+  source:
+    name: Exact source snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
         with:
-          name: packages
-          path: artifacts/packages
+          persist-credentials: false
+      - name: Archive source with independent commit, tree and content identities
+        run: |
+          mkdir -p artifacts/source
+          git archive --format=tar.gz -o artifacts/source/source.tar.gz HEAD
+          git rev-parse HEAD > artifacts/source/commit.txt
+          git rev-parse HEAD^{tree} > artifacts/source/tree.txt
+          git ls-tree -r HEAD > artifacts/source/files.txt
+          (cd artifacts/source && sha256sum source.tar.gz > sha256.txt)
+          python scripts/verify-workflow-inventory.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compiler-source
+          retention-days: 7
+          path: artifacts/source
+          if-no-files-found: error
