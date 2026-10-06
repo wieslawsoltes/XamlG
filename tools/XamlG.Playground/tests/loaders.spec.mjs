@@ -15,9 +15,19 @@ async function setProject(page, source = code) {
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
+  await expect.poll(() => page.evaluate(() => {
+    if (!globalThis.monaco) return false;
+    const writable = monaco.editor.getEditors().filter(editor => !editor.getOption(monaco.editor.EditorOption.readOnly));
+    return ['xml', 'csharp'].every(language => writable.filter(editor => editor.getModel()?.getLanguageId() === language).length === 1);
+  })).toBe(true);
   await page.evaluate(({ xaml, code }) => {
-    monaco.editor.getModels().find(m => m.getLanguageId() === 'xml').setValue(xaml);
-    monaco.editor.getModels().find(m => m.getLanguageId() === 'csharp').setValue(code);
+    const writable = monaco.editor.getEditors().filter(editor => !editor.getOption(monaco.editor.EditorOption.readOnly));
+    for (const [language, text] of [['xml', xaml], ['csharp', code]]) {
+      const editors = writable.filter(editor => editor.getModel()?.getLanguageId() === language);
+      if (editors.length !== 1) throw new Error(`Expected one writable ${language} editor, found ${editors.length}.`);
+      editors[0].setValue(text);
+      if (editors[0].getValue() !== text) throw new Error(`The ${language} editor did not retain the source buffer.`);
+    }
   }, { xaml, code: source });
 }
 

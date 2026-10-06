@@ -11,7 +11,8 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
     public void Initialize(BindingContext context, ObjectBindingBuilder target)
     {
         var inherited = FindTarget(context, target);
-        if (target.Scope.Directive(target.Syntax, AvaloniaStyleMetadata.SetterTargetType) is { } declared)
+        var declared = target.Scope.Directive(target.Syntax, AvaloniaStyleMetadata.SetterTargetType);
+        if (declared != null)
         {
             inherited = AvaloniaBindingScopeRule.ResolveDataType(context, declared.Value, target.Scope, declared.ValueSpan);
             if (inherited != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, inherited);
@@ -33,7 +34,9 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
         }
         else if (target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) || target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate))
         {
-            if (inherited == null && target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate))
+            // Always determine the nearest semantic owner. An outer template's target
+            // must not shadow a concrete control receiving a nested template.
+            if (declared == null && target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate))
                 inherited = BindingTargetTypeResolver.FindTemplateOwner(context, target);
             var source = TextMember(target.Syntax, AvaloniaStyleMetadata.TargetTypeMember);
             var type = source is { } explicitType

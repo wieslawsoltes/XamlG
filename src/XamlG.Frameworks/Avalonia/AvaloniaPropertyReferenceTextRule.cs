@@ -19,14 +19,28 @@ public sealed class AvaloniaPropertyReferenceTextRule : IXamlTextConversionRule
         INamedTypeSymbol? owner = null;
         if (current?.Type.HasMetadataName(AvaloniaLiteralMetadata.TemplateBinding) == true)
         {
-            // A nested Style can select a template child. TemplateBinding still refers
-            // to the nearest ControlTemplate's owner, not that Style's selector type.
+            // TemplateBinding remains rooted at the nearest template's owner even
+            // when a nested style selects one of that template's visual children.
             var template = context.Ancestors.FirstOrDefault(ancestor => ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate));
             if (template != null && template.Annotations.TryGet(AvaloniaStyleAnnotations.TargetType, out var templateType)) owner = templateType;
         }
-        else if (current != null) owner = AvaloniaStyleObjectRule.FindTarget(context, current);
-        // Conversion is also used speculatively when ranking constructors. Failure must
-        // not append diagnostics that would poison another successful overload candidate.
+        else if (current != null)
+        {
+            var animatable = context.Types.Find(AvaloniaLiteralMetadata.Animatable);
+            foreach (var ancestor in context.Ancestors)
+            {
+                if (ReferenceEquals(ancestor, current)) continue;
+                if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.TargetType, out var declared))
+                { owner = declared; break; }
+                if (animatable != null && context.Types.Compilation.ClassifyCommonConversion(ancestor.Type, animatable).IsImplicit)
+                { owner = ancestor.Type; break; }
+                if (ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.Style) ||
+                    ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) ||
+                    ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate)) break;
+            }
+        }
+        // Constructor ranking is speculative: an unsuccessful conversion must not
+        // poison another overload candidate with diagnostics or a runtime fallback.
         var property = AvaloniaRegisteredPropertyResolver.Resolve(context, owner, text, scope, span, report: false);
         if (property != null) expression = property.Reference(span);
         return true;
