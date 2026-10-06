@@ -8,4 +8,5 @@ internal static class AvaloniaLiteralMetadata
     public const string Design = "Avalonia.Controls.Design";
     public const string BaseUri = "BaseUri";
     public const string Animatable = "Avalonia.Animation.Animatable";
+    public const string WindowTransparencyLevel = "Avalonia.Controls.WindowTransparencyLevel";
 }

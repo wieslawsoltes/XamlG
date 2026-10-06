@@ -7,18 +7,20 @@ using XamlG.Syntax;
 
 namespace XamlG.Frameworks.Avalonia;
 
-/// <summary>Uses the public property registration for CLR wrappers whose setter is private.
-/// No private member access or reflection is emitted. Truly getter-only CLR members retain
-/// the portable compiler's read-only diagnostic unless another explicit framework rule owns them.</summary>
+/// <summary>Assigns through a public Avalonia registration when its CLR wrapper cannot
+/// be written. Private setters need not be imported. Runtime registration semantics
+/// still reject read-only writes; unregistered CLR properties retain normal diagnostics.</summary>
 public sealed class AvaloniaRegisteredSetterRule : IXamlPropertyBindingRule
 {
     public bool TryBind(BindingContext context, ObjectBindingBuilder target, BoundMember member,
         ImmutableArray<XamlSyntaxNode> values, NamespaceScope scope, TextSpan span, bool isAttribute)
     {
         if (member.CanWrite || member.TargetDescriptor == null || values.Length != 1 ||
-            member.Kind != BoundMemberKind.Property || member.Symbol is not IPropertySymbol { SetMethod: not null }) return false;
+            member.Kind != BoundMemberKind.Property || member.Symbol is not IPropertySymbol { IsStatic: false, IsIndexer: false }) return false;
+        var objectType = context.Types.Find(AvaloniaMetadata.Object);
+        if (objectType == null || !context.Types.Compilation.ClassifyCommonConversion(target.Type, objectType).IsImplicit) return false;
         var adapter = context.Types.Find(AvaloniaRegisteredSetterMetadata.Adapter)?.Members(AvaloniaRegisteredSetterMetadata.Assign)
-            .OfType<IMethodSymbol>().SingleOrDefault(method => method.IsStatic && method.Parameters.Length == 3 &&
+            .OfType<IMethodSymbol>().SingleOrDefault(method => method.IsStatic && !method.IsGenericMethod && method.Parameters.Length == 3 &&
                 method.Parameters[0].Type.HasMetadataName(AvaloniaMetadata.Object) &&
                 method.Parameters[1].Type.HasMetadataName(AvaloniaMetadata.Property) &&
                 method.Parameters[2].Type.SpecialType == SpecialType.System_Object && context.Types.IsAccessible(method));
