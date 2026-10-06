@@ -15,6 +15,7 @@ public static class AvaloniaFrameworkProfile
         var classes = new AvaloniaClassBindingRule();
         var resources = new AvaloniaResourceMergeRule();
         var options = new AvaloniaOptionMarkupRule();
+        var bindingValues = new AvaloniaBindingMarkupRule();
         return XamlFrameworkProfile.Portable with
         {
             Name = "Avalonia",
@@ -26,7 +27,7 @@ public static class AvaloniaFrameworkProfile
                 .Add(AvaloniaResourceMetadata.ResourceInclude, AvaloniaResourceMetadata.Source)
                 .Add(AvaloniaResourceMetadata.MergeResourceInclude, AvaloniaResourceMetadata.Source)
                 .Add(AvaloniaResourceMetadata.StyleInclude, AvaloniaResourceMetadata.Source),
-            ObjectExpressionRules = XamlFrameworkProfile.Portable.ObjectExpressionRules.Add(new AvaloniaResourceIncludeRule()).Add(options),
+            ObjectExpressionRules = XamlFrameworkProfile.Portable.ObjectExpressionRules.Add(new AvaloniaResourceIncludeRule()).Add(options).Add(bindingValues),
             TypeSystem = new XamlTypeSystemConfiguration
             {
                 XmlnsDefinitionAttributes = ImmutableArray.Create(AvaloniaMetadata.XmlnsDefinition),
@@ -62,7 +63,7 @@ public static class AvaloniaFrameworkProfile
             MemberBindingRules = ImmutableArray.Create<IXamlMemberBindingRule>(new AvaloniaPropertyDescriptorRule()),
             PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(new AvaloniaDesignPropertyRule(), resources,
                 new AvaloniaStylePropertyRule(), new References.AvaloniaResolveByNameRule(), new AvaloniaRegisteredSetterRule(), new AvaloniaBindingRule()),
-            MarkupBindingRules = ImmutableArray.Create<IXamlMarkupBindingRule>(options, new AvaloniaCompiledBindingRule(), new AvaloniaBindingMarkupRule())
+            MarkupBindingRules = ImmutableArray.Create<IXamlMarkupBindingRule>(options, new AvaloniaCompiledBindingRule(), bindingValues)
         };
     }
 }

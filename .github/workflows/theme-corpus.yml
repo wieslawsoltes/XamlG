@@ -5,10 +5,11 @@ on:
     branches: [main]
     paths: ['src/**', 'tests/XamlG.ThemeCorpus/**', 'Directory.*', '.github/workflows/theme-corpus.yml']
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 concurrency:
-  group: theme-corpus-${{ github.ref }}
+  group: theme-corpus-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   execute:
