@@ -1,0 +1,31 @@
+name: Pinned validation source
+on:
+  push:
+    branches: [ops/pinned-validation-source-01ca2a3]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: AvaloniaUI/Avalonia
+          ref: 8eeda4f6f546165b3f72e63c9f42247abb306905
+          persist-credentials: false
+      - name: Archive unchanged pinned upstream source for offline validation
+        run: |
+          test "$(git rev-parse HEAD)" = 8eeda4f6f546165b3f72e63c9f42247abb306905
+          git diff --exit-code
+          git archive --format=tar.gz --output=/tmp/avalonia-pinned.tar.gz HEAD
+          git rev-parse HEAD HEAD^{tree} > /tmp/upstream-identity.txt
+          sha256sum /tmp/avalonia-pinned.tar.gz > /tmp/upstream-sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinned-avalonia-source
+          retention-days: 7
+          path: |
+            /tmp/avalonia-pinned.tar.gz
+            /tmp/upstream-identity.txt
+            /tmp/upstream-sha256.txt
