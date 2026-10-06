@@ -12,7 +12,7 @@ public sealed class TemplateOwnerRegressionTests
     [AvaloniaFact]
     public void ThemeSetterWithoutConcreteTemplateUsesThemeOwner()
     {
-        var theme = Build("<Setter Property='ButtonSpinnerCornerRadius' Value='{TemplateBinding CornerRadius}'/>");
+        var theme = Build("<Setter Property='CornerRadius' Value='{TemplateBinding CornerRadius}'/>");
         var binding = Assert.IsType<TemplateBinding>(Assert.IsType<Setter>(Assert.Single(theme.Setters)).Value);
         Assert.Same(TemplatedControl.CornerRadiusProperty, binding.Property);
     }
@@ -20,20 +20,20 @@ public sealed class TemplateOwnerRegressionTests
     [AvaloniaFact]
     public void TemplateSelectorKeepsSourceOwnerSeparateFromSelectedChild()
     {
-        var theme = Build("<Style Selector='^ /template/ RepeatButton'><Setter Property='CornerRadius' Value='{TemplateBinding ButtonSpinnerCornerRadius}'/></Style>");
+        var theme = Build("<Style Selector='^ /template/ RepeatButton'><Setter Property='IsVisible' Value='{TemplateBinding ShowButtonSpinner}'/></Style>");
         var style = Assert.IsType<Style>(Assert.Single(theme.Children));
         var binding = Assert.IsType<TemplateBinding>(Assert.IsType<Setter>(Assert.Single(style.Setters)).Value);
-        Assert.Same(ButtonSpinner.ButtonSpinnerCornerRadiusProperty, binding.Property);
+        Assert.Same(ButtonSpinner.ShowButtonSpinnerProperty, binding.Property);
     }
 
     [AvaloniaFact]
     public void NestedPseudoClassInheritsTheTemplateSource()
     {
-        var theme = Build("<Style Selector='^ /template/ RepeatButton'><Style Selector='^:pressed'><Setter Property='CornerRadius' Value='{TemplateBinding ButtonSpinnerCornerRadius}'/></Style></Style>");
+        var theme = Build("<Style Selector='^ /template/ RepeatButton'><Style Selector='^:pressed'><Setter Property='IsVisible' Value='{TemplateBinding ShowButtonSpinner}'/></Style></Style>");
         var parent = Assert.IsType<Style>(Assert.Single(theme.Children));
         var style = Assert.IsType<Style>(Assert.Single(parent.Children));
         var binding = Assert.IsType<TemplateBinding>(Assert.IsType<Setter>(Assert.Single(style.Setters)).Value);
-        Assert.Same(ButtonSpinner.ButtonSpinnerCornerRadiusProperty, binding.Property);
+        Assert.Same(ButtonSpinner.ShowButtonSpinnerProperty, binding.Property);
     }
 
     [AvaloniaFact]
