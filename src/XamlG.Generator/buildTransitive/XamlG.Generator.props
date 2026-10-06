@@ -5,10 +5,16 @@
     <XamlGEnableDefaultItems Condition="'$(XamlGEnableDefaultItems)' == ''">true</XamlGEnableDefaultItems>
     <XamlGGenerateInitializeComponent Condition="'$(XamlGGenerateInitializeComponent)' == ''">true</XamlGGenerateInitializeComponent>
     <XamlGGenerateNamedFields Condition="'$(XamlGGenerateNamedFields)' == ''">true</XamlGGenerateNamedFields>
-    <EnableAvaloniaXamlCompilation Condition="'$(XamlGEnabled)' == 'true'">false</EnableAvaloniaXamlCompilation>
-    <AvaloniaNameGeneratorIsEnabled Condition="'$(XamlGEnabled)' == 'true'">false</AvaloniaNameGeneratorIsEnabled>
   </PropertyGroup>
+  <!-- Declare defaults before the project body so Remove and Update have normal MSBuild semantics.
+       The execution-time normalizer respects late property overrides and Avalonia's authoritative items. -->
+  <ItemGroup Condition="'$(EnableDefaultItems)' != 'false' and '$(XamlGEnableDefaultItems)' != 'false'">
+    <XamlGSource Include="**/*.xaml;**/*.axaml;**/*.paml" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder);**/bin/**;**/obj/**;**/.git/**;**/node_modules/**">
+      <XamlGDefaultItem>true</XamlGDefaultItem>
+    </XamlGSource>
+  </ItemGroup>
   <ItemGroup>
+    <AvailableItemName Include="XamlGSource" />
     <CompilerVisibleProperty Include="XamlGEnabled;XamlGFramework;XamlGGenerateInitializeComponent;XamlGGenerateNamedFields;XamlGCompileBindingsByDefault;AvaloniaUseCompiledBindingsByDefault;MSBuildProjectDirectory" />
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="XamlGCompile" />
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="XamlGLogicalPath" />

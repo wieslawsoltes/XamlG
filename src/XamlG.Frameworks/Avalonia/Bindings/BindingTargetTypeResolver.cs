@@ -16,8 +16,20 @@ internal static class BindingTargetTypeResolver
     public static INamedTypeSymbol? FindTemplateOwner(BindingContext context, ObjectBindingBuilder template)
     {
         var contract = context.Types.Find(AvaloniaBindingMetadata.TemplatedControl);
-        if (contract == null) return null;
-        return context.Ancestors.FirstOrDefault(ancestor => !ReferenceEquals(ancestor, template) &&
-            context.Types.Compilation.ClassifyCommonConversion(ancestor.Type, contract).IsImplicit)?.Type;
+        foreach (var ancestor in context.Ancestors)
+        {
+            if (ReferenceEquals(ancestor, template)) continue;
+            // A nearer setter/style declaration is authoritative. Do not search through
+            // its scope to an unrelated control containing the style's resources.
+            if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.TargetType, out var declared))
+                return declared;
+            if (contract != null && context.Types.Compilation.ClassifyCommonConversion(ancestor.Type, contract).IsImplicit)
+                return ancestor.Type;
+            if (ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate) ||
+                ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) ||
+                ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.Style))
+                return null;
+        }
+        return null;
     }
 }

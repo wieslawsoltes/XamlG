@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the packaged tools and build real consumers exclusively against the candidate XamlG feed."""
+"""Install packaged tools and build real consumers against the candidate XamlG feed."""
 import argparse
 import os
 from pathlib import Path
@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--version', required=True)
     args = parser.parse_args()
     packages = args.packages.resolve()
+    run('python', 'scripts/inspect-shipping-package.py', '--packages', str(packages), '--version', args.version)
     with tempfile.TemporaryDirectory(prefix='xamlg-release-') as temporary:
         work = Path(temporary)
         configuration = ET.Element('configuration')
@@ -51,8 +52,6 @@ def main():
         run('git', 'ls-files', '-s', '--', 'scripts/test-lsp-*.py', env=environment)
         for script in ('host', 'watch', 'features', 'csharp', 'diagnostic-contract'):
             run('python', f'scripts/test-lsp-{script}.py', str(lsp[0]), env=environment)
-        # These fixture restores supply project metadata only. Every protocol interaction
-        # below still starts the installed candidate tool, never a repository-built LSP DLL.
         for project in ('tests/ResourceWorkspaceSmoke/ResourceWorkspaceSmoke.csproj', 'tests/FileRenameSmoke/FileRenameSmoke.csproj'):
             run('dotnet', 'restore', project, '--configfile', str(config), '-p:NuGetAudit=false', env=environment)
         for script in ('resources', 'pull', 'file-moves'):
@@ -64,7 +63,8 @@ def main():
         run('dotnet', 'restore', project, '--configfile', str(config), '-p:NuGetAudit=false', env=environment)
         run(cli, 'compile', '--project', project, '--framework', 'Portable', '--output', str(work / 'project'),
             '--emit-assembly', str(work / 'project/WorkspaceSmoke.dll'), env=environment)
-        print('PASS: clean installed CLI/LSP, all protocol/watch/pull/C#/file-refactoring suites, portable/Avalonia consumers and MSBuild project compilation.')
+        run('python', 'scripts/test-shipping-consumer.py', '--config', str(config), '--version', args.version, '--cli', cli, env=environment)
+        print('PASS: installed CLI/LSP, protocol suites, portable/Avalonia consumers, single-reference shipping and evaluated resource emission.')
 
 
 if __name__ == '__main__':

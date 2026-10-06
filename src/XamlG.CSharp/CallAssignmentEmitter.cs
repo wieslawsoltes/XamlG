@@ -15,7 +15,17 @@ internal sealed class CallAssignmentEmitter(EmissionContext context, ValueEmitte
                 values.Emit(assignment.TargetDescriptor, frame) + ");");
             frame = local;
         }
-        var arguments = assignment.Arguments.Select(argument => values.Emit(argument, frame)).ToList();
+        var arguments = new List<string>();
+        for (var index = 0; index < assignment.Arguments.Length; index++)
+        {
+            var parameterIndex = index + (assignment.IncludeTarget ? 1 : 0);
+            var local = context.Temporary("argument");
+            var expression = index == assignment.Arguments.Length - 1
+                ? values.EmitInitialized(assignment.Arguments[index], frame, assignment.ValueInitializers, arguments)
+                : values.Emit(assignment.Arguments[index], frame);
+            writer.Line(assignment.Method.Parameters[parameterIndex].Type.CSharpName() + " " + local + " = " + expression + ";");
+            arguments.Add(local);
+        }
         if (assignment.IncludeTarget) arguments.Insert(0, target);
         var call = (assignment.Method.IsStatic ? assignment.Method.ContainingType.CSharpName() : target) +
             "." + CSharpNames.Method(assignment.Method) + "(" + string.Join(", ", arguments) + ")";

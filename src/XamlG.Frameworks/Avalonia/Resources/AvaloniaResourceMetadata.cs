@@ -6,6 +6,8 @@ internal static class AvaloniaResourceMetadata
     public const string ResourceInclude = "Avalonia.Markup.Xaml.Styling.ResourceInclude";
     public const string MergeResourceInclude = "Avalonia.Markup.Xaml.Styling.MergeResourceInclude";
     public const string StyleInclude = "Avalonia.Markup.Xaml.Styling.StyleInclude";
+    public const string ThemeVariantProvider = "Avalonia.Controls.IThemeVariantProvider";
+    public const string ThemeVariantKey = "Key";
     public const string Dictionary = "Avalonia.Controls.ResourceDictionary";
     public const string ResourceProvider = "Avalonia.Controls.IResourceProvider";
     public const string Style = "Avalonia.Styling.IStyle";

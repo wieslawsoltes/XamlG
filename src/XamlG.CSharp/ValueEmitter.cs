@@ -17,6 +17,7 @@ internal sealed class ValueEmitter
         _context.Cancellation.ThrowIfCancellationRequested();
         switch (value)
         {
+            case BoundChoiceExpression choice: return new ChoiceExpressionEmitter(_context, _objects, this).Emit(choice, frame);
             case BoundResourceExpression resource: return new ResourceExpressionEmitter(_context).Emit(resource, frame);
             case BoundConstantExpression constant: return CSharpNames.Constant(constant.Value);
             case BoundEnumExpression enumeration:
@@ -52,6 +53,17 @@ internal sealed class ValueEmitter
             case BoundRawExpression raw: return ExpandTrusted(raw.CSharp, frame, frame + ".TargetObject!");
             default: _context.Error("The backend does not recognize expression '" + value.GetType().Name + "'.", value.Span); return "default!";
         }
+    }
+
+    public string EmitInitialized(BoundExpression value, string frame,
+        System.Collections.Immutable.ImmutableArray<BoundArgumentInitialization> initializers, IReadOnlyList<string> arguments)
+    {
+        if (initializers.IsDefaultOrEmpty) return Emit(value, frame);
+        if (value is BoundObjectExpression child)
+            return _objects.Emit(child.Object, frame, null, null,
+                target => ArgumentInitializerEmitter.Emit(_context, target, initializers, arguments));
+        _context.Error("An argument initializer requires a construction expression.", value.Span);
+        return Emit(value, frame);
     }
 
     public string ExpandTrusted(string source, string frame, string target) => source.Replace("$context", frame).Replace("$target", target).Replace("$root", _context.RootVariable);

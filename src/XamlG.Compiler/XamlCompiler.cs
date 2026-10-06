@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using XamlG.Roslyn;
 using XamlG.Syntax;
 namespace XamlG.Compiler;
@@ -19,6 +18,7 @@ public sealed class XamlCompiler
     {
         options ??= new(); var context = new BindingContext(syntax, types, profile, options, cancellationToken);
         var root = syntax.Root; BoundObject? bound = null; string? className = null; var modifier = "public";
+        var canAugment = false;
         if (root != null)
         {
             var scope = NamespaceScope.Empty.Push(root); var directive = scope.Directive(root, "Class"); className = directive?.Value;
@@ -31,9 +31,13 @@ public sealed class XamlCompiler
                 if (context.RootClass == null) context.Report("XG1030", $"Code-behind class '{className}' was not found in the Roslyn compilation.", directive!.ValueSpan);
                 else
                 {
-                    foreach (var reference in context.RootClass.DeclaringSyntaxReferences)
-                        if (reference.GetSyntax(cancellationToken) is TypeDeclarationSyntax declaration && !declaration.Modifiers.Any(SyntaxKind.PartialKeyword))
-                            context.Report("XG1030", $"Code-behind class '{className}' must be partial.", directive!.ValueSpan);
+                    canAugment = XamlClassAugmentation.IsAvailable(context.RootClass, cancellationToken);
+                    if (!canAugment && !types.IsAccessible(context.RootClass))
+                        context.Report("XG1030", $"Non-partial code-behind '{className}' must be accessible to its generated factory.", directive!.ValueSpan);
+                    if (!canAugment)
+                        for (var current = context.RootClass; current != null; current = current.ContainingType)
+                            if (current.Arity != 0 || current.TypeKind != TypeKind.Class)
+                            { context.Report("XG1030", "An external component factory requires a nongeneric reference-type component and containing types.", directive!.ValueSpan); break; }
                 }
             }
             var declared = context.ResolveType(root.Name, scope, root.NameSpan, scope.Directive(root, "TypeArguments")?.Value);
@@ -45,7 +49,8 @@ public sealed class XamlCompiler
             }
         }
         MetadataDiagnosticCollector.Collect(context);
-        var document = new BoundDocument(syntax, bound, className, context.RootClass, modifier, context.Diagnostics.ToImmutableArray(), context.Symbols.ToImmutableArray(), profile, options) { Runtime = context.Runtime };
+        var document = new BoundDocument(syntax, bound, className, context.RootClass, modifier, context.Diagnostics.ToImmutableArray(), context.Symbols.ToImmutableArray(), profile, options)
+        { Runtime = context.Runtime, CanAugmentClass = canAugment };
         foreach (var pass in profile.Passes) { cancellationToken.ThrowIfCancellationRequested(); document = pass.Run(document, context); }
         return document;
     }

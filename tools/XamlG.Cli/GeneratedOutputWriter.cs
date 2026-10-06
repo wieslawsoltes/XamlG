@@ -1,48 +1,52 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using XamlG.Tooling;
+using XamlG.CSharp.Integration;
 
 namespace XamlG.Cli;
 
-/// <summary>Atomically replaces individual generated files and removes stale outputs only when their recorded content hash still matches.</summary>
+/// <summary>Writes compiler-owned files only. Validates every overwrite before mutation and
+/// removes stale outputs only when their recorded content hash still matches.</summary>
 internal static class GeneratedOutputWriter
 {
     private const string ManifestName = ".xamlg-manifest.json";
 
-    public static async Task WriteAsync(string directory, IReadOnlyList<XamlAnalysis> analyses, CancellationToken cancellationToken)
+    public static async Task WriteAsync(string directory, IEnumerable<XamlGeneratedSource> sources, CancellationToken cancellationToken)
     {
         directory = Path.GetFullPath(directory);
         Directory.CreateDirectory(directory);
         var manifestPath = Path.Combine(directory, ManifestName);
-        var previous = System.IO.File.Exists(manifestPath)
-            ? JsonSerializer.Deserialize<Dictionary<string, string>>(await System.IO.File.ReadAllTextAsync(manifestPath, cancellationToken)) ?? new()
+        var previous = File.Exists(manifestPath)
+            ? JsonSerializer.Deserialize<Dictionary<string, string>>(await File.ReadAllTextAsync(manifestPath, cancellationToken)) ?? new()
             : new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var name in previous.Keys) ValidateName(name);
         var next = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var analysis in analyses)
+        var writes = new List<(string Path, byte[] Bytes)>();
+        foreach (var source in sources)
         {
-            var name = analysis.Output.HintName;
+            cancellationToken.ThrowIfCancellationRequested();
+            var name = source.HintName;
             ValidateName(name);
             var path = Path.Combine(directory, name);
-            var bytes = Encoding.UTF8.GetBytes(analysis.Output.Source);
+            var bytes = Encoding.UTF8.GetBytes(source.Source);
             var hash = Convert.ToHexString(SHA256.HashData(bytes));
-            if (!next.TryAdd(name, hash)) throw new InvalidOperationException("Two input documents produced the same output identity: " + name);
-            if (System.IO.File.Exists(path))
+            if (!next.TryAdd(name, hash)) throw new InvalidOperationException("Two sources produced the same output identity: " + name);
+            if (File.Exists(path))
             {
-                var existing = Convert.ToHexString(SHA256.HashData(await System.IO.File.ReadAllBytesAsync(path, cancellationToken)));
+                var existing = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(path, cancellationToken)));
                 if (existing == hash) continue;
                 if (!previous.TryGetValue(name, out var recorded) || existing != recorded)
                     throw new IOException("Refusing to overwrite an output modified outside XamlG: " + path);
             }
-            await AtomicWriteAsync(path, bytes, cancellationToken);
+            writes.Add((path, bytes));
         }
+        foreach (var write in writes) await AtomicWriteAsync(write.Path, write.Bytes, cancellationToken);
         foreach (var item in previous.Where(p => !next.ContainsKey(p.Key)))
         {
             var path = Path.Combine(directory, item.Key);
-            if (!System.IO.File.Exists(path)) continue;
-            var hash = Convert.ToHexString(SHA256.HashData(await System.IO.File.ReadAllBytesAsync(path, cancellationToken)));
-            if (hash == item.Value) System.IO.File.Delete(path);
+            if (!File.Exists(path)) continue;
+            var hash = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(path, cancellationToken)));
+            if (hash == item.Value) File.Delete(path);
         }
         await AtomicWriteAsync(manifestPath, JsonSerializer.SerializeToUtf8Bytes(next, new JsonSerializerOptions { WriteIndented = true }), cancellationToken);
     }
@@ -52,15 +56,15 @@ internal static class GeneratedOutputWriter
         var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {
-            await System.IO.File.WriteAllBytesAsync(temporary, bytes, cancellationToken);
-            System.IO.File.Move(temporary, path, overwrite: true);
+            await File.WriteAllBytesAsync(temporary, bytes, cancellationToken);
+            File.Move(temporary, path, overwrite: true);
         }
-        finally { if (System.IO.File.Exists(temporary)) System.IO.File.Delete(temporary); }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
-
     private static void ValidateName(string name)
     {
-        if (string.IsNullOrEmpty(name) || Path.GetFileName(name) != name || name.Contains('\\') || !name.EndsWith(".xaml.g.cs", StringComparison.Ordinal))
+        if (string.IsNullOrEmpty(name) || Path.GetFileName(name) != name || name.Contains('\\') || name.Contains('/') ||
+            !(name.EndsWith(".xaml.g.cs", StringComparison.Ordinal) || name == XamlSourceIntegrationResult.HintName))
             throw new InvalidDataException("Invalid generated output name in compiler manifest.");
     }
 }

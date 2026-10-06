@@ -11,7 +11,8 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
     public void Initialize(BindingContext context, ObjectBindingBuilder target)
     {
         var inherited = FindTarget(context, target);
-        if (target.Scope.Directive(target.Syntax, AvaloniaStyleMetadata.SetterTargetType) is { } declared)
+        var declared = target.Scope.Directive(target.Syntax, AvaloniaStyleMetadata.SetterTargetType);
+        if (declared != null)
         {
             inherited = AvaloniaBindingScopeRule.ResolveDataType(context, declared.Value, target.Scope, declared.ValueSpan);
             if (inherited != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, inherited);
@@ -23,17 +24,21 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
             if (source is { } selector)
             {
                 var syntax = AvaloniaSelectorParser.Parse(selector.Text, selector.Span, context.Diagnostics.Add, context.Cancellation);
-                var bound = syntax == null ? null : new AvaloniaSelectorBinder(context, target.Scope, inherited).Bind(syntax);
+                var bound = syntax == null ? null : new AvaloniaSelectorBinder(context, target.Scope, inherited, FindNestingSelector(context, target)).Bind(syntax);
                 if (bound != null)
                 {
                     target.Annotations.Set(AvaloniaStyleAnnotations.Selector, bound);
                     if (bound.TargetType != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, bound.TargetType);
                 }
             }
+            else if (inherited != null)
+                target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, inherited);
         }
         else if (target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) || target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate))
         {
-            if (inherited == null && target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate))
+            // Always determine the nearest semantic owner. An outer template's target
+            // must not shadow a concrete control receiving a nested template.
+            if (declared == null && target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate))
                 inherited = BindingTargetTypeResolver.FindTemplateOwner(context, target);
             var source = TextMember(target.Syntax, AvaloniaStyleMetadata.TargetTypeMember);
             var type = source is { } explicitType
@@ -63,6 +68,18 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
         // observes the registered property when the Value setter is called.
         var property = target.Assignments.OfType<BoundSetAssignment>().FirstOrDefault(a => a.Member.Name == AvaloniaStyleMetadata.PropertyMember);
         if (property != null) { target.Assignments.Remove(property); target.Assignments.Insert(0, property); }
+    }
+
+    private static BoundSelector? FindNestingSelector(BindingContext context, ObjectBindingBuilder current)
+    {
+        foreach (var ancestor in context.Ancestors)
+        {
+            if (ReferenceEquals(current, ancestor)) continue;
+            if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector)) return selector;
+            if (ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) ||
+                ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate)) break;
+        }
+        return null;
     }
 
     internal static INamedTypeSymbol? FindTarget(BindingContext context, ObjectBindingBuilder current)

@@ -1,26 +1,46 @@
 <Project>
-  <ItemGroup Condition="'$(XamlGEnabled)' == 'true' and '$(XamlGEnableDefaultItems)' == 'true'">
-    <XamlGSource Include="**/*.xaml;**/*.axaml" Exclude="$(DefaultItemExcludes);$(DefaultExcludesInProjectFolder);@(XamlGSource)" />
-  </ItemGroup>
-  <Target Name="PrepareXamlGAdditionalFiles"
-          BeforeTargets="GenerateMSBuildEditorConfigFileShouldRun;CoreCompile"
-          AfterTargets="_InjectAvaloniaAdditionalFiles"
-          Condition="'$(XamlGEnabled)' == 'true'">
-    <PropertyGroup>
-      <EnableAvaloniaXamlCompilation>false</EnableAvaloniaXamlCompilation>
-      <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
-    </PropertyGroup>
-    <ItemGroup>
-      <AdditionalFiles Remove="@(XamlGSource)" />
-      <AdditionalFiles Include="@(XamlGSource)">
-        <XamlGCompile Condition="'%(XamlGSource.XamlGCompile)' == ''">true</XamlGCompile>
-        <XamlGLogicalPath Condition="'%(XamlGSource.Link)' != ''">%(XamlGSource.Link)</XamlGLogicalPath>
-        <XamlGLogicalPath Condition="'%(XamlGSource.Link)' == ''">%(XamlGSource.Identity)</XamlGLogicalPath>
-      </AdditionalFiles>
-    </ItemGroup>
+  <!-- Evaluated after project properties: XamlGEnabled=false never disables Avalonia. -->
+  <PropertyGroup Condition="'$(XamlGEnabled)' == 'true'">
+    <EnableAvaloniaXamlCompilation>false</EnableAvaloniaXamlCompilation>
+    <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
+    <InterceptorsNamespaces>$(InterceptorsNamespaces);XamlG.Generated.Loaders</InterceptorsNamespaces>
+    <_XamlGFrameworkInputTarget Condition="'$(AvaloniaBuildTasksLocation)' != ''">_InjectAvaloniaAdditionalFiles</_XamlGFrameworkInputTarget>
+  </PropertyGroup>
+  <UsingTask TaskName="XamlG.Build.NormalizeXamlGInputs" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <Task><Code Type="Class" Language="cs" Source="$(MSBuildThisFileDirectory)NormalizeXamlGInputs.cs" /></Task>
+  </UsingTask>
+  <Target Name="ValidateXamlGConfiguration" Condition="'$(XamlGEnabled)' == 'true'">
+    <Error Condition="'$(Language)' != '' and '$(Language)' != 'C#'" Text="XamlG requires a C# project." Code="XG2000" />
+    <Error Condition="'$(EnableAvaloniaXamlCompilation)' != 'false' or '$(AvaloniaNameGeneratorIsEnabled)' != 'false'" Text="XamlG cannot replace a globally forced Avalonia compiler/name-generator setting. Remove the conflicting global properties or set XamlGEnabled=false." Code="XG2000" />
   </Target>
-  <Target Name="ValidateXamlGConfiguration" BeforeTargets="CoreCompile" Condition="'$(XamlGEnabled)' == 'true'">
-    <Error Condition="'$(Language)' != 'C#'" Text="XamlG emits C# and requires a C# project." Code="XG2000" />
-    <Error Condition="'$(EnableAvaloniaXamlCompilation)' == 'true'" Text="XamlG and the Avalonia IL XAML compiler cannot compile the same documents. Disable EnableAvaloniaXamlCompilation." Code="XG2000" />
+  <Target Name="PrepareXamlGAdditionalFiles"
+          BeforeTargets="GenerateMSBuildEditorConfigFileShouldRun;GenerateMSBuildEditorConfigFileCore;CoreCompile;CollectUpToDateCheckInputDesignTime"
+          DependsOnTargets="$(_XamlGFrameworkInputTarget);ValidateXamlGConfiguration"
+          Condition="'$(XamlGEnabled)' == 'true' and '$(IsCrossTargetingBuild)' != 'true'">
+    <PropertyGroup>
+      <_XamlGUseFrameworkDefaults>false</_XamlGUseFrameworkDefaults>
+      <_XamlGUseFrameworkDefaults Condition="'$(AvaloniaBuildTasksLocation)' != ''">true</_XamlGUseFrameworkDefaults>
+      <_XamlGDefaultsEnabled>true</_XamlGDefaultsEnabled>
+      <_XamlGDefaultsEnabled Condition="'$(EnableDefaultItems)' == 'false' or '$(XamlGEnableDefaultItems)' == 'false'">false</_XamlGDefaultsEnabled>
+    </PropertyGroup>
+    <XamlG.Build.NormalizeXamlGInputs AdditionalFiles="@(AdditionalFiles)" Sources="@(XamlGSource)"
+        FrameworkSources="@(AvaloniaXaml);@(AvaloniaResource)" ProjectDirectory="$(MSBuildProjectDirectory)"
+        UseFrameworkDefaults="$(_XamlGUseFrameworkDefaults)" EnableDefaults="$(_XamlGDefaultsEnabled)">
+      <Output TaskParameter="NormalizedFiles" ItemName="_XamlGNormalizedAdditionalFiles" />
+      <Output TaskParameter="Fingerprint" PropertyName="_XamlGInputFingerprint" />
+    </XamlG.Build.NormalizeXamlGInputs>
+    <ItemGroup>
+      <AdditionalFiles Remove="@(AdditionalFiles)" />
+      <AdditionalFiles Include="@(_XamlGNormalizedAdditionalFiles)" />
+      <_XamlGNormalizedAdditionalFiles Remove="@(_XamlGNormalizedAdditionalFiles)" />
+      <UpToDateCheckInput Include="@(AdditionalFiles)" />
+    </ItemGroup>
+    <PropertyGroup><_XamlGInputsFile>$(IntermediateOutputPath)XamlG/inputs.cache</_XamlGInputsFile></PropertyGroup>
+    <MakeDir Directories="$(IntermediateOutputPath)XamlG" />
+    <WriteLinesToFile File="$(_XamlGInputsFile)" Lines="$(_XamlGInputFingerprint)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <FileWrites Include="$(_XamlGInputsFile)" />
+      <CustomAdditionalCompileInputs Include="$(_XamlGInputsFile);@(AdditionalFiles)" />
+    </ItemGroup>
   </Target>
 </Project>

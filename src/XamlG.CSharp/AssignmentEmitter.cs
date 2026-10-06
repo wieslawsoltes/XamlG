@@ -41,10 +41,18 @@ internal sealed class AssignmentEmitter
                     { receiver = _context.Temporary("collection"); writer.Line("var " + receiver + " = " + Get(add.Collection, target) + ";"); collections.Add(add.Collection.Symbol, receiver); }
                 }
                 var arguments = new List<string>();
-                for (var i = 0; i < add.Arguments.Length - 1; i++) arguments.Add(_values.Emit(add.Arguments[i], valueFrame));
+                for (var i = 0; i < add.Arguments.Length - 1; i++)
+                {
+                    var argument = _context.Temporary("argument");
+                    writer.Line(add.AddMethod.Parameters[i].Type.CSharpName() + " " + argument + " = " + _values.Emit(add.Arguments[i], valueFrame) + ";");
+                    arguments.Add(argument);
+                }
                 var last = add.Arguments[add.Arguments.Length - 1];
                 void Add(string value) => writer.Line("((" + add.AddMethod.ContainingType.CSharpName() + ")" + receiver + ")." + CSharpNames.Method(add.AddMethod) + "(" + string.Join(", ", arguments.Concat(new[] { value })) + ");");
-                if (last is BoundObjectExpression child) _objects.Emit(child.Object, valueFrame, null, Add); else Add(_values.Emit(last, valueFrame));
+                if (last is BoundObjectExpression child)
+                    _objects.Emit(child.Object, valueFrame, null, Add,
+                        value => ArgumentInitializerEmitter.Emit(_context, value, add.ValueInitializers, arguments));
+                else Add(_values.EmitInitialized(last, valueFrame, add.ValueInitializers, arguments));
                 break;
             }
             case BoundEventAssignment ev:

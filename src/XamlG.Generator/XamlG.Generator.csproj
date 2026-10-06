@@ -10,8 +10,10 @@
   <ItemGroup>
     <ProjectReference Include="../XamlG.CSharp/XamlG.CSharp.csproj" PrivateAssets="all" />
     <ProjectReference Include="../XamlG.Frameworks/XamlG.Frameworks.csproj" PrivateAssets="all" />
-    <ProjectReference Include="../XamlG.Runtime/XamlG.Runtime.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../XamlG.Runtime/XamlG.Runtime.csproj" />
+    <Compile Remove="buildTransitive/**/*.cs" />
     <None Include="buildTransitive/*" Pack="true" PackagePath="buildTransitive" />
+    <None Include="PackageAssets/_._" Pack="true" PackagePath="lib/netstandard2.0/_._" />
   </ItemGroup>
   <Target Name="PackXamlGAnalyzerDependencies" BeforeTargets="_GetPackageFiles">
     <ItemGroup>

@@ -29,7 +29,7 @@ internal sealed class ObjectEmitter
             _runtime.InitializeNameScope(variable, incoming);
         }
     }
-    public string Emit(BoundObject value, string parentContext, string? existing, Action<string>? consume)
+    public string Emit(BoundObject value, string parentContext, string? existing, Action<string>? consume, Action<string>? initialize = null)
     {
         _context.Cancellation.ThrowIfCancellationRequested(); var writer = _context.Writer;
         parentContext = _runtime.Scope(parentContext, value.Scope);
@@ -48,10 +48,11 @@ internal sealed class ObjectEmitter
         if (value.Name != null)
         {
             _runtime.RegisterName(frame, value.Name, variable);
-            if (_context.Document.ClassSymbol != null && _context.Document.Options.GenerateNamedFields && value.NameScopeId == _context.Document.Root!.NameScopeId)
+            if (_context.Document.ClassSymbol != null && _context.Document.CanAugmentClass && _context.Document.Options.GenerateNamedFields && value.NameScopeId == _context.Document.Root!.NameScopeId)
                 writer.Line(_context.RootVariable + "." + CSharpNames.Identifier(value.Name) + " = " + variable + ";");
         }
         if (value.SupportsInitialize) writer.Line("((global::System.ComponentModel.ISupportInitialize)" + variable + ").BeginInit();");
+        initialize?.Invoke(variable);
         if (value.UsableDuringInitialization) consume?.Invoke(variable);
         var collections = new Dictionary<ISymbol, string>(SymbolEqualityComparer.Default);
         foreach (var assignment in value.Assignments)

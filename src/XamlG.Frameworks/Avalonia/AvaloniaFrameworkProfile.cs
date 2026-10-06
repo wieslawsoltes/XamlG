@@ -14,16 +14,20 @@ public static class AvaloniaFrameworkProfile
         var bindings = new AvaloniaBindingScopeRule(compileBindingsByDefault);
         var classes = new AvaloniaClassBindingRule();
         var resources = new AvaloniaResourceMergeRule();
+        var options = new AvaloniaOptionMarkupRule();
+        var bindingValues = new AvaloniaBindingMarkupRule();
         return XamlFrameworkProfile.Portable with
         {
             Name = "Avalonia",
+            SourceLoader = new(AvaloniaLoaderMetadata.Loader, AvaloniaLoaderMetadata.Load)
+            { ResourceScheme = AvaloniaResourceMetadata.Scheme, LegacyIndexMetadataName = AvaloniaLoaderMetadata.CompiledIndex },
             NameReferenceRules = XamlFrameworkProfile.Portable.NameReferenceRules.Add(new References.AvaloniaNameReferenceRule()),
             ResourceScheme = AvaloniaResourceMetadata.Scheme,
             ResourceSourceMembers = ImmutableDictionary<string, string>.Empty.WithComparers(StringComparer.Ordinal)
                 .Add(AvaloniaResourceMetadata.ResourceInclude, AvaloniaResourceMetadata.Source)
                 .Add(AvaloniaResourceMetadata.MergeResourceInclude, AvaloniaResourceMetadata.Source)
                 .Add(AvaloniaResourceMetadata.StyleInclude, AvaloniaResourceMetadata.Source),
-            ObjectExpressionRules = ImmutableArray.Create<IXamlObjectExpressionRule>(new AvaloniaResourceIncludeRule()),
+            ObjectExpressionRules = XamlFrameworkProfile.Portable.ObjectExpressionRules.Add(new AvaloniaResourceIncludeRule()).Add(options).Add(bindingValues),
             TypeSystem = new XamlTypeSystemConfiguration
             {
                 XmlnsDefinitionAttributes = ImmutableArray.Create(AvaloniaMetadata.XmlnsDefinition),
@@ -51,11 +55,15 @@ public static class AvaloniaFrameworkProfile
                     new XamlServiceMapping(AvaloniaMetadata.NamespaceProvider, XamlServiceKind.XmlNamespaces, AvaloniaMetadata.NamespaceItem))
             },
             BindingRules = ImmutableArray.Create<IXamlBindingRule>(bindings, new AvaloniaStyleDirectiveRule(), classes),
-            TextConversionRules = ImmutableArray.Create<IXamlTextConversionRule>(new AvaloniaTextConversionRule()),
-            ObjectBindingRules = ImmutableArray.Create<IXamlObjectBindingRule>(new AvaloniaStyleObjectRule(), bindings, classes, resources),
+            TextConversionRules = ImmutableArray.Create<IXamlTextConversionRule>(new AvaloniaPropertyReferenceTextRule(),
+                new AvaloniaFontFamilyTextRule(), new XamlStaticMemberTextRule(new[] { AvaloniaLiteralMetadata.WindowTransparencyLevel }),
+                new XamlDelimitedListTextRule(new[] { AvaloniaRegisteredSetterMetadata.List, AvaloniaRegisteredSetterMetadata.ReadOnlyList }),
+                new AvaloniaTextConversionRule()),
+            ObjectBindingRules = ImmutableArray.Create<IXamlObjectBindingRule>(new References.AvaloniaNameScopeRule(), new AvaloniaStyleObjectRule(), bindings, classes, resources),
             MemberBindingRules = ImmutableArray.Create<IXamlMemberBindingRule>(new AvaloniaPropertyDescriptorRule()),
-            PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(resources, new AvaloniaStylePropertyRule(), new AvaloniaBindingRule()),
-            MarkupBindingRules = ImmutableArray.Create<IXamlMarkupBindingRule>(new AvaloniaCompiledBindingRule(), new AvaloniaBindingMarkupRule())
+            PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(new AvaloniaDesignPropertyRule(), resources,
+                new AvaloniaStylePropertyRule(), new References.AvaloniaResolveByNameRule(), new AvaloniaRegisteredSetterRule(), new AvaloniaBindingRule()),
+            MarkupBindingRules = ImmutableArray.Create<IXamlMarkupBindingRule>(options, new AvaloniaCompiledBindingRule(), bindingValues)
         };
     }
 }

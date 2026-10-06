@@ -1,7 +1,7 @@
 name: Browser playground
 on:
   push:
-    branches: [main, feat/tooling-and-playground]
+    branches: [main]
     paths: ['src/**', 'tools/XamlG.Playground/**', 'Directory.*', '.github/workflows/playground.yml']
   pull_request:
   workflow_dispatch:

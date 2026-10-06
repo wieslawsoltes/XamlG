@@ -12,6 +12,7 @@ public static class BoundDocumentTraversal
         foreach (var expression in Expressions(document))
             if (expression is BoundObjectExpression obj) yield return obj.Object;
             else if (expression is BoundMarkupExpression markup) yield return markup.Extension;
+            else if (expression is BoundChoiceExpression choice) yield return choice.Extension;
     }
 
     public static IEnumerable<BoundExpression> Expressions(BoundDocument document)
@@ -48,6 +49,7 @@ public static class BoundDocumentTraversal
     {
         BoundObjectExpression obj => ObjectExpressions(obj.Object),
         BoundMarkupExpression markup => ObjectExpressions(markup.Extension),
+        BoundChoiceExpression choice => ObjectExpressions(choice.Extension).Concat(choice.Branches.SelectMany(b => new[] { b.Option, b.Value })).Concat(choice.Default == null ? Enumerable.Empty<BoundExpression>() : new[] { choice.Default }),
         BoundCastExpression cast => new[] { cast.Value },
         BoundArrayExpression array => array.Values,
         BoundNewExpression creation => creation.Arguments,
