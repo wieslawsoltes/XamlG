@@ -1,3 +1,4 @@
+import { installCSharpLanguage } from './csharp-language.js';
 let monacoPromise;
 const editors = new Map();
 let sequence = 0;
@@ -32,6 +33,7 @@ export async function createEditor(host, dotnet, text, language, readOnly, path 
   const id = ++sequence;
   try {
     const monaco = await loadMonaco();
+    installCSharpLanguage(monaco, editors);
     const model = monaco.editor.createModel(text, language, path ? monaco.Uri.from({ scheme: 'xamlg', authority: 'studio', path: '/' + id + '/' + path }) : undefined);
     host.dataset.documentPath = path ?? '';
     const editor = monaco.editor.create(host, {
@@ -52,8 +54,8 @@ export async function createEditor(host, dotnet, text, language, readOnly, path 
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => dotnet.invokeMethodAsync('Run'));
     if (path && !readOnly) {
       const actions = [
-        ['rename', 'XamlG: Rename XAML name', monaco.KeyCode.F2],
-        ['format', 'XamlG: Format XAML', monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF],
+        ['rename', 'XamlG: Rename symbol', monaco.KeyCode.F2],
+        ['format', 'XamlG: Format source', monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF],
         ['actions', 'XamlG: Source actions', monaco.KeyMod.CtrlCmd | monaco.KeyCode.Period],
         ['undo', 'XamlG: Undo project edit', monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyZ],
         ['redo', 'XamlG: Redo project edit', monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyZ]

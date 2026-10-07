@@ -50,7 +50,8 @@ SDKs; live paid-account validation, if unavailable, must be reported separately.
 
 The implementation branch is `codex/studio-mcp-agent`, based on `19cb780`.
 Main is merged at implementation checkpoints; the latest merged upstream commit
-is `5f26615` (including structured/collection literals and enum conversions).
+is `041147c` (including structured/collection literals, enum conversions and
+Avalonia synthetic converter mappings).
 The original checkout contains unrelated local compiler edits and is left intact.
 The locally available pinned SDK is `/tmp/xamlg-dotnet-10.0.401/dotnet`.
 
@@ -119,7 +120,8 @@ consumer example that uses only NuGet references outside this repository.
   built, installed and ran through a separate consumer with an initially empty
   package cache. Temporary caches and the 30 MiB candidate package set were
   removed after validation; the small inventory and logs are retained locally.
-- All 38 browser scenarios passed locally after the main merge and provider expansion. The runtime
+- All 44 browser scenarios passed locally after the C# authoring expansion and
+  the synthetic converter main merge. The runtime
   browser scenario constructs a C# DataContext, invokes its method,
   installs and updates a real binding, inspects style value frames, and creates,
   reparents and removes controls without changing source. Coverage includes actual rendering, authoring, designer gestures,
@@ -138,6 +140,14 @@ consumer example that uses only NuGet references outside this repository.
   browser suite passed 38 of 40 cases initially; after correcting an Undo readiness
   wait and opening the docked Problems tab, all four cases in the affected C# and
   loader suites passed. Both failures were in test synchronization or navigation.
+- All 108 Tooling tests pass with the reusable C# language and rename services.
+  C# completion, hover, definitions/references, signatures, formatting, local type
+  actions and checked source rename are available through MCP and Monaco. Browser
+  acceptance exercises completion with agent sharing disabled, navigation to an
+  unopened file, cross-file rename/undo, stale edits, generated-field XAML rename
+  and selection of individual generated files. Native cases cover silent binding
+  capture, overload identity, constants, nullable/target typing and rejected
+  generated/inheritance edits. See `docs/playground.md` for current boundaries.
 
 Runtime tools now include bounded object-path inspection and mutation, loaded type
 discovery, public method invocation with Task/ValueTask results, live control tree

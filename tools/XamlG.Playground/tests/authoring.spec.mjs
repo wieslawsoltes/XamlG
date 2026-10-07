@@ -73,7 +73,7 @@ test('Monaco formatting and quick fixes use the shared source services and are u
   const compact = '<StackPanel xmlns="https://github.com/avaloniaui"><TextBlock Txet="Keep &amp; preserve"/></StackPanel>';
   await page.evaluate(value => monaco.editor.getModels().find(m => m.uri.path.endsWith('/View.axaml')).setValue(value), compact);
   await command(page, 'View.axaml', 'Txet', 'actions');
-  const actions = page.getByRole('dialog', { name: 'XAML code actions' });
+  const actions = page.getByRole('dialog', { name: 'Source code actions' });
   await expect(actions).toBeVisible();
   await actions.getByRole('button', { name: "Change 'Txet' to 'Text'", exact: true }).click();
   await expect.poll(() => source(page, 'View.axaml')).toContain('Text="Keep &amp; preserve"');

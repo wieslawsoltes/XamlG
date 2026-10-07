@@ -36,6 +36,7 @@ public partial class App
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        await RevealGeneratedAsync();
         if (!firstRender) return;
         try
         {

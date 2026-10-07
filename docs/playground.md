@@ -26,7 +26,7 @@ Design mode provides real drag/eight-handle resize, snapping, aspect locking, ke
 
 The compiler can generate construction factories for eligible `x:Class` roots, including nested classes. Preview and isolated payload construction consume `FactoryMetadataName` when resolving runtime types; C# source generation continues to use `FactoryTypeName`. Construction invokes real user constructors and uses the generated initializer's idempotence guard. Caller-controlled/handwritten initialization and unsupported constructor shapes remain explicit boundaries.
 
-Authoring formatting, rename, code actions and token deltas are exposed through the reusable tooling/LSP libraries. This change does not add a Monaco F2 command or coordinated multi-document browser undo for C# plus XAML; those must not be inferred from LSP capability support.
+Authoring formatting, rename, code actions and token deltas are exposed through the reusable tooling/LSP libraries. The browser also provides Monaco authoring commands and coordinated project undo for C# and XAML.
 
 ## Multi-document resources
 
@@ -64,6 +64,23 @@ Acceptance covers real controls/code-behind, inspections, immediate edits, undo/
 
 ## Semantic authoring commands
 
-Use Rename, Format and Actions in the source toolbar or Monaco command palette/context menu. F2 opens a scoped name-rename dialog with XAML/C# edit preview; applying it is one project undo step. Shift+Alt+F formats the source/selection while preserving literal XML content. Ctrl+. displays applicable source actions. Resource editors expose the same commands. Invoke rename from a XAML name/reference; generated-field C# references are included automatically.
+Use Rename, Format and Actions in the source toolbar or Monaco command palette/context menu. F2 opens a symbol-rename dialog with an edit preview; applying it is one project undo step. Shift+Alt+F formats XAML source/selection while preserving literal XML content, or normalizes a C# document with Roslyn. Ctrl+. displays applicable source actions. Resource and auxiliary C# editors expose the same commands. An XAML name can be renamed from its XAML declaration/reference or its generated C# field use; both routes update XAML and C# together.
+
+C# editors provide accessible-symbol completion, hover, method/constructor signature help,
+definitions and references through the reusable `CSharpLanguageService` in `XamlG.Tooling`.
+Definition navigation opens the owning Dockyard document. The generated-C# inspector
+selects every emitted file, including loader adapters, as read-only source. The same
+operations are exposed as `xamlg_csharp_*` tools, with explicit result bounds and source
+revision checks for edits. Interactive editor operations work with agent access disabled.
+
+`CSharpRenameService` verifies compilation and identifier bindings before returning an
+atomic source plan. It rejects source collisions, silent local capture, unresolved
+compilations, inheritance/interface contracts and generated dependencies requiring
+framework-aware edits. The browser routes XAML-generated field renames to XAML's existing
+rename service. General C# type/member renames across XAML and inheritance hierarchies
+remain outside this service's current coverage. Formatting uses Roslyn's syntax whitespace
+normalizer; it does not implement desktop `.editorconfig` formatting options. Source
+actions currently offer explicit/inferred local types and verify the resulting type and
+diagnostics, including nullable and target-typed expressions.
 
 The project-wide transaction history covers XAML, C#, resource edits and resource additions/removals. Toolbar Undo/Redo and Monaco project shortcuts use that history. New typing is captured before commands, conflicting or stale previews are rejected atomically, and source commands never execute the preview. The main syntax revision remains monotonic across undo so stale visuals cannot be mistaken for the current source.

@@ -208,19 +208,11 @@ public partial class App
         AddAutomation<PositionArguments>("csharp_symbol", "Inspect the Roslyn symbol, type, constant and declaration locations at a C# source offset.", AutomationScope.Compiler, AutomationEffect.Read,
             (args, context) =>
             {
-                var tree = CSharpTree(args.Path, context.CancellationToken); var root = tree.GetRoot(context.CancellationToken);
-                if (args.Offset < 0 || args.Offset >= root.FullSpan.End) throw new ArgumentException("Offset out of bounds.");
-                var node = root.FindToken(args.Offset).Parent!; var model = _result!.Compilation.GetSemanticModel(tree);
-                ISymbol? symbol = null; ITypeSymbol? type = null; Optional<object?> constant = default;
-                foreach (var candidate in node.AncestorsAndSelf())
-                {
-                    symbol = model.GetDeclaredSymbol(candidate, context.CancellationToken) ?? model.GetSymbolInfo(candidate, context.CancellationToken).Symbol;
-                    if (symbol != null) { type = model.GetTypeInfo(candidate, context.CancellationToken).Type; constant = model.GetConstantValue(candidate, context.CancellationToken); break; }
-                }
-                return new { revision = SourceRevision, symbol = symbol?.ToDisplayString(), kind = symbol?.Kind.ToString(), type = type?.ToDisplayString(),
-                    hasConstant = constant.HasValue, constant = constant.HasValue ? constant.Value : null,
-                    locations = symbol?.Locations.Where(l => l.IsInSource).Select(l => new { path = l.SourceTree!.FilePath, start = l.SourceSpan.Start, length = l.SourceSpan.Length }) };
+                var symbol = CSharpLanguage(context.CancellationToken).GetSymbol(args.Path, args.Offset, context.CancellationToken);
+                return new { revision = SourceRevision, symbol = symbol?.Display, kind = symbol?.Kind, type = symbol?.Type,
+                    hasConstant = symbol?.HasConstant ?? false, constant = symbol?.Constant, locations = symbol?.Locations };
             });
+        AddCSharpAutomation();
         AddAutomation<DesignerEditArguments>("designer_edit", "Edit XAML properties or structure without executing the preview. Uses revision-checked source transactions and undo.", AutomationScope.Designer, AutomationEffect.Edit,
             (args, context) =>
             {
@@ -324,6 +316,9 @@ public partial class App
     }
     private BrowserCompilation AnalyzeAutomation(CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
+        if (_result != null && ReferenceEquals(_result.Analysis.Syntax, _document.Current) && _result.CodeText == _code &&
+            _result.ResourceRevision == Compiler.Resources.Revision && _result.CodeRevision == Compiler.CodeFiles.Revision) return _result;
         _result = Compiler.Analyze(_document.Current, _code, cancellationToken: token);
         return _result;
     }

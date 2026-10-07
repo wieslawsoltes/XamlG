@@ -49,14 +49,14 @@
                 <button class="@(_editorTab == "xaml" ? "active" : "")" @onclick='() => _editorTab = "xaml"' role="tab" aria-selected="@(_editorTab == "xaml")">◇ &nbsp; View.axaml</button>
                 <button class="@(_editorTab == "code" ? "active" : "")" @onclick='() => _editorTab = "code"' role="tab" aria-selected="@(_editorTab == "code")"># &nbsp; Code.cs</button>
                 <span class="tab-spacer"></span><div class="authoring-shortcuts">
-                    <button @onclick='() => RequestMainCommandAsync("rename")' disabled="@(!_ready || _busy)" title="Rename XAML name (F2)">Rename</button>
-                    <button @onclick='() => RequestMainCommandAsync("format")' disabled="@(!_ready || _busy)" title="Format XAML (Shift+Alt+F)">Format</button>
-                    <button @onclick='() => RequestMainCommandAsync("actions")' disabled="@(!_ready || _busy)" title="XAML code actions (Ctrl+.)">Actions</button>
+                    <button @onclick='() => RequestMainCommandAsync("rename")' disabled="@(!_ready || _busy)" title="Rename symbol (F2)">Rename</button>
+                    <button @onclick='() => RequestMainCommandAsync("format")' disabled="@(!_ready || _busy)" title="Format source (Shift+Alt+F)">Format</button>
+                    <button @onclick='() => RequestMainCommandAsync("actions")' disabled="@(!_ready || _busy)" title="Source actions (Ctrl+.)">Actions</button>
                 </div><small>revision @_document.Current.Version</small>
             </div>
             <div class="editor-stack">
                 <div class="editor-page @(_editorTab == "xaml" ? "visible" : "")"><CodeEditor @ref="_xamlEditor" Text="@_document.Current.Text" TextChanged="XamlChangedAsync" Language="xml" DocumentPath="View.axaml" AuthoringRequested="AuthoringCommandAsync" RunRequested="RunCurrentModeAsync" /></div>
-                <div class="editor-page @(_editorTab == "code" ? "visible" : "")"><CodeEditor @ref="_codeEditor" Text="@_code" TextChanged="CodeChangedAsync" Language="csharp" DocumentPath="Code.cs" AuthoringRequested="AuthoringCommandAsync" RunRequested="RunCurrentModeAsync" /></div>
+                <div class="editor-page @(_editorTab == "code" ? "visible" : "")"><CodeEditor @ref="_codeEditor" Text="@_code" TextChanged="CodeChangedAsync" Language="csharp" DocumentPath="Code.cs" AuthoringRequested="AuthoringCommandAsync" RunRequested="RunCurrentModeAsync" LanguageQueryRequested="EditorLanguageQueryAsync" NavigateRequested="NavigateCSharpAsync" /></div>
             </div>
 
         </section>
@@ -97,9 +97,14 @@
                 }
             </div>
             <div class="inspector-body">
-                <div class="inspector-page @(_inspectorTab == "C# output" ? "visible" : "")"><CodeEditor Text="@(_result?.Analysis.Output.Source ?? "// Generated C# appears here after compilation.\n")" Language="csharp" ReadOnly="true" /></div>
+                <div class="inspector-page generated-code @(_inspectorTab == "C# output" ? "visible" : "")">
+                    <select aria-label="Generated C# file" value="@SelectedGeneratedPath" @onchange="GeneratedPathChanged">
+                        @foreach (var path in GeneratedPaths) { <option value="@path">@path</option> }
+                    </select>
+                    <CodeEditor @key="SelectedGeneratedPath" @ref="_generatedEditor" Text="@GeneratedText" DocumentPath="@SelectedGeneratedPath" Language="csharp" ReadOnly="true" LanguageQueryRequested="EditorLanguageQueryAsync" NavigateRequested="NavigateCSharpAsync" />
+                </div>
                 <div class="resource-container" style="display:@(_inspectorTab == "C# files" ? "block" : "none")">
-                    <ProjectCode @ref="_projectCodeEditor" Documents="Compiler.CodeFiles" Busy="_busy" Changed="ProjectCodeChangedAsync" RunRequested="RunCurrentModeAsync" AuthoringRequested="AuthoringCommandAsync" />
+                    <ProjectCode @ref="_projectCodeEditor" Documents="Compiler.CodeFiles" Busy="_busy" Changed="ProjectCodeChangedAsync" RunRequested="RunCurrentModeAsync" AuthoringRequested="AuthoringCommandAsync" LanguageQueryRequested="EditorLanguageQueryAsync" NavigateRequested="NavigateCSharpAsync" />
                 </div>
                 <div class="resource-container" style="display:@(_inspectorTab == "Resources" ? "block" : "none")">
                     <ProjectResources @ref="_resourceEditor" Documents="Compiler.Resources" Result="_result" Busy="@(_busy || _fileMoveWorking)" Changed="ResourceChangedAsync" LoadExample="LoadResourceExampleAsync" RunRequested="RunCurrentModeAsync" AuthoringRequested="AuthoringCommandAsync" RenameRequested="OpenFileMoveAsync" />
@@ -176,7 +181,7 @@
     </section>
 }
 
-<AuthoringDialog RenameVisible="_renameVisible" ActionsVisible="_actionsVisible" Busy="_busy"
+<AuthoringDialog RenameVisible="_renameVisible" ActionsVisible="_actionsVisible" Busy="_busy" IsCSharp="@(_authoringRequest != null && IsCSharpPath(_authoringRequest.Path))"
     OriginalName="@_renameOriginal" NewName="@_renameName" NewNameChanged="RenameNameChanged"
     Plan="_renamePlan" Actions="_codeActions" Error="@_authoringError" Preview="PreviewRenameAsync"
     Apply="ApplyRenameAsync" Cancel="CloseAuthoring" ActionSelected="ApplyCodeActionAsync" />

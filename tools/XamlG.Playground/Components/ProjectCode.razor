@@ -17,7 +17,8 @@
         <small>@document.Path · revision @document.Version</small>
         <div class="project-code-editor">
             <CodeEditor @key="(document.Path, _editorEpoch)" @ref="_editor" Text="@document.Text" Language="csharp"
-                TextChanged="text => ChangeAsync(document, text)" RunRequested="RunRequested" DocumentPath="@document.Path" AuthoringRequested="AuthoringRequested" />
+                TextChanged="text => ChangeAsync(document, text)" RunRequested="RunRequested" DocumentPath="@document.Path" AuthoringRequested="AuthoringRequested"
+                LanguageQueryRequested="LanguageQueryRequested" NavigateRequested="NavigateRequested" />
         </div>
     }
     else { <p class="empty">Add C# models, controls and partial classes. All source files share the same XAML compilation and preview assembly.</p> }
@@ -29,11 +30,14 @@
     [Parameter] public EventCallback Changed { get; set; }
     [Parameter] public EventCallback<EditorCommandRequest> AuthoringRequested { get; set; }
     [Parameter] public EventCallback RunRequested { get; set; }
+    [Parameter] public Func<CSharpEditorQuery, Task<System.Text.Json.JsonElement>>? LanguageQueryRequested { get; set; }
+    [Parameter] public EventCallback<CSharpNavigationRequest> NavigateRequested { get; set; }
     private string _activePath = "", _newPath = "Models/Model.cs";
     private string? _error;
     private CodeEditor? _editor;
     private CSharpProjectDocument? _lastObserved;
     private long _editorEpoch;
+    private TextSpan? _pendingReveal;
     private CSharpProjectDocument? Active => Documents.Snapshot.GetValueOrDefault(_activePath);
 
     protected override void OnParametersSet() => SynchronizeSelection();
@@ -103,5 +107,11 @@
     {
         if (!Documents.Snapshot.ContainsKey(path)) return;
         Activate(path); StateHasChanged();
+    }
+    public void Reveal(string path, TextSpan span) { SelectDocument(path); _pendingReveal = span; }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingReveal is { } span && _editor != null)
+        { _pendingReveal = null; await _editor.RevealAsync(span); }
     }
 }

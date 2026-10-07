@@ -51,6 +51,7 @@ test('linked projects run isolated and deleted dependencies report source errors
   await expect(page.getByLabel('Project resource', { exact: true })).toHaveValue('Styles/Buttons.axaml');
   await page.getByRole('button', { name: 'Compile', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Compilation has errors');
+  await page.getByRole('tab', { name: 'Problems', exact: true }).click();
   await expect(page.locator('.diagnostics')).toContainText('XG3301');
   await expect(page.locator('.diagnostics')).toContainText('Resources/Palette.axaml');
 });

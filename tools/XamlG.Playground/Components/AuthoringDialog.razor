@@ -3,8 +3,8 @@
 @if (RenameVisible || ActionsVisible)
 {
     <div class="authoring-backdrop" @onkeydown="KeyDown" @onkeydown:stopPropagation="true">
-        <section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="@(RenameVisible ? "Rename XAML name" : "XAML code actions")" tabindex="-1" @ref="_dialog">
-            <header><h2>@(RenameVisible ? "Rename " + OriginalName : "XAML code actions")</h2><button aria-label="Close authoring dialog" @onclick="Cancel">✕</button></header>
+        <section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="@(RenameVisible ? (IsCSharp ? "Rename C# symbol" : "Rename XAML name") : "Source code actions")" tabindex="-1" @ref="_dialog">
+            <header><h2>@(RenameVisible ? "Rename " + OriginalName : "Source code actions")</h2><button aria-label="Close authoring dialog" @onclick="Cancel">✕</button></header>
             @if (RenameVisible)
             {
                 <p>Review changes across XAML and code-behind. Applying them creates one project undo step; it does not execute the preview.</p>
@@ -39,6 +39,7 @@
     [Parameter] public bool RenameVisible { get; set; }
     [Parameter] public bool ActionsVisible { get; set; }
     [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool IsCSharp { get; set; }
     [Parameter] public string OriginalName { get; set; } = string.Empty;
     [Parameter] public string NewName { get; set; } = string.Empty;
     [Parameter] public EventCallback<string> NewNameChanged { get; set; }
