@@ -6,7 +6,7 @@ using XamlG.Syntax;
 
 namespace XamlG.Frameworks.Avalonia.Bindings;
 
-internal sealed class BindingSourceResolver(BindingContext context, ObjectBindingBuilder target)
+internal sealed class BindingSourceResolver(BindingContext context)
 {
     public (INamedTypeSymbol? Type, ITypeSymbol? DataType) Named(string name, TextSpan span)
     {
@@ -27,10 +27,11 @@ internal sealed class BindingSourceResolver(BindingContext context, ObjectBindin
             if (level < 0) { context.Report("XG3204", "The parent level must be non-negative.", segment.Span); return (null, null, 0); }
         }
         var styled = context.Types.Find(AvaloniaStyleMetadata.StyledElement)!;
-        var candidates = context.Ancestors.Where(a => !ReferenceEquals(a, target) && context.Types.Compilation.ClassifyCommonConversion(a.Type, styled).IsImplicit)
+        var candidates = context.Ancestors.Where(a => context.Types.Compilation.ClassifyCommonConversion(a.Type, styled).IsImplicit).Skip(1)
             .Where(a => type == null || context.Types.Compilation.ClassifyCommonConversion(a.Type, type).IsImplicit).ToArray();
         var parent = candidates.ElementAtOrDefault(level);
-        type ??= parent?.Type ?? context.Types.Find(AvaloniaMetadata.Control);
+        type ??= parent?.Type;
+        if (type == null) context.Report("XG3204", "An implicit ancestor requires a matching parent in the XAML tree.", segment.Span);
         var data = parent != null && parent.Annotations.TryGet(AvaloniaBindingScope.Key, out var known) ? known.DataType : null;
         return (type, data, level);
     }

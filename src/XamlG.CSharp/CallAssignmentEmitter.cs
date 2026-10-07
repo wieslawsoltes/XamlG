@@ -1,13 +1,20 @@
 using XamlG.Compiler;
 using XamlG.Roslyn;
+using Microsoft.CodeAnalysis;
 
 namespace XamlG.CSharp;
 
 internal sealed class CallAssignmentEmitter(EmissionContext context, ValueEmitter values)
 {
-    public void Emit(BoundCallAssignment assignment, string target, string frame)
+    public void Emit(BoundCallAssignment assignment, ITypeSymbol ownerType, string target, string frame)
     {
         var writer = context.Writer;
+        if (assignment.TargetMember is { } member)
+        {
+            var receiver = context.Temporary("callReceiver");
+            writer.Line("var " + receiver + " = " + AssignmentEmitter.Get(member, ownerType, target) + ";");
+            target = receiver;
+        }
         if (assignment.TargetDescriptor != null)
         {
             var local = context.Temporary("callTarget");

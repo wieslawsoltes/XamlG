@@ -105,6 +105,49 @@ public sealed class InterceptedLoaderAnalyzerTests
         Assert.Empty(result);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task PrecompileOptOutExemptsOnlyTheExcludedComponent(bool anotherDocument, bool sameClass)
+    {
+        const string ns = "xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'";
+        var files = ImmutableArray.CreateBuilder<AdditionalText>();
+        files.Add(new InMemoryAdditionalText("Skipped.axaml", "<Missing " + ns + " x:Class='Model.View' x:Precompile='False'/>"));
+        if (anotherDocument) files.Add(new InMemoryAdditionalText("Included.axaml", "<Missing " + ns + (sameClass ? " x:Class='Model.View'" : "") + "/>"));
+        var options = new AnalyzerOptions(files.ToImmutable(), new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string>
+            { ["build_property.XamlGFramework"] = "Avalonia" }));
+        var diagnostics = await Create(Source).WithAnalyzers(ImmutableArray.Create<DiagnosticAnalyzer>(new AvaloniaLoaderMigrationAnalyzer()), options).GetAnalyzerDiagnosticsAsync();
+        Assert.Equal(sameClass ? 1 : 0, diagnostics.Length);
+        if (sameClass) Assert.Equal("XG2001", Assert.Single(diagnostics).Id);
+    }
+
+    [Fact]
+    public async Task OptOutResolvesNamedArgumentsByParameter()
+    {
+        var source = Source.Replace("Load(object instance)", "Load(System.IServiceProvider services, object instance)", StringComparison.Ordinal)
+            .Replace("Load(this)", "Load(instance: this, services: null)", StringComparison.Ordinal);
+        var files = ImmutableArray.Create<AdditionalText>(
+            new InMemoryAdditionalText("Skipped.axaml", "<Missing xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' x:Class='Model.View' x:Precompile='False'/>"),
+            new InMemoryAdditionalText("Included.axaml", "<Missing/>"));
+        var options = new AnalyzerOptions(files, new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string> { ["build_property.XamlGFramework"] = "Avalonia" }));
+        var diagnostics = await Create(source).WithAnalyzers(ImmutableArray.Create<DiagnosticAnalyzer>(new AvaloniaLoaderMigrationAnalyzer()), options).GetAnalyzerDiagnosticsAsync();
+        Assert.Empty(diagnostics);
+    }
+
+    [Fact]
+    public async Task APartialOptOutDoesNotExemptUnrelatedLoaderCalls()
+    {
+        var source = Source + "\npublic class Other { public void Initialize() => Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this); }";
+        var files = ImmutableArray.Create<AdditionalText>(
+            new InMemoryAdditionalText("Skipped.axaml", "<Missing xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' x:Class='Model.View' x:Precompile='False'/>"),
+            new InMemoryAdditionalText("Included.axaml", "<Missing/>"));
+        var options = new AnalyzerOptions(files, new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string> { ["build_property.XamlGFramework"] = "Avalonia" }));
+        var diagnostics = await Create(source).WithAnalyzers(ImmutableArray.Create<DiagnosticAnalyzer>(new AvaloniaLoaderMigrationAnalyzer()), options).GetAnalyzerDiagnosticsAsync();
+        Assert.Equal("XG2001", Assert.Single(diagnostics).Id);
+        Assert.True(diagnostics[0].Location.SourceSpan.Start > Source.Length);
+    }
+
     private static CSharpCompilation Create(string source)
     {
         var options = XamlCSharpCompilation.GeneratedParseOptions(new CSharpParseOptions(LanguageVersion.Preview));

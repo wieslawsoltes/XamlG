@@ -100,7 +100,7 @@ internal sealed class AssignmentEmitter
                 break;
             }
             case BoundCallAssignment call:
-                new CallAssignmentEmitter(_context, _values).Emit(call, target, frame);
+                new CallAssignmentEmitter(_context, _values).Emit(call, owner.Type, target, frame);
                 break;
             case BoundDynamicSetAssignment dynamicSet: Dynamic(dynamicSet, owner.Type, target, frame); break;
             case BoundAdaptedSetAssignment adapted:

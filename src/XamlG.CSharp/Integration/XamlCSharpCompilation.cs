@@ -29,7 +29,7 @@ public static class XamlCSharpCompilation
     {
         if (project == null) throw new ArgumentNullException(nameof(project));
         foreach (var document in project.Documents)
-            if (document.Output.Success) yield return new(document.Output.HintName, document.Output.Source);
+            if (document.Output.Success && !document.Output.IsSkipped) yield return new(document.Output.HintName, document.Output.Source);
         if (project.SourceIntegration.Source.Length != 0)
             yield return new(XamlSourceIntegrationResult.HintName, project.SourceIntegration.Source);
     }

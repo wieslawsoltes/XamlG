@@ -15,7 +15,7 @@ public sealed class AvaloniaOptionMarkupRule : IXamlObjectExpressionRule, IXamlM
         "ShouldProvideOption", "Avalonia.Metadata.MarkupExtensionOptionAttribute",
         "Avalonia.Metadata.MarkupExtensionDefaultOptionAttribute",
         ImmutableArray.Create("Avalonia.Markup.Xaml.MarkupExtensions.On", "Avalonia.Markup.Xaml.MarkupExtensions.On`1"),
-        "Options", "Content"));
+        "Options", "Content") { AllowRepeatedAssignments = true, UseFirstMatchingPredicate = true });
 
     public bool TryBind(BindingContext context, XamlElementSyntax syntax, ITypeSymbol targetType,
         NamespaceScope parentScope, int nameScope, out BoundExpression? expression)

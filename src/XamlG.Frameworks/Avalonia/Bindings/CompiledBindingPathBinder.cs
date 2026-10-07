@@ -20,7 +20,7 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
         var type = initialSource?.SourceType ?? sourceType;
         var writable = false;
         ITypeSymbol? rootedDataType = initialSource?.DataType;
-        var resolver = new BindingSourceResolver(context, target);
+        var resolver = new BindingSourceResolver(context);
         for (var index = 0; index < syntax.Segments.Length; index++)
         {
             context.Cancellation.ThrowIfCancellationRequested();
@@ -62,7 +62,7 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
                     { context.Report("XG3205", "An attached-property path requires a registered property field.", segment.Span); return null; }
                     var attached = _accessors.Registered(registered, segment.Span);
                     if (attached == null) return null;
-                    builder = _expressions.Call(builder, "Property", segment.Span, attached.PropertyInfo, attached.Factory);
+                    builder = Property(builder, attached, segment);
                     type = attached.ValueType; writable = attached.CanWrite;
                     break;
                 case BindingPathKind.Property:
@@ -74,7 +74,7 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
                         context.Symbols.Add(new(segment.Span, (ISymbol?)property ?? registeredProperty.Field, "binding-member"));
                         var registeredAccessor = _accessors.Registered(registeredProperty, segment.Span);
                         if (registeredAccessor == null) return null;
-                        builder = _expressions.Call(builder, "Property", segment.Span, registeredAccessor.PropertyInfo, registeredAccessor.Factory);
+                        builder = Property(builder, registeredAccessor, segment);
                         type = registeredAccessor.ValueType; writable = registeredAccessor.CanWrite;
                         if (builder != null && sourceDataType != null &&
                             registeredProperty.Field.Name == AvaloniaBindingMetadata.DataContext + AvaloniaMetadata.PropertySuffix &&
@@ -85,16 +85,17 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
                     var field = property == null ? type.Members(segment.Name).OfType<IFieldSymbol>().FirstOrDefault(f => !f.IsStatic && context.Types.IsAccessible(f)) : null;
                     if (property == null && field == null)
                     {
-                        if (commandTarget && index == syntax.Segments.Length - 1)
+                        if (type.Members(segment.Name).OfType<IMethodSymbol>().Any())
                         {
-                            builder = Command(builder, type, segment);
-                            type = context.Types.Find(AvaloniaBindingMetadata.Command); writable = false; break;
+                            var command = commandTarget && index == syntax.Segments.Length - 1;
+                            builder = new CompiledBindingMethodBinder(context).Bind(builder, type, segment, command);
+                            type = context.Types.Find(command ? AvaloniaBindingMetadata.Command : "System.Delegate"); writable = false; break;
                         }
                         context.Report("XG3205", $"Readable member '{segment.Name}' does not exist on '{type.ToDisplayString()}'.", segment.Span); return null;
                     }
                     var accessor = _accessors.Property(type, (ISymbol?)property ?? field!, ImmutableArray<BoundExpression>.Empty, segment.Span);
                     if (accessor == null) return null;
-                    builder = _expressions.Call(builder, "Property", segment.Span, accessor.PropertyInfo, accessor.Factory);
+                    builder = Property(builder, accessor, segment);
                     type = accessor.ValueType; writable = accessor.CanWrite;
                     break;
                 case BindingPathKind.Indexer:
@@ -141,10 +142,10 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
                     if (type == null) { MissingDataType(segment); return null; }
                     var task = FindGeneric(type, AvaloniaBindingMetadata.Task);
                     var observable = FindGeneric(type, AvaloniaBindingMetadata.Observable);
-                    var stream = task ?? observable;
+                    var stream = observable ?? task;
                     if (stream == null) { context.Report("XG3207", $"'{type}' is not a statically typed task or observable.", segment.Span); return null; }
                     type = stream.TypeArguments[0];
-                    builder = _expressions.GenericCall(builder, task != null ? "StreamTask" : "StreamObservable", type, segment.Span); writable = false;
+                    builder = _expressions.GenericCall(builder, observable != null ? "StreamObservable" : "StreamTask", type, segment.Span); writable = false;
                     break;
                 default: throw new InvalidOperationException("Unknown binding path segment.");
             }
@@ -154,40 +155,11 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
         return path == null ? null : new(path, type, writable);
     }
 
-    private BoundExpression? Command(BoundExpression builder, ITypeSymbol type, BindingPathSegment segment)
-    {
-        var methods = type.Members(segment.Name).OfType<IMethodSymbol>()
-            .Where(m => !m.IsStatic && !m.IsGenericMethod && m.Parameters.Length <= 1 && m.Parameters.All(p => p.RefKind == RefKind.None) && context.Types.IsAccessible(m)).ToArray();
-        if (methods.Length != 1) { context.Report("XG3208", "A command binding requires one accessible method with zero or one parameter: " + segment.Name, segment.Span); return null; }
-        var method = methods[0];
-        var commandMethod = builder.Type!.Members("Command").OfType<IMethodSymbol>().Single(m => m.Parameters.Length == 4);
-        var objectType = context.Types.Special(SpecialType.System_Object);
-        var targetParameter = new BoundParameterExpression("target", objectType, segment.Span);
-        var valueParameter = new BoundParameterExpression("value", objectType, segment.Span);
-        var receiver = new BoundCastExpression(targetParameter, method.ContainingType, segment.Span);
-        var arguments = method.Parameters.Length == 0 ? ImmutableArray<BoundExpression>.Empty : ImmutableArray.Create<BoundExpression>(new BoundCastExpression(valueParameter, method.Parameters[0].Type, segment.Span));
-        BoundExpression execute = new BoundLambdaExpression((INamedTypeSymbol)commandMethod.Parameters[1].Type,
-            ImmutableArray.Create(targetParameter, valueParameter), new BoundCallExpression(method, receiver, arguments, segment.Span), true, segment.Span);
-        BoundExpression canExecute = new BoundConstantExpression(null, commandMethod.Parameters[2].Type, segment.Span);
-        var canName = "Can" + method.Name;
-        var canMethod = type.Members(canName).OfType<IMethodSymbol>().FirstOrDefault(m => !m.IsStatic && !m.IsGenericMethod && m.ReturnType.SpecialType == SpecialType.System_Boolean &&
-            m.Parameters.Length == method.Parameters.Length && m.Parameters.Select((p, i) => SymbolEqualityComparer.Default.Equals(p.Type, method.Parameters[i].Type)).All(v => v) && context.Types.IsAccessible(m));
-        var canProperty = type.Members(canName).OfType<IPropertySymbol>().FirstOrDefault(p => !p.IsStatic && p.Type.SpecialType == SpecialType.System_Boolean && p.GetMethod != null && context.Types.IsAccessible(p.GetMethod));
-        if (canMethod != null || canProperty != null)
-        {
-            BoundExpression body = canMethod != null ? new BoundCallExpression(canMethod, receiver, arguments, segment.Span) :
-                new BoundPropertyAccessExpression(receiver, canProperty!, ImmutableArray<BoundExpression>.Empty, segment.Span);
-            canExecute = new BoundLambdaExpression((INamedTypeSymbol)commandMethod.Parameters[2].Type, ImmutableArray.Create(targetParameter, valueParameter), body, true, segment.Span);
-        }
-        var dependencies = (canMethod as ISymbol ?? canProperty)?.GetAttributes()
-            .Where(a => a.AttributeClass?.HasMetadataName(AvaloniaBindingMetadata.DependsOn) == true)
-            .SelectMany(a => a.ConstructorArguments).Where(a => a.Value is string).Select(a => (string)a.Value!).ToList() ?? new List<string>();
-        if (canProperty != null) dependencies.Add(canProperty.Name);
-        var strings = context.Types.Compilation.CreateArrayTypeSymbol(context.Types.Special(SpecialType.System_String));
-        context.Symbols.Add(new(segment.Span, method, "binding-command"));
-        return _expressions.Call(builder, "Command", segment.Span, _expressions.Text(method.Name, segment.Span), execute, canExecute,
-            new BoundArrayExpression(dependencies.Distinct(StringComparer.Ordinal).Select(d => _expressions.Text(d, segment.Span)).ToImmutableArray(), strings, segment.Span));
-    }
+    private BoundExpression? Property(BoundExpression builder, BindingAccessor accessor, BindingPathSegment segment) => segment.AcceptsNull
+        ? _expressions.Call(builder, "Property", segment.Span, accessor.PropertyInfo, accessor.Factory,
+            _expressions.Constant(true, context.Types.Special(SpecialType.System_Boolean), segment.Span))
+        : _expressions.Call(builder, "Property", segment.Span, accessor.PropertyInfo, accessor.Factory);
+
     private void MissingDataType(BindingPathSegment segment) => context.Report("XG3209", "Compiled binding needs x:DataType, an explicit DataType, or a statically typed source before '" + segment.Name + "'.", segment.Span);
     private static INamedTypeSymbol? FindGeneric(ITypeSymbol type, string name)
     {

@@ -19,7 +19,7 @@ public static class XamlResourceCatalogBuilder
         {
             cancellationToken.ThrowIfCancellationRequested();
             var root = input.Syntax.Root;
-            if (root == null || !options.GenerateBuildMethod) continue;
+            if (root == null || !options.GenerateBuildMethod || !profile.Directives.ShouldCompile(input.Syntax, options)) continue;
             var scope = NamespaceScope.Empty.Push(root);
             var classDirective = scope.Directive(root, "Class");
             var classType = classDirective == null ? null : types.Find(classDirective.Value);

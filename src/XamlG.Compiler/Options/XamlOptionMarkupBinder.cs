@@ -51,7 +51,7 @@ public sealed class XamlOptionMarkupBinder(XamlOptionMarkupConfiguration configu
             var option = Attribute(property, configuration.OptionAttribute);
             var isDefault = Attribute(property, configuration.DefaultAttribute) != null;
             if (option == null && !isDefault) return false;
-            if (!seen.Add(name)) { Error("The option is assigned more than once: " + name, span); return true; }
+            if (!seen.Add(name) && !configuration.AllowRepeatedAssignments) { Error("The option is assigned more than once: " + name, span); return true; }
             var value = Value(nodes, valueScope, span);
             if (value == null) return true;
             if (isDefault) { fallback = value; hasFallback = true; return true; }
@@ -65,6 +65,7 @@ public sealed class XamlOptionMarkupBinder(XamlOptionMarkupConfiguration configu
                 var converted = Constant(context, optionValue, parameter, valueScope, span);
                 if (converted != null) candidates.Add((predicate, converted,
                     SymbolEqualityComparer.Default.Equals(optionValue.Type, parameter) ? 0 : 1));
+                if (converted != null && configuration.UseFirstMatchingPredicate) break;
             }
             var ranked = candidates.OrderBy(c => c.Rank).ToArray();
             if (ranked.Length == 0 || ranked.Length > 1 && ranked[0].Rank == ranked[1].Rank)

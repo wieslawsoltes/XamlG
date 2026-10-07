@@ -13,6 +13,9 @@ public sealed class CSharpEmitter
     public XamlEmissionResult Emit(BoundDocument document, CancellationToken cancellationToken = default)
     {
         var context = new EmissionContext(document, cancellationToken);
+        if (document.IsSkipped)
+            return new(context.Id + ".xaml.g.cs", string.Empty, string.Empty, null, string.Empty,
+                context.Diagnostics.ToImmutableArray(), ImmutableArray<XamlSourceMapping>.Empty) { IsSkipped = true };
         var writer = context.Writer;
         var augment = document.ClassSymbol != null && document.CanAugmentClass;
         var typeName = augment ? document.ClassSymbol!.ToDisplayString() : document.Options.GeneratedNamespace + ".Document_" + context.Id;
@@ -36,7 +39,7 @@ public sealed class CSharpEmitter
         var nesting = containers.Count;
         if (containers.Count == 0)
         {
-            var accessibility = root.Type.DeclaredAccessibility == Accessibility.Public ? "public" : "internal";
+            var accessibility = root.Type.DeclaredAccessibility == Accessibility.Public && document.ClassModifier == "public" ? "public" : "internal";
             writer.Open(accessibility + " static class Document_" + context.Id);
         }
         else

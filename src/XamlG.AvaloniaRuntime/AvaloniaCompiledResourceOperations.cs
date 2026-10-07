@@ -7,6 +7,11 @@ namespace XamlG.AvaloniaRuntime;
 /// <summary>Direct dictionary operations emitted for statically resolved merge includes. Never loads or parses XAML.</summary>
 public static class AvaloniaCompiledResourceOperations
 {
+    public static void EnsureCapacity(object? target, int additionalCount)
+    {
+        if (target is ResourceDictionary dictionary) dictionary.EnsureCapacity(dictionary.Count + additionalCount);
+    }
+
     public static void Merge(ResourceDictionary target, ResourceDictionary source)
     {
         ArgumentNullException.ThrowIfNull(target); ArgumentNullException.ThrowIfNull(source);

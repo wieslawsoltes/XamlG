@@ -48,16 +48,40 @@ internal sealed class LoaderSourceEmitter(CSharpCompilation compilation, XamlPro
     {
         Line("private static void Populate(object instance, global::System.IServiceProvider? services) {");
         Line("if (instance is null) throw new global::System.ArgumentNullException(nameof(instance));");
-        var targets = project.Documents.Where(d => d.Output.Success && d.Document.ClassSymbol != null && d.Document.Options.GenerateInitializeComponent &&
-            XamlLoaderAdapterCompiler.CanReference(compilation, d.Document.ClassSymbol)).OrderByDescending(d => Depth(d.Document.ClassSymbol!));
+        var compiled = project.Documents.Where(d => d.Output.Success && !d.Document.IsSkipped && d.Document.ClassSymbol != null && d.Document.Options.GenerateInitializeComponent &&
+            XamlLoaderAdapterCompiler.CanReference(compilation, d.Document.ClassSymbol)).ToArray();
+        var original = OriginalLoader(uri: false);
+        var skipped = project.Documents.Where(d => d.Document.IsSkipped && d.Document.ClassSymbol != null &&
+            !compiled.Any(active => SymbolEqualityComparer.Default.Equals(active.Document.ClassSymbol, d.Document.ClassSymbol)));
+        // The most specific declaration wins even when an opted-out component and a
+        // compiled component inherit from one another.
+        var targets = compiled.Concat(original == null ? Enumerable.Empty<XamlProjectDocumentResult>() : skipped)
+            .OrderByDescending(d => Depth(d.Document.ClassSymbol!));
         var index = 0;
         foreach (var target in targets)
         {
+            if (target.Document.IsSkipped)
+            {
+                var type = target.Document.ClassSymbol!;
+                Line("if (IsInstanceOf(instance, " + CSharpNames.Literal(type.MetadataName()) + ", " + CSharpNames.Literal(type.ContainingAssembly.Identity.Name) +
+                    ")) { " + OriginalCall(original!, "instance") + "; return; }");
+                continue;
+            }
             var variable = "__root" + index++;
             Line("if (instance is " + target.Document.ClassSymbol!.CSharpName() + " " + variable + ") { " + Initializer(target) + "(" + variable + ", services); return; }");
         }
         Line("throw new global::System.InvalidOperationException(\"No compiled XamlG component initializer matches \" + instance.GetType().FullName);");
         Line("}");
+        if (original != null && skipped.Any())
+        {
+            Line("private static bool IsInstanceOf(object instance, string name, string assembly) {");
+            Line("for (var type = instance.GetType(); type != null; type = type.BaseType) {");
+            Line("var definition = type.IsGenericType ? type.GetGenericTypeDefinition() : type;");
+            Line("if (definition.FullName == name && definition.Assembly.GetName().Name == assembly) return true;");
+            Line("}");
+            Line("return false;");
+            Line("}");
+        }
     }
     private void EmitUriDispatch()
     {
@@ -82,6 +106,11 @@ internal sealed class LoaderSourceEmitter(CSharpCompilation compilation, XamlPro
             if (factory != null)
                 Line("case " + CSharpNames.Literal(resource.Uri) + ": return " + factory + "(global::XamlG.Runtime.XamlResourceServices.Enter(services ?? EmptyServices.Instance, key));");
         }
+        var optedOutLoader = OriginalLoader(uri: true);
+        if (optedOutLoader != null)
+            foreach (var uri in project.Documents.Where(document => document.Document.IsSkipped && document.ResourceUri != null &&
+                !project.Resources.Resources.Any(resource => resource.Uri == document.ResourceUri)).Select(document => document.ResourceUri!).Distinct(StringComparer.Ordinal))
+                Line("case " + CSharpNames.Literal(uri) + ": return " + OriginalCall(optedOutLoader, "absolute, null") + ";");
         Line("}");
         // Existing referenced binaries already contain compiled code. Preserve their official
         // loader path only when that compiled index is visible in reference metadata. Never
@@ -106,6 +135,18 @@ internal sealed class LoaderSourceEmitter(CSharpCompilation compilation, XamlPro
         Line("}");
         Line("private sealed class EmptyServices : global::System.IServiceProvider { internal static readonly EmptyServices Instance = new EmptyServices(); public object? GetService(global::System.Type type) => null; }");
     }
+    private IMethodSymbol? OriginalLoader(bool uri) => compilation.GetTypeByMetadataName(configuration.TypeMetadataName)?
+        .GetMembers(configuration.MethodName).OfType<IMethodSymbol>()
+        .Where(method => method.IsStatic && !method.IsGenericMethod && method.Parameters.All(parameter => parameter.RefKind == RefKind.None))
+        .Where(method => uri
+            ? method.ReturnType.SpecialType == SpecialType.System_Object && method.Parameters.Length is 2 or 3 &&
+                method.Parameters[method.Parameters.Length - 2].Type.HasMetadataName("System.Uri") && method.Parameters.Last().Type.HasMetadataName("System.Uri") &&
+                (method.Parameters.Length == 2 || method.Parameters[0].Type.HasMetadataName("System.IServiceProvider"))
+            : method.ReturnsVoid && method.Parameters.Length is 1 or 2 && method.Parameters.Last().Type.SpecialType == SpecialType.System_Object &&
+                (method.Parameters.Length == 1 || method.Parameters[0].Type.HasMetadataName("System.IServiceProvider")))
+        .OrderByDescending(method => method.Parameters.Length).FirstOrDefault();
+    private static string OriginalCall(IMethodSymbol method, string arguments) => method.ContainingType.CSharpName() + "." + CSharpNames.Method(method) + "(" +
+        (method.Parameters[0].Type.HasMetadataName("System.IServiceProvider") ? "services, " : string.Empty) + arguments + ")";
     private static string Factory(XamlProjectDocumentResult document) =>
         document.Document.ClassSymbol != null && document.Document.CanAugmentClass
             ? document.Document.ClassSymbol.CSharpName() : "global::" + document.Output.FactoryTypeName;

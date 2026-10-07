@@ -31,6 +31,7 @@ class Inputs(unittest.TestCase):
 <Target Name="Dump" DependsOnTargets="PrepareXamlGAdditionalFiles">
 <WriteLinesToFile File="items.txt" Lines="@(AdditionalFiles->'%(Filename)%(Extension)|%(XamlGLogicalPath)|%(XamlGCompile)|%(Marker)')" Overwrite="true" />
 <WriteLinesToFile File="properties.txt" Lines="$(EnableAvaloniaXamlCompilation)|$(AvaloniaNameGeneratorIsEnabled)" Overwrite="true" />
+<WriteLinesToFile File="unsafe.txt" Lines="unsafe=$(AllowUnsafeBlocks)" Overwrite="true" />
 </Target></Project>''', encoding='utf8')
         result = subprocess.run(['dotnet', 'msbuild', str(project), '-nologo', '-v:q', '-t:Dump', *arguments], cwd=root, capture_output=True, text=True, timeout=90)
         if not success:
@@ -50,6 +51,23 @@ class Inputs(unittest.TestCase):
         lines, flags, _ = self.run_project('<PropertyGroup><XamlGEnabled>false</XamlGEnabled></PropertyGroup>', props='<EnableAvaloniaXamlCompilation>true</EnableAvaloniaXamlCompilation><AvaloniaNameGeneratorIsEnabled>true</AvaloniaNameGeneratorIsEnabled>')
         self.assertEqual(lines, [])
         self.assertEqual(flags, 'true|true')
+    def test_deferred_resource_compilation_setting(self):
+        for framework, avalonia, enabled, original, expected in (
+            ('Avalonia', False, True, 'false', 'true'),
+            ('Auto', True, True, 'false', 'true'),
+            ('Auto', False, True, 'false', 'false'),
+            ('Portable', True, True, 'false', 'false'),
+            ('Avalonia', True, False, 'false', 'false'),
+            ('Auto', True, False, 'false', 'false'),
+            ('Portable', False, True, 'true', 'true'),
+        ):
+            with self.subTest(framework=framework, avalonia=avalonia, enabled=enabled, original=original):
+                props = f'<AllowUnsafeBlocks>{original}</AllowUnsafeBlocks>'
+                if avalonia:
+                    props += '<AvaloniaBuildTasksLocation>test</AvaloniaBuildTasksLocation>'
+                body = f'<PropertyGroup><XamlGFramework>{framework}</XamlGFramework><XamlGEnabled>{str(enabled).lower()}</XamlGEnabled></PropertyGroup>'
+                _, _, root = self.run_project(body, props=props)
+                self.assertEqual((root / 'unsafe.txt').read_text(encoding='utf-8-sig').strip(), f'unsafe={expected}')
     def test_disable_default_items_late(self):
         self.assertEqual(self.run_project('<PropertyGroup><XamlGEnableDefaultItems>false</XamlGEnableDefaultItems></PropertyGroup>')[0], [])
     def test_disable_sdk_defaults_late(self):

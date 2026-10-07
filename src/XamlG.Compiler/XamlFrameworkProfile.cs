@@ -11,6 +11,7 @@ public sealed record XamlFrameworkProfile
     public XamlLoaderConfiguration? SourceLoader { get; init; }
     /// <summary>Maps x:Name to a property assignment in source order. Null retains the portable naming directive.</summary>
     public string? NameDirectiveProperty { get; init; }
+    public IXamlDirectivePolicy Directives { get; init; } = new PortableXamlDirectivePolicy();
     public ImmutableArray<XamlG.Compiler.References.IXamlNameReferenceRule> NameReferenceRules { get; init; } = ImmutableArray.Create<XamlG.Compiler.References.IXamlNameReferenceRule>(new XamlG.Compiler.References.IntrinsicNameReferenceRule());
     public string ResourceScheme { get; init; } = "xamlg";
     public ImmutableDictionary<string, string> ResourceSourceMembers { get; init; } = ImmutableDictionary<string, string>.Empty.WithComparers(StringComparer.Ordinal);

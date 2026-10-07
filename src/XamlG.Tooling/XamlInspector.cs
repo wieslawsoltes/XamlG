@@ -75,6 +75,7 @@ public static class XamlInspector
             BoundPropertyAccessExpression p => p.Property.ToDisplayString(),
             BoundFieldAccessExpression f => f.Field.ToDisplayString(),
             BoundMethodGroupExpression m => m.Method.ToDisplayString(),
+            BoundMethodHandleExpression m => m.Method.ToDisplayString(),
             BoundAssignmentExpression => "Store",
             BoundCallExpression c => c.Method.ToDisplayString(),
             _ => value.GetType().Name

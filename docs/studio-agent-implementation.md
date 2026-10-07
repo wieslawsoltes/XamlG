@@ -50,9 +50,9 @@ SDKs; live paid-account validation, if unavailable, must be reported separately.
 
 The implementation branch is `codex/studio-mcp-agent`, based on `19cb780`.
 Main is merged at implementation checkpoints; the latest merged upstream commit
-is `4797c59` (including structured/collection literals, enum conversions,
-synthetic converter mappings, Avalonia class/setter contracts, literal names and
-string conversions).
+is `46553c8` (including literal/enum conversions, Avalonia class/setter contracts,
+precompilation/visibility directives, the remaining compiled-binding paths and
+transform contracts, and deferred resource callbacks).
 The original checkout contains unrelated local compiler edits and is left intact.
 The locally available pinned SDK is `/tmp/xamlg-dotnet-10.0.401/dotnet`.
 

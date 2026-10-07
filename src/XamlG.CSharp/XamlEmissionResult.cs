@@ -6,5 +6,6 @@ public sealed record XamlEmissionResult(string HintName, string Source, string F
     /// <summary>Reflection metadata name, including '+' for nested code-behind types.
     /// FactoryTypeName remains the C# source name for generated typeof expressions.</summary>
     public string FactoryMetadataName { get; init; } = FactoryTypeName;
-    public bool Success => !Diagnostics.Any(d => d.Severity == XamlSeverity.Error) && Source.Length != 0;
+    public bool IsSkipped { get; init; }
+    public bool Success => !Diagnostics.Any(d => d.Severity == XamlSeverity.Error) && (IsSkipped || Source.Length != 0);
 }

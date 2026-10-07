@@ -6,7 +6,7 @@ public static class MarkupExtensionParser
 {
     public static MarkupExtensionSyntax? Parse(string text, TextSpan span, Action<XamlDiagnostic> report)
     {
-        if (text.Length < 2 || text[0] != '{' || text.StartsWith("{}", StringComparison.Ordinal)) return null;
+        if (text.Length == 0 || text[0] != '{' || text.StartsWith("{}", StringComparison.Ordinal)) return null;
         var end = text.Length;
         if (text[end - 1] != '}') { report(new("XG0010", "Markup extension is missing a closing brace.", span)); } else end--;
         var position = 1; while (position < end && char.IsWhiteSpace(text[position])) position++;

@@ -17,48 +17,36 @@ public sealed class AvaloniaPropertyReferenceTextRule : IXamlTextConversionRule
         if (!targetType.HasMetadataName(AvaloniaLiteralMetadata.Property)) return false;
         var current = context.Ancestors.FirstOrDefault();
         INamedTypeSymbol? owner = null;
-        if (current?.Type.HasMetadataName(AvaloniaLiteralMetadata.TemplateBinding) == true)
+        var scopeKind = member?.GetAttributes().FirstOrDefault(attribute => attribute.AttributeClass?.HasMetadataName("Avalonia.Metadata.InheritDataTypeFromAttribute") == true)
+            ?.ConstructorArguments.FirstOrDefault().Value as int?;
+        if (scopeKind == 2 || current?.Type.HasMetadataName(AvaloniaLiteralMetadata.TemplateBinding) == true)
         {
-            INamedTypeSymbol? styleFallback = null;
-            foreach (var ancestor in context.Ancestors)
-            {
-                if (ReferenceEquals(ancestor, current)) continue;
-                // Use the closest semantic boundary, including a selector entering a
-                // nested template. An unknown selector owner must remain unknown.
-                if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector) && selector.HasTemplateScope)
-                { owner = selector.TemplateOwnerType; break; }
-                if (AvaloniaStyleScope.IsTemplate(ancestor.Type) ||
-                    AvaloniaStyleScope.Is(ancestor.Type, AvaloniaStyleMetadata.ControlTheme))
-                {
-                    if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.TargetType, out var templateType)) owner = templateType;
-                    break;
-                }
-                if (styleFallback == null && ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.TargetType, out var styleType))
-                    styleFallback = styleType;
-            }
-            // A standalone Style has no enclosing theme or concrete ControlTemplate.
-            // Only use its target when there was no intervening template boundary.
-            if (owner == null && !context.Ancestors.Any(ancestor =>
-                AvaloniaStyleScope.IsTemplate(ancestor.Type) ||
-                AvaloniaStyleScope.Is(ancestor.Type, AvaloniaStyleMetadata.ControlTheme) ||
-                ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector) && selector.HasTemplateScope))
-                owner = styleFallback;
+            owner = Bindings.BindingTargetTypeResolver.TemplateTarget(context, includeDetached: true);
         }
         else if (current != null)
         {
-            var animatable = context.Types.Find(AvaloniaLiteralMetadata.Animatable);
             foreach (var ancestor in context.Ancestors)
             {
-                if (ReferenceEquals(ancestor, current)) continue;
+                if (scopeKind == 1)
+                {
+                    if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.SetterScope, out var setterScope))
+                    { owner = setterScope.TargetType; break; }
+                    continue;
+                }
+                if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.DetachedTemplateTarget, out var detached))
+                { owner = detached; break; }
                 if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.TargetType, out var declared))
                 { owner = declared; break; }
-                if (animatable != null && context.Types.Compilation.ClassifyCommonConversion(ancestor.Type, animatable).IsImplicit)
-                { owner = ancestor.Type; break; }
+                for (var propertyScope = context.PropertyScope; propertyScope != null; propertyScope = propertyScope.Parent)
+                    if (ReferenceEquals(propertyScope.Target, ancestor) && propertyScope.Member.Getter?.ReturnType.HasMetadataName("Avalonia.Animation.Transitions") == true)
+                    { owner = ancestor.Type; break; }
+                if (owner != null) break;
                 if (AvaloniaStyleScope.Is(ancestor.Type, AvaloniaStyleMetadata.Style) ||
                     AvaloniaStyleScope.Is(ancestor.Type, AvaloniaStyleMetadata.ControlTheme) ||
                     AvaloniaStyleScope.IsTemplate(ancestor.Type)) break;
             }
         }
+        if (owner == null) return true;
         // Constructor ranking is speculative: an unsuccessful conversion must not
         // poison another overload candidate with diagnostics or a runtime fallback.
         var property = AvaloniaRegisteredPropertyResolver.Resolve(context, owner, text, scope, span, report: false);
