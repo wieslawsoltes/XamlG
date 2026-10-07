@@ -47,18 +47,8 @@ public sealed class AvaloniaStylePropertyRule : IXamlPropertyBindingRule
         {
             if (node is XamlElementSyntax bindingElement && new AvaloniaCompiledBindingRule().TryBindElement(context, bindingElement, registered.ValueType, scope, out var compiled)) value = compiled;
             else value = context.Values.BindNode(node, context.Types.Special(SpecialType.System_Object), scope, target.NameScopeId, normalizeText: false);
-            if (value?.Type != null && value.Type.SpecialType != SpecialType.System_Object && !IsSpecialValue(context, value.Type))
-                value = context.Values.Coerce(value, registered.ValueType, span);
         }
         if (value != null) context.Members.AddSet(target, member with { TargetDescriptor = registered.Reference(span) }, value, span);
         return true;
-    }
-
-    private static bool IsSpecialValue(BindingContext context, ITypeSymbol type)
-    {
-        var binding = context.Types.Find(AvaloniaMetadata.BindingBase);
-        var template = context.Types.Find(AvaloniaStyleMetadata.Template);
-        return binding != null && context.Types.Compilation.ClassifyCommonConversion(type, binding).IsImplicit ||
-               template != null && context.Types.Compilation.ClassifyCommonConversion(type, template).IsImplicit;
     }
 }

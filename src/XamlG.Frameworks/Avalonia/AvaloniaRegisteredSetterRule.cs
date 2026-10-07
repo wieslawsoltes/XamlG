@@ -19,11 +19,7 @@ public sealed class AvaloniaRegisteredSetterRule : IXamlPropertyBindingRule
             member.Kind != BoundMemberKind.Property || member.Symbol is not IPropertySymbol { IsStatic: false, IsIndexer: false }) return false;
         var objectType = context.Types.Find(AvaloniaMetadata.Object);
         if (objectType == null || !context.Types.Compilation.ClassifyCommonConversion(target.Type, objectType).IsImplicit) return false;
-        var adapter = context.Types.Find(AvaloniaRegisteredSetterMetadata.Adapter)?.Members(AvaloniaRegisteredSetterMetadata.Assign)
-            .OfType<IMethodSymbol>().SingleOrDefault(method => method.IsStatic && !method.IsGenericMethod && method.Parameters.Length == 3 &&
-                method.Parameters[0].Type.HasMetadataName(AvaloniaMetadata.Object) &&
-                method.Parameters[1].Type.HasMetadataName(AvaloniaMetadata.Property) &&
-                method.Parameters[2].Type.SpecialType == SpecialType.System_Object && context.Types.IsAccessible(method));
+        var adapter = AvaloniaRegisteredValue.Adapter(context);
         if (adapter == null)
         {
             context.Report("XG3002", "Registered-property assignment requires the matching XamlG.AvaloniaRuntime contract.", span);
