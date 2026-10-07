@@ -59,7 +59,6 @@ internal sealed class RelativeBindingSourceBinder(BindingContext context, Object
                 break;
             case "Self":
                 sourceType = BindingTargetTypeResolver.Resolve(context, target);
-                rootedDataType = target.Annotations.TryGet(AvaloniaBindingScope.Key, out var current) ? current.DataType : null;
                 builder = _expressions.Call(builder, "Self", span);
                 break;
             case "TemplatedParent":
@@ -92,7 +91,7 @@ internal sealed class RelativeBindingSourceBinder(BindingContext context, Object
                 var ancestor = context.Ancestors.Where(a => !ReferenceEquals(a, target) &&
                     context.Types.Compilation.ClassifyCommonConversion(a.Type, sourceType).IsImplicit)
                     .Skip(level - 1).FirstOrDefault();
-                if (ancestor != null && ancestor.Annotations.TryGet(AvaloniaBindingScope.Key, out var parentScope))
+                if (tree == "Logical" && ancestor != null && ancestor.Annotations.TryGet(AvaloniaBindingScope.Key, out var parentScope))
                     rootedDataType = parentScope.DataType;
                 builder = _expressions.Call(builder, tree == "Visual" ? "VisualAncestor" : "Ancestor", span,
                     _expressions.Type(sourceType, span), _expressions.Number(level - 1, span));

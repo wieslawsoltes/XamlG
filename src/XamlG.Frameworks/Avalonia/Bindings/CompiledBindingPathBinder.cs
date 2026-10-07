@@ -25,6 +25,10 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
         {
             context.Cancellation.ThrowIfCancellationRequested();
             var segment = syntax.Segments[index];
+            var sourceDataType = rootedDataType;
+            // Only an immediately preceding name/ancestor node supplies metadata. Negation
+            // transforms the completed path rather than introducing an intermediate value.
+            if (segment.Kind != BindingPathKind.Not) rootedDataType = null;
             switch (segment.Kind)
             {
                 case BindingPathKind.Not:
@@ -32,7 +36,6 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
                 case BindingPathKind.Self:
                     builder = _expressions.Call(builder, "Self", segment.Span);
                     type = BindingTargetTypeResolver.Resolve(context, target);
-                    rootedDataType = target.Annotations.TryGet(AvaloniaBindingScope.Key, out var own) ? own.DataType : null;
                     break;
                 case BindingPathKind.Parent:
                     var parent = resolver.Parent(segment, scope);
@@ -55,7 +58,7 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
                 case BindingPathKind.AttachedProperty:
                     var registered = AvaloniaRegisteredPropertyResolver.Resolve(context, type, segment.Name, scope, segment.Span);
                     if (registered == null) return null;
-                    var attached = _accessors.Attached(registered, segment.Span);
+                    var attached = _accessors.Registered(registered, segment.Span);
                     if (attached == null) return null;
                     builder = _expressions.Call(builder, "Property", segment.Span, attached.PropertyInfo, attached.Factory);
                     type = attached.ValueType; writable = attached.CanWrite;
@@ -63,6 +66,20 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
                 case BindingPathKind.Property:
                     if (type == null) { MissingDataType(segment); return null; }
                     var property = type.Members(segment.Name).OfType<IPropertySymbol>().FirstOrDefault(p => !p.IsStatic && !p.IsIndexer && p.GetMethod != null && context.Types.IsAccessible(p.GetMethod));
+                    var registeredProperty = AvaloniaRegisteredPropertyResolver.Find(context, type, segment.Name);
+                    if (registeredProperty != null)
+                    {
+                        context.Symbols.Add(new(segment.Span, (ISymbol?)property ?? registeredProperty.Field, "binding-member"));
+                        var registeredAccessor = _accessors.Registered(registeredProperty, segment.Span);
+                        if (registeredAccessor == null) return null;
+                        builder = _expressions.Call(builder, "Property", segment.Span, registeredAccessor.PropertyInfo, registeredAccessor.Factory);
+                        type = registeredAccessor.ValueType; writable = registeredAccessor.CanWrite;
+                        if (builder != null && sourceDataType != null &&
+                            registeredProperty.Field.Name == AvaloniaBindingMetadata.DataContext + AvaloniaMetadata.PropertySuffix &&
+                            registeredProperty.Field.ContainingType.HasMetadataName(AvaloniaStyleMetadata.StyledElement))
+                        { type = sourceDataType; builder = _expressions.GenericCall(builder, "TypeCast", type, segment.Span); }
+                        break;
+                    }
                     var field = property == null ? type.Members(segment.Name).OfType<IFieldSymbol>().FirstOrDefault(f => !f.IsStatic && context.Types.IsAccessible(f)) : null;
                     if (property == null && field == null)
                     {
@@ -77,8 +94,6 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
                     if (accessor == null) return null;
                     builder = _expressions.Call(builder, "Property", segment.Span, accessor.PropertyInfo, accessor.Factory);
                     type = accessor.ValueType; writable = accessor.CanWrite;
-                    if (builder != null && segment.Name == AvaloniaBindingMetadata.DataContext && rootedDataType != null)
-                    { type = rootedDataType; builder = _expressions.GenericCall(builder, "TypeCast", type, segment.Span); rootedDataType = null; }
                     break;
                 case BindingPathKind.Indexer:
                     if (type == null) { MissingDataType(segment); return null; }

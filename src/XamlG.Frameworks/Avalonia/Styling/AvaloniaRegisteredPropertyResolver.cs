@@ -20,16 +20,23 @@ internal static class AvaloniaRegisteredPropertyResolver
             if (report) context.Report("XG3102", "A property reference requires a target type or an explicit owner type.", span);
             return null;
         }
+        if (Find(context, owner, name) is { } property)
+        {
+            context.Symbols.Add(new(span, property.Field, "registered-property"));
+            return property;
+        }
+        if (report) context.Report("XG3103", $"Registered property '{text}' was not found on '{owner.ToDisplayString()}'.", span);
+        return null;
+    }
+
+    public static RegisteredProperty? Find(BindingContext context, ITypeSymbol owner, string name)
+    {
         var field = owner.Members(name + AvaloniaMetadata.PropertySuffix).OfType<IFieldSymbol>()
             .FirstOrDefault(f => f.IsStatic && context.Types.IsAccessible(f));
         if (field != null)
             for (var current = field.Type as INamedTypeSymbol; current != null; current = current.BaseType)
                 if (current.OriginalDefinition.HasMetadataName(AvaloniaStyleMetadata.GenericProperty))
-                {
-                    context.Symbols.Add(new(span, field, "registered-property"));
                     return new(field, current.TypeArguments[0]);
-                }
-        if (report) context.Report("XG3103", $"Registered property '{text}' was not found on '{owner.ToDisplayString()}'.", span);
         return null;
     }
 }

@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
 using XamlG.Frameworks.Avalonia.Styling;
-using XamlG.Roslyn;
 using XamlG.Syntax;
 
 namespace XamlG.Frameworks.Avalonia.Bindings;
@@ -50,17 +49,6 @@ internal sealed class BindingAccessorBuilder(BindingContext context)
             : new BoundConstantExpression(null, setterType, span);
         BoundExpression info = new BoundNewExpression(constructor,
             ImmutableArray.Create(expressions.Text(name, span), getter, setterExpression, expressions.Type(valueType, span)), span);
-        var factoryName = "CreateInpcPropertyAccessor";
-        if (indices.IsEmpty && member is IPropertySymbol)
-        {
-            var registered = sourceType.Members(name + AvaloniaMetadata.PropertySuffix).OfType<IFieldSymbol>()
-                .FirstOrDefault(f => f.IsStatic && context.Types.IsAccessible(f) && DerivesRegisteredProperty(f.Type));
-            if (registered != null)
-            {
-                info = new BoundStaticExpression(registered, registered.Type, span);
-                factoryName = "CreateAvaloniaPropertyAccessor";
-            }
-        }
         var factoryType = (INamedTypeSymbol)propertyMethod.Parameters[1].Type;
         var factoryOwner = context.Types.Find(AvaloniaBindingMetadata.AccessorFactory);
         BoundExpression factory;
@@ -76,7 +64,7 @@ internal sealed class BindingAccessorBuilder(BindingContext context)
         }
         else
         {
-            var method = factoryOwner?.GetMembers(factoryName).OfType<IMethodSymbol>().FirstOrDefault(m => m.Parameters.Length == 2);
+            var method = factoryOwner?.GetMembers("CreateInpcPropertyAccessor").OfType<IMethodSymbol>().FirstOrDefault(m => m.Parameters.Length == 2);
             if (method == null) { context.Report("XG3202", "The property accessor factory is missing.", span); return null; }
             factory = new BoundMethodGroupExpression(method, null, factoryType, span);
         }
@@ -84,19 +72,12 @@ internal sealed class BindingAccessorBuilder(BindingContext context)
         return new(info, factory, valueType, writable);
     }
 
-    public BindingAccessor? Attached(RegisteredProperty property, TextSpan span)
+    public BindingAccessor? Registered(RegisteredProperty property, TextSpan span)
     {
         var method = context.Types.Find(AvaloniaBindingMetadata.PathBuilder)?.GetMembers("Property").OfType<IMethodSymbol>()
             .FirstOrDefault(m => !m.IsGenericMethod && m.Parameters.Length == 2);
         var factory = context.Types.Find(AvaloniaBindingMetadata.AccessorFactory)?.GetMembers("CreateAvaloniaPropertyAccessor").OfType<IMethodSymbol>().FirstOrDefault();
-        if (method == null || factory == null) { context.Report("XG3202", "Attached-property accessor contracts are missing.", span); return null; }
+        if (method == null || factory == null) { context.Report("XG3202", "Registered-property accessor contracts are missing.", span); return null; }
         return new(property.Reference(span), new BoundMethodGroupExpression(factory, null, (INamedTypeSymbol)method.Parameters[1].Type, span), property.ValueType, true);
-    }
-
-    private static bool DerivesRegisteredProperty(ITypeSymbol type)
-    {
-        for (var current = type as INamedTypeSymbol; current != null; current = current.BaseType)
-            if (current.OriginalDefinition.HasMetadataName(AvaloniaStyleMetadata.GenericProperty)) return true;
-        return false;
     }
 }
