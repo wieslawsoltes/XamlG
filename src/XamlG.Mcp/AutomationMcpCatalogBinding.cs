@@ -98,7 +98,7 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
         {
             try
             {
-                var result = await host.CallAsync(Definition.Name, AutomationJson.Element(request.Params.Arguments ?? new Dictionary<string, JsonElement>()), new("mcp", cancellationToken));
+                var result = await host.CallAsync(Definition.Name, AutomationJson.Element(request.Params.Arguments ?? new Dictionary<string, JsonElement>()), new("mcp", cancellationToken, Principal(request)));
                 return new() { StructuredContent = result, Content = [new TextContentBlock { Text = result.GetRawText() }] };
             }
             catch (AutomationException error) { return Error(error.Code, error.Message); }
@@ -116,7 +116,7 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
         public override async ValueTask<ReadResourceResult> ReadAsync(RequestContext<ReadResourceRequestParams> request, CancellationToken cancellationToken = default)
         {
             var resource = host.Resources.FirstOrDefault(r => AutomationUriTemplate.IsMatch(r, request.Params.Uri)) ?? throw new McpException("Unknown resource.");
-            var text = await host.ReadResourceAsync(request.Params.Uri, new("mcp", cancellationToken));
+            var text = await host.ReadResourceAsync(request.Params.Uri, new("mcp", cancellationToken, Principal(request)));
             return new() { Contents = [new TextResourceContents { Uri = request.Params.Uri, MimeType = resource.MimeType, Text = text }] };
         }
     }
@@ -138,4 +138,5 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
         var result = AutomationJson.Element(new { error = new { code, message } });
         return new() { IsError = true, StructuredContent = result, Content = [new TextContentBlock { Text = result.GetRawText() }] };
     }
+    private static string Principal(MessageContext context) => context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "mcp";
 }

@@ -6,5 +6,6 @@
   <ItemGroup>
     <ProjectReference Include="../XamlG.Automation/XamlG.Automation.csproj" />
     <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="ModelContextProtocol.Extensions.Tasks" />
   </ItemGroup>
 </Project>

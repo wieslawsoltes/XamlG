@@ -229,7 +229,14 @@ public partial class AgentWorkbench
         }
         _reference?.Dispose(); _lifetime.Dispose();
     }
-    public sealed class WorkbenchState { public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; }
+    public sealed class WorkbenchState { public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; }
+    public sealed class OperationView
+    {
+        public string TaskId { get; set; } = "";
+        public string Status { get; set; } = "";
+        public DateTimeOffset CreatedAt { get; set; }
+        public DateTimeOffset LastUpdatedAt { get; set; }
+    }
     public sealed class TaskView
     {
         public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string Status { get; set; } = ""; public string? StatusReason { get; set; }

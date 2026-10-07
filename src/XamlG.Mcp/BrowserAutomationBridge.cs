@@ -22,6 +22,7 @@ public sealed class BrowserAutomationBridge : IAutomationHost, IAutomationCatalo
     public IReadOnlyList<AutomationPrompt> Prompts { get { lock (_gate) return _session?.Catalog.Prompts ?? []; } }
     public event Action? CatalogChanged;
     public event Action<string>? ResourceChanged;
+    public CancellationToken CurrentSessionLifetime { get { lock (_gate) return _session is { Closing: false } session ? session.Lifetime.Token : new CancellationToken(true); } }
 
     /// <summary>Checks the private lease delivered only to the paired browser. Owner HTTP
     /// requests must also authenticate separately; the lease alone is not a credential.</summary>
@@ -157,7 +158,7 @@ public sealed class BrowserAutomationBridge : IAutomationHost, IAutomationCatalo
         deadline.CancelAfter(TimeSpan.FromMinutes(10));
         try
         {
-            await SendAsync(socket, new { kind = "request", id, method, name, arguments, caller = context.Caller }, deadline.Token);
+            await SendAsync(socket, new { kind = "request", id, method, name, arguments, caller = context.Caller, principalId = context.PrincipalId ?? context.Caller }, deadline.Token);
             try { return await completion.Task.WaitAsync(deadline.Token); }
             catch (OperationCanceledException)
             {

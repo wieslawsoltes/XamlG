@@ -9,6 +9,17 @@
     }
     else
     {
+        <details class="agent-operations">
+            <summary>MCP operations (@(_state.Operations?.Length ?? 0))</summary>
+            <p>Background waits expire after two minutes. Cancelling stops a wait immediately.</p>
+            <button @onclick='() => CommandAsync("operations_clear", new { })'>Clear finished operations</button>
+            @foreach (var operation in _state.Operations ?? [])
+            {
+                <div class="agent-operation"><code>@operation.TaskId</code> · @operation.Status · @operation.CreatedAt.ToLocalTime().ToString("T")
+                    <button disabled='@(operation.Status != "Working")' @onclick='() => CommandAsync("operation_cancel", new { id = operation.TaskId })'>Cancel operation</button>
+                </div>
+            }
+        </details>
         <details class="agent-create" open="@(_state.Tasks.Length == 0)">
             <summary>New task</summary>
             @if (_state.Providers.Length == 0) { <p>Configure a provider key in the companion environment, then restart it.</p> }

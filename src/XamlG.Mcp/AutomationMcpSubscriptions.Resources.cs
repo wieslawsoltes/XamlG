@@ -24,8 +24,9 @@ internal sealed partial class AutomationMcpSubscriptions
         lock (_gate)
         {
             foreach (var host in _hosts.OfType<IAutomationResourceEvents>()) host.ResourceChanged -= PublishResource;
+            if (_taskStore != null) _taskStore.TaskChanged -= PublishTask;
             foreach (var entry in _legacy) foreach (var subscription in entry.Value.Values) subscription.Close();
-            _hosts.Clear(); _legacy.Clear(); ResourceChanged = null;
+            _hosts.Clear(); _legacy.Clear(); ResourceChanged = null; TaskChanged = null; _taskStore = null;
         }
     }
     private IAutomationHost[] Hosts { get { lock (_gate) return _hosts.ToArray(); } }

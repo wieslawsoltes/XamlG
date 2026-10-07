@@ -198,8 +198,8 @@ export function installAutomation(owner) {
     automationOwner = owner;
     window.xamlgAutomation = Object.freeze({
         catalog: () => owner.invokeMethodAsync('AutomationCatalog'),
-        call: (name, args = {}) => owner.invokeMethodAsync('AutomationInvoke', crypto.randomUUID(), 'call', name, args, 'Browser automation'),
-        resource: uri => owner.invokeMethodAsync('AutomationInvoke', crypto.randomUUID(), 'resource', uri, {}, 'Browser automation')
+        call: (name, args = {}) => owner.invokeMethodAsync('AutomationInvoke', crypto.randomUUID(), 'call', name, args, 'Browser automation', 'studio-owner'),
+        resource: uri => owner.invokeMethodAsync('AutomationInvoke', crypto.randomUUID(), 'resource', uri, {}, 'Browser automation', 'studio-owner')
     });
 }
 export async function connectAutomation(address, token) {
@@ -243,7 +243,7 @@ export async function connectAutomation(address, token) {
             if (pending.has(id)) { socket.close(); return; }
             pending.add(id);
             try {
-                const result = await automationOwner.invokeMethodAsync('AutomationInvoke', id, request.method, request.name, request.arguments ?? {}, request.caller ?? 'MCP');
+                const result = await automationOwner.invokeMethodAsync('AutomationInvoke', id, request.method, request.name, request.arguments ?? {}, request.caller ?? 'MCP', request.principalId ?? 'mcp');
                 if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ id: request.id, result }));
             } catch (error) {
                 if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ id: request.id, error: { code: 'ide_error', message: String(error.message || error) } }));
@@ -262,6 +262,11 @@ export function installAgentWorkbench(owner, id) { agentOwner = owner; agentOwne
 export function uninstallAgentWorkbench(id) { if (agentOwnerId === id) { agentOwner = null; agentOwnerId = null; } }
 export function agentConnected() { return !!agentConnection; }
 export async function copyAgentText(text) { await navigator.clipboard.writeText(text); }
+export function downloadBytes(name, bytes, mimeType) {
+    const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+    const link = document.createElement('a'); link.href = url; link.download = name; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 const agentThreadPositions = new Map();
 const agentThreadBindings = new WeakMap();
 export function bindAgentThread(element, taskId) {

@@ -63,9 +63,10 @@ using var geminiClient = (Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?
         httpOptions: new() { BaseUrl = ProviderEndpoint("GEMINI_ENDPOINT", "https://generativelanguage.googleapis.com").AbsoluteUri.TrimEnd('/'), RetryOptions = new() { Attempts = 1 } },
         clientOptions: new() { HttpClientFactory = () => providerHttp }) : null;
 if (geminiClient != null) providers.Add(new GeminiAgentProvider(geminiClient));
-using var agents = new AgentWorkbench(bridge, providers, new BrowserAgentWorkspace(bridge));
+using var mcpTasks = new AutomationMcpTaskStore();
+using var agents = new AgentWorkbench(bridge, providers, new BrowserAgentWorkspace(bridge), mcpTasks);
 var mcp = builder.Services.AddMcpServer(options => options.ServerInfo = new Implementation { Name = "XamlG Studio", Version = "0.1.0" })
-    .WithAutomation(bridge);
+    .WithAutomation(bridge).WithAutomationTasks(mcpTasks, () => bridge.CurrentSessionLifetime);
 if (builder.Configuration.GetValue("stdio", false))
 {
     builder.Logging.ClearProviders();

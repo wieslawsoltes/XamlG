@@ -238,7 +238,7 @@ public partial class App
     }
     public async ValueTask DisposeAsync()
     {
-        RevokeAutomation(); _runtimeInspector?.Dispose();
+        RevokeAutomation(); _runtimeInspector?.Dispose(); _buildArtifacts.Dispose();
         if (_module != null) await _module.InvokeVoidAsync("disconnectAutomation");
         _automationReference?.Dispose();
         _disposed = true; Preview.Dispose();

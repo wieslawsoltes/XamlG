@@ -24,6 +24,7 @@ public partial class App
     private AutomationReview? _automationReview;
     private TaskCompletionSource<bool>? _approval;
     private readonly SemaphoreSlim _automationGate = new(1);
+    private readonly SemaphoreSlim _automationReviewGate = new(1);
     private CancellationTokenSource _automationLifetime = new();
     private readonly Dictionary<string, CancellationTokenSource> _automationRequests = new(StringComparer.Ordinal);
     private string _companionUrl = "ws://127.0.0.1:4893/bridge";
@@ -34,19 +35,24 @@ public partial class App
     {
         _automation = new(async (review, token) =>
         {
-            if (!_sharing || !_ready) return false;
-            var decision = new AutomationPolicy { Profile = _automationProfile }.Decide(review.Tool);
-            if (decision != PermissionDecision.Ask) return decision == PermissionDecision.Allow;
-            _automationReview = review;
-            _approval = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            StateHasChanged();
+            await _automationReviewGate.WaitAsync(token);
             try
             {
-                var allowed = await _approval.Task.WaitAsync(token);
-                if (allowed) await CaptureEditorsAsync();
-                return allowed && _sharing;
+                if (!_sharing || !_ready) return false;
+                var decision = new AutomationPolicy { Profile = _automationProfile }.Decide(review.Tool);
+                if (decision != PermissionDecision.Ask) return decision == PermissionDecision.Allow;
+                _automationReview = review;
+                _approval = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                StateHasChanged();
+                try
+                {
+                    var allowed = await _approval.Task.WaitAsync(token);
+                    if (allowed) await CaptureEditorsAsync();
+                    return allowed && _sharing;
+                }
+                finally { _automationReview = null; _approval = null; StateHasChanged(); }
             }
-            finally { _automationReview = null; _approval = null; StateHasChanged(); }
+            finally { _automationReviewGate.Release(); }
         });
         AddAutomation<NoArguments>("capabilities", "Discover the current IDE tool catalog and protocol limits.", AutomationScope.Project, AutomationEffect.Read,
             (_, _) => new { revision = SourceRevision, tools = _automation.Tools, limits = new { sourceOffsets = "UTF-16", maxRead = 262144 }, runtime = Preview.Root != null });
@@ -293,6 +299,7 @@ public partial class App
         Resource("xamlg://diagnostics", "Diagnostics", "xamlg_compiler_compile");
         Resource("xamlg://generated", "Generated C# files", "xamlg_generated_list");
         AddAutomationResources();
+        AddBuildAutomation();
         _automation.AddPrompt(new("repair", "Inspect and repair current compilation errors", "Read xamlg_project_get and xamlg_compiler_compile, inspect relevant current source, make revision-checked edits, and compile again. Report the actual diagnostic evidence."));
         _automation.AddPrompt(new("inspect-runtime", "Inspect the actual Avalonia preview", "Read xamlg_runtime_tree, inspect properties of relevant live handles, and correlate source provenance with XAML. Runtime revisions and source revisions are independent. Do not execute or mutate without permission."));
     }
@@ -342,19 +349,28 @@ public partial class App
     [JSInvokable]
     public JsonElement AutomationCatalog() => AutomationJson.Element(new { tools = _automation.Tools, resources = _automation.Resources, prompts = _automation.Prompts });
     [JSInvokable]
-    public async Task<JsonElement> AutomationInvoke(string id, string method, string name, JsonElement arguments, string caller)
+    public async Task<JsonElement> AutomationInvoke(string id, string method, string name, JsonElement arguments, string caller, string principalId)
     {
         if (!_sharing) throw new AutomationException("unavailable", "Agent access is disabled.");
+        if (string.IsNullOrWhiteSpace(caller) || caller.Length > 200) throw new ArgumentException("Invalid automation caller label.");
+        if (string.IsNullOrWhiteSpace(principalId) || principalId.Length > 512) throw new ArgumentException("Invalid transport principal.");
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_automationLifetime.Token);
         if (!_automationRequests.TryAdd(id, cancellation)) throw new AutomationException("duplicate_request", "Duplicate automation request.");
         var entered = false;
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        _automationActivity.Add(method, name, caller, "started", 0);
         try
         {
+            if (method == "call" && name == "xamlg_wait")
+            {
+                var waited = await _automation.CallAsync(name, arguments, new(caller, cancellation.Token, principalId));
+                _automationActivity.Add(method, name, caller, "completed", System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+                return waited;
+            }
             await _automationGate.WaitAsync(cancellation.Token); entered = true;
             if (!_sharing || !_ready || _busy) throw new AutomationException("unavailable", "Enable agent access and wait for the current IDE operation.");
             await CaptureEditorsAsync(); // Include edits still queued in Monaco before validating revisions.
-            if (string.IsNullOrWhiteSpace(caller) || caller.Length > 200) throw new ArgumentException("Invalid automation caller label.");
-            var context = new AutomationCallContext(caller, cancellation.Token);
+            var context = new AutomationCallContext(caller, cancellation.Token, principalId);
             var result = method switch
             {
                 "call" => await _automation.CallAsync(name, arguments, context),
@@ -362,12 +378,17 @@ public partial class App
                 "complete" => AutomationJson.Element(await _automation.CompleteAsync(name, arguments.GetProperty("argument").GetString()!, arguments.GetProperty("value").GetString()!, context)),
                 _ => throw new AutomationException("unknown_method", "Unknown automation method.")
             };
-            await SaveDraftAsync(); StateHasChanged(); return result;
+            await SaveDraftAsync();
+            _automationActivity.Add(method, name, caller, "completed", System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            StateHasChanged(); return result;
         }
         // JS interop must receive an explicit failed invocation for cancellation, including
         // callers queued behind another tool when a lease is revoked.
-        catch (OperationCanceledException) { throw new AutomationException("cancelled", "The operation was cancelled or access revoked."); }
-        finally { _automationRequests.Remove(id); if (entered) _automationGate.Release(); }
+        catch (OperationCanceledException)
+        { _automationActivity.Add(method, name, caller, "cancelled", System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds); throw new AutomationException("cancelled", "The operation was cancelled or access revoked."); }
+        catch (Exception error)
+        { _automationActivity.Add(method, name, caller, "failed", System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds, error is AutomationException automation ? automation.Code : error.GetType().Name); throw; }
+        finally { _automationRequests.Remove(id); if (entered) _automationGate.Release(); StateHasChanged(); }
     }
     [JSInvokable]
     public void AutomationCancel(string id) { if (_automationRequests.TryGetValue(id, out var request)) request.Cancel(); }
@@ -375,6 +396,7 @@ public partial class App
     {
         _sharing = false; _approval?.TrySetResult(false);
         _automationLifetime.Cancel();
+        _buildArtifacts.Clear();
     }
     private async Task SetAutomationSharing(Microsoft.AspNetCore.Components.ChangeEventArgs args)
     {

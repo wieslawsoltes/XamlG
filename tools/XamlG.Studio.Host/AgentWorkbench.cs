@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using XamlG.Agents;
 using XamlG.Automation;
+using XamlG.Mcp;
 
 namespace XamlG.Studio.Host;
 
@@ -16,8 +17,9 @@ public sealed class AgentWorkbench : IDisposable
     private Task? _run;
     private CancellationTokenSource? _runCancellation;
     private string? _runningId;
-    public AgentWorkbench(IAutomationHost host, IEnumerable<IAgentProvider> providers, IAgentWorkspace? workspace = null)
-    { _providers = providers.ToDictionary(p => p.Id, StringComparer.Ordinal); _harness = new(host, workspace); }
+    private readonly AutomationMcpTaskStore? _mcpTasks;
+    public AgentWorkbench(IAutomationHost host, IEnumerable<IAgentProvider> providers, IAgentWorkspace? workspace = null, AutomationMcpTaskStore? mcpTasks = null)
+    { _providers = providers.ToDictionary(p => p.Id, StringComparer.Ordinal); _harness = new(host, workspace); _mcpTasks = mcpTasks; }
     public AgentHarness Harness => _harness;
 
     public async Task<JsonElement> ExecuteAsync(string action, JsonElement arguments, CancellationToken cancellationToken, CancellationToken ownerSession = default)
@@ -36,10 +38,13 @@ public sealed class AgentWorkbench : IDisposable
                         latestRunChanges = task.LatestRunChanges == null ? null : new { task.LatestRunChanges.Revision, files = task.LatestRunChanges.Files.Select(file => new { file.Path, beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
                         events = task.Events.TakeLast(80).Select(item => item with { Text = item.Text.Length > 8192 ? item.Text[..8192] + "\n[see transcript export]" : item.Text })
                     }),
-                    pending = _pending.Values.Select(p => new { p.Id, p.TaskId, p.Kind, p.Content })
+                    pending = _pending.Values.Select(p => new { p.Id, p.TaskId, p.Kind, p.Content }),
+                    operations = _mcpTasks?.LocalInventory.Select(task => new { task.TaskId, status = task.Status.ToString(), task.CreatedAt, task.LastUpdatedAt })
                 });
             case "models":
                 return AutomationJson.Element(await Provider(Read<ProviderArgs>(arguments).Provider).ListModelsAsync(cancellationToken));
+            case "operation_cancel": _mcpTasks?.CancelLocal(Read<IdArgs>(arguments).Id); break;
+            case "operations_clear": _mcpTasks?.ClearFinishedLocal(); break;
             case "create":
                 var create = Read<CreateArgs>(arguments);
                 return AutomationJson.Element(_harness.CreateTask(create.Name, Provider(create.Provider), create.Model, ownerSession));

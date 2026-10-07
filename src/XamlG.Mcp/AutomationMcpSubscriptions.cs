@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using ModelContextProtocol;
+using ModelContextProtocol.Extensions.Tasks;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -31,6 +32,7 @@ internal sealed partial class AutomationMcpSubscriptions : IDisposable
             var resources = requested.ResourcesListChanged == true ? options.ResourceCollection : null;
             var prompts = requested.PromptsListChanged == true ? options.PromptCollection : null;
             var resourceUris = SupportedUris(requested.ResourceSubscriptions);
+            var taskIds = await SupportedTasksAsync(request, cancellationToken);
             var granted = new SubscriptionsListenNotifications
             {
                 ToolsListChanged = tools != null ? true : null,
@@ -45,6 +47,7 @@ internal sealed partial class AutomationMcpSubscriptions : IDisposable
             { SingleReader = true, AllowSynchronousContinuations = false, FullMode = BoundedChannelFullMode.DropWrite });
             var pending = 0;
             var resourceGate = new object(); var pendingResources = new HashSet<string>(StringComparer.Ordinal);
+            var taskGate = new object(); var pendingTasks = new HashSet<string>(StringComparer.Ordinal);
             void Signal(int kind) { Interlocked.Or(ref pending, kind); changes.Writer.TryWrite(0); }
             void ToolsChanged(object? _, EventArgs __) => Signal(1);
             void ResourcesChanged(object? _, EventArgs __) => Signal(2);
@@ -55,17 +58,28 @@ internal sealed partial class AutomationMcpSubscriptions : IDisposable
                 lock (resourceGate) pendingResources.Add(uri);
                 Signal(8);
             }
+            void TaskUpdated(string id)
+            {
+                if (!taskIds.Contains(id, StringComparer.Ordinal)) return;
+                lock (taskGate) pendingTasks.Add(id);
+                Signal(16);
+            }
             if (tools != null) tools.Changed += ToolsChanged;
             if (resources != null) resources.Changed += ResourcesChanged;
             if (prompts != null) prompts.Changed += PromptsChanged;
             ResourceChanged += ResourceUpdated;
+            TaskChanged += TaskUpdated;
             try
             {
                 // Install observers before acknowledging, then serialize every send so the
                 // acknowledgement is always the first notification on this subscription.
-                await SendAsync(NotificationMethods.SubscriptionsAcknowledgedNotification,
-                    JsonSerializer.SerializeToNode(new SubscriptionsAcknowledgedNotificationParams { Notifications = granted }, NotificationJson)!.AsObject());
-                if (tools == null && resources == null && prompts == null && resourceUris.Length == 0) return new();
+                var acknowledgement = JsonSerializer.SerializeToNode(new SubscriptionsAcknowledgedNotificationParams { Notifications = granted }, NotificationJson)!.AsObject();
+                if (taskIds.Length != 0) acknowledgement["notifications"]!["taskIds"] = new JsonArray(taskIds.Select(id => (JsonNode?)JsonValue.Create(id)).ToArray());
+                await SendAsync(NotificationMethods.SubscriptionsAcknowledgedNotification, acknowledgement);
+                if (tools == null && resources == null && prompts == null && resourceUris.Length == 0 && taskIds.Length == 0) return new();
+                // Read the latest state after installing observers, including a task that
+                // completed between request admission and the acknowledgement.
+                foreach (var id in taskIds) TaskUpdated(id);
                 await foreach (var _ in changes.Reader.ReadAllAsync(cancellationToken))
                 {
                     var kinds = Interlocked.Exchange(ref pending, 0);
@@ -78,6 +92,14 @@ internal sealed partial class AutomationMcpSubscriptions : IDisposable
                         lock (resourceGate) { updates = pendingResources.ToArray(); pendingResources.Clear(); }
                         foreach (var uri in updates) await SendAsync(NotificationMethods.ResourceUpdatedNotification, new JsonObject { ["uri"] = uri });
                     }
+                    if ((kinds & 16) != 0)
+                    {
+                        string[] updates;
+                        lock (taskGate) { updates = pendingTasks.ToArray(); pendingTasks.Clear(); }
+                        foreach (var id in updates)
+                            if (await TaskNotificationAsync(id, cancellationToken) is { } notification)
+                                await SendAsync(TasksProtocol.NotificationTaskStatus, notification);
+                    }
                 }
                 return new();
             }
@@ -87,6 +109,7 @@ internal sealed partial class AutomationMcpSubscriptions : IDisposable
                 if (resources != null) resources.Changed -= ResourcesChanged;
                 if (prompts != null) prompts.Changed -= PromptsChanged;
                 ResourceChanged -= ResourceUpdated;
+                TaskChanged -= TaskUpdated;
             }
         }
         finally { Interlocked.Decrement(ref _active); }

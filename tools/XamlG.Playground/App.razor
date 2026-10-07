@@ -174,7 +174,34 @@
         <label>Owner token <input type="password" autocomplete="off" @bind="_companionToken" /></label>
         <div><button @onclick="ConnectAutomationAsync" disabled="@(!_sharing)">Connect companion</button><button @onclick="DisconnectAutomationAsync">Revoke &amp; disconnect</button></div>
         <p role="status">@_connectionStatus · @_automation.Tools.Count tools</p>
-        <details><summary>Tool catalog</summary>@foreach (var tool in _automation.Tools) { <p><code>@tool.Name</code> — @tool.Description</p> }</details>
+        <details><summary>Tool catalog</summary>
+            <label>Filter capabilities <input @bind="_capabilityFilter" @bind:event="oninput" /></label>
+            <label>Scope <select @bind="_capabilityScope"><option value="">All scopes</option>@foreach (var scope in Enum.GetValues<XamlG.Automation.AutomationScope>()) { <option>@scope</option> }</select></label>
+            @foreach (var tool in FilteredTools) { <p><code>@tool.Name</code> — @tool.Description</p> }
+        </details>
+        <button @onclick="ExportAutomationCatalogAsync">Export schema catalog</button>
+        <details><summary>Resources and prompts</summary>
+            @foreach (var resource in _automation.Resources) { <p><code>@resource.Uri</code> — @resource.Description</p> }
+            @foreach (var prompt in _automation.Prompts) { <details><summary>@prompt.Name</summary><pre>@prompt.Text</pre></details> }
+        </details>
+        <details><summary>Build artifacts (@_buildArtifacts.LocalInventory.Count)</summary>
+            <p>Build snapshots expire after five minutes. Releasing a snapshot frees its memory and retires the download handle.</p>
+            @foreach (var artifact in _buildArtifacts.LocalInventory)
+            {
+                <div @key="artifact.Id"><strong>@artifact.Name</strong> · @artifact.Length.ToString("N0") bytes · revision @artifact.Revision
+                    <button @onclick="() => DownloadArtifactAsync(artifact)">Download</button><button @onclick="() => _buildArtifacts.ReleaseLocal(artifact.Id)">Release</button>
+                </div>
+            }
+            <button @onclick="() => _buildArtifacts.Clear()">Release all artifacts</button>
+        </details>
+        <details><summary>Activity (@_automationActivity.Snapshot.Count)</summary>
+            <label>Filter activity <input @bind="_activityFilter" @bind:event="oninput" /></label>
+            <label><input type="checkbox" @bind="_activityErrorsOnly" /> Errors only</label>
+            <label><input type="checkbox" checked="@_activityFollow" @onchange="SetActivityFollow" /> Follow new activity</label>
+            <button @onclick="ClearAutomationActivity">Clear activity</button><button @onclick="ExportAutomationActivityAsync">Export filtered activity</button>
+            @foreach (var activity in FilteredActivity)
+            { <p @key="activity.Sequence">@activity.Time.ToLocalTime().ToString("T") · @activity.Caller · @activity.Method <code>@activity.Name</code> · @activity.Status · @activity.ElapsedMilliseconds.ToString("0") ms @activity.ErrorCode</p> }
+        </details>
         <button @onclick="() => _automationVisible = false">Close</button>
     </section>
 }

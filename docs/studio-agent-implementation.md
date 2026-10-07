@@ -135,6 +135,24 @@ have URI templates with percent-encoded path/handle arguments and bounded comple
 Default catalog lists return 100 entries per page; cursors reject a changed catalog.
 Explicit embedding list handlers retain ownership of their own pagination.
 
+`WithAutomationTasks` enables the official SDK Tasks extension for event-driven
+`xamlg_wait` only. Modern clients opt in per request, poll/update/cancel their own
+task, or subscribe to its `taskIds` with `subscriptions/listen`. Ordinary clients
+receive synchronous waits. Waits observe source revisions or resource changes;
+they do not hold the IDE mutation gate. The companion retains at most 32 tasks for
+120 seconds, bound to the authenticated principal and the originating workspace.
+The workbench provides owner-only cancellation and clearing of finished tasks.
+
+`xamlg_build_targets/create/read/release` expose immutable project JSON, source ZIP,
+managed assembly and portable-PDB snapshots using the existing browser compiler.
+Artifacts carry a source revision, SHA-256, byte size and five-minute expiry. Reads
+use bounded base64 chunks of at most 256 KiB. At most eight artifacts / 32 MiB total
+are retained; revoking or replacing the workspace releases them. Transport-provided
+principals own their handles, independently of client names. The Agent access panel
+provides local download/release controls, searchable capabilities and metadata-only
+activity filtering, pause/follow, export and clearing. It records no tool arguments,
+results or credentials.
+
 Queued follow-ups stay local until an explicit `RunQueuedAsync` accepts their ID
 and reviewed queue revision. The queue supports editing, reordering and removal,
 including during generation, with limits of 16 messages, 100,000 characters per
@@ -176,6 +194,10 @@ the full behavioral suites and package consumers are deliberately pending. Earli
 browser fixtures need updating for the new compaction and restore confirmations.
 MCP templates, completion, resource notifications and catalog pagination also compile
 with the browser and MCP packages; their expanded behavioral coverage is pending.
+Tasks, immutable build downloads and the activity/operations controls are implemented
+in the same feature-first pass. Targeted companion and browser builds succeeded;
+task cancellation/ownership, notification streams and artifact emission/download
+still require the final behavioral validation pass.
 
 - The merged native solution passed 1,508 tests after merging main through
   `a331efe` (Avalonia class/setter contracts), including 1,017 real-Avalonia tests
@@ -242,7 +264,7 @@ Template-owned visuals require template/source edits; tree operations reject
 unsupported ownership. Diagnostic frame metadata uses the loaded Avalonia runtime.
 
 Full reference parity remains in progress: account-mode support and remaining
-provider protocol/recovery details; MCP tasks and artifact handling;
+provider protocol/recovery details;
 typed runtime input and additional designer/runtime UI; the remaining Roslyn
 authoring surface for the multi-file C# workspace; and the corresponding UI and protocol
 acceptance coverage. This ledger does not claim those capabilities from a build

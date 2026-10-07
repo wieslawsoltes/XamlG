@@ -12,7 +12,7 @@ public sealed record AutomationTool(string Name, string Description, JsonElement
     AutomationScope Scope, AutomationEffect Effect, bool Destructive = false);
 public sealed record AutomationResource(string Uri, string Name, string Description, string MimeType = "application/json", bool IsTemplate = false);
 public sealed record AutomationPrompt(string Name, string Description, string Text);
-public sealed record AutomationCallContext(string Caller, CancellationToken CancellationToken = default);
+public sealed record AutomationCallContext(string Caller, CancellationToken CancellationToken = default, string? PrincipalId = null);
 public sealed record AutomationReview(AutomationTool Tool, JsonElement Arguments, string Caller);
 
 /// <summary>Transport-independent, browser-compatible automation boundary.</summary>
