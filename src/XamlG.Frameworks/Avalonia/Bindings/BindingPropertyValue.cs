@@ -18,7 +18,9 @@ internal sealed record BindingPropertyValue(string Name, ImmutableArray<XamlSynt
         }
         foreach (var attribute in target.Syntax.Attributes)
             if (!attribute.IsNamespace && !Ignored(target.Scope, attribute.Name, true))
-                yield return new(attribute.Name, ImmutableArray.Create<XamlSyntaxNode>(new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan)),
+                yield return new(context.Profile.NameDirectiveProperty is { } mapped &&
+                    target.Scope.Expand(attribute.Name, true) is { Namespace: { } ns, LocalName: "Name" } && XamlNames.IsLanguage(ns) ? mapped : attribute.Name,
+                    ImmutableArray.Create<XamlSyntaxNode>(new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan)),
                     target.Scope, attribute.NameSpan, attribute.Span);
         foreach (var property in target.Syntax.Children.OfType<XamlElementSyntax>())
         {

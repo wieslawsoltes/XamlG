@@ -20,7 +20,7 @@ public sealed class ObjectBinder
         if (type.IsAbstract && !isRoot) { _context.Report("XG1006", $"Cannot instantiate abstract type '{type}'.", syntax.NameSpan); return null; }
         if (_context.Types.GetDeclaredContentProperties(type).Length > 1)
             _context.Report("XG1026", $"Type '{type}' declares more than one content property.", syntax.NameSpan);
-        var nameAttribute = scope.Directive(syntax, "Name");
+        var nameAttribute = _context.Profile.NameDirectiveProperty == null ? scope.Directive(syntax, "Name") : null;
         var key = nameAttribute == null ? _context.NewObjectKey() : "s" + nameScope + ":" + nameAttribute.Value;
         var builder = new ObjectBindingBuilder(type, syntax, scope, key, isRoot, nameScope);
         if (nameAttribute != null)
@@ -48,6 +48,12 @@ public sealed class ObjectBinder
                 var expanded = scope.Expand(attribute.Name, true);
                 if (expanded.Namespace == XamlNames.Xml || expanded.Namespace == XamlNames.Compatibility || expanded.Namespace != null &&
                     (scope.IgnoredNamespaces.Contains(expanded.Namespace) || _context.Types.Configuration.IgnoredNamespaces.Contains(expanded.Namespace))) continue;
+                if (_context.Profile.NameDirectiveProperty is { } nameProperty && expanded.Namespace != null &&
+                    XamlNames.IsLanguage(expanded.Namespace) && expanded.LocalName == "Name")
+                {
+                    _context.Members.BindAttribute(builder, attribute with { Name = nameProperty }, scope);
+                    continue;
+                }
                 var handled = false;
                 foreach (var rule in _context.Profile.BindingRules)
                     if (rule.TryBindAttribute(_context, builder, attribute, scope)) { handled = true; break; }

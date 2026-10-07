@@ -5,7 +5,11 @@ internal sealed class XamlNameScope
     private readonly List<Action> _fixups = new();
     public void Register(string name, object value)
     {
-        if (_names.ContainsKey(name)) throw new InvalidOperationException($"Duplicate XAML name '{name}'.");
+        if (_names.TryGetValue(name, out var previous))
+        {
+            if (!ReferenceEquals(previous, value)) throw new InvalidOperationException($"Duplicate XAML name '{name}'.");
+            return;
+        }
         _names.Add(name, value);
     }
     public object Resolve(string name) => _names.TryGetValue(name, out var value) ? value : throw new InvalidOperationException($"XAML name '{name}' was not registered.");

@@ -50,9 +50,9 @@ public sealed class CSharpEmitter
         }
         var flow = new ObjectEmitter(context);
         if (augment && document.Options.GenerateNamedFields)
-            foreach (var named in BoundTraversal.Objects(root).Where(n => n.Name != null && n.NameScopeId == root.NameScopeId))
-                if (!document.ClassSymbol!.GetMembers(named.Name!).Any())
-                    writer.Line(named.FieldModifier + " " + named.Type.CSharpName() + " " + CSharpNames.Identifier(named.Name!) + " = default!;");
+            foreach (var field in context.NamedFields)
+                if (!document.ClassSymbol!.GetMembers(field.Name).Any())
+                    writer.Line(field.Object.FieldModifier + " " + field.Object.Type.CSharpName() + " " + CSharpNames.Identifier(field.Name) + " = default!;");
         if (classFactory)
         {
             if (augment && document.ClassSymbol!.GetMembers(build!).Any()) context.Error("The code-behind class defines a reserved generated factory method.", root.Syntax.NameSpan);

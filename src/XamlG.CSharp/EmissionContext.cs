@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
@@ -13,6 +14,9 @@ internal sealed class EmissionContext
     { Document = document; Cancellation = cancellation; Diagnostics.AddRange(document.Diagnostics); Id = CSharpNames.StableId(document.Options.DocumentId ?? document.Syntax.Path); }
     public BoundDocument Document { get; }
     public string Id { get; }
+    private ImmutableArray<NamedObjectField> _namedFields;
+    public ImmutableArray<NamedObjectField> NamedFields => _namedFields.IsDefault
+        ? _namedFields = Document.Root == null ? ImmutableArray<NamedObjectField>.Empty : NamedObjectField.Collect(Document.Root) : _namedFields;
     public CancellationToken Cancellation { get; }
     private DynamicSetterEmitter? _dynamicSetters;
     public DynamicSetterEmitter DynamicSetters => _dynamicSetters ??= new(this);

@@ -35,10 +35,10 @@ public sealed class BindingContext
     public int NewNameScope() => ++_scopeCounter;
     public string NewObjectKey() => "n" + _objectCounter++;
     public void Report(string code, string message, TextSpan span, XamlSeverity severity = XamlSeverity.Error) => Diagnostics.Add(new(code, message, span, severity));
-    public void RegisterName(int scope, string name, ITypeSymbol type, TextSpan span)
+    public void RegisterName(int scope, string name, ITypeSymbol type, TextSpan span, bool allowDuplicate = false)
     {
         if (!_names.TryGetValue(scope, out var names)) _names[scope] = names = new(StringComparer.Ordinal);
-        if (names.ContainsKey(name)) Report("XG1012", $"Duplicate name '{name}' in the same name scope.", span);
+        if (names.ContainsKey(name)) { if (!allowDuplicate) Report("XG1012", $"Duplicate name '{name}' in the same name scope.", span); }
         else names.Add(name, (type, span));
     }
     public ITypeSymbol? FindName(int scope, string name) => _names.TryGetValue(scope, out var names) && names.TryGetValue(name, out var definition) ? definition.Type : null;

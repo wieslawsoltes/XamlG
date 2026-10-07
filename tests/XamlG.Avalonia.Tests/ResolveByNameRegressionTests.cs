@@ -45,15 +45,19 @@ public sealed class ResolveByNameRegressionTests
         Assert.Same(panel.Children[1], RelativePanel.GetRightOf(panel.Children[0]));
     }
 
-    [Fact]
-    public void ConflictingNameSpellingsAreRejected()
+    [AvaloniaFact]
+    public void NameAndDirectiveAliasesResolveToTheSameControl()
     {
-        var fixture = new ResourceProjectFixture(new[]
+        var xaml = "<RelativePanel " + ResourceProjectFixture.Namespace + "><Border x:Name='first' Name='second'/><Border RelativePanel.RightOf='first'/><Border RelativePanel.RightOf='second'/></RelativePanel>";
+        var baseline = AvaloniaUpstreamCompilation.Compile(xaml);
+        Assert.Null(baseline.Error);
+        var fixture = new ResourceProjectFixture(new[] { ("View.axaml", xaml) });
+        foreach (var panel in new[] { Assert.IsType<RelativePanel>(baseline.Root), Assert.IsType<RelativePanel>(fixture.Build("View.axaml")) })
         {
-            ("View.axaml", "<Border " + ResourceProjectFixture.Namespace + " x:Name='first' Name='second'/>")
-        });
-        Assert.False(fixture.Result.Success);
-        Assert.Contains(fixture.Result.Documents.SelectMany(d => d.Output.Diagnostics), d => d.Code == "XG1012");
+            Assert.Equal("second", panel.Children[0].Name);
+            Assert.Same(panel.Children[0], RelativePanel.GetRightOf(panel.Children[1]));
+            Assert.Same(panel.Children[0], RelativePanel.GetRightOf(panel.Children[2]));
+        }
     }
 
     [Fact]

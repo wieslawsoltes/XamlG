@@ -1,31 +1,29 @@
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using XamlG.Compiler;
 using XamlG.Roslyn;
+using XamlG.Syntax;
 
 namespace XamlG.Frameworks.Avalonia.References;
 
 /// <summary>Declares literal names for binding and registers string-valued INamed.Name
 /// assignments after their setters, including values supplied at runtime.</summary>
-public sealed class AvaloniaNameScopeRule : IXamlObjectBindingRule
+public sealed class AvaloniaNameScopeRule : IXamlObjectBindingRule, IXamlMemberBindingRule
 {
     public void Initialize(BindingContext context, ObjectBindingBuilder target)
     {
-        if (AvaloniaLiteralName.Read(context, target) is not { } name) return;
-        if (!SyntaxFacts.IsValidIdentifier(name.Value))
+        foreach (var name in AvaloniaLiteralName.Read(context, target))
         {
-            context.Report("XG1012", $"Invalid XAML name '{name.Value}'.", name.Span);
-            return;
+            if (target.Name == null)
+            {
+                target.Name = name.Value;
+                if (context.FindName(target.NameScopeId, name.Value) == null) target.Key = "s" + target.NameScopeId + ":" + name.Value;
+            }
+            context.RegisterName(target.NameScopeId, name.Value, target.Type, name.Span, allowDuplicate: true);
         }
-        if (target.Name != null)
-        {
-            if (!string.Equals(target.Name, name.Value, StringComparison.Ordinal))
-                context.Report("XG1012", "Name and x:Name must identify the same object.", name.Span);
-            return;
-        }
-        target.Name = name.Value;
-        context.RegisterName(target.NameScopeId, name.Value, target.Type, name.Span);
     }
+
+    public BoundMember Bind(BindingContext context, ITypeSymbol target, BoundMember member, NamespaceScope scope) =>
+        member.Name == "Name" && member.Symbol is IPropertySymbol ? member with { AllowRepeatedAssignments = true } : member;
 
     public void Complete(BindingContext context, ObjectBindingBuilder target)
     {

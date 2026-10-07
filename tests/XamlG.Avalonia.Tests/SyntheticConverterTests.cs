@@ -83,11 +83,25 @@ public sealed class SyntheticConverterTests
     [InlineData("Integers")]
     [InlineData("Array")]
     [InlineData("ReadOnlyPoints")]
-    public void SyntheticMappingsRequireTheExactTargetType(string property)
+    public void SyntheticMappingsDoNotConvertOtherCollectionsAsAWhole(string property)
     {
         var xaml = Attribute(property, "1,2,3,4", true);
-        Assert.NotNull(AvaloniaUpstreamCompilation.Compile(xaml).Error);
-        Assert.False(new ResourceProjectFixture(new[] { ("Converters.axaml", xaml) }).Result.Success);
+        var expected = AvaloniaUpstreamCompilation.Compile(xaml).Error;
+        Assert.NotNull(expected);
+        var fixture = new ResourceProjectFixture(new[] { ("Converters.axaml", xaml) });
+        if (property == "ReadOnlyPoints")
+        {
+            Assert.StartsWith("XamlX.", expected.GetType().FullName);
+            Assert.False(fixture.Result.Success);
+        }
+        else
+        {
+            Assert.IsType<FormatException>(expected.GetBaseException());
+            Assert.True(fixture.Result.Success, string.Join("\n", fixture.Result.Documents.SelectMany(document => document.Output.Diagnostics)));
+            var actual = Record.Exception(() => fixture.Build("Converters.axaml"));
+            Assert.NotNull(actual);
+            Assert.IsType<FormatException>(actual.GetBaseException());
+        }
     }
 
     [AvaloniaTheory]

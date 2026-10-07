@@ -52,9 +52,10 @@ internal sealed class ObjectEmitter
         {
             if (!value.Assignments.OfType<BoundSetAssignment>().Any(assignment => assignment.RegisterName))
                 _runtime.RegisterName(frame, CSharpNames.Literal(value.Name), variable);
-            if (_context.Document.ClassSymbol != null && _context.Document.CanAugmentClass && _context.Document.Options.GenerateNamedFields && value.NameScopeId == _context.Document.Root!.NameScopeId)
-                writer.Line(_context.RootVariable + "." + CSharpNames.Identifier(value.Name) + " = " + variable + ";");
         }
+        if (_context.Document.ClassSymbol != null && _context.Document.CanAugmentClass && _context.Document.Options.GenerateNamedFields)
+            foreach (var field in _context.NamedFields.Where(field => ReferenceEquals(field.Object, value)))
+                writer.Line(_context.RootVariable + "." + CSharpNames.Identifier(field.Name) + " = " + variable + ";");
         if (value.SupportsInitialize) writer.Line("((global::System.ComponentModel.ISupportInitialize)" + variable + ").BeginInit();");
         initialize?.Invoke(variable);
         if (value.UsableDuringInitialization) consume?.Invoke(variable);

@@ -18,9 +18,11 @@ public static class AvaloniaFrameworkProfile
         var styleWarnings = new AvaloniaStyleWarningsRule();
         var options = new AvaloniaOptionMarkupRule();
         var bindingValues = new AvaloniaBindingMarkupRule();
+        var names = new References.AvaloniaNameScopeRule();
         return XamlFrameworkProfile.Portable with
         {
             Name = "Avalonia",
+            NameDirectiveProperty = "Name",
             SourceLoader = new(AvaloniaLoaderMetadata.Loader, AvaloniaLoaderMetadata.Load)
             { ResourceScheme = AvaloniaResourceMetadata.Scheme, LegacyIndexMetadataName = AvaloniaLoaderMetadata.CompiledIndex },
             NameReferenceRules = XamlFrameworkProfile.Portable.NameReferenceRules.Add(new References.AvaloniaNameReferenceRule()),
@@ -62,8 +64,8 @@ public static class AvaloniaFrameworkProfile
                 new AvaloniaFontFamilyTextRule(), new AvaloniaConstructorLiteralRule(), new AvaloniaNumericLiteralRule(), new AvaloniaStaticLiteralRule(),
                 new AvaloniaTextConversionRule(), new AvaloniaListLiteralRule()),
             TypeConverterProviders = ImmutableArray.Create<IXamlTypeConverterProvider>(new AvaloniaTypeConverterProvider()),
-            ObjectBindingRules = ImmutableArray.Create<IXamlObjectBindingRule>(new References.AvaloniaNameScopeRule(), new AvaloniaStyleObjectRule(), new AvaloniaTemplatePartsRule(), styleWarnings, bindings, classes, resources, deferredResources, new AvaloniaResourceSourceInfoRule()),
-            MemberBindingRules = ImmutableArray.Create<IXamlMemberBindingRule>(new AvaloniaPropertyDescriptorRule()),
+            ObjectBindingRules = ImmutableArray.Create<IXamlObjectBindingRule>(names, new AvaloniaStyleObjectRule(), new AvaloniaTemplatePartsRule(), styleWarnings, bindings, classes, resources, deferredResources, new AvaloniaResourceSourceInfoRule()),
+            MemberBindingRules = ImmutableArray.Create<IXamlMemberBindingRule>(new AvaloniaPropertyDescriptorRule(), names),
             PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(new AvaloniaDesignPropertyRule(), styleWarnings, resources,
                 new AvaloniaStylePropertyRule(), new AvaloniaContainerQueryRule(), new References.AvaloniaResolveByNameRule(), new AvaloniaRegisteredSetterRule(), new AvaloniaBindingRule()),
             MarkupBindingRules = ImmutableArray.Create<IXamlMarkupBindingRule>(options, new AvaloniaCompiledBindingRule(), bindingValues)

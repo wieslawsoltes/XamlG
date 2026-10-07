@@ -27,10 +27,14 @@ public sealed class ValueBinder
     }
     public BoundExpression? TryText(string text, ITypeSymbol target, NamespaceScope scope, TextSpan span, ISymbol? member = null)
     {
-        var propertyConverter = FindConverter(member);
+        var stringType = _context.Types.Special(SpecialType.System_String);
+        var direct = _context.Types.Compilation.ClassifyCommonConversion(stringType, target);
+        var acceptsString = direct.IsImplicit && !direct.IsUserDefined;
+        var propertyConverter = acceptsString ? null : FindConverter(member);
         if (propertyConverter != null) return new BoundConverterExpression(text, propertyConverter, target, span);
         foreach (var rule in _context.Profile.TextConversionRules)
             if (rule.TryConvert(_context, text, target, scope, span, member, out var result)) return result;
+        if (acceptsString) return new BoundConstantExpression(text, stringType, span);
         if (target is INamedTypeSymbol nullable && nullable.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
         { var inner = TryText(text, nullable.TypeArguments[0], scope, span, member); return inner == null ? null : new BoundCastExpression(inner, target, span); }
         if (PrimitiveValueParser.TryParse(text, target.SpecialType, out var primitive))
