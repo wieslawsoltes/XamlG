@@ -106,6 +106,7 @@ public sealed class MemberBinder
         }
         var collectionType = member?.ValueType ?? target.Type;
         var isCollection = (member == null || member.Getter != null) && _context.Types.AddMethods(collectionType).Any();
+        var firstValue = true;
         foreach (var node in nodes)
         {
             if (node is XamlElementSyntax ignored)
@@ -113,11 +114,13 @@ public sealed class MemberBinder
                 var nested = scope.Push(ignored); var ns = nested.Expand(ignored.Name).Namespace;
                 if (ns != null && (nested.IgnoredNamespaces.Contains(ns) || _context.Types.Configuration.IgnoredNamespaces.Contains(ns))) continue;
             }
+            var canReplace = firstValue;
+            firstValue = false;
             if (isCollection)
             {
                 var nodeType = _context.Values.PeekValueType(node, scope);
-                // A collection-valued property can itself be explicitly replaced by a compatible object.
-                if (member?.CanWrite == true && nodes.Length == 1 && nodeType != null && _context.Types.Compilation.ClassifyCommonConversion(nodeType, member.ValueType).IsImplicit)
+                // The first value can replace the collection; later values add to that instance.
+                if (member?.CanWrite == true && canReplace && nodeType != null && _context.Types.Compilation.ClassifyCommonConversion(nodeType, member.ValueType).IsImplicit)
                 {
                     var collection = _context.Values.BindNode(node, member.ValueType, scope, target.NameScopeId);
                     if (collection != null) AddSet(target, member, collection, node.Span);

@@ -19,7 +19,7 @@ Compare behavior against the pinned source as well as its tests. Additional regr
 | Upstream behavior | XamlG implementation and evidence |
 | --- | --- |
 | `ProvideValue` and `ProvideTypedValue` alternatives | `RoslynTypeSystem.MarkupExtensionMethod` shares provider selection across binding and value-type probing. Parameterless providers take precedence; typed returns win within the same parameter shape. `MarkupExtensionSelectionTests` executes attribute, element, collection and constructor-argument forms. |
-| Collection replacement followed by additions | Audit found that `MemberBinder` permits replacement only when the property contains one node. The upstream assignment transformer permits a replacement followed by item additions. Requires implementation and runtime regression coverage. |
+| Collection replacement followed by additions | `MemberBinder` permits the first value to replace a collection before adding subsequent items. Generic lists exclude the non-generic `IList.Add` fallback. `CollectionAssignmentTests` verifies instance identity, replacement counts, nested collection items and incompatible-item diagnostics. |
 | Delegate-valued properties | The upstream conversion helper resolves method names against the root. XamlG currently does this for events, but its portable text conversion does not bind delegate properties. Requires implementation and runtime regression coverage. |
 | Member-specific text conversions | Attribute values retain member metadata; property-element and constructor-argument paths need additional coverage for converter metadata and namespace-sensitive conversion. |
 

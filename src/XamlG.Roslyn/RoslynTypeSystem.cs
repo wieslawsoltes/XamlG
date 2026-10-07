@@ -110,10 +110,13 @@ public sealed class RoslynTypeSystem
     private ImmutableArray<IMethodSymbol> CollectAddMethods(ITypeSymbol type)
     {
         var methods = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+        var genericList = type.HasMetadataName(ClrNames.IListOfT) || type.AllInterfaces.Any(contract => contract.HasMetadataName(ClrNames.IListOfT));
         foreach (var method in type.Members(Configuration.CollectionAddMethod).OfType<IMethodSymbol>())
             if (!method.IsStatic && !method.IsGenericMethod && method.Parameters.Length is 1 or 2 && IsAccessible(method)) methods.Add(method);
         foreach (var contract in type.AllInterfaces)
         {
+            // IList.Add(object) bypasses the generic list's item contract and fails only at runtime.
+            if (genericList && contract.HasMetadataName(ClrNames.IList)) continue;
             var addChild = Configuration.AddChildInterfaces.Contains(contract.OriginalDefinition.MetadataName());
             foreach (var method in contract.GetMembers(addChild ? Configuration.AddChildMethod : Configuration.CollectionAddMethod).OfType<IMethodSymbol>())
                 if (method.Parameters.Length is 1 or 2 && !method.IsStatic && !method.IsGenericMethod && IsAccessible(contract)) methods.Add(method);
