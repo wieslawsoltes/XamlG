@@ -104,7 +104,8 @@ consumer example that uses only NuGet references outside this repository.
 
 ## Local evidence and remaining work
 
-- The merged native solution passed 1,311 tests, including 845 real-Avalonia tests
+- The merged native solution passed 1,387 tests after merging main through
+  `041147c` (Avalonia synthetic converter mappings), including 912 real-Avalonia tests
   and the runtime inspector's fifteen tests for live manipulation and source
   provenance for objects and deferred resource keys.
 - 37 automation/MCP/agent tests passed, including actual official MCP, OpenAI,
