@@ -36,6 +36,7 @@ public static class BoundDocumentTraversal
             {
                 BoundSetAssignment set => new[] { set.Value },
                 BoundAddAssignment add => add.Arguments.AsEnumerable(),
+                BoundEventAssignment { Value: { } handler } => new[] { handler },
                 BoundAdaptedSetAssignment adapted => new[] { adapted.Value },
                 BoundDynamicSetAssignment dynamicSet => new[] { dynamicSet.Value },
                 BoundCallAssignment call => call.TargetDescriptor == null ? call.Arguments.AsEnumerable() : call.Arguments.Prepend(call.TargetDescriptor),

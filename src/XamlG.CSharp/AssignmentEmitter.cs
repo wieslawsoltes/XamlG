@@ -58,7 +58,8 @@ internal sealed class AssignmentEmitter
             case BoundEventAssignment ev:
             {
                 var receiver = ev.Handler == null ? _context.RootVariable : "((" + ev.Handler.ContainingType.CSharpName() + ")" + _context.RootVariable + ")";
-                var handler = _context.Temporary("handler"); writer.Line(ev.Event.ValueType.CSharpName() + " " + handler + " = " + receiver + "." + CSharpNames.Identifier(ev.HandlerName) + ";");
+                var value = ev.Value == null ? receiver + "." + CSharpNames.Identifier(ev.HandlerName) : _values.Emit(ev.Value, ForTarget(ev.Event, target, frame));
+                var handler = _context.Temporary("handler"); writer.Line(ev.Event.ValueType.CSharpName() + " " + handler + " = " + value + ";");
                 if (ev.Event.Kind == BoundMemberKind.Event)
                 {
                     writer.Line(target + "." + CSharpNames.Identifier(ev.Event.Name) + " += " + handler + ";");
@@ -67,7 +68,8 @@ internal sealed class AssignmentEmitter
                 else
                 {
                     var method = ev.Event.Setter!; writer.Line(method.ContainingType.CSharpName() + "." + CSharpNames.Method(method) + "(" + target + ", " + handler + ");");
-                    var remove = method.ContainingType.GetMembers("Remove" + ev.Event.Name + "Handler").OfType<IMethodSymbol>().FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 2);
+                    var remove = method.ContainingType.GetMembers("Remove" + ev.Event.Name + "Handler").OfType<IMethodSymbol>().FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 2 &&
+                        m.Parameters.Select((parameter, index) => parameter.RefKind == method.Parameters[index].RefKind && SymbolEqualityComparer.Default.Equals(parameter.Type, method.Parameters[index].Type)).All(value => value));
                     if (remove != null) writer.Line(frame + ".Session.TrackCleanup(() => " + remove.ContainingType.CSharpName() + "." + CSharpNames.Method(remove) + "(" + target + ", " + handler + "));");
                 }
                 break;

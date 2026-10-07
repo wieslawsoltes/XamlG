@@ -45,6 +45,7 @@ public static class XamlInspector
         {
             BoundSetAssignment s => ImmutableArray.Create(s.Value),
             BoundAddAssignment a => a.Arguments,
+            BoundEventAssignment { Value: { } handler } => ImmutableArray.Create(handler),
             BoundDynamicSetAssignment d => ImmutableArray.Create(d.Value),
             BoundAdaptedSetAssignment a => ImmutableArray.Create(a.Value),
             BoundCallAssignment c => c.Arguments,

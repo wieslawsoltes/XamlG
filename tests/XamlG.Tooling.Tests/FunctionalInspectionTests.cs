@@ -1,6 +1,8 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using XamlG.Compiler;
+using XamlG.Syntax;
 using Xunit;
 
 namespace XamlG.Tooling.Tests;
@@ -25,5 +27,24 @@ public sealed class FunctionalInspectionTests
         Assert.Equal(nameof(BoundPropertyAccessExpression), tree.Children[1].Kind);
         Assert.Contains("Text", tree.Children[1].Label);
         Assert.Single(tree.Children[1].Children);
+    }
+
+    [Fact]
+    public void EventExpressionsParticipateInInspectionAndDocumentTraversal()
+    {
+        var compilation = ToolingFixture.Create().Types.Compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText("""
+            namespace Model
+            {
+                public class Button { public event System.EventHandler Click; }
+                public class HandlerExtension { public System.EventHandler ProvideValue() => (_, _) => { }; }
+            }
+            """));
+        var document = new XamlCompiler().Bind(XamlSyntaxTree.Parse("<Button xmlns='clr-namespace:Model' Click='{Handler}'/>"), compilation);
+        Assert.True(document.Success, string.Join(Environment.NewLine, document.Diagnostics));
+        Assert.Contains(BoundDocumentTraversal.Objects(document), value => value.Type.Name == "HandlerExtension");
+        Assert.IsType<BoundMarkupExpression>(Assert.Single(BoundDocumentTraversal.Expressions(document)));
+        var assignment = Assert.Single(XamlInspector.Bound(document)!.Children);
+        Assert.Equal(nameof(BoundEventAssignment), assignment.Kind);
+        Assert.Equal("MarkupExtension", Assert.Single(assignment.Children).Kind);
     }
 }

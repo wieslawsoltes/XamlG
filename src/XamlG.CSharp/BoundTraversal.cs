@@ -17,6 +17,7 @@ internal static class BoundTraversal
     public static IEnumerable<BoundExpression> Expressions(BoundAssignment assignment) => assignment switch
     {
         BoundSetAssignment s => new[] { s.Value }, BoundAddAssignment a => a.Arguments,
+        BoundEventAssignment { Value: { } value } => new[] { value },
         BoundDynamicSetAssignment d => new[] { d.Value }, BoundAdaptedSetAssignment a => new[] { a.Value },
         BoundCallAssignment c => c.TargetDescriptor == null ? c.Arguments : c.Arguments.Insert(0, c.TargetDescriptor), _ => Array.Empty<BoundExpression>()
     };

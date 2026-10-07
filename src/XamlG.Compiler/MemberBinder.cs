@@ -72,7 +72,8 @@ public sealed class MemberBinder
         if (member == null) return;
         if (member.Setter?.IsInitOnly == true && _context.Types.Find("System.Runtime.CompilerServices.UnsafeAccessorAttribute") == null)
         { _context.Report("XG1031", "Init-only Populate requires a target runtime with UnsafeAccessor support (.NET 8 or later).", attribute.NameSpan); return; }
-        if (member.Kind is BoundMemberKind.Event or BoundMemberKind.AttachedEvent) { BindEvent(target, member, attribute.Value, attribute.ValueSpan); return; }
+        if (member.Kind is BoundMemberKind.Event or BoundMemberKind.AttachedEvent)
+        { BindEventValue(target, member, new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan), scope); return; }
         foreach (var rule in _context.Profile.PropertyBindingRules)
             if (rule.TryBind(_context, target, member, ImmutableArray.Create<XamlSyntaxNode>(new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan)), scope, attribute.Span, true)) return;
         if (!member.CanWrite)
@@ -89,6 +90,12 @@ public sealed class MemberBinder
         var contentType = member?.ValueType ?? target.Type;
         var contentIsCollection = (member == null || member.Getter != null) && _context.Types.AddMethods(contentType).Any();
         var nodes = new ContentWhitespaceNormalizer(_context).Normalize(children, contentType, contentIsCollection, scope);
+        if (member?.Kind is BoundMemberKind.Event or BoundMemberKind.AttachedEvent)
+        {
+            if (nodes.Length != 1) _context.Report("XG1017", "An event assignment requires exactly one handler value.", span);
+            else BindEventValue(target, member, nodes[0], scope);
+            return;
+        }
         if (member != null)
             foreach (var rule in _context.Profile.PropertyBindingRules)
                 if (rule.TryBind(_context, target, member, nodes.ToImmutableArray(), scope, span, false)) return;
@@ -184,6 +191,13 @@ public sealed class MemberBinder
         var value = _context.Values.BindNode(syntax, selected.Parameters[selected.Parameters.Length - 1].Type, scope, target.NameScopeId, normalizeText: !normalized);
         if (value == null) return; args.Add(value);
         target.Assignments.Add(new BoundAddAssignment(member, selected, args.ToImmutable(), syntax.Span));
+    }
+    private void BindEventValue(ObjectBindingBuilder target, BoundMember member, XamlSyntaxNode syntax, NamespaceScope scope)
+    {
+        if (_context.Values.TryGetStringLiteral(syntax, scope, out var name) && !name.StartsWith("{", StringComparison.Ordinal))
+        { BindEvent(target, member, name, syntax.Span); return; }
+        var value = _context.Values.BindNode(syntax, member.ValueType, scope, target.NameScopeId, normalizeText: false, member: member.ConversionSource);
+        if (value != null) target.Assignments.Add(new BoundEventAssignment(member, string.Empty, null, syntax.Span) { Value = value });
     }
     private void BindEvent(ObjectBindingBuilder target, BoundMember member, string handlerName, TextSpan span)
     {
