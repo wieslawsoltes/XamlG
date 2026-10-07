@@ -15,10 +15,12 @@ namespace XamlG.Automation.Tests;
 
 public sealed class OpenAIProviderTests
 {
-    [Fact]
-    public async Task Official_sdk_streaming_preserves_encrypted_reasoning_and_tool_ids_without_public_export()
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public async Task Official_sdk_streaming_preserves_encrypted_reasoning_and_tool_ids_without_public_export(string lineEnding)
     {
-        using var handler = new NativeResponsesHandler();
+        using var handler = new NativeResponsesHandler(lineEnding);
         using var http = new HttpClient(handler);
         var client = new ResponsesClient(new ApiKeyCredential("test-only-not-a-secret"), new ResponsesClientOptions
         { Transport = new HttpClientPipelineTransport(http), RetryPolicy = new ClientRetryPolicy(0) });
@@ -41,7 +43,7 @@ public sealed class OpenAIProviderTests
     }
 
     public sealed record EditArguments(string Text);
-    private sealed class NativeResponsesHandler : HttpMessageHandler
+    private sealed class NativeResponsesHandler(string lineEnding) : HttpMessageHandler
     {
         public List<JsonElement> Requests { get; } = [];
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -55,7 +57,11 @@ public sealed class OpenAIProviderTests
                 [{"type":"message","id":"msg_2","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Updated and verified.","annotations":[]}]}]
                 """;
             var response = "{\"type\":\"response.completed\",\"sequence_number\":0,\"response\":{\"id\":\"resp_" + Requests.Count + "\",\"object\":\"response\",\"created_at\":123,\"model\":\"test-model\",\"status\":\"completed\",\"output\":" + output + ",\"usage\":{\"input_tokens\":10,\"output_tokens\":5,\"total_tokens\":15}}}";
-            return new(HttpStatusCode.OK) { Content = new StringContent("event: response.completed\ndata: " + response.Replace("\n", "", StringComparison.Ordinal) + "\n\n", Encoding.UTF8, "text/event-stream") };
+            // Raw string literal line endings follow the checkout on Windows. Serialize the
+            // JSON before placing it in an SSE data line; embedded CR characters split frames.
+            using var document = JsonDocument.Parse(response);
+            var compact = JsonSerializer.Serialize(document.RootElement);
+            return new(HttpStatusCode.OK) { Content = new StringContent("event: response.completed" + lineEnding + "data: " + compact + lineEnding + lineEnding, Encoding.UTF8, "text/event-stream") };
         }
     }
 }

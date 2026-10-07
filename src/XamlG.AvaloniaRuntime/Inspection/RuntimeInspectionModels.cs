@@ -23,3 +23,13 @@ public sealed record RuntimeChange(long Sequence, long Revision, string ObjectId
     string Name, RuntimeValue? Value);
 
 public sealed record RuntimeChanges(long Sequence, bool HistoryLost, IReadOnlyList<RuntimeChange> Changes);
+
+public sealed record RuntimeArgument(System.Text.Json.JsonElement? Value = null, string? ObjectId = null, string[]? Path = null);
+public sealed record RuntimeMember(string Name, string Type, string Kind, bool ReadOnly, RuntimeValue? Value, string? Error = null);
+public sealed record RuntimeObjectInspection(long Revision, RuntimeValue Value, int TotalMembers, int Offset, bool HasMore,
+    IReadOnlyList<RuntimeMember> Members, IReadOnlyList<string> Methods);
+public sealed record RuntimeType(string Name, string Assembly, string? BaseType, bool CanConstruct, bool IsControl, string? AssemblyQualifiedName);
+public sealed record RuntimeFrameValue(string Property, RuntimeValue Value);
+public sealed record RuntimeValueFrame(int Index, string Type, string Priority, bool Active, string SourceType, string? Description, IReadOnlyList<RuntimeFrameValue> Values);
+public sealed record RuntimeBinding(string Property, string Type, string? Description, string? ErrorType, bool? IsRunning, string? Priority, RuntimeValue Value);
+public sealed record RuntimeStyle(int Index, string Type, string? Selector, IReadOnlyList<RuntimeFrameValue> Setters);

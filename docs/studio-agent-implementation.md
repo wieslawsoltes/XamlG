@@ -95,25 +95,32 @@ consumer example that uses only NuGet references outside this repository.
 
 ## Local evidence and remaining work
 
-- 462 real-Avalonia tests passed, including eight runtime inspector tests.
-- 18 automation/MCP/agent tests passed, including actual official MCP and OpenAI
+- 468 real-Avalonia tests passed, including fourteen runtime inspector tests.
+- 19 automation/MCP/agent tests passed, including actual official MCP and OpenAI
   SDK transports, permission enforcement, native tool continuation, no replay on
   resume, queued messages, compaction and conflict-checked source restoration.
 - The five new packages built, installed and ran through a separate consumer
   with an initially empty package cache. Its temporary files are removed even
   when validation fails.
-- The full browser run passed 34 of 35 scenarios. The remaining Dockyard
-  floating/docking/layout-restore case passed after correcting the API call for
-  the pinned package. This covers actual rendering, authoring, designer gestures,
+- CI passed all 35 browser scenarios at the initial PR checkpoint. The new runtime
+  browser scenario also passes: it constructs a C# DataContext, invokes its method,
+  installs and updates a real binding, inspects style value frames, and creates,
+  reparents and removes controls without changing source. Coverage includes actual rendering, authoring, designer gestures,
   source undo, file moves, editor lifetimes, isolation, mobile layout and HTTP MCP.
 - The workbench test uses a local Responses fixture through the official SDK and
   the real companion/browser. It edits XAML, compiles, reviews and selectively
   restores source, compacts context and exports the public thread. No paid
   provider account was used. CI starts and removes its own companion processes.
 
+Runtime tools now include bounded object-path inspection and mutation, loaded type
+discovery, public method invocation with Task/ValueTask results, live control tree
+changes, event watches, binding expressions and style/value-frame diagnostics.
+Template-owned visuals require template/source edits; tree operations reject
+unsupported ownership. Diagnostic frame metadata uses the loaded Avalonia runtime.
+
 Full reference parity remains in progress: additional official provider adapters
 and account-mode support; MCP subscriptions/notifications and session routing;
-more general runtime object/tree/binding/style operations; a full multi-file C#
+typed runtime input and additional designer/runtime UI; a full multi-file C#
 workspace and Roslyn authoring surface; and the corresponding UI and protocol
 acceptance coverage. This ledger does not claim those capabilities from a build
 or from the existence of a tool name.

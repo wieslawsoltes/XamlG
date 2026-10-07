@@ -54,6 +54,7 @@ public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelCl
             throw new AgentProviderException("http_" + error.Status, retryable);
         }
         catch (HttpRequestException) { throw new AgentProviderException("connection_error", true); }
+        catch (JsonException) { throw new AgentProviderException("invalid_response_json", false); }
         if (terminal == null) throw new AgentProviderException("stream_ended_without_terminal_event", true);
         if (ModelReaderWriter.Write(terminal).ToMemory().Length > 8 * 1024 * 1024)
             throw new AgentProviderException("response_too_large", false);

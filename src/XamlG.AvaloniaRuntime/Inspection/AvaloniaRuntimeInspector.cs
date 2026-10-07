@@ -19,13 +19,13 @@ namespace XamlG.AvaloniaRuntime.Inspection;
 /// child indices. Removed objects and handles from a replaced preview cannot be mutated.
 /// Runtime mutations are deliberately separate from source/designer transactions.
 /// </summary>
-public sealed class AvaloniaRuntimeInspector : IDisposable
+public sealed partial class AvaloniaRuntimeInspector : IDisposable
 {
     private readonly AvaloniaObject _root;
     private readonly ConditionalWeakTable<AvaloniaObject, ObjectIdentity> _identities = new();
     private readonly Dictionary<string, AvaloniaObject> _objects = new(StringComparer.Ordinal);
     private readonly Queue<RuntimeChange> _changes = new();
-    private readonly List<Action> _eventCleanup = new();
+    private readonly Dictionary<(string ObjectId, string Event), Action> _eventCleanup = new();
     private long _nextId, _sequence;
     private string _topology = "";
     private bool _disposed;
@@ -65,6 +65,9 @@ public sealed class AvaloniaRuntimeInspector : IDisposable
         foreach (var old in _objects.Where(pair => !seen.Contains(pair.Value)).ToArray())
         {
             old.Value.PropertyChanged -= OnPropertyChanged;
+            foreach (var watch in _eventCleanup.Keys.Where(key => key.ObjectId == old.Key).ToArray())
+            { _eventCleanup[watch](); _eventCleanup.Remove(watch); }
+            RetireBindings(old.Key);
             _objects.Remove(old.Key);
         }
         foreach (var obj in ordered)
@@ -135,7 +138,9 @@ public sealed class AvaloniaRuntimeInspector : IDisposable
         {
             var property = FindProperty(obj, propertyKey);
             if (property.IsReadOnly) throw new InvalidOperationException("The property is read-only.");
-            obj.SetValue(property, ConvertValue(value, property.PropertyType));
+            var converted = ConvertValue(value, property.PropertyType);
+            RetireBinding(objectId, Key(property));
+            obj.SetValue(property, converted);
         }
         return Properties(objectId).Single(p => p.Key == propertyKey ||
             (!propertyKey.Contains('.') && !propertyKey.Contains(':') && p.Name == propertyKey));
@@ -146,6 +151,7 @@ public sealed class AvaloniaRuntimeInspector : IDisposable
         var obj = ResolveForMutation(objectId, expectedRevision);
         var property = FindProperty(obj, propertyKey);
         if (property.IsReadOnly) throw new InvalidOperationException("The property is read-only.");
+        RetireBinding(objectId, Key(property));
         obj.ClearValue(property);
     }
 
@@ -204,18 +210,20 @@ public sealed class AvaloniaRuntimeInspector : IDisposable
 
     public void WatchEvent(string objectId, string eventName)
     {
-        if (_eventCleanup.Count >= 128) throw new InvalidOperationException("At most 128 event subscriptions are supported.");
         var obj = Resolve(objectId) as Interactive ?? throw new InvalidOperationException("The object is not interactive.");
         var routedEvent = FindEvent(obj, eventName);
+        var key = (objectId, TypeName(routedEvent.OwnerType) + "." + routedEvent.Name);
+        if (_eventCleanup.ContainsKey(key)) return;
+        if (_eventCleanup.Count >= 128) throw new InvalidOperationException("At most 128 event subscriptions are supported.");
         EventHandler<RoutedEventArgs> handler = (_, args) => Changed(objectId, "event", eventName, DescribeValue(args.Handled));
         obj.AddHandler(routedEvent, handler, RoutingStrategies.Direct | RoutingStrategies.Bubble | RoutingStrategies.Tunnel, true);
-        _eventCleanup.Add(() => obj.RemoveHandler(routedEvent, handler));
+        _eventCleanup.Add(key, () => obj.RemoveHandler(routedEvent, handler));
     }
 
     public void ClearEventWatches()
     {
         VerifyAccess();
-        foreach (var cleanup in _eventCleanup) cleanup();
+        foreach (var cleanup in _eventCleanup.Values) cleanup();
         _eventCleanup.Clear();
     }
 
@@ -396,6 +404,8 @@ public sealed class AvaloniaRuntimeInspector : IDisposable
     {
         if (_disposed) return;
         VerifyAccess(); ClearEventWatches();
+        foreach (var subscription in _ownedBindings.Values) subscription.Dispose();
+        _ownedBindings.Clear();
         foreach (var obj in _objects.Values) obj.PropertyChanged -= OnPropertyChanged;
         _objects.Clear(); _changes.Clear(); _disposed = true;
     }

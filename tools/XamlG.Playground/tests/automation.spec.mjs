@@ -108,3 +108,43 @@ test('floating, docking and layout restoration retain the source buffers and Ava
   await call(page, 'xamlg_layout_content', { contentId: 'explorer', operation: 'show' });
   await expect(page.getByRole('complementary')).toContainText('EXPLORER');
 });
+
+test('runtime object paths, bindings, styles and tree mutations operate on the real preview', async ({ page }) => {
+  await enable(page);
+  const project = await call(page, 'xamlg_project_get');
+  const code = 'namespace RuntimeDemo; public class Model { public string Title { get; set; } = "Initial"; public string Rename(string value) => Title = value; }';
+  const codeWrite = await call(page, 'xamlg_document_write', { path: 'Code.cs', text: code, expectedRevision: project.revision });
+  const xaml = '<StackPanel xmlns="https://github.com/avaloniaui"><TextBlock Name="target" Text="Source text" /></StackPanel>';
+  const source = await call(page, 'xamlg_document_write', { path: 'View.axaml', text: xaml, expectedRevision: codeWrite.revision });
+  let tree = await call(page, 'xamlg_runtime_run', { expectedRevision: source.revision });
+  const rootId = tree.rootId, targetId = tree.nodes.find(node => node.name === 'target').id;
+  const mutate = async (name, args) => {
+    tree = await call(page, 'xamlg_runtime_tree');
+    return call(page, name, { ...args, expectedRevision: tree.revision });
+  };
+  await mutate('xamlg_runtime_object_create', { objectId: rootId, path: ['DataContext'], type: 'RuntimeDemo.Model', initialValues: { Title: { value: 'Bound at runtime' } } });
+  const model = await call(page, 'xamlg_runtime_object_inspect', { objectId: rootId, path: ['DataContext'] });
+  expect(model.members.find(member => member.name === 'Title').value.value).toBe('Bound at runtime');
+  expect(model.methods).toContain('Rename(System.String)');
+  const properties = await call(page, 'xamlg_runtime_properties', { objectId: targetId });
+  const textKey = properties.properties.find(property => property.name === 'Text' && property.owner === 'Avalonia.Controls.TextBlock').key;
+  const fontKey = properties.properties.find(property => property.name === 'FontSize' && property.kind !== 'clr').key;
+  await mutate('xamlg_runtime_binding_set', { objectId: targetId, property: textKey, path: 'Title', mode: 'OneWay' });
+  expect((await call(page, 'xamlg_runtime_bindings', { objectId: targetId })).bindings.find(binding => binding.property === textKey).value.value).toBe('Bound at runtime');
+  await mutate('xamlg_runtime_method_invoke', { objectId: rootId, path: ['DataContext'], signature: 'Rename(System.String)', arguments: [{ value: 'Method invoked' }] });
+  await mutate('xamlg_runtime_binding_update', { objectId: targetId, property: textKey });
+  expect((await call(page, 'xamlg_runtime_object_read', { objectId: rootId, path: ['DataContext', 'Title'] })).value.value).toBe('Method invoked');
+  const style = await mutate('xamlg_runtime_style_add', { objectId: rootId, targetType: 'Avalonia.Controls.TextBlock', setters: { [fontKey]: { value: 37 } } });
+  const frames = await call(page, 'xamlg_runtime_value_frames', { objectId: targetId });
+  expect(frames.frames.some(frame => frame.active && frame.values.some(value => value.property === fontKey && value.value.value === 37))).toBe(true);
+  await mutate('xamlg_runtime_style_remove', { objectId: rootId, index: style.index });
+  const created = await mutate('xamlg_runtime_child_create', { parentId: rootId, type: 'Avalonia.Controls.Border', initialValues: { Name: { value: 'newParent' } } });
+  const parentId = created.nodes.find(node => node.name === 'newParent').id;
+  await mutate('xamlg_runtime_child_reparent', { objectId: targetId, parentId });
+  const moved = await call(page, 'xamlg_runtime_tree');
+  expect(moved.nodes.find(node => node.id === targetId).logicalParent).toBe(parentId);
+  await mutate('xamlg_runtime_child_remove', { objectId: targetId });
+  await expect(call(page, 'xamlg_runtime_properties', { objectId: targetId })).rejects.toThrow();
+  expect((await call(page, 'xamlg_project_get')).revision).toBe(source.revision);
+  expect((await call(page, 'xamlg_document_read', { path: 'View.axaml' })).text).toBe(xaml);
+});

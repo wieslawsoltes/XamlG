@@ -262,6 +262,7 @@ public partial class App
             (args, _) => new { objectId = RuntimeInspector().HitTest(args.X, args.Y) });
         AddAutomation<RuntimeChangesArguments>("runtime_changes", "Read bounded property/tree/event changes after a sequence, including a history-loss indicator.", AutomationScope.Runtime, AutomationEffect.Read,
             (args, _) => RuntimeInspector().Changes(args.AfterSequence));
+        AddRuntimeObjectAutomation();
         _automation.Add<RevisionArguments, object>("xamlg_runtime_run", "Compile and run the current trusted preview. Executes application code.", AutomationScope.Runtime, AutomationEffect.Execute,
             async (args, context) =>
             {

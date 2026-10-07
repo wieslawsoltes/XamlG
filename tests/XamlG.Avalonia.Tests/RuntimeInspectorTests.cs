@@ -57,11 +57,12 @@ public sealed class RuntimeInspectorTests
         var text = new TextBlock { Text = "one" };
         using var inspector = new AvaloniaRuntimeInspector(text);
         var before = inspector.Capture();
+        var textKey = TextBlock.TextProperty.OwnerType.FullName + "." + TextBlock.TextProperty.Name;
         text.Text = "user edit";
-        Assert.Throws<InvalidOperationException>(() => inspector.SetProperty(before.RootId, "Text", Json("stale"), before.Revision));
+        Assert.Throws<InvalidOperationException>(() => inspector.SetProperty(before.RootId, textKey, Json("stale"), before.Revision));
         Assert.Equal("user edit", text.Text);
         var next = inspector.Capture();
-        var property = inspector.SetProperty(next.RootId, "Text", Json("agent edit"), next.Revision);
+        var property = inspector.SetProperty(next.RootId, textKey, Json("agent edit"), next.Revision);
         Assert.Equal("agent edit", text.Text);
         Assert.Equal("agent edit", property.Value!.Value);
         Assert.Equal("LocalValue", property.Priority);
@@ -150,6 +151,128 @@ public sealed class RuntimeInspectorTests
     }
 
     private static JsonElement Json<T>(T value) => JsonSerializer.SerializeToElement(value);
+
+    [AvaloniaFact]
+    public void Runtime_creation_reordering_reparenting_and_removal_preserve_identity_and_source_independence()
+    {
+        var left = new StackPanel { Name = "left" }; var right = new Border { Name = "right" };
+        var root = new StackPanel { Children = { left, right } };
+        using var inspector = new AvaloniaRuntimeInspector(root);
+        var state = inspector.Capture(); var leftId = state.Nodes.Single(node => node.Name == "left").Id; var rightId = state.Nodes.Single(node => node.Name == "right").Id;
+        state = inspector.CreateChild(leftId, typeof(TextBlock).FullName!, new Dictionary<string, RuntimeArgument>
+        { ["Name"] = new(Json("created")), ["Text"] = new(Json("Live")) }, -1, state.Revision);
+        var created = state.Nodes.Single(node => node.Name == "created");
+        Assert.Null(created.Source); Assert.Equal("Live", Assert.IsType<TextBlock>(left.Children[0]).Text);
+        state = inspector.Reparent(created.Id, rightId, -1, state.Revision);
+        Assert.Empty(left.Children); Assert.Same(right.Child, inspector.Resolve(created.Id));
+        Assert.Equal(rightId, state.Nodes.Single(node => node.Id == created.Id).LogicalParent);
+        Assert.Throws<ArgumentException>(() => inspector.Reparent(rightId, created.Id, -1, state.Revision));
+        Assert.Throws<ArgumentException>(() => inspector.CreateChild(rightId, typeof(Button).FullName!, null, -1, state.Revision));
+        state = inspector.RemoveChild(created.Id, state.Revision);
+        Assert.Null(right.Child); Assert.DoesNotContain(state.Nodes, node => node.Id == created.Id);
+        Assert.Throws<KeyNotFoundException>(() => inspector.Resolve(created.Id));
+    }
+
+    [AvaloniaFact]
+    public void Tree_operations_reject_template_owned_children_without_detaching_them()
+    {
+        var button = new Button { Content = "content" }; var window = new Window { Content = button }; window.Show();
+        try
+        {
+            using var inspector = new AvaloniaRuntimeInspector(button);
+            var state = inspector.Capture();
+            var visual = state.Nodes.First(node => node.VisualParent == state.RootId);
+            Assert.ThrowsAny<InvalidOperationException>(() => inspector.RemoveChild(visual.Id, state.Revision));
+            Assert.Contains(inspector.Capture().Nodes, node => node.Id == visual.Id);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaFact]
+    public async Task Object_paths_inspect_and_mutate_view_models_collections_and_exact_methods()
+    {
+        var model = new InspectedModel(); var view = new TextBlock { DataContext = model };
+        using var inspector = new AvaloniaRuntimeInspector(view); var state = inspector.Capture();
+        var inspected = inspector.InspectObject(state.RootId, ["DataContext"]);
+        Assert.Contains(inspected.Members, member => member.Name == "Title" && Equals(member.Value?.Value, "initial"));
+        Assert.Contains("Rename(System.String)", inspected.Methods);
+        inspector.SetObjectMember(state.RootId, ["DataContext", "Values", "0"], new(Json("edited")), inspector.Revision);
+        Assert.Equal("edited", model.Values[0]);
+        inspector.SetObjectMember(state.RootId, ["DataContext", "Labels", "name"], new(Json("dictionary")), inspector.Revision);
+        Assert.Equal("dictionary", model.Labels["name"]);
+        var result = await inspector.InvokeMethodAsync(state.RootId, ["DataContext"], "Rename(System.String)", [new(Json("renamed"))], inspector.Revision, TestContext.Current.CancellationToken);
+        Assert.Equal("renamed", model.Title); Assert.Equal("renamed", result.Value);
+        result = await inspector.InvokeMethodAsync(state.RootId, ["DataContext"], "RenameAsync(System.String)", [new(Json("awaited"))], inspector.Revision, TestContext.Current.CancellationToken);
+        Assert.Equal("awaited", model.Title); Assert.Equal("awaited", result.Value);
+        Assert.Throws<InvalidOperationException>(() => inspector.SetObjectMember(state.RootId, ["DataContext", "Title"], new(Json("stale")), state.Revision));
+        Assert.Throws<ArgumentException>(() => inspector.SetObjectMember(state.RootId, ["DataContext", "Values", "10"], new(Json("missing")), inspector.Revision));
+        inspector.CreateObjectMember(state.RootId, ["DataContext"], typeof(InspectedModel).FullName!, new Dictionary<string, RuntimeArgument> { ["Title"] = new(Json("new model")) }, inspector.Revision);
+        Assert.NotSame(model, view.DataContext); Assert.Equal("new model", Assert.IsType<InspectedModel>(view.DataContext).Title);
+    }
+
+    [AvaloniaFact]
+    public void Event_watches_retire_with_detached_controls_and_do_not_duplicate_handlers()
+    {
+        var button = new Button(); var root = new StackPanel { Children = { button } };
+        using var inspector = new AvaloniaRuntimeInspector(root); var state = inspector.Capture();
+        var id = state.Nodes.Single(node => node.Type == typeof(Button).FullName).Id;
+        inspector.WatchEvent(id, "Click"); inspector.WatchEvent(id, "Click");
+        var sequence = inspector.Changes().Sequence;
+        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.Single(inspector.Changes(sequence).Changes, change => change.Kind == "event");
+        root.Children.Clear(); sequence = inspector.Changes().Sequence;
+        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.Empty(inspector.Changes(sequence).Changes);
+    }
+
+    public sealed class InspectedModel
+    {
+        public string Title { get; set; } = "initial";
+        public List<string> Values { get; } = ["one", "two"];
+        public Dictionary<string, string> Labels { get; } = new() { ["name"] = "initial" };
+        public string Rename(string title) => Title = title;
+        public async ValueTask<string> RenameAsync(string title) { await Task.Yield(); return Title = title; }
+    }
+
+    [AvaloniaFact]
+    public void Binding_inspection_updates_and_invalid_replacement_preserve_the_real_expression()
+    {
+        var model = new InspectedModel(); var text = new TextBlock { DataContext = model };
+        using var inspector = new AvaloniaRuntimeInspector(text); var state = inspector.Capture();
+        const string property = "Avalonia.Controls.TextBlock.Text";
+        var binding = inspector.SetBinding(state.RootId, property, "Title", "TwoWay", null, state.Revision);
+        Assert.Equal("initial", text.Text); Assert.Contains("Title", binding.Description);
+        model.Title = "updated source";
+        inspector.UpdateBinding(state.RootId, property, false, inspector.Revision);
+        Assert.Equal("updated source", text.Text);
+        Assert.ThrowsAny<Exception>(() => inspector.SetBinding(state.RootId, property, "[", "TwoWay", null, inspector.Revision));
+        Assert.Single(inspector.Bindings(state.RootId)); Assert.Equal("updated source", text.Text);
+        text.SetCurrentValue(TextBlock.TextProperty, "updated target");
+        inspector.UpdateBinding(state.RootId, property, true, inspector.Revision);
+        Assert.Equal("updated target", model.Title);
+        inspector.ClearProperty(state.RootId, property, inspector.Revision);
+        Assert.Empty(inspector.Bindings(state.RootId));
+    }
+
+    [AvaloniaFact]
+    public void Styles_and_diagnostic_frames_explain_effective_values_and_restore_after_removal()
+    {
+        var text = new TextBlock(); text.Classes.Add("inspected");
+        var panel = new StackPanel { Children = { text } }; var window = new Window { Content = panel }; window.Show();
+        try
+        {
+            using var inspector = new AvaloniaRuntimeInspector(panel); var state = inspector.Capture();
+            var id = state.Nodes.Single(node => node.Type == typeof(TextBlock).FullName).Id; var original = text.FontSize;
+            var fontSizeKey = TextBlock.FontSizeProperty.OwnerType.FullName + "." + TextBlock.FontSizeProperty.Name;
+            var index = inspector.AddStyle(state.RootId, typeof(TextBlock).FullName!, "inspected", new Dictionary<string, RuntimeArgument>
+            { [fontSizeKey] = new(Json(43d)) }, state.Revision);
+            Assert.Equal(43, text.FontSize); Assert.Single(inspector.Styles(state.RootId));
+            Assert.Contains(inspector.ValueFrames(id), frame => frame.Active && frame.Values.Any(value => value.Property.EndsWith(".FontSize") && Equals(value.Value.Value, 43d)));
+            inspector.RemoveStyle(state.RootId, index, inspector.Revision);
+            Assert.Equal(original, text.FontSize); Assert.Empty(inspector.Styles(state.RootId));
+        }
+        finally { window.Close(); }
+    }
     private sealed class ThrowingToString
     {
         public override string ToString() => throw new InvalidOperationException("Must not execute application formatting.");
