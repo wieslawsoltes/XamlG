@@ -11,7 +11,7 @@ namespace XamlG.Playground;
 
 public partial class App
 {
-    private static readonly string[] InspectorTabs = { "C# output", "C# files", "Resources", "Syntax", "Bound tree", "Visual tree", "Properties", "Pipeline" };
+    private static readonly string[] InspectorTabs = { "C# output", "C# files", "Resources", "Syntax", "Bound tree", "Visual tree", "Properties", "Runtime", "Pipeline" };
     private XamlDocumentSession _document = new(PlaygroundExamples.All[0].Xaml, "View.axaml");
     private string _code = PlaygroundExamples.All[0].Code;
     private BrowserCompilation? _result;

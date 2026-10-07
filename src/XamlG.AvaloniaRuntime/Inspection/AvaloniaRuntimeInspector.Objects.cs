@@ -38,6 +38,7 @@ public sealed partial class AvaloniaRuntimeInspector
     {
         if (offset is < 0 or > 100000 || count is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(offset));
         var target = FollowPath(Resolve(objectId), path);
+        ObserveObject(objectId, path, target);
         if (target == null) return new(Revision, DescribeValue(null), 0, 0, false, [], []);
         var flags = MemberFlags(includeNonPublic);
         var members = Members(target, flags).ToArray();
@@ -51,7 +52,10 @@ public sealed partial class AvaloniaRuntimeInspector
         return new(Revision, DescribeValue(target), members.Length, offset, offset + result.Length < members.Length, result, methods);
     }
 
-    public RuntimeValue ReadObject(string objectId, IReadOnlyList<string> path) => DescribeValue(FollowPath(Resolve(objectId), path));
+    public RuntimeValue ReadObject(string objectId, IReadOnlyList<string> path)
+    {
+        var target = FollowPath(Resolve(objectId), path); ObserveObject(objectId, path, target); return DescribeValue(target);
+    }
 
     public RuntimeValue SetObjectMember(string objectId, IReadOnlyList<string> path, RuntimeArgument argument, long expectedRevision)
     {

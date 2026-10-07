@@ -35,3 +35,14 @@ public sealed record RuntimeBinding(string Property, string Type, string? Descri
 public sealed record RuntimeStyle(int Index, string Type, string? Selector, IReadOnlyList<RuntimeFrameValue> Setters);
 public sealed record RuntimeSourceLocation(string? SourceUri, int LineNumber, int LinePosition);
 public sealed record RuntimeSourceInspection(long Revision, RuntimeSourceLocation? FrameworkSource, XamlSourceInfo? Source, bool ResourceKey);
+public enum RuntimeKeyAction { Press, Down, Up }
+public enum RuntimePointerAction { Move, Down, Up, Click, DoubleClick, Wheel }
+public enum RuntimeTouchAction { Begin, Move, End, Cancel }
+public sealed record RuntimeInputResult(long Revision, bool Handled, string ObjectId);
+public enum RuntimeAccessibilityAction { Focus, BringIntoView, ContextMenu }
+public sealed record RuntimeAccessibilityNode(string Id, string? ObjectId, string? ParentId, IReadOnlyList<string> Children,
+    IReadOnlyDictionary<string, RuntimeValue> Properties, IReadOnlyList<string> Providers, IReadOnlyDictionary<string, string> Errors);
+public sealed record RuntimeAccessibilitySnapshot(string SessionId, long Revision, string RootId, int Total, int Offset, bool HasMore, IReadOnlyList<RuntimeAccessibilityNode> Nodes);
+public sealed record RuntimeAccessibilityProvider(long Revision, string PeerId, string Provider, IReadOnlyList<RuntimeMember> Members, IReadOnlyList<string> Methods);
+public sealed record RuntimeDictionaryEntry(RuntimeValue Key, RuntimeValue Value, string KeyType);
+public sealed record RuntimeDictionarySnapshot(long Revision, string KeyType, string ValueType, bool ReadOnly, int Total, int Offset, bool HasMore, IReadOnlyList<RuntimeDictionaryEntry> Entries);

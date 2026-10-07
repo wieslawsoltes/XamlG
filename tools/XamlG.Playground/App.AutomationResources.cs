@@ -12,6 +12,7 @@ public partial class App
     {
         _automation.ResourceChanged += uri => { _ = PublishResourceChangeAsync(uri); };
         Resource("xamlg://runtime", "Live Avalonia visual and logical trees", "xamlg_runtime_tree");
+        Resource("xamlg://runtime/accessibility", "Live Avalonia accessibility peers", "xamlg_runtime_accessibility");
         _automation.AddResourceTemplate(new("xamlg://source/{path}", "Source document", "Current source with UTF-16 range and revision metadata."),
             async (values, context) => (await _automation.CallAsync("xamlg_document_read", AutomationJson.Element(new { path = values["path"], offset = 0, count = 262144 }), context)).GetRawText(),
             async (argument, value, context) =>
@@ -65,6 +66,7 @@ public partial class App
     private void NotifyRuntimeResource(RuntimeChange change)
     {
         _automation.NotifyResourceChanged("xamlg://runtime");
+        if (change.Kind == "accessibility") _automation.NotifyResourceChanged("xamlg://runtime/accessibility");
         _automation.NotifyResourceChanged("xamlg://runtime/" + Uri.EscapeDataString(change.ObjectId) + "/properties");
     }
     private async Task PublishResourceChangeAsync(string uri)

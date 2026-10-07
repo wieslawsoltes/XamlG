@@ -4,7 +4,8 @@ using System.Text.RegularExpressions;
 
 namespace XamlG.Automation;
 
-/// <summary>A reusable typed catalog. Validation and the host authorization gate apply to every caller.</summary>
+/// <summary>A reusable typed catalog. Remote callers use the validated, authorized
+/// IAutomationHost entry point; a separate explicit entry point serves trusted local UI.</summary>
 public sealed partial class AutomationCatalog : IAutomationHost, IAutomationCatalogEvents, IAutomationResourceEvents, IAutomationCompletions
 {
     private readonly object _gate = new();
@@ -71,14 +72,21 @@ public sealed partial class AutomationCatalog : IAutomationHost, IAutomationCata
     public void AddPrompt(AutomationPrompt prompt)
     { lock (_gate) _prompts.Add(prompt.Name, prompt); NotifyCatalogChanged(); }
 
-    public async ValueTask<JsonElement> CallAsync(string name, JsonElement arguments, AutomationCallContext context)
+    public ValueTask<JsonElement> CallAsync(string name, JsonElement arguments, AutomationCallContext context) => CallCoreAsync(name, arguments, context, authorize: true);
+
+    /// <summary>Executes a user-initiated local UI action with schema validation and the
+    /// same handler/revision checks. Never expose this entry point to agents or transports;
+    /// it intentionally bypasses the remote permission review delegate.</summary>
+    public ValueTask<JsonElement> CallLocalAsync(string name, JsonElement arguments, AutomationCallContext context) => CallCoreAsync(name, arguments, context, authorize: false);
+
+    private async ValueTask<JsonElement> CallCoreAsync(string name, JsonElement arguments, AutomationCallContext context, bool authorize)
     {
         context.CancellationToken.ThrowIfCancellationRequested();
         Entry? entry;
         lock (_gate) _tools.TryGetValue(name, out entry);
         if (entry == null) throw new AutomationException("unknown_tool", "Unknown tool: " + name);
         AutomationSchema.Validate(entry.Tool.InputSchema, arguments);
-        if (_authorize != null && !await _authorize(new(entry.Tool, arguments, context.Caller), context.CancellationToken))
+        if (authorize && _authorize != null && !await _authorize(new(entry.Tool, arguments, context.Caller), context.CancellationToken))
             throw new AutomationException("permission_denied", "The host denied this tool invocation.");
         context.CancellationToken.ThrowIfCancellationRequested();
         return await entry.Execute(arguments, context);

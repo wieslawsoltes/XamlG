@@ -69,6 +69,7 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
             foreach (var watch in _eventCleanup.Keys.Where(key => key.ObjectId == old.Key).ToArray())
             { _eventCleanup[watch](); _eventCleanup.Remove(watch); }
             RetireBindings(old.Key);
+            RetireObjectWatches(old.Key);
             _objects.Remove(old.Key);
         }
         foreach (var obj in ordered)
@@ -408,7 +409,7 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        VerifyAccess(); ClearEventWatches();
+        VerifyAccess(); ClearEventWatches(); ClearObjectWatches(); DisposeInput(); DisposeAccessibility();
         foreach (var subscription in _ownedBindings.Values) subscription.Dispose();
         _ownedBindings.Clear();
         foreach (var obj in _objects.Values) obj.PropertyChanged -= OnPropertyChanged;

@@ -167,8 +167,8 @@ Request timeout, retry count and tool-result size are independently editable.
 ## Local evidence and remaining work
 
 Full validation is deferred until the remaining feature implementation is complete,
-as requested. The evidence below records earlier checkpoints; the latest Pages
-integration and literal-name merge have not yet undergone a full validation run.
+as requested. The evidence below records earlier checkpoints; the latest feature
+additions and compiler merges have not yet undergone a full validation run.
 
 Implemented since that checkpoint: tasks bind to the creating browser workspace
 lifetime; replacement and revocation disconnect that lifetime. A separate preparation
@@ -263,9 +263,42 @@ identities. Keyed location reads do not instantiate deferred resources.
 Template-owned visuals require template/source edits; tree operations reject
 unsupported ownership. Diagnostic frame metadata uses the loaded Avalonia runtime.
 
+Typed keyboard/text, pointer movement/down/up/click/double-click/wheel, and up to
+16 touch contacts now dispatch through Avalonia's actual platform input pipeline.
+Pointer coordinates are control-local DIPs, capture persists across drag steps,
+and inspector disposal/reset releases its mouse and touch devices. Input rejects
+disabled, hidden, detached and stale targets; design mode must be disabled first.
+The runtime package deliberately pins Avalonia to exactly `12.1.3`, following
+[Avalonia's private API packaging requirement](https://github.com/AvaloniaUI/Avalonia/wiki/Using-private-apis-in-nuget-packages).
+Only its input adapter opts into those APIs; updating that dependency requires
+checking the adapter and its behavioral coverage against the new version.
+
+Accessibility tools traverse the actual automation-peer tree, including virtual
+peers, with stable handles, bounded pages, metadata, relationships and supported
+provider interfaces. Provider inspection exposes public values and exact method
+signatures; invocation uses typed arguments and revision checks. This covers
+invoke/toggle, value/range, selection, scrolling and other providers exposed by the
+loaded framework. Peer property/tree observers retire with their handles.
+
+Typed dictionary reads and writes support non-string keys and generic read-only
+dictionaries. Object/dictionary inspection acquires at most 128 INPC/collection
+observers; background bursts coalesce into explicit wildcard change records on the
+Avalonia dispatcher. Watches can be cleared and retire with their tree handles.
+
+The existing Inspectors pane now has a Runtime workbench with visual/logical
+navigation, effective properties and classes, input controls, object/method
+inspection, bindings/styles/resources/events, accessibility providers, advanced
+runtime operations and result export. Owner UI actions use a separate local entry
+point with schema/revision checks; MCP and agent transports retain their normal
+permission gate. Source navigation validates the preview's source version and can
+reveal resource documents as well as the main XAML file. The new runtime APIs and
+browser UI compile; their native/browser acceptance tests remain deferred until
+feature implementation is complete.
+
 Full reference parity remains in progress: account-mode support and remaining
 provider protocol/recovery details;
-typed runtime input and additional designer/runtime UI; the remaining Roslyn
+handles for arbitrary method/provider result objects; additional source-backed
+designer controls; the remaining Roslyn
 authoring surface for the multi-file C# workspace; and the corresponding UI and protocol
 acceptance coverage. This ledger does not claim those capabilities from a build
 or from the existence of a tool name.

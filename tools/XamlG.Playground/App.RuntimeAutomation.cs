@@ -7,6 +7,15 @@ public partial class App
 {
     private void AddRuntimeObjectAutomation()
     {
+        AddRuntimeInputAutomation();
+        AddAutomation<RuntimeDictionaryArguments>("runtime_dictionary_entries", "Read a bounded page of dictionary keys and values, including numeric, enum, object and other non-string keys. Read-only generic dictionaries are supported.", AutomationScope.Runtime, AutomationEffect.Read,
+            (args, _) => RuntimeInspector().DictionaryEntries(args.ObjectId, args.Path, args.Offset, args.Count));
+        AddAutomation<RuntimeDictionaryReadArguments>("runtime_dictionary_read", "Read a typed dictionary key. Supply keyType for a heterogeneous object-keyed dictionary, or a live object reference for an identity key.", AutomationScope.Runtime, AutomationEffect.Read,
+            (args, _) => { var runtime = RuntimeInspector(); var value = runtime.ReadDictionaryEntry(args.ObjectId, args.Path, args.Key, args.KeyType); return new { runtime.Revision, value }; });
+        AddAutomation<RuntimeDictionarySetArguments>("runtime_dictionary_set", "Set or remove a typed live dictionary entry after checking its runtime revision. Observed INPC and collection changes enter the bounded runtime journal.", AutomationScope.Runtime, AutomationEffect.Execute,
+            (args, _) => { var runtime = RuntimeInspector(); var value = runtime.SetDictionaryEntry(args.ObjectId, args.Path, args.Key, args.Value, args.Remove, args.ExpectedRevision, args.KeyType); return new { runtime.Revision, value }; });
+        AddAutomation<NoArguments>("runtime_object_watches_clear", "Release the bounded view-model/property/collection change observers acquired by object and dictionary inspection.", AutomationScope.Runtime, AutomationEffect.Read,
+            (_, _) => { RuntimeInspector().ClearObjectWatches(); return new { watching = false }; });
         AddAutomation<RuntimeSourceArguments>("runtime_source", "Read exact Avalonia source metadata and generated-object provenance for a live object path. Optional resourceKey reads keyed metadata without constructing a deferred resource.", AutomationScope.Runtime, AutomationEffect.Read,
             (args, _) => RuntimeInspector().Source(args.ObjectId, args.Path, args.ResourceKey));
         AddAutomation<RuntimeTypesArguments>("runtime_types", "Discover loaded runtime types, assemblies and public construction support with bounded pagination.", AutomationScope.Runtime, AutomationEffect.Read,
@@ -52,6 +61,9 @@ public partial class App
     }
 
     public sealed record RuntimeTypesArguments(string Query = "", int Offset = 0, int Count = 100);
+    public sealed record RuntimeDictionaryArguments(string ObjectId, string[]? Path = null, int Offset = 0, int Count = 100);
+    public sealed record RuntimeDictionaryReadArguments(string ObjectId, RuntimeArgument Key, string[]? Path = null, string? KeyType = null);
+    public sealed record RuntimeDictionarySetArguments(string ObjectId, RuntimeArgument Key, long ExpectedRevision, RuntimeArgument? Value = null, bool Remove = false, string[]? Path = null, string? KeyType = null);
     public sealed record RuntimeSourceArguments(string ObjectId, string[]? Path = null, RuntimeArgument? ResourceKey = null);
     public sealed record RuntimeInspectArguments(string ObjectId, string[]? Path = null, int Offset = 0, int Count = 100, bool IncludeNonPublic = false);
     public sealed record RuntimePathArguments(string ObjectId, string[] Path);

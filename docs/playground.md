@@ -44,6 +44,29 @@ document, including files moved between folders.
 
 Resource document count/character limits, normalized relative paths, reserved root paths and revision checks bound the editor store. Replacing a project retires callbacks from previous same-path resource editors. See [resource semantics and export metadata](resources.md).
 
+## Live runtime inspection
+
+Run a trusted preview and open **Inspectors → Runtime**. Choose visual or logical
+relationships, filter by name/type/handle, inspect effective properties and classes,
+and edit live values. **Open XAML source** checks the preview's source version before
+navigating to the main document or a resource file. Runtime edits affect running
+objects; source edits continue through the normal designer and undo history.
+
+The runtime workbench includes object paths and exact method invocation, binding
+expressions, style/value frames, resources, routed-event watches and the bounded
+change journal. Its **Input** section sends keys, text, mouse and wheel events
+through Avalonia's actual input pipeline. Leave Design mode first. Pointer
+coordinates are control-local DIPs; Down/Move/Up preserve capture for dragging.
+Touch contacts and the full runtime catalog are available through **Tools**.
+
+**Accessibility** reads the actual automation-peer tree, including virtual peers,
+and inspects or invokes the provider methods supported by each peer. Advanced
+operations show their exact argument schema and current handles/revisions, and
+inspection results can be exported. These owner controls work with MCP sharing
+disabled; remote clients retain the separate permission gate. Typed runtime input
+uses Avalonia's private platform APIs, so `XamlG.AvaloniaRuntime` pins its dependency
+to exactly `12.1.3`.
+
 ## Explicit execution modes
 
 **Run preview** executes trusted generated code in the editor tab for visual design, with the studio's browser-origin capabilities. Review code before using it.
