@@ -39,7 +39,7 @@ public sealed class BindingContext
         else names.Add(name, type);
     }
     public ITypeSymbol? FindName(int scope, string name) => _names.TryGetValue(scope, out var names) && names.TryGetValue(name, out var type) ? type : null;
-    public INamedTypeSymbol? ResolveType(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, bool extension = false)
+    public INamedTypeSymbol? ResolveType(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, bool extension = false, NamespaceScope? typeArgumentScope = null)
     {
         var parsed = XamlTypeNameParser.Parse(name, span, d => { if (report) Diagnostics.Add(d); });
         if (parsed == null) return null;
@@ -51,9 +51,9 @@ public sealed class BindingContext
             if (explicitArguments.Length == 0) return null;
             parsed = parsed with { Arguments = explicitArguments };
         }
-        return ResolveType(parsed, scope, report, extension);
+        return ResolveType(parsed, scope, report, extension, typeArguments == null ? null : typeArgumentScope);
     }
-    private INamedTypeSymbol? ResolveType(XamlTypeNameSyntax syntax, NamespaceScope scope, bool report, bool extension = false)
+    private INamedTypeSymbol? ResolveType(XamlTypeNameSyntax syntax, NamespaceScope scope, bool report, bool extension = false, NamespaceScope? typeArgumentScope = null)
     {
         Cancellation.ThrowIfCancellationRequested();
         foreach (var rule in Profile.TypeBindingRules)
@@ -82,7 +82,7 @@ public sealed class BindingContext
             var bound = new List<ITypeSymbol>();
             foreach (var argument in syntax.Arguments)
             {
-                var item = ResolveType(argument, scope, report);
+                var item = ResolveType(argument, typeArgumentScope ?? scope, report);
                 if (item == null) return null;
                 bound.Add(item);
             }

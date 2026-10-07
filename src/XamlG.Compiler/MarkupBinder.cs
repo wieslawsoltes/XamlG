@@ -14,26 +14,7 @@ internal sealed class MarkupBinder
             if (rule.TryBind(_context, syntax, target, scope, out var value)) return value;
         var name = scope.Expand(syntax.Name);
         if (name.Namespace != null && XamlNames.IsLanguage(name.Namespace))
-        {
-            var explicitArguments = syntax.Arguments.FirstOrDefault(a => a.Name != null && scope.Expand(a.Name, true).LocalName == "TypeArguments" && scope.Expand(a.Name, true).Namespace is string ns && XamlNames.IsLanguage(ns))?.Value;
-            var argument = syntax.Arguments.FirstOrDefault(a => a.Name == null)?.Value ?? syntax.Arguments.FirstOrDefault(a => a.Name == (name.LocalName == "Static" ? "Member" : name.LocalName == "Reference" ? "Name" : "TypeName"))?.Value;
-            switch (name.LocalName)
-            {
-                case "True": case "False": return _context.Values.Coerce(new BoundConstantExpression(name.LocalName == "True", _context.Types.Special(SpecialType.System_Boolean), syntax.Span), target, syntax.Span);
-                case "Null":
-                    if (syntax.Arguments.Length != 0) _context.Report("XG1009", "x:Null does not accept arguments.", syntax.Span);
-                    return _context.Values.Coerce(new BoundConstantExpression(null, null, syntax.Span), target, syntax.Span);
-                case "Type":
-                {
-                    var type = argument == null ? null : _context.Values.ResolveTypeLiteral(argument, scope, syntax.Span, typeArguments: explicitArguments);
-                    if (type == null) { if (argument == null) _context.Report("XG1009", "x:Type requires a type name.", syntax.Span); return null; }
-                    return new BoundTypeExpression(type, _context.Types.Find(ClrNames.Type)!, syntax.Span);
-                }
-                case "Static": return argument == null ? Missing("x:Static requires a member.", syntax.Span) : Static(argument, target, scope, syntax.Span, explicitArguments);
-                case "Reference": return argument == null ? Missing("x:Reference requires a name.", syntax.Span) : new BoundReferenceExpression(argument, target, syntax.Span);
-                default: return Missing($"Unsupported intrinsic markup extension '{syntax.Name}'.", syntax.Span);
-            }
-        }
+            return new IntrinsicMarkupBinder(_context).Bind(syntax, target, scope);
         var genericArguments = syntax.Arguments.FirstOrDefault(a => a.Name != null && scope.Expand(a.Name, true).LocalName == "TypeArguments" && scope.Expand(a.Name, true).Namespace is string ns && XamlNames.IsLanguage(ns))?.Value;
         var typeSymbol = _context.ResolveType(syntax.Name, scope, syntax.Span, genericArguments, extension: true);
         if (typeSymbol == null) return null;
@@ -50,11 +31,12 @@ internal sealed class MarkupBinder
         var method = _context.Types.MarkupExtensionMethod(obj.Type);
         return method == null ? null : new BoundMarkupExpression(obj, method, method.ReturnType, span);
     }
-    public BoundExpression? Static(string text, ITypeSymbol target, NamespaceScope scope, TextSpan span, string? typeArguments = null)
+    public BoundExpression? Static(string text, ITypeSymbol target, NamespaceScope scope, TextSpan span, string? typeArguments = null, NamespaceScope? typeArgumentScope = null)
     {
+        text = text.Trim();
         var dot = text.LastIndexOf('.');
         if (dot < 1) return Missing("x:Static requires Type.Member.", span);
-        var owner = _context.ResolveType(text.Substring(0, dot), scope, span, typeArguments);
+        var owner = _context.ResolveType(text.Substring(0, dot), scope, span, typeArguments, typeArgumentScope: typeArgumentScope);
         if (owner == null) return null;
         var member = owner.Members(text.Substring(dot + 1)).FirstOrDefault(m => m.IsStatic && _context.Types.IsAccessible(m) &&
             (m is IFieldSymbol || m is IPropertySymbol p && p.GetMethod != null && _context.Types.IsAccessible(p.GetMethod)));

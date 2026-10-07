@@ -23,8 +23,9 @@ Compare behavior against the pinned source as well as its tests. Additional regr
 | Delegate-valued properties and root events | `RootMethodBinder` shares accessible method selection between events and delegate values. `RootMethodBindingTests` executes attributes, text/string elements, private partial-class methods, nested constructor arguments and deferred owner capture, and checks invalid method diagnostics. |
 | Event delegate expressions | `BoundEventAssignment.Value` carries markup/object-form handlers through emission and tooling traversal. `EventValueTests` verifies event target services, single evaluation, named fields and session cleanup for CLR and attached events. |
 | Member-specific text conversions | Property elements, attached getters and constructor arguments retain conversion metadata. String elements and `x:Arguments` preserve their namespace scopes. Static `Parse` takes precedence over type-level converters, while member converters override it. `TextConversionContextTests` executes these paths. |
+| Intrinsic object/property-element forms | `IntrinsicMarkupBinder` supports `TypeName`, `Member` and `Name` property elements, preserves generic-argument namespace scopes, and diagnoses duplicate/unknown arguments. `IntrinsicObjectTests` covers these forms, forward references, Boolean collection values and framework rule overrides. |
 
-This is an ongoing source audit. Remaining review includes intrinsic object/property-element forms, automatic collection overload dispatch, metadata inheritance and framework-specific transforms. Passing the current suites does not close those items.
+This is an ongoing source audit. Remaining review includes automatic collection overload dispatch, metadata inheritance, root conversion forms and framework-specific transforms. Passing the current suites does not close those items.
 
 ## Run
 

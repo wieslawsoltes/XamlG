@@ -95,14 +95,14 @@ public sealed class ValueBinder
         }
         return null;
     }
-    public ITypeSymbol? ResolveTypeLiteral(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true)
+    public ITypeSymbol? ResolveTypeLiteral(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, NamespaceScope? typeArgumentScope = null)
     {
         if (name.EndsWith("[]", StringComparison.Ordinal))
         {
-            var element = ResolveTypeLiteral(name.Substring(0, name.Length - 2), scope, span, typeArguments, report);
+            var element = ResolveTypeLiteral(name.Substring(0, name.Length - 2), scope, span, typeArguments, report, typeArgumentScope);
             return element == null ? null : _context.Types.Compilation.CreateArrayTypeSymbol(element);
         }
-        return _context.ResolveType(name, scope, span, typeArguments, report);
+        return _context.ResolveType(name, scope, span, typeArguments, report, typeArgumentScope: typeArgumentScope);
     }
     public BoundExpression? BindNode(XamlSyntaxNode syntax, ITypeSymbol target, NamespaceScope scope, int nameScope = 0, bool normalizeText = true, ISymbol? member = null)
     {
@@ -115,7 +115,6 @@ public sealed class ValueBinder
                 return replacement == null ? null : Coerce(replacement, target, element.Span, nested, member);
         if (name.Namespace != null && XamlNames.IsLanguage(name.Namespace))
         {
-            if (name.LocalName == "Null") return Coerce(new BoundConstantExpression(null, null, syntax.Span), target, syntax.Span);
             if (name.LocalName == "Array")
             {
                 var typeText = element.Attributes.FirstOrDefault(a => a.Name == "Type")?.Value;
@@ -132,10 +131,16 @@ public sealed class ValueBinder
                 { var value = BindNode(child, itemType, nested, nameScope); if (value != null) values.Add(value); }
                 return Coerce(new BoundArrayExpression(values.ToImmutable(), _context.Types.Compilation.CreateArrayTypeSymbol(itemType), syntax.Span), target, syntax.Span);
             }
-            if (name.LocalName is "Type" or "Static" or "Reference" or "True" or "False")
+            if (name.LocalName is "Type" or "Static" or "Reference" or "True" or "False" or "Null")
             {
-                var args = element.Attributes.Where(a => !a.IsNamespace).Select(a => new MarkupArgumentSyntax(a.Name, a.Value, a.Span)).ToImmutableArray();
-                var value = _markup.Bind(new(element.Name, args, element.Span), target, nested); return value == null ? null : Coerce(value, target, syntax.Span, nested, member);
+                var arguments = element.Attributes.Where(attribute => !attribute.IsNamespace)
+                    .Select(attribute => new MarkupArgumentSyntax(attribute.Name, attribute.Value, attribute.ValueSpan)).ToImmutableArray();
+                var markup = new MarkupExtensionSyntax(element.Name, arguments, element.Span);
+                foreach (var rule in _context.Profile.MarkupBindingRules)
+                    if (rule.TryBind(_context, markup, target, nested, out var replacement))
+                        return replacement == null ? null : Coerce(replacement, target, syntax.Span, nested, member);
+                var value = new IntrinsicMarkupBinder(_context).BindObject(element, target, nested);
+                return value == null ? null : Coerce(value, target, syntax.Span, nested, member);
             }
         }
         var type = _context.ResolveType(element.Name, nested, element.NameSpan, nested.Directive(element, "TypeArguments")?.Value);
@@ -159,7 +164,11 @@ public sealed class ValueBinder
         if (syntax is XamlTextSyntax) return _context.Types.Special(SpecialType.System_String);
         if (syntax is not XamlElementSyntax element) return null;
         var nested = scope.Push(element); var name = nested.Expand(element.Name);
-        if (name.Namespace != null && XamlNames.IsLanguage(name.Namespace) && name.LocalName == "Null") return null;
+        if (name.Namespace != null && XamlNames.IsLanguage(name.Namespace))
+        {
+            if (name.LocalName == "Null") return null;
+            if (name.LocalName is "True" or "False") return _context.Types.Special(SpecialType.System_Boolean);
+        }
         return _context.ResolveType(element.Name, nested, element.NameSpan, nested.Directive(element, "TypeArguments")?.Value, report: false);
     }
     public ITypeSymbol? PeekValueType(XamlSyntaxNode syntax, NamespaceScope scope)
