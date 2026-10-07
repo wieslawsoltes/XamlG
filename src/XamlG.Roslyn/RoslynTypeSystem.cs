@@ -109,17 +109,22 @@ public sealed class RoslynTypeSystem
     public ImmutableArray<IMethodSymbol> AddMethods(ITypeSymbol type) => _addMethods.GetOrAdd(type, CollectAddMethods);
     private ImmutableArray<IMethodSymbol> CollectAddMethods(ITypeSymbol type)
     {
-        var methods = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+        var methods = new List<IMethodSymbol>();
+        var seen = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);
+        void Add(IMethodSymbol method)
+        {
+            if (method.Parameters.All(parameter => parameter.RefKind == RefKind.None) && seen.Add(method)) methods.Add(method);
+        }
         var genericList = type.HasMetadataName(ClrNames.IListOfT) || type.AllInterfaces.Any(contract => contract.HasMetadataName(ClrNames.IListOfT));
         foreach (var method in type.Members(Configuration.CollectionAddMethod).OfType<IMethodSymbol>())
-            if (!method.IsStatic && !method.IsGenericMethod && method.Parameters.Length is 1 or 2 && IsAccessible(method)) methods.Add(method);
+            if (!method.IsStatic && !method.IsGenericMethod && method.Parameters.Length is 1 or 2 && IsAccessible(method)) Add(method);
         foreach (var contract in type.AllInterfaces)
         {
             // IList.Add(object) bypasses the generic list's item contract and fails only at runtime.
             if (genericList && contract.HasMetadataName(ClrNames.IList)) continue;
             var addChild = Configuration.AddChildInterfaces.Contains(contract.OriginalDefinition.MetadataName());
             foreach (var method in contract.GetMembers(addChild ? Configuration.AddChildMethod : Configuration.CollectionAddMethod).OfType<IMethodSymbol>())
-                if (method.Parameters.Length is 1 or 2 && !method.IsStatic && !method.IsGenericMethod && IsAccessible(contract)) methods.Add(method);
+                if (method.Parameters.Length is 1 or 2 && !method.IsStatic && !method.IsGenericMethod && IsAccessible(contract)) Add(method);
         }
         if (methods.Count == 0 && type is INamedTypeSymbol declared)
         {
@@ -131,10 +136,11 @@ public sealed class RoslynTypeSystem
                 if (mutation.Arity != 0) mutation = mutation.Construct(declared.TypeArguments.ToArray());
                 foreach (var method in mutation.Members(Configuration.CollectionAddMethod).OfType<IMethodSymbol>())
                     if (!method.IsStatic && !method.IsGenericMethod && method.Parameters.Length == 1)
-                        methods.Add(method);
+                        Add(method);
             }
         }
-        return methods.OrderBy(m => m.ContainingType.TypeKind == TypeKind.Interface ? 1 : 0).ThenBy(m => m.ToDisplayString(), StringComparer.Ordinal).ToImmutableArray();
+        return methods.OrderBy(method => SymbolEqualityComparer.Default.Equals(method.ContainingType, type) ? 0 : 1)
+            .ThenBy(method => method.ContainingType.TypeKind == TypeKind.Interface ? 1 : 0).ToImmutableArray();
     }
     public IEnumerable<INamedTypeSymbol> EnumerateTypes(string xmlNamespace)
     {

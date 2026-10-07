@@ -48,7 +48,14 @@ internal sealed class AssignmentEmitter
                     arguments.Add(argument);
                 }
                 var last = add.Arguments[add.Arguments.Length - 1];
-                void Add(string value) => writer.Line("((" + add.AddMethod.ContainingType.CSharpName() + ")" + receiver + ")." + CSharpNames.Method(add.AddMethod) + "(" + string.Join(", ", arguments.Concat(new[] { value })) + ");");
+                void Add(string value)
+                {
+                    var inputs = string.Join(", ", arguments.Concat(new[] { value }));
+                    if (add.Alternatives.IsDefaultOrEmpty)
+                        writer.Line("((" + add.AddMethod.ContainingType.CSharpName() + ")" + receiver + ")." + CSharpNames.Method(add.AddMethod) + "(" + inputs + ");");
+                    else
+                        writer.Line(_context.DynamicAdds.Register(add.Collection?.ValueType ?? owner.Type, add.Alternatives) + "(" + receiver + ", " + inputs + ");");
+                }
                 if (last is BoundObjectExpression child)
                     _objects.Emit(child.Object, valueFrame, null, Add,
                         value => ArgumentInitializerEmitter.Emit(_context, value, add.ValueInitializers, arguments));

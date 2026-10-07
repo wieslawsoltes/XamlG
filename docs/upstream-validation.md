@@ -20,12 +20,19 @@ Compare behavior against the pinned source as well as its tests. Additional regr
 | --- | --- |
 | `ProvideValue` and `ProvideTypedValue` alternatives | `RoslynTypeSystem.MarkupExtensionMethod` shares provider selection across binding and value-type probing. Parameterless providers take precedence; typed returns win within the same parameter shape. `MarkupExtensionSelectionTests` executes attribute, element, collection and constructor-argument forms. |
 | Collection replacement followed by additions | `MemberBinder` permits the first value to replace a collection before adding subsequent items. Generic lists exclude the non-generic `IList.Add` fallback. `CollectionAssignmentTests` verifies instance identity, replacement counts, nested collection items and incompatible-item diagnostics. |
+| Runtime collection overload selection | `DynamicCollectionBinder` retains ordered `Add` alternatives for object-valued extensions; `DynamicAddEmitter` emits shared typed dispatch helpers. `DynamicCollectionTests` covers keys, null/nullable items, object fallbacks, explicit interfaces, single evaluation and unmatched-value failures. |
 | Delegate-valued properties and root events | `RootMethodBinder` shares accessible method selection between events and delegate values. `RootMethodBindingTests` executes attributes, text/string elements, private partial-class methods, nested constructor arguments and deferred owner capture, and checks invalid method diagnostics. |
 | Event delegate expressions | `BoundEventAssignment.Value` carries markup/object-form handlers through emission and tooling traversal. `EventValueTests` verifies event target services, single evaluation, named fields and session cleanup for CLR and attached events. |
 | Member-specific text conversions | Property elements, attached getters and constructor arguments retain conversion metadata. String elements and `x:Arguments` preserve their namespace scopes. Static `Parse` takes precedence over type-level converters, while member converters override it. `TextConversionContextTests` executes these paths. |
 | Intrinsic object/property-element forms | `IntrinsicMarkupBinder` supports `TypeName`, `Member` and `Name` property elements, preserves generic-argument namespace scopes, and diagnoses duplicate/unknown arguments. `IntrinsicObjectTests` covers these forms, forward references, Boolean collection values and framework rule overrides. |
 
-This is an ongoing source audit. Remaining review includes automatic collection overload dispatch, metadata inheritance, root conversion forms and framework-specific transforms. Passing the current suites does not close those items.
+This is an ongoing source audit. Passing the current suites does not close the remaining work:
+
+- Collection-valued writable properties still choose replacement using the statically probed value type. Compare an object-returning extension that produces a collection with the upstream setter-before-adder runtime alternatives.
+- Static collection overload/conversion ordering needs a differential check against `ConvertPropertyValuesToAssignmentsTransformer`, especially text conversions and inherited adders. The new runtime helpers retain declaration order, but the existing static binder still ranks candidates.
+- Type probing for constructor/collection values needs coverage of `x:Static`, arrays and references, beyond the Boolean and typed-provider forms exercised here.
+- Audit inherited metadata and converted root forms against the actual upstream transform/emitter combination before classifying differences as missing features or backend constraints.
+- Complete the framework-transform comparison beyond the portable corpus, including Avalonia animation, binding, selector and resource behavior. Existing framework tests and theme gates remain relevant but do not certify untested combinations.
 
 ## Run
 

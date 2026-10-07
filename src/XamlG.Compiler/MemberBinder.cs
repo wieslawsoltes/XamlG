@@ -153,6 +153,7 @@ public sealed class MemberBinder
         var elementScope = syntax is XamlElementSyntax element ? scope.Push(element) : scope;
         var key = syntax is XamlElementSyntax keyed ? elementScope.Directive(keyed, "Key") : null;
         var methods = _context.Types.AddMethods(type).Where(m => m.Parameters.Length == (key == null ? 1 : 2)).ToArray();
+        if (new DynamicCollectionBinder(_context).TryBind(target, member, syntax, scope, key, elementScope, methods)) return;
         var ranked = new List<(IMethodSymbol Method, int Score)>();
         foreach (var method in methods)
         {

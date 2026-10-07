@@ -16,6 +16,8 @@ internal sealed class EmissionContext
     public CancellationToken Cancellation { get; }
     private DynamicSetterEmitter? _dynamicSetters;
     public DynamicSetterEmitter DynamicSetters => _dynamicSetters ??= new(this);
+    private DynamicAddEmitter? _dynamicAdds;
+    public DynamicAddEmitter DynamicAdds => _dynamicAdds ??= new(this);
     public CSharpWriter Writer { get; } = new();
     public List<XamlDiagnostic> Diagnostics { get; } = new();
     public List<XamlSourceMapping> Mappings { get; } = new();

@@ -79,7 +79,7 @@ public sealed class CSharpEmitter
             ComponentInitializationEmitter.Emit(context, populate);
         flow.EmitNamespaceMaps();
         new ServiceContractEmitter(context).Emit();
-        context.DynamicSetters.Emit(); context.EmitMetadataHelpers();
+        context.DynamicSetters.Emit(); context.DynamicAdds.Emit(); context.EmitMetadataHelpers();
         if (nesting == 0) writer.Close(); else for (var i = 0; i < nesting; i++) writer.Close();
         if (namespaceName.Length != 0) writer.Close();
         return new(context.Id + ".xaml.g.cs", writer.ToString(), typeName, build, populate,
