@@ -97,10 +97,7 @@ internal sealed class DynamicSetterEmitter
         }
         if (setter is BoundCollectionValueSetter collection)
         {
-            var member = collection.Collection;
-            var receiver = member.Kind == BoundMemberKind.AttachedProperty
-                ? member.Getter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Getter) + "(__target)"
-                : "__target." + CSharpNames.Identifier(member.Name);
+            var receiver = AssignmentEmitter.Get(collection.Collection, "__target");
             writer.Line("((" + collection.AddMethod.ContainingType.CSharpName() + ")" + receiver + ")." + CSharpNames.Method(collection.AddMethod) + "(__typed);");
             return;
         }

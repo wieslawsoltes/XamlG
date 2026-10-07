@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
+using XamlG.Compiler;
 using XamlG.Roslyn;
 
 namespace XamlG.CSharp;
@@ -8,14 +9,14 @@ namespace XamlG.CSharp;
 /// receivers and keys retain their statically resolved types.</summary>
 internal sealed class DynamicAddEmitter(EmissionContext context)
 {
-    private readonly Dictionary<string, (string Name, ITypeSymbol Receiver, ImmutableArray<IMethodSymbol> Methods)> _plans = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (string Name, ITypeSymbol Receiver, BoundMember? Collection, ImmutableArray<IMethodSymbol> Methods)> _plans = new(StringComparer.Ordinal);
 
-    public string Register(ITypeSymbol receiver, ImmutableArray<IMethodSymbol> methods)
+    public string Register(ITypeSymbol receiver, BoundMember? collection, ImmutableArray<IMethodSymbol> methods)
     {
-        var key = receiver.CSharpName() + "\n" + string.Join("\n", methods.Select(method => method.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+        var key = receiver.CSharpName() + "\n" + collection?.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "\n" + string.Join("\n", methods.Select(method => method.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
         if (_plans.TryGetValue(key, out var existing)) return existing.Name;
         var name = "__XamlDynamicAdd_" + CSharpNames.StableId(key);
-        _plans.Add(key, (name, receiver, methods));
+        _plans.Add(key, (name, receiver, collection, methods));
         return name;
     }
 
@@ -39,7 +40,7 @@ internal sealed class DynamicAddEmitter(EmissionContext context)
                     ? nullable.TypeArguments[0] : type;
                 catchAll = type.SpecialType == SpecialType.System_Object;
                 writer.Open((index == 0 ? "if" : "else if") + " (" + (catchAll ? "true" : "__value is " + patternType.CSharpName()) + ")");
-                Call(method);
+                Call(method, plan.Collection);
                 writer.Close();
                 if (catchAll) break;
             }
@@ -47,7 +48,7 @@ internal sealed class DynamicAddEmitter(EmissionContext context)
             {
                 writer.Open("else");
                 writer.Open("if (__value is null)");
-                if (acceptsNull != null) Call(acceptsNull);
+                if (acceptsNull != null) Call(acceptsNull, plan.Collection);
                 else writer.Line("throw new global::System.NullReferenceException(\"A null XAML value cannot be unboxed into a non-nullable collection item.\");");
                 writer.Close();
                 writer.Line("throw new global::System.InvalidCastException(\"No XAML collection overload accepts the runtime value.\");");
@@ -56,10 +57,11 @@ internal sealed class DynamicAddEmitter(EmissionContext context)
             writer.Close();
         }
 
-        void Call(IMethodSymbol method)
+        void Call(IMethodSymbol method, BoundMember? collection)
         {
             var key = method.Parameters.Length == 2 ? "(" + method.Parameters[0].Type.CSharpName() + ")__key, " : string.Empty;
-            writer.Line("((" + method.ContainingType.CSharpName() + ")__target)." + CSharpNames.Method(method) + "(" + key +
+            var receiver = collection == null ? "__target" : AssignmentEmitter.Get(collection, "__target");
+            writer.Line("((" + method.ContainingType.CSharpName() + ")" + receiver + ")." + CSharpNames.Method(method) + "(" + key +
                 "(" + method.Parameters.Last().Type.CSharpName() + ")__value!);");
             writer.Line("return;");
         }

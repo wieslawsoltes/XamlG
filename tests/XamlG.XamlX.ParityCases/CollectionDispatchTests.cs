@@ -86,6 +86,52 @@ public sealed class CollectionDispatchTests : CompilerTestBase
     {
         Assert.Throws<XamlLoadException>(() => Compile("<CollectionRoot xmlns='clr-namespace:XamlParserTests.Parity;assembly=XamlParserTests' ReadOnlyItems='" + value + "'/>"));
     }
+
+    [Fact]
+    public void StaticAdditionsReadTheCollectionForEachValue()
+    {
+        var root = (CollectionRoot)CompileAndRun(Prefix + "<CollectionRoot.Items><x:String>one</x:String><x:String>two</x:String></CollectionRoot.Items></CollectionRoot>");
+        Assert.Equal(new[] { "get", "get" }, root.Events);
+        Assert.Equal(new[] { "initial", "one", "two" }, root.Items);
+    }
+
+    [Fact]
+    public void StaticallySelectedAddersReadBeforeEvaluatingTheValue()
+    {
+        var root = (CollectionRoot)CompileAndRun(Prefix + "<CollectionRoot.Items><StringValue/></CollectionRoot.Items></CollectionRoot>");
+        Assert.Equal(new[] { "get", "provide:string", "set" }, root.Events);
+        Assert.Equal(new[] { "changed" }, root.Items);
+    }
+
+    [Fact]
+    public void RuntimeSelectedAddersReadAfterEvaluatingTheValue()
+    {
+        var root = (CollectionRoot)CompileAndRun(Prefix + "<CollectionRoot.ReadOnlyItems><RuntimeValue Mode='mutate'/></CollectionRoot.ReadOnlyItems></CollectionRoot>");
+        Assert.Equal(new[] { "provide:mutate", "set", "get" }, root.Events);
+        Assert.Equal(new[] { "changed", "item" }, root.Items);
+    }
+
+    [Fact]
+    public void AProvidedObjectWithOneAdderReadsBeforeEvaluatingTheValue()
+    {
+        var root = (CollectionRoot)CompileAndRun(Prefix + "<CollectionRoot.SingleItems><RuntimeValue Mode='item'/></CollectionRoot.SingleItems></CollectionRoot>");
+        Assert.Equal(new[] { "get:single", "provide:item" }, root.Events);
+    }
+
+    [Fact]
+    public void AnUnmatchedRuntimeValueDoesNotReadTheCollection()
+    {
+        var root = new CollectionRoot();
+        Assert.Throws<InvalidCastException>(() => CompileAndPopulate(Prefix + "<CollectionRoot.OverloadedItems><RuntimeValue Mode='invalid'/></CollectionRoot.OverloadedItems></CollectionRoot>", instance: root));
+        Assert.Equal(new[] { "provide:invalid" }, root.Events);
+    }
+
+    [Fact]
+    public void RuntimeKeyedAddersReadAfterBothArguments()
+    {
+        var root = (CollectionRoot)CompileAndRun(Prefix + "<CollectionRoot.Entries><RuntimeValue Mode='item' x:Key='{KeyValue}'/></CollectionRoot.Entries></CollectionRoot>");
+        Assert.Equal(new[] { "provide:key", "provide:item", "get:entries" }, root.Events);
+    }
 }
 
 public sealed class CollectionRoot
@@ -93,7 +139,10 @@ public sealed class CollectionRoot
     private List<string>? _items = new() { "initial" };
     public List<string> Events { get; } = new();
     public int Replacements { get; private set; }
-    public List<string>? ReadOnlyItems => _items;
+    public List<string>? ReadOnlyItems => Items;
+    public TypedCollection SingleItems { get { Events.Add("get:single"); return new(); } }
+    public OverloadedCollection OverloadedItems { get { Events.Add("get:overloaded"); return new(); } }
+    public KeyedCollection Entries { get { Events.Add("get:entries"); return new(); } }
     public List<string>? Items
     {
         get { Events.Add("get"); return _items; }
@@ -124,6 +173,39 @@ public sealed class NullValue
     public object? ProvideValue() => null;
 }
 
+public sealed class OverloadedCollection
+{
+    public void Add(int value) { }
+    public void Add(string value) { }
+}
+
+public sealed class KeyedCollection
+{
+    public void Add(int key, int value) { }
+    public void Add(int key, string value) { }
+}
+
+public sealed class KeyValue
+{
+    public int ProvideValue(IServiceProvider services)
+    {
+        var root = (CollectionRoot)((ITestRootObjectProvider)services.GetService(typeof(ITestRootObjectProvider))!).RootObject!;
+        root.Events.Add("provide:key");
+        return 1;
+    }
+}
+
+public sealed class StringValue
+{
+    public string ProvideValue(IServiceProvider services)
+    {
+        var root = (CollectionRoot)((ITestRootObjectProvider)services.GetService(typeof(ITestRootObjectProvider))!).RootObject!;
+        root.Events.Add("provide:string");
+        root.Items = new List<string> { "changed" };
+        return "item";
+    }
+}
+
 public sealed class RuntimeValue
 {
     public string? Mode { get; set; }
@@ -133,6 +215,7 @@ public sealed class RuntimeValue
         root.Events.Add("provide:" + Mode);
         if (Mode == "collection") return new List<string> { "provided" };
         if (Mode == "mutate") root.Items = new List<string> { "changed" };
+        if (Mode == "invalid") return true;
         return Mode == "null" ? null : "item";
     }
 }

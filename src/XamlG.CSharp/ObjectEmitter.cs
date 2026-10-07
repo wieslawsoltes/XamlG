@@ -54,9 +54,8 @@ internal sealed class ObjectEmitter
         if (value.SupportsInitialize) writer.Line("((global::System.ComponentModel.ISupportInitialize)" + variable + ").BeginInit();");
         initialize?.Invoke(variable);
         if (value.UsableDuringInitialization) consume?.Invoke(variable);
-        var collections = new Dictionary<ISymbol, string>(SymbolEqualityComparer.Default);
         foreach (var assignment in value.Assignments)
-            _context.Map(assignment.Span, () => _assignments.Emit(assignment, value, variable, frame, collections));
+            _context.Map(assignment.Span, () => _assignments.Emit(assignment, value, variable, frame));
         if (value.SupportsInitialize) writer.Line("((global::System.ComponentModel.ISupportInitialize)" + variable + ").EndInit();");
         if (!value.UsableDuringInitialization) consume?.Invoke(variable);
         return variable;
