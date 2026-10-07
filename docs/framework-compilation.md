@@ -12,6 +12,8 @@ Style, ControlTheme and ControlTemplate scopes carry the target type, including 
 
 Control templates validate inherited `TemplatePart` metadata against their deferred namescope. Required missing parts and incompatible part types are errors; optional missing parts are informational. A derived declaration overrides the same part from a base control. Names in an outer graph or nested data template do not satisfy the containing control template's requirements, and wrong-type diagnostics point to the part's name.
 
+Style warnings follow the pinned compiler's scope and severity. Repeated literal setter names in direct style/theme content produce warnings; aliases and explicit `Setters` property elements retain upstream's different warning behavior. Compilation preserves both setters, so Avalonia can still reject them when applying the style. Item-container warnings check the known owner's `ItemTemplate` or `DataTemplates`, direct template content and the upstream `ContentControl` restriction. Merged-dictionary warnings retain the upstream exclusion for nodes wrapped in target-type metadata.
+
 ```xml
 <StackPanel xmlns="https://github.com/avaloniaui">
   <StackPanel.Styles>

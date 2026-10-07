@@ -15,7 +15,6 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
         var declaredType = declared == null ? null : AvaloniaBindingScopeRule.ResolveDataType(context, declared.Value, target.Scope, declared.ValueSpan);
         if (AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Style))
         {
-            target.Annotations.Set(AvaloniaStyleAnnotations.AssignedProperties, new HashSet<ISymbol>(SymbolEqualityComparer.Default));
             var source = TextMember(target.Syntax, AvaloniaStyleMetadata.SelectorMember);
             if (source is { } selector && !string.IsNullOrWhiteSpace(selector.Text))
             {
@@ -49,8 +48,6 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
                 else type = inherited ?? context.Types.Find(AvaloniaMetadata.Control);
             }
             if (type != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, type);
-            if (theme)
-                target.Annotations.Set(AvaloniaStyleAnnotations.AssignedProperties, new HashSet<ISymbol>(SymbolEqualityComparer.Default));
         }
         else if (AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Setter))
         {
@@ -58,9 +55,6 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
             if (source is { } property && AvaloniaRegisteredPropertyResolver.Resolve(context, declaredType ?? inherited, property.Text, target.Scope, property.Span) is { } resolved)
             {
                 target.Annotations.Set(AvaloniaStyleAnnotations.SetterProperty, resolved);
-                var parent = context.Ancestors.Skip(1).FirstOrDefault();
-                if (parent != null && parent.Annotations.TryGet(AvaloniaStyleAnnotations.AssignedProperties, out var assigned) && !assigned.Add(resolved.Field))
-                    context.Report("XG3107", "A style cannot assign the same registered property twice: " + property.Text, property.Span);
             }
         }
         // The directive wraps the inferred style metadata and is nearest to its setters.

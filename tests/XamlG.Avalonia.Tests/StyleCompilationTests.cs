@@ -67,8 +67,7 @@ public sealed class StyleCompilationTests
         foreach (var test in new[]
         {
             ("<Style " + Ns + " Selector='Button'><Setter Property='Width' Value='not-a-number'/></Style>", "XG1008"),
-            ("<Style " + Ns + " Selector='Button'><Setter Property='Missing' Value='1'/></Style>", "XG3103"),
-            ("<Style " + Ns + " Selector='Button'><Setter Property='Width' Value='1'/><Setter Property='Width' Value='2'/></Style>", "XG3107")
+            ("<Style " + Ns + " Selector='Button'><Setter Property='Missing' Value='1'/></Style>", "XG3103")
         })
         {
             var bound = new XamlCompiler().Bind(XamlSyntaxTree.Parse(test.Item1, cancellationToken: cancellation), compilation,

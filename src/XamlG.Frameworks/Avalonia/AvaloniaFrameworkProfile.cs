@@ -14,6 +14,7 @@ public static class AvaloniaFrameworkProfile
         var bindings = new AvaloniaBindingScopeRule(compileBindingsByDefault);
         var classes = new AvaloniaClassBindingRule();
         var resources = new AvaloniaResourceMergeRule();
+        var styleWarnings = new AvaloniaStyleWarningsRule();
         var options = new AvaloniaOptionMarkupRule();
         var bindingValues = new AvaloniaBindingMarkupRule();
         return XamlFrameworkProfile.Portable with
@@ -59,9 +60,9 @@ public static class AvaloniaFrameworkProfile
                 new AvaloniaFontFamilyTextRule(), new XamlStaticMemberTextRule(new[] { AvaloniaLiteralMetadata.WindowTransparencyLevel }),
                 new XamlDelimitedListTextRule(new[] { AvaloniaRegisteredSetterMetadata.List, AvaloniaRegisteredSetterMetadata.ReadOnlyList }),
                 new AvaloniaTextConversionRule()),
-            ObjectBindingRules = ImmutableArray.Create<IXamlObjectBindingRule>(new References.AvaloniaNameScopeRule(), new AvaloniaStyleObjectRule(), new AvaloniaTemplatePartsRule(), bindings, classes, resources),
+            ObjectBindingRules = ImmutableArray.Create<IXamlObjectBindingRule>(new References.AvaloniaNameScopeRule(), new AvaloniaStyleObjectRule(), new AvaloniaTemplatePartsRule(), styleWarnings, bindings, classes, resources),
             MemberBindingRules = ImmutableArray.Create<IXamlMemberBindingRule>(new AvaloniaPropertyDescriptorRule()),
-            PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(new AvaloniaDesignPropertyRule(), resources,
+            PropertyBindingRules = ImmutableArray.Create<IXamlPropertyBindingRule>(new AvaloniaDesignPropertyRule(), styleWarnings, resources,
                 new AvaloniaStylePropertyRule(), new AvaloniaContainerQueryRule(), new References.AvaloniaResolveByNameRule(), new AvaloniaRegisteredSetterRule(), new AvaloniaBindingRule()),
             MarkupBindingRules = ImmutableArray.Create<IXamlMarkupBindingRule>(options, new AvaloniaCompiledBindingRule(), bindingValues)
         };
