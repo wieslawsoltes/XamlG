@@ -36,7 +36,7 @@ Use the single-reference `XamlG.Avalonia` integration package in an existing C# 
 </ItemGroup>
 ```
 
-This package supplies the generator, transitive build targets and matching runtime dependencies. While `XamlGEnabled` is true, its targets disable Avalonia's XamlX compilation and name generator and configure the pinned Roslyn interceptor contract. Eligible handwritten `AvaloniaXamlLoader.Load` calls, generated initializers and factories share initialization ownership. Unsupported loader paths receive diagnostics instead of silently invoking a runtime XAML compiler.
+This package supplies the generator, transitive build targets and matching runtime dependencies. While `XamlGEnabled` is true, its targets disable Avalonia's XamlX compilation and name generator, configure the pinned Roslyn interceptor contract and enable unsafe compilation for generated deferred-resource callbacks. Eligible handwritten `AvaloniaXamlLoader.Load` calls, generated initializers and factories share initialization ownership. Unsupported loader paths receive diagnostics instead of silently invoking a runtime XAML compiler.
 
 The input normalizer reconciles `XamlGSource`, Avalonia XAML/resource items and existing `AdditionalFiles`. Project removals and updates remain authoritative; physical paths are separated from logical resource identities, conflicting metadata is rejected, and unrelated generator metadata is preserved. Input preparation precedes analyzer-config generation and compilation. Unchanged input manifests retain their timestamps; edit, rename, clean/rebuild, linked-file and multi-target behavior have executable contracts.
 

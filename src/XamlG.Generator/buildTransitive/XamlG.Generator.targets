@@ -4,6 +4,8 @@
     <EnableAvaloniaXamlCompilation>false</EnableAvaloniaXamlCompilation>
     <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
     <InterceptorsNamespaces>$(InterceptorsNamespaces);XamlG.Generated.Loaders</InterceptorsNamespaces>
+    <!-- Avalonia's deferred-resource factory accepts a managed function pointer. -->
+    <AllowUnsafeBlocks Condition="'$(XamlGFramework)' == 'Avalonia' or ('$(XamlGFramework)' == 'Auto' and '$(AvaloniaBuildTasksLocation)' != '')">true</AllowUnsafeBlocks>
     <_XamlGFrameworkInputTarget Condition="'$(AvaloniaBuildTasksLocation)' != ''">_InjectAvaloniaAdditionalFiles</_XamlGFrameworkInputTarget>
   </PropertyGroup>
   <UsingTask TaskName="XamlG.Build.NormalizeXamlGInputs" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
