@@ -132,6 +132,15 @@ public sealed class CollectionDispatchTests : CompilerTestBase
         var root = (CollectionRoot)CompileAndRun(Prefix + "<CollectionRoot.Entries><RuntimeValue Mode='item' x:Key='{KeyValue}'/></CollectionRoot.Entries></CollectionRoot>");
         Assert.Equal(new[] { "provide:key", "provide:item", "get:entries" }, root.Events);
     }
+
+    [Theory]
+    [InlineData("ObjectItems")]
+    [InlineData("InterfaceItems")]
+    public void RedundantRuntimeAlternativesUseTheStaticGetterOrder(string property)
+    {
+        var root = (CollectionRoot)CompileAndRun(Prefix + "<CollectionRoot." + property + "><RuntimeValue Mode='item'/></CollectionRoot." + property + "></CollectionRoot>");
+        Assert.Equal(new[] { "get:" + property, "provide:item" }, root.Events);
+    }
 }
 
 public sealed class CollectionRoot
@@ -143,6 +152,8 @@ public sealed class CollectionRoot
     public TypedCollection SingleItems { get { Events.Add("get:single"); return new(); } }
     public OverloadedCollection OverloadedItems { get { Events.Add("get:overloaded"); return new(); } }
     public KeyedCollection Entries { get { Events.Add("get:entries"); return new(); } }
+    public ObjectFirstCollection ObjectItems { get { Events.Add("get:ObjectItems"); return new(); } }
+    public InterfaceStringCollection InterfaceItems { get { Events.Add("get:InterfaceItems"); return new(); } }
     public List<string>? Items
     {
         get { Events.Add("get"); return _items; }
@@ -176,6 +187,16 @@ public sealed class NullValue
 public sealed class OverloadedCollection
 {
     public void Add(int value) { }
+    public void Add(string value) { }
+}
+
+public interface IStringItems
+{
+    void Add(string value);
+}
+
+public sealed class InterfaceStringCollection : IStringItems
+{
     public void Add(string value) { }
 }
 

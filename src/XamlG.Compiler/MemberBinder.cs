@@ -155,44 +155,44 @@ public sealed class MemberBinder
         var elementScope = syntax is XamlElementSyntax element ? scope.Push(element) : scope;
         var key = syntax is XamlElementSyntax keyed ? elementScope.Directive(keyed, "Key") : null;
         var methods = _context.Types.AddMethods(type).Where(m => m.Parameters.Length == (key == null ? 1 : 2)).ToArray();
-        if (new DynamicCollectionBinder(_context).TryBind(target, member, syntax, scope, key, elementScope, methods)) return;
-        var ranked = new List<(IMethodSymbol Method, int Score)>();
+        if (!new CollectionKeyBinder(_context).TryBind(key, elementScope, ref methods, out var boundKey)) return;
+        if (new DynamicCollectionBinder(_context).TryBind(target, member, syntax, scope, boundKey, methods)) return;
+        var nodeType = _context.Values.PeekValueType(syntax, scope);
+        var isLiteral = _context.Values.TryGetStringLiteral(syntax, scope, out var literal);
+        if (syntax is XamlTextSyntax && isLiteral)
+        {
+            if (!normalized) literal = XmlWhitespace.Normalize(literal, scope.PreserveSpace);
+            if (literal.StartsWith("{}", StringComparison.Ordinal)) literal = literal.Substring(2);
+        }
+        IMethodSymbol? selected = null;
+        BoundExpression? converted = null;
         foreach (var method in methods)
         {
             var parameter = method.Parameters[method.Parameters.Length - 1].Type;
-            var score = method.ContainingType.TypeKind == TypeKind.Interface ? 1 : 0;
-            if (syntax is XamlTextSyntax text)
+            var conversion = nodeType == null ? default : _context.Types.Compilation.ClassifyConversion(nodeType, parameter);
+            if (nodeType == null ? parameter.AcceptsNull() : conversion.IsImplicit && (!conversion.IsNumeric || _context.Types.Configuration.AllowImplicitNumericConversions))
             {
-                if (_context.Values.TryText(normalized ? text.Value : XmlWhitespace.Normalize(text.Value, scope.PreserveSpace), parameter, scope, text.Span) == null && !text.Value.StartsWith("{", StringComparison.Ordinal)) continue;
-                score += parameter.SpecialType == SpecialType.System_String ? 0 : parameter.SpecialType == SpecialType.System_Object ? 3 : 2;
+                selected ??= method;
+                continue;
             }
-            else
+            if (isLiteral && _context.Values.TryText(literal, parameter, elementScope, syntax.Span) is { } value)
             {
-                var nodeType = _context.Values.PeekValueType(syntax, scope);
-                if (nodeType == null && !parameter.AcceptsNull()) continue;
-                if (nodeType != null && !_context.Types.Compilation.ClassifyCommonConversion(nodeType, parameter).IsImplicit)
-                {
-                    if (nodeType.SpecialType != SpecialType.System_Object || !_context.Types.Compilation.ClassifyCommonConversion(nodeType, parameter).Exists) continue;
-                    score += 5;
-                }
-                else if (!SymbolEqualityComparer.Default.Equals(nodeType, parameter)) score++;
+                selected = method;
+                converted = value;
+                break;
             }
-            ranked.Add((method, score));
+            if (isLiteral && PrimitiveValueParser.IsScalar(parameter))
+            { _context.Report("XG1008", $"Cannot convert '{literal}' to '{parameter.ToDisplayString()}'.", syntax.Span); return; }
         }
-        var selected = ranked.OrderBy(p => p.Score).Select(p => p.Method).FirstOrDefault();
         if (selected == null)
         {
             var hasDictionary = _context.Types.AddMethods(type).Any(m => m.Parameters.Length == 2);
             _context.Report("XG1016", key == null && hasDictionary ? "Dictionary entries require x:Key." : $"No compatible Add method on '{type}'.", syntax.Span); return;
         }
         var args = ImmutableArray.CreateBuilder<BoundExpression>();
-        if (key != null)
-        {
-            var boundKey = _context.Values.BindText(key.Value, selected.Parameters[0].Type, elementScope, key.ValueSpan);
-            if (boundKey == null) return; args.Add(boundKey);
-        }
-        var value = _context.Values.BindNode(syntax, selected.Parameters[selected.Parameters.Length - 1].Type, scope, target.NameScopeId, normalizeText: !normalized);
-        if (value == null) return; args.Add(value);
+        if (boundKey != null) args.Add(boundKey);
+        var boundValue = converted ?? _context.Values.BindNode(syntax, selected.Parameters[selected.Parameters.Length - 1].Type, scope, target.NameScopeId, normalizeText: !normalized);
+        if (boundValue == null) return; args.Add(boundValue);
         target.Assignments.Add(new BoundAddAssignment(member, selected, args.ToImmutable(), syntax.Span));
     }
     private void BindEventValue(ObjectBindingBuilder target, BoundMember member, XamlSyntaxNode syntax, NamespaceScope scope)

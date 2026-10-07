@@ -50,7 +50,8 @@ internal sealed class AssignmentEmitter
                 var last = add.Arguments[add.Arguments.Length - 1];
                 void Add(string value)
                 {
-                    var inputs = string.Join(", ", arguments.Concat(new[] { value }));
+                    var inputs = string.Join(", ", arguments.Concat(new[] { value }).Select((input, index) =>
+                        add.Alternatives.IsDefaultOrEmpty ? "(" + add.AddMethod.Parameters[index].Type.CSharpName() + ")(" + input + ")" : input));
                     if (add.Alternatives.IsDefaultOrEmpty)
                         writer.Line("((" + add.AddMethod.ContainingType.CSharpName() + ")" + receiver + ")." + CSharpNames.Method(add.AddMethod) + "(" + inputs + ");");
                     else
