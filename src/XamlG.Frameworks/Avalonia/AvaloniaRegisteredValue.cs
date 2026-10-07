@@ -8,8 +8,8 @@ namespace XamlG.Frameworks.Avalonia;
 
 internal static class AvaloniaRegisteredValue
 {
-    public static IMethodSymbol? Adapter(BindingContext context) =>
-        context.Types.Find(AvaloniaRegisteredSetterMetadata.Adapter)?.Members(AvaloniaRegisteredSetterMetadata.Assign)
+    public static IMethodSymbol? Adapter(BindingContext context, string methodName = AvaloniaRegisteredSetterMetadata.Assign) =>
+        context.Types.Find(AvaloniaRegisteredSetterMetadata.Adapter)?.Members(methodName)
             .OfType<IMethodSymbol>().SingleOrDefault(method => method.IsStatic && !method.IsGenericMethod && method.Parameters.Length == 3 &&
                 method.Parameters[0].Type.HasMetadataName(AvaloniaMetadata.Object) &&
                 method.Parameters[1].Type.HasMetadataName(AvaloniaMetadata.Property) &&

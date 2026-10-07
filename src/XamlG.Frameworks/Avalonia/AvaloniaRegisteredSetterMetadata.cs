@@ -4,6 +4,9 @@ internal static class AvaloniaRegisteredSetterMetadata
 {
     public const string Adapter = "XamlG.AvaloniaRuntime.AvaloniaRegisteredSetter";
     public const string Assign = "Assign";
+    public const string AssignValue = "AssignValue";
+    public const string AssignBinding = "AssignBinding";
+    public const string AssignBindingOrUnset = "AssignBindingOrUnset";
     public const string AssignTemplate = "AssignTemplate";
     public const string UnsetValueType = "Avalonia.UnsetValueType";
     public const string UnsetValue = "UnsetValue";

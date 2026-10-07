@@ -12,10 +12,31 @@ public static class AvaloniaRegisteredSetter
 
     public static IDisposable? Assign(AvaloniaObject target, AvaloniaProperty property, object? value)
     {
+        if (value is BindingBase binding) return AvaloniaBindingAdapter.Apply(target, property, binding);
+        AssignValue(target, property, value);
+        return null;
+    }
+
+    public static void AssignValue(AvaloniaObject target, AvaloniaProperty property, object? value)
+    {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(property);
-        if (value is BindingBase binding) return AvaloniaBindingAdapter.Apply(target, property, binding);
         target.SetValue(property, value);
-        return null;
+    }
+
+    public static IDisposable? AssignBindingOrUnset(AvaloniaObject target, AvaloniaProperty property, object? value)
+    {
+        if (value is UnsetValueType)
+        {
+            AssignValue(target, property, AvaloniaProperty.UnsetValue);
+            return null;
+        }
+        return AssignBinding(target, property, value);
+    }
+
+    public static IDisposable AssignBinding(AvaloniaObject target, AvaloniaProperty property, object? value)
+    {
+        if (value is null) throw new NullReferenceException("No registered-property setter accepts null.");
+        return AvaloniaBindingAdapter.Apply(target, property, (BindingBase)value);
     }
 }
