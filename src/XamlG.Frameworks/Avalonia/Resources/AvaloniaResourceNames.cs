@@ -11,6 +11,7 @@ internal static class AvaloniaResourceNames
         BoundCastExpression value => Contains(value.Value),
         BoundValueConverterExpression value => Contains(value.Value),
         BoundArrayExpression value => value.Values.Any(Contains),
+        BoundCollectionExpression value => value.Values.Any(Contains),
         BoundNewExpression value => value.Arguments.Any(Contains),
         BoundCallExpression value => value.Receiver != null && Contains(value.Receiver) || value.Arguments.Any(Contains),
         BoundChoiceExpression value => Contains(value.Extension) || value.Branches.Any(branch => Contains(branch.Option) || Contains(branch.Value)) || value.Default != null && Contains(value.Default),

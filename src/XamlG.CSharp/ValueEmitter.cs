@@ -34,10 +34,25 @@ internal sealed class ValueEmitter
                 return frame + ".ResolveName<" + (reference.Type?.CSharpName() ?? "object") + ">(" + CSharpNames.Literal(reference.Name) + ")";
             case BoundObjectExpression obj: return _objects.Emit(obj.Object, frame, null, null);
             case BoundArrayExpression array:
-                return "new " + array.ArrayType.ElementType.CSharpName() + "[] { " + string.Join(", ", array.Values.Select(v => Emit(v, frame))) + " }";
+                var arrayLocal = _context.Temporary("array");
+                _context.Writer.Line("var " + arrayLocal + " = " + ArrayCreation(array) + ";");
+                for (var index = 0; index < array.Values.Length; index++)
+                    _context.Writer.Line(arrayLocal + "[" + index + "] = " + Emit(array.Values[index], frame) + ";");
+                return arrayLocal;
+            case BoundCollectionExpression collection:
+                var collectionLocal = _context.Temporary("collection");
+                _context.Writer.Line("var " + collectionLocal + " = new " + collection.Constructor.ContainingType.CSharpName() + "();");
+                _context.Writer.Line("((" + collection.Capacity.ContainingType.CSharpName() + ")" + collectionLocal + ")." + CSharpNames.Identifier(collection.Capacity.Name) + " = " + collection.Values.Length + ";");
+                foreach (var item in collection.Values)
+                {
+                    var itemValue = Emit(item, frame);
+                    _context.Writer.Line("((" + collection.AddMethod.ContainingType.CSharpName() + ")" + collectionLocal + ")." + CSharpNames.Method(collection.AddMethod) +
+                        "((" + collection.AddMethod.Parameters[0].Type.CSharpName() + ")(" + itemValue + "));");
+                }
+                return collectionLocal;
             case BoundNewExpression creation:
                 var constructed = "new " + creation.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", EmitArguments(creation.Constructor, creation.Arguments, frame)) + ")";
-                if (creation.SourceInfoSpan is not { } sourceSpan || creation.Constructor.ContainingType.IsValueType || _context.Document.Runtime.SourceInfo == null) return constructed;
+                if (creation.SuppressSourceInfo || creation.SourceInfoSpan is not { } sourceSpan || creation.Constructor.ContainingType.IsValueType || _context.Document.Runtime.SourceInfo == null) return constructed;
                 var located = _context.Temporary("literal");
                 _context.Writer.Line("var " + located + " = " + constructed + ";");
                 new SourceInfoEmitter(_context).EmitConstructed(located, sourceSpan);
@@ -67,11 +82,20 @@ internal sealed class ValueEmitter
         }
     }
 
+    private static string ArrayCreation(BoundArrayExpression array)
+    {
+        var element = array.ArrayType.ElementType;
+        var suffix = string.Empty;
+        while (element is IArrayTypeSymbol nested)
+        { suffix += "[" + new string(',', nested.Rank - 1) + "]"; element = nested.ElementType; }
+        return "new " + element.CSharpName() + "[" + array.Values.Length + "]" + suffix;
+    }
+
     private string Convert(BoundExpression expression, INamedTypeSymbol converter, ITypeSymbol resultType, string frame, Func<string> value)
     {
         var local = _context.Temporary("converter");
         _context.Writer.Line("var " + local + " = new " + converter.CSharpName() + "();");
-        if (_context.Document.Runtime.SourceInfo != null)
+        if (!expression.SuppressSourceInfo && _context.Document.Runtime.SourceInfo != null)
             new SourceInfoEmitter(_context).EmitConstructed(local, expression.SourceInfoSpan ?? BoundSourceInfo.ValueLocation(_context.Document.Syntax, expression.Span));
         return "((" + resultType.CSharpName() + ")" + local + ".ConvertFrom(" + frame + ", " + CSharpNames.InvariantCulture + ", " + value() + ")!)";
     }

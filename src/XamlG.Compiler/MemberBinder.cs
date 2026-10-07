@@ -82,9 +82,9 @@ public sealed class MemberBinder
         { _context.Report("XG1031", "Init-only Populate requires a target runtime with UnsafeAccessor support (.NET 8 or later).", attribute.NameSpan); return; }
         if (member.Kind is BoundMemberKind.Event or BoundMemberKind.AttachedEvent)
         { BindEventValue(target, member, new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan), scope); return; }
-        if (member.CanWrite && member.ValueType.SpecialType is not (SpecialType.System_String or SpecialType.System_Object) &&
-            attribute.Value.All(XmlWhitespace.IsWhitespace) &&
-            !member.ValueType.HasMetadataName(ClrNames.IEnumerable) && !member.ValueType.AllInterfaces.Any(type => type.HasMetadataName(ClrNames.IEnumerable)) &&
+        if (attribute.Value.All(XmlWhitespace.IsWhitespace) &&
+            (member.CanWrite || member.Getter != null && _context.Types.AddMethods(member.ValueType).Any()) &&
+            member.ValueType.SpecialType is not (SpecialType.System_String or SpecialType.System_Object) &&
             (member.Getter == null || !_context.Types.HasInheritedAttribute(member.Getter.ReturnType, _context.Types.Configuration.WhitespaceSignificantCollectionAttributes))) return;
         foreach (var rule in _context.Profile.PropertyBindingRules)
             if (rule.TryBind(_context, target, member, ImmutableArray.Create<XamlSyntaxNode>(new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan)), scope, attribute.Span, true)) return;
