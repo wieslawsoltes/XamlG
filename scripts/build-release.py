@@ -111,7 +111,7 @@ def main():
     (output / 'package-inventory.json').write_text(json.dumps({'sourceCommit': commit, 'version': args.version, 'packages': inventory}, indent=2) + '\n')
     (output / 'release-notes.md').write_text(
         f'# XamlG {args.version}\n\nSource commit: `{commit}`.\n\n'
-        'This development release contains the modular compiler, framework adapter, runtime, generator, tooling, workspace and language-server libraries, and the xamlg/xamlg-lsp tools.\n\n'
+        'This development release contains the modular compiler, framework adapter, runtime, generator, tooling, workspace, language-server, automation, MCP and coding-agent libraries, official OpenAI/Anthropic/Gemini SDK adapters, and the xamlg/xamlg-lsp/xamlg-studio tools.\n\n'
         'See the included README and documentation for validated behavior and compatibility boundaries. '
         'The upstream baseline and XamlG compatibility suites are separate. Browser isolation protects editor origin access, not operating-system resource quotas.\n\n'
         'SHA256SUMS covers every attached package, symbol package, source archive, inventory and this file. '

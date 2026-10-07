@@ -64,6 +64,8 @@ Color-valued brush literals construct fresh immutable brushes. URI, row/column d
 
 Use the `XamlG.Generator` package with `XamlG.Runtime`, plus `XamlG.AvaloniaRuntime` for Avalonia binding/runtime integration. The transitive build targets supply XAML AdditionalFiles, expose generator configuration, and disable competing Avalonia XAML/name-generation paths when XamlG is enabled. Existing handwritten `AvaloniaXamlLoader.Load` initialization must be migrated to the generated initializer; a source generator cannot rewrite an existing method body.
 
+Avalonia deferred resources use the framework's managed function-pointer factory contract. Projects containing these resources must set `<AllowUnsafeBlocks>true</AllowUnsafeBlocks>` so the generated factory calls compile. The generator does not change this project setting implicitly.
+
 `tests/AvaloniaPackagingSmoke` is a real package-consuming project, not a direct-library compilation test. It validates the adapter through MSBuild and the generator after NuGet packing.
 
 ## Compatibility boundary

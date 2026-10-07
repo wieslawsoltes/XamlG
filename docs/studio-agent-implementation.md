@@ -110,7 +110,7 @@ consumer example that uses only NuGet references outside this repository.
 - The five new packages built, installed and ran through a separate consumer
   with an initially empty package cache. Its temporary files are removed even
   when validation fails.
-- CI passed all 36 browser scenarios at the runtime expansion checkpoint. The runtime
+- All 38 browser scenarios passed locally after the main merge and provider expansion. The runtime
   browser scenario constructs a C# DataContext, invokes its method,
   installs and updates a real binding, inspects style value frames, and creates,
   reparents and removes controls without changing source. Coverage includes actual rendering, authoring, designer gestures,
