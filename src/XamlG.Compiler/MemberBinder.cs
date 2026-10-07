@@ -189,11 +189,7 @@ public sealed class MemberBinder
     {
         if (!SyntaxFacts.IsValidIdentifier(handlerName) && !(handlerName.StartsWith("@", StringComparison.Ordinal) && SyntaxFacts.IsValidIdentifier(handlerName.Substring(1))))
         { _context.Report("XG1017", "An event handler must be a method identifier, not an expression.", span); return; }
-        var invoke = (member.ValueType as INamedTypeSymbol)?.DelegateInvokeMethod;
-        var methods = _context.RootClass?.Members(handlerName.TrimStart('@')).OfType<IMethodSymbol>() ?? Enumerable.Empty<IMethodSymbol>();
-        var handler = methods.FirstOrDefault(m => !m.IsStatic && !m.IsGenericMethod && invoke != null && m.Parameters.Length == invoke.Parameters.Length &&
-            m.Parameters.Select((p, i) => _context.Types.Compilation.ClassifyCommonConversion(invoke.Parameters[i].Type, p.Type).IsImplicit && p.RefKind == invoke.Parameters[i].RefKind).All(v => v) &&
-            (invoke.ReturnsVoid && m.ReturnsVoid || _context.Types.Compilation.ClassifyCommonConversion(m.ReturnType, invoke.ReturnType).IsImplicit));
+        var handler = member.ValueType is INamedTypeSymbol delegateType ? RootMethodBinder.Resolve(_context, handlerName, delegateType) : null;
         if (handler == null) { _context.Report("XG1017", $"Compatible code-behind handler '{handlerName}' was not found.", span); return; }
         _context.Symbols.Add(new(span, handler, "event-handler"));
         target.Assignments.Add(new BoundEventAssignment(member, handlerName.TrimStart('@'), handler, span));

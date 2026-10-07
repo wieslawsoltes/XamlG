@@ -27,7 +27,9 @@ internal sealed class FunctionalExpressionEmitter(EmissionContext context, Value
                 { context.Error("A bound store requires a property, indexer or field target.", assignment.Span); return "default!"; }
                 return values.Emit(assignment.Target, frame) + " = " + values.Emit(assignment.Value, frame);
             case BoundMethodGroupExpression method:
-                var owner = method.Method.IsStatic ? method.Method.ContainingType.CSharpName() : "(" + values.Emit(method.Receiver!, frame) + ")";
+                var owner = method.Method.IsStatic ? method.Method.ContainingType.CSharpName() : method.Receiver == null
+                    ? "((" + method.Method.ContainingType.CSharpName() + ")" + context.RootVariable + ")"
+                    : "(" + values.Emit(method.Receiver, frame) + ")";
                 return "((" + method.DelegateType.CSharpName() + ")" + owner + "." + CSharpNames.Method(method.Method) + ")";
             case BoundLambdaExpression lambda:
                 if (!IsInline(lambda.Body))

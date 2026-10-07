@@ -57,7 +57,8 @@ internal sealed class AssignmentEmitter
             }
             case BoundEventAssignment ev:
             {
-                var handler = _context.Temporary("handler"); writer.Line(ev.Event.ValueType.CSharpName() + " " + handler + " = " + _context.RootVariable + "." + CSharpNames.Identifier(ev.HandlerName) + ";");
+                var receiver = ev.Handler == null ? _context.RootVariable : "((" + ev.Handler.ContainingType.CSharpName() + ")" + _context.RootVariable + ")";
+                var handler = _context.Temporary("handler"); writer.Line(ev.Event.ValueType.CSharpName() + " " + handler + " = " + receiver + "." + CSharpNames.Identifier(ev.HandlerName) + ";");
                 if (ev.Event.Kind == BoundMemberKind.Event)
                 {
                     writer.Line(target + "." + CSharpNames.Identifier(ev.Event.Name) + " += " + handler + ";");

@@ -57,6 +57,15 @@ public sealed class ValueBinder
             var referenced = ResolveTypeLiteral(text, scope, span, report: false);
             return referenced == null ? null : new BoundTypeExpression(referenced, target, span);
         }
+        if (target is INamedTypeSymbol { TypeKind: TypeKind.Delegate } delegateType)
+        {
+            var method = RootMethodBinder.Resolve(_context, text, delegateType);
+            if (method != null)
+            {
+                _context.Symbols.Add(new(span, method, "method"));
+                return new BoundMethodGroupExpression(method, null, delegateType, span);
+            }
+        }
         var converter = FindConverter(member) ?? FindConverter(target);
         if (converter != null) return new BoundConverterExpression(text, converter, target, span);
         var parse = target.Members(ClrNames.Parse).OfType<IMethodSymbol>()
