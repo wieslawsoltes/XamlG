@@ -36,7 +36,7 @@ Compare behavior against the pinned source as well as its tests. Native compiler
 This is an ongoing source audit. Passing the current suites does not close the remaining work:
 
 - Complete the framework-transform comparison beyond the portable corpus, including Avalonia animation, binding, selector and resource behavior. Existing framework tests and theme gates remain relevant but do not certify untested combinations.
-- The Avalonia 12.1.3 transform inventory is still being reviewed, including names supplied by providers, runtime source information and the remaining binding/resource transforms.
+- The Avalonia 12.1.3 transform inventory is still being reviewed, including names supplied by providers, binding-path data-context propagation, runtime source information, `x:Precompile`, invalid selectors and the remaining binding/resource transforms.
 
 The native Avalonia suite now also references the pinned `Avalonia.Markup.Xaml.Loader` 12.1.3 package solely for differential tests. `ContainerQueryTests` compares compiled query construction, invalid-input rejection and named-container layout behavior against that compiler. Production projects retain no XamlX or runtime-XAML-loader dependency. The query parser and binder emit typed public `StyleQueries` calls and preserve the pinned compiled transform's height/conjunction behavior, which differs from Avalonia's reflection query parser.
 
@@ -75,6 +75,6 @@ The CI workflow retrieves the revision from the same props file and runs the two
 
 ## Theme checkpoint
 
-At compiler commit `ed63c8a`, the theme gate passed against Avalonia `8eeda4f6f546165b3f72e63c9f42247abb306905`: 82 Simple documents (81 physical plus one declared project link), 86 Fluent documents, original code-behind, and 34 control/theme realizations per theme. Both themes were compiled from a clean detached compiler worktree; retained source hashes and source copies match the pinned checkout. Local evidence and compiler/upstream provenance are under `artifacts/tests/ed63c8a/`.
+At compiler commit `36ea30c`, the theme gate passed against Avalonia `8eeda4f6f546165b3f72e63c9f42247abb306905`: 82 Simple documents (81 physical plus one declared project link), 86 Fluent documents, original code-behind, and 34 control/theme realizations per theme. Both themes were compiled from a clean detached compiler worktree; retained source hashes and source copies match the pinned checkout. Local evidence and compiler/upstream provenance are under `artifacts/tests/36ea30c/`.
 
-The same compiler checkpoint passed 816 native tests, 217 upstream compatibility tests and all 85 shared parity cases through XamlG, with no skipped tests and warning-free solution/compatibility builds. This validates that commit, not subsequent compiler changes or the full framework transform surface.
+The same compiler checkpoint passed 856 native tests, 217 upstream compatibility tests and all 85 shared parity cases through XamlG, with no skipped tests and warning-free solution/compatibility builds. The original XamlX baseline also passed its 222 tests and all 85 shared parity cases in a fresh run. This validates that commit, not subsequent compiler changes or the full framework transform surface.
