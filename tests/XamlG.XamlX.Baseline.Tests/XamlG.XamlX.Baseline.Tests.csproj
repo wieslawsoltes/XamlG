@@ -14,5 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../../external/XamlX/tests/XamlParserTests/*.cs" Exclude="../../external/XamlX/tests/XamlParserTests/CompilerTestBase.Sre.cs" LinkBase="Upstream" />
+    <Compile Include="../XamlG.XamlX.ParityCases/*.cs" LinkBase="Parity" />
   </ItemGroup>
 </Project>

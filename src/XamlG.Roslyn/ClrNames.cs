@@ -17,7 +17,6 @@ public static class ClrNames
     public const string IEnumerable = "System.Collections.IEnumerable";
     public const string IList = "System.Collections.IList";
     public const string IEnumerableOfT = "System.Collections.Generic.IEnumerable`1";
-    public const string IListOfT = "System.Collections.Generic.IList`1";
     public const string ICollectionOfT = "System.Collections.Generic.ICollection`1";
     public const string GetPrefix = "Get";
     public const string SetPrefix = "Set";

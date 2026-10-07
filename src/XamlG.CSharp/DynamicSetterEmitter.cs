@@ -32,25 +32,41 @@ internal sealed class DynamicSetterEmitter
         {
             _context.Cancellation.ThrowIfCancellationRequested();
             writer.Open("private static void " + plan.Name + "(" + plan.Target.CSharpName() + " __target, object? __value)");
+            BoundValueSetter? acceptsNull = null;
+            var catchAll = false;
             for (var i = 0; i < plan.Setters.Length; i++)
             {
                 var setter = plan.Setters[i];
+                if (setter.AllowRuntimeNull) acceptsNull ??= setter;
                 var patternType = setter.ValueType is INamedTypeSymbol nullable &&
                     nullable.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
                         ? nullable.TypeArguments[0] : setter.ValueType;
                 var condition = "__value is " + patternType.CSharpName();
-                if (setter.AllowRuntimeNull) condition += " || __value is null";
+                catchAll = setter.ValueType.SpecialType == SpecialType.System_Object && setter.AllowRuntimeNull;
+                if (catchAll) condition = "true";
                 writer.Open((i == 0 ? "if" : "else if") + " (" + condition + ")");
-                writer.Line("var __typed = (" + setter.ValueType.CSharpName() + ")__value!;");
-                EmitSetter(setter);
+                Call(setter);
+                writer.Close();
+                if (catchAll) break;
+            }
+            if (!catchAll)
+            {
+                writer.Open(plan.Setters.Length == 0 ? string.Empty : "else");
+                writer.Open("if (__value is null)");
+                if (acceptsNull != null) Call(acceptsNull);
+                else writer.Line("throw new global::System.NullReferenceException(\"A null XAML value cannot be unboxed into a non-nullable setter.\");");
+                writer.Close();
+                writer.Line("throw new global::System.InvalidCastException(\"No XAML setter accepts the runtime value.\");");
                 writer.Close();
             }
-            var fallback = plan.Setters.Length == 0 ? string.Empty : "else ";
-            writer.Open(fallback);
-            writer.Line("if (__value is null) throw new global::System.NullReferenceException(\"A null XAML value cannot be unboxed into a non-nullable setter.\");");
-            writer.Line("throw new global::System.InvalidCastException(\"No XAML setter accepts the runtime value.\");");
             writer.Close();
-            writer.Close();
+        }
+
+        void Call(BoundValueSetter setter)
+        {
+            writer.Line("var __typed = (" + setter.ValueType.CSharpName() + ")__value!;");
+            EmitSetter(setter);
+            writer.Line("return;");
         }
     }
 
@@ -79,6 +95,15 @@ internal sealed class DynamicSetterEmitter
                 (method.IncludeTarget ? "__target, " : string.Empty) + "__typed);");
             return;
         }
+        if (setter is BoundCollectionValueSetter collection)
+        {
+            var member = collection.Collection;
+            var receiver = member.Kind == BoundMemberKind.AttachedProperty
+                ? member.Getter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Getter) + "(__target)"
+                : "__target." + CSharpNames.Identifier(member.Name);
+            writer.Line("((" + collection.AddMethod.ContainingType.CSharpName() + ")" + receiver + ")." + CSharpNames.Method(collection.AddMethod) + "(__typed);");
+            return;
+        }
         throw new InvalidOperationException("Unknown bound dynamic setter: " + setter.GetType().Name);
     }
 
@@ -86,6 +111,7 @@ internal sealed class DynamicSetterEmitter
     {
         BoundPropertyValueSetter property => "property:" + property.Member.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ":" + setter.AllowRuntimeNull,
         BoundMethodValueSetter method => "method:" + method.Method.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ":" + method.IncludeTarget + ":" + setter.AllowRuntimeNull + ":" + string.Join(".", method.ReceiverPath.Select(p => p.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))),
+        BoundCollectionValueSetter collection => "collection:" + collection.Collection.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ":" + collection.AddMethod.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + ":" + setter.AllowRuntimeNull,
         _ => throw new InvalidOperationException("Unknown bound dynamic setter: " + setter.GetType().Name)
     };
 }

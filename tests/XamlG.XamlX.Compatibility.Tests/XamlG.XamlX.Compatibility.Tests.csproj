@@ -19,5 +19,6 @@
     <Compile Include="@(UpstreamFixture->'../../external/XamlX/tests/XamlParserTests/%(Identity).cs')" LinkBase="Upstream" />
     <ProjectReference Include="../XamlG.UpstreamAdapterGenerator/XamlG.UpstreamAdapterGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <AdditionalFiles Include="../../external/XamlX/tests/XamlParserTests/DynamicSettersTests.cs" />
+    <Compile Include="../XamlG.XamlX.ParityCases/*.cs" LinkBase="Parity" />
   </ItemGroup>
 </Project>

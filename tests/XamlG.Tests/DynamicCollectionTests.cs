@@ -111,10 +111,11 @@ public sealed class DynamicCollectionTests
     }
 
     [Fact]
-    public void AttributeMarkupUsesTheSameRuntimeDispatch()
+    public void AttributeMarkupCannotAddToAReadOnlyCollection()
     {
-        using var code = CompiledXaml.Create("<View xmlns='clr-namespace:Demo' Items='{Item Kind=text}'/>", Model);
-        Assert.Equal("string:hello", Assert.Single(Values(code.Build(), "Items")));
+        var document = new XamlCompiler().Bind(XamlSyntaxTree.Parse("<View xmlns='clr-namespace:Demo' Items='{Item Kind=text}'/>"), CompilationFactory.Create(Model));
+        Assert.False(document.Success);
+        Assert.Contains(document.Diagnostics, diagnostic => diagnostic.Code == "XG1010");
     }
 
     [Fact]

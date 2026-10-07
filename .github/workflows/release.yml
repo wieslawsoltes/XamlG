@@ -95,10 +95,14 @@ jobs:
         with:
           dotnet-version: '10.0.401'
       - run: |
-          dotnet test tests/XamlG.XamlX.Baseline.Tests -c Release -p:NuGetAudit=false --logger 'trx;LogFileName=Baseline.trx' --results-directory artifacts/upstream
-          dotnet test tests/XamlG.XamlX.Compatibility.Tests -c Release -p:NuGetAudit=false --logger 'trx;LogFileName=Compatibility.trx' --results-directory artifacts/upstream
+          dotnet test tests/XamlG.XamlX.Baseline.Tests -c Release -p:NuGetAudit=false --filter 'Category!=ParityRegression' --logger 'trx;LogFileName=Baseline.trx' --results-directory artifacts/upstream
+          dotnet test tests/XamlG.XamlX.Compatibility.Tests -c Release -p:NuGetAudit=false --filter 'Category!=ParityRegression' --logger 'trx;LogFileName=Compatibility.trx' --results-directory artifacts/upstream
           python scripts/verify-test-results.py artifacts/upstream/Baseline.trx --expected 222
           python scripts/verify-test-results.py artifacts/upstream/Compatibility.trx --expected 217
+          dotnet test tests/XamlG.XamlX.Baseline.Tests -c Release --no-build --filter Category=ParityRegression --logger 'trx;LogFileName=Baseline-parity.trx' --results-directory artifacts/upstream
+          dotnet test tests/XamlG.XamlX.Compatibility.Tests -c Release --no-build --filter Category=ParityRegression --logger 'trx;LogFileName=Compatibility-parity.trx' --results-directory artifacts/upstream
+          python scripts/verify-test-results.py artifacts/upstream/Baseline-parity.trx --expected 13
+          python scripts/verify-test-results.py artifacts/upstream/Compatibility-parity.trx --expected 13
   themes:
     if: startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/theme-corpus.yml

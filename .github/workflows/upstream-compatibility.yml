@@ -48,13 +48,18 @@ jobs:
         run: |
           mkdir -p artifacts/tests
           set +e
-          dotnet test tests/XamlG.XamlX.${{ matrix.suite }}.Tests -c Release -p:NuGetAudit=false --logger 'trx;LogFileName=${{ matrix.suite }}.trx' --results-directory artifacts/tests > artifacts/upstream.log 2>&1
+          dotnet test tests/XamlG.XamlX.${{ matrix.suite }}.Tests -c Release -p:NuGetAudit=false --filter 'Category!=ParityRegression' --logger 'trx;LogFileName=${{ matrix.suite }}.trx' --results-directory artifacts/tests > artifacts/upstream.log 2>&1
           result=$?
           tail -n 140 artifacts/upstream.log
           exit "$result"
       - name: Require the full expected test count and no skips
         if: always()
         run: python scripts/verify-test-results.py artifacts/tests/${{ matrix.suite }}.trx --expected ${{ matrix.expected }}
+      - name: Execute additional shared parity regressions
+        run: dotnet test tests/XamlG.XamlX.${{ matrix.suite }}.Tests -c Release --no-build --filter Category=ParityRegression --logger 'trx;LogFileName=${{ matrix.suite }}-parity.trx' --results-directory artifacts/tests
+      - name: Require every shared regression to pass
+        if: always()
+        run: python scripts/verify-test-results.py artifacts/tests/${{ matrix.suite }}-parity.trx --expected 13
       - uses: actions/upload-artifact@v4
         if: always()
         with:

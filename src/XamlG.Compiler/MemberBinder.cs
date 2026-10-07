@@ -78,7 +78,8 @@ public sealed class MemberBinder
             if (rule.TryBind(_context, target, member, ImmutableArray.Create<XamlSyntaxNode>(new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan)), scope, attribute.Span, true)) return;
         if (!member.CanWrite)
         {
-            if (member.Getter != null && _context.Types.AddMethods(member.ValueType).Any())
+            if (member.Getter != null && _context.Types.AddMethods(member.ValueType).Any() &&
+                (!attribute.Value.StartsWith("{", StringComparison.Ordinal) || attribute.Value.StartsWith("{}", StringComparison.Ordinal)))
             { BindCollectionItem(target, member, new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan), scope); return; }
             _context.Report("XG1010", $"Property '{member.Name}' is read-only.", attribute.NameSpan); return;
         }
@@ -125,6 +126,7 @@ public sealed class MemberBinder
             firstValue = false;
             if (isCollection)
             {
+                if (member?.CanWrite == true && canReplace && new CollectionReplacementBinder(_context).TryBind(target, member, node, scope)) continue;
                 var nodeType = _context.Values.PeekValueType(node, scope);
                 // The first value can replace the collection; later values add to that instance.
                 if (member?.CanWrite == true && canReplace && nodeType != null && _context.Types.Compilation.ClassifyCommonConversion(nodeType, member.ValueType).IsImplicit)

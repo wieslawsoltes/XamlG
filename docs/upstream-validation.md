@@ -14,12 +14,12 @@ The suites do not cover every custom transformer used by every XAML framework. I
 
 ## Implementation audit beyond the pinned tests
 
-Compare behavior against the pinned source as well as its tests. Additional regression cases belong in the native compiler suite; they do not increase the count of unmodified upstream assertions.
+Compare behavior against the pinned source as well as its tests. Native compiler regressions cover implementation details. The two upstream harnesses also link 13 additional cases from `tests/XamlG.XamlX.ParityCases` to execute identical assertions through both compilers. These authored differential tests use the `ParityRegression` category and separate TRX files; they do not increase the count of unmodified upstream assertions.
 
 | Upstream behavior | XamlG implementation and evidence |
 | --- | --- |
 | `ProvideValue` and `ProvideTypedValue` alternatives | `RoslynTypeSystem.MarkupExtensionMethod` shares provider selection across binding and value-type probing. Parameterless providers take precedence; typed returns win within the same parameter shape. `MarkupExtensionSelectionTests` executes attribute, element, collection and constructor-argument forms. |
-| Collection replacement followed by additions | `MemberBinder` permits the first value to replace a collection before adding subsequent items. Generic lists exclude the non-generic `IList.Add` fallback. `CollectionAssignmentTests` verifies instance identity, replacement counts, nested collection items and incompatible-item diagnostics. |
+| Collection replacement followed by additions | `MemberBinder` permits the first value to replace a collection before adding subsequent items. `CollectionReplacementBinder` retains setter-before-adder alternatives for object-valued providers; the selected adder reads the collection after the provider runs. Shared `CollectionDispatchTests` verifies replacement, getter timing, attached properties and explicit/runtime null behavior. Like the pinned SRE compiler, generic lists retain the non-generic `IList.Add` fallback, including its incompatible-item exception. |
 | Runtime collection overload selection | `DynamicCollectionBinder` retains ordered `Add` alternatives for object-valued extensions; `DynamicAddEmitter` emits shared typed dispatch helpers. `DynamicCollectionTests` covers keys, null/nullable items, object fallbacks, explicit interfaces, single evaluation and unmatched-value failures. |
 | Delegate-valued properties and root events | `RootMethodBinder` shares accessible method selection between events and delegate values. `RootMethodBindingTests` executes attributes, text/string elements, private partial-class methods, nested constructor arguments and deferred owner capture, and checks invalid method diagnostics. |
 | Event delegate expressions | `BoundEventAssignment.Value` carries markup/object-form handlers through emission and tooling traversal. `EventValueTests` verifies event target services, single evaluation, named fields and session cleanup for CLR and attached events. |
@@ -28,7 +28,7 @@ Compare behavior against the pinned source as well as its tests. Additional regr
 
 This is an ongoing source audit. Passing the current suites does not close the remaining work:
 
-- Collection-valued writable properties still choose replacement using the statically probed value type. Compare an object-returning extension that produces a collection with the upstream setter-before-adder runtime alternatives.
+- Compare collection getter timing for static additions and dynamic additions to read-only properties; replacing a writable collection is covered by the shared dispatch regressions.
 - Static collection overload/conversion ordering needs a differential check against `ConvertPropertyValuesToAssignmentsTransformer`, especially text conversions and inherited adders. The new runtime helpers retain declaration order, but the existing static binder still ranks candidates.
 - Type probing for constructor/collection values needs coverage of `x:Static`, arrays and references, beyond the Boolean and typed-provider forms exercised here.
 - Audit inherited metadata and converted root forms against the actual upstream transform/emitter combination before classifying differences as missing features or backend constraints.
@@ -39,8 +39,10 @@ This is an ongoing source audit. Passing the current suites does not close the r
 ```sh
 git clone https://github.com/AvaloniaUI/XamlX external/XamlX
 git -C external/XamlX checkout 7ef6aef496ab6e8dcf3df04bef697be49db37c04
-dotnet test tests/XamlG.XamlX.Baseline.Tests -c Release
-dotnet test tests/XamlG.XamlX.Compatibility.Tests -c Release
+dotnet test tests/XamlG.XamlX.Baseline.Tests -c Release --filter 'Category!=ParityRegression'
+dotnet test tests/XamlG.XamlX.Compatibility.Tests -c Release --filter 'Category!=ParityRegression'
+dotnet test tests/XamlG.XamlX.Baseline.Tests -c Release --no-build --filter Category=ParityRegression
+dotnet test tests/XamlG.XamlX.Compatibility.Tests -c Release --no-build --filter Category=ParityRegression
 ```
 
 The CI workflow retrieves the revision from the same props file and runs the two suites in separate jobs. TRX results distinguish the baseline from the replacement compiler.

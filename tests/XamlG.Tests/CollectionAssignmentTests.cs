@@ -1,6 +1,5 @@
 using System.Collections;
-using XamlG.Compiler;
-using XamlG.Syntax;
+using System.Reflection;
 using Xunit;
 
 namespace XamlG.Tests;
@@ -63,13 +62,12 @@ public sealed class CollectionAssignmentTests
     }
 
     [Fact]
-    public void IncompatibleSecondReplacementIsDiagnosed()
+    public void IncompatibleSecondReplacementUsesTheNonGenericAdder()
     {
-        var document = new XamlCompiler().Bind(XamlSyntaxTree.Parse("""
+        using var code = CompiledXaml.Create("""
             <View xmlns="clr-namespace:Demo"><View.Items><Strings/><Strings/></View.Items></View>
-            """), CompilationFactory.Create(Model));
-        Assert.False(document.Success);
-        Assert.Contains(document.Diagnostics, diagnostic => diagnostic.Code == "XG1016");
+            """, Model);
+        Assert.IsType<ArgumentException>(Assert.Throws<TargetInvocationException>(() => code.Build()).InnerException);
     }
 
     private static string[] Items(object root, string property) =>
