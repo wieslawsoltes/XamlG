@@ -45,7 +45,7 @@ internal sealed class DynamicSetterEmitter
                 catchAll = setter.ValueType.SpecialType == SpecialType.System_Object && setter.AllowRuntimeNull;
                 if (catchAll) condition = "true";
                 writer.Open((i == 0 ? "if" : "else if") + " (" + condition + ")");
-                Call(setter);
+                Call(setter, plan.Target);
                 writer.Close();
                 if (catchAll) break;
             }
@@ -53,7 +53,7 @@ internal sealed class DynamicSetterEmitter
             {
                 writer.Open(plan.Setters.Length == 0 ? string.Empty : "else");
                 writer.Open("if (__value is null)");
-                if (acceptsNull != null) Call(acceptsNull);
+                if (acceptsNull != null) Call(acceptsNull, plan.Target);
                 else writer.Line("throw new global::System.NullReferenceException(\"A null XAML value cannot be unboxed into a non-nullable setter.\");");
                 writer.Close();
                 writer.Line("throw new global::System.InvalidCastException(\"No XAML setter accepts the runtime value.\");");
@@ -62,15 +62,15 @@ internal sealed class DynamicSetterEmitter
             writer.Close();
         }
 
-        void Call(BoundValueSetter setter)
+        void Call(BoundValueSetter setter, ITypeSymbol targetType)
         {
             writer.Line("var __typed = (" + setter.ValueType.CSharpName() + ")__value!;");
-            EmitSetter(setter);
+            EmitSetter(setter, targetType);
             writer.Line("return;");
         }
     }
 
-    private void EmitSetter(BoundValueSetter setter)
+    private void EmitSetter(BoundValueSetter setter, ITypeSymbol targetType)
     {
         var writer = _context.Writer;
         if (setter is BoundPropertyValueSetter property)
@@ -81,7 +81,7 @@ internal sealed class DynamicSetterEmitter
             else if (member.Kind == BoundMemberKind.AttachedProperty)
                 writer.Line(member.Setter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Setter) + "(__target, __typed);");
             else
-                writer.Line("__target." + CSharpNames.Identifier(member.Name) + " = __typed;");
+                writer.Line(CSharpNames.MemberTarget(member.Symbol, targetType, "__target") + "." + CSharpNames.Identifier(member.Name) + " = __typed;");
             return;
         }
         if (setter is BoundMethodValueSetter method)
@@ -97,7 +97,7 @@ internal sealed class DynamicSetterEmitter
         }
         if (setter is BoundCollectionValueSetter collection)
         {
-            var receiver = AssignmentEmitter.Get(collection.Collection, "__target");
+            var receiver = AssignmentEmitter.Get(collection.Collection, targetType, "__target");
             writer.Line("((" + collection.AddMethod.ContainingType.CSharpName() + ")" + receiver + ")." + CSharpNames.Method(collection.AddMethod) + "(__typed);");
             return;
         }

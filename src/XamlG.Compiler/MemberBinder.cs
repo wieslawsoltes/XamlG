@@ -13,8 +13,21 @@ public sealed class MemberBinder
     {
         var member = ResolveCore(target, name, scope, span, valueHint, report);
         if (member == null) return null;
+        return ApplyRules(target, member, scope);
+    }
+    internal BoundMember Resolve(ITypeSymbol target, IPropertySymbol property, NamespaceScope scope, TextSpan span) =>
+        ApplyRules(target, BindProperty(property, span), scope);
+    private BoundMember ApplyRules(ITypeSymbol target, BoundMember member, NamespaceScope scope)
+    {
         foreach (var rule in _context.Profile.MemberBindingRules) member = rule.Bind(_context, target, member, scope);
         return member;
+    }
+    private BoundMember BindProperty(IPropertySymbol property, TextSpan span)
+    {
+        _context.Symbols.Add(new(span, property, "property"));
+        return new(property.Name, BoundMemberKind.Property, property, property.Type,
+            property.GetMethod != null && _context.Types.IsAccessible(property.GetMethod, _context.RootClass) ? property.GetMethod : null,
+            property.SetMethod != null && _context.Types.IsAccessible(property.SetMethod, _context.RootClass) ? property.SetMethod : null, span);
     }
     private BoundMember? ResolveCore(ITypeSymbol target, string name, NamespaceScope scope, TextSpan span, string? valueHint, bool report)
     {
@@ -34,15 +47,9 @@ public sealed class MemberBinder
         }
         if (owner == null || _context.Types.Compilation.ClassifyCommonConversion(target, owner).IsImplicit)
         {
-            var property = target.Members(memberName).OfType<IPropertySymbol>().FirstOrDefault(p => !p.IsStatic && !p.IsIndexer && _context.Types.IsAccessible(p, _context.RootClass));
-            if (property != null)
-            {
-                _context.Symbols.Add(new(span, property, "property"));
-                return new(memberName, BoundMemberKind.Property, property, property.Type,
-                    property.GetMethod != null && _context.Types.IsAccessible(property.GetMethod, _context.RootClass) ? property.GetMethod : null,
-                    property.SetMethod != null && _context.Types.IsAccessible(property.SetMethod, _context.RootClass) ? property.SetMethod : null, span);
-            }
-            var ev = target.Members(memberName).OfType<IEventSymbol>().FirstOrDefault(e => !e.IsStatic && _context.Types.IsAccessible(e, _context.RootClass));
+            var property = (owner ?? target).Members(memberName).OfType<IPropertySymbol>().FirstOrDefault(p => !p.IsStatic && !p.IsIndexer && _context.Types.IsAccessible(p, _context.RootClass));
+            if (property != null) return BindProperty(property, span);
+            var ev = (owner ?? target).Members(memberName).OfType<IEventSymbol>().FirstOrDefault(e => !e.IsStatic && _context.Types.IsAccessible(e, _context.RootClass));
             if (ev != null)
             { _context.Symbols.Add(new(span, ev, "event")); return new(memberName, BoundMemberKind.Event, ev, ev.Type, null, ev.AddMethod, span); }
         }

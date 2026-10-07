@@ -24,9 +24,9 @@ internal sealed class AssignmentEmitter
                 var valueFrame = ForTarget(set.Member, target, frame);
                 void Assign(string value)
                 {
-                    Set(set.Member, target, value);
+                    Set(set.Member, owner.Type, target, value);
                     if (set.Member.Getter != null && set.Member.Setter != null && !set.Member.Setter.IsInitOnly)
-                        writer.Line(frame + ".Session.RegisterProperty<" + set.Member.ValueType.CSharpName() + ">(" + CSharpNames.Literal(owner.Key) + ", " + CSharpNames.Literal(set.Member.Name) + ", () => " + Get(set.Member, target) + ", __value => { " + SetExpression(set.Member, target, "__value") + "; });");
+                        writer.Line(frame + ".Session.RegisterProperty<" + set.Member.ValueType.CSharpName() + ">(" + CSharpNames.Literal(owner.Key) + ", " + CSharpNames.Literal(set.Member.Name) + ", () => " + Get(set.Member, owner.Type, target) + ", __value => { " + SetExpression(set.Member, owner.Type, target, "__value") + "; });");
                 }
                 if (set.Value is BoundObjectExpression child) _objects.Emit(child.Object, valueFrame, null, Assign); else Assign(_values.Emit(set.Value, valueFrame));
                 break;
@@ -38,7 +38,7 @@ internal sealed class AssignmentEmitter
                 {
                     valueFrame = ForTarget(add.Collection, target, frame);
                     if (add.Alternatives.IsDefaultOrEmpty)
-                    { receiver = _context.Temporary("collection"); writer.Line("var " + receiver + " = " + Get(add.Collection, target) + ";"); }
+                    { receiver = _context.Temporary("collection"); writer.Line("var " + receiver + " = " + Get(add.Collection, owner.Type, target) + ";"); }
                 }
                 var arguments = new List<string>();
                 for (var i = 0; i < add.Arguments.Length - 1; i++)
@@ -70,8 +70,9 @@ internal sealed class AssignmentEmitter
                 var handler = _context.Temporary("handler"); writer.Line(ev.Event.ValueType.CSharpName() + " " + handler + " = " + value + ";");
                 if (ev.Event.Kind == BoundMemberKind.Event)
                 {
-                    writer.Line(target + "." + CSharpNames.Identifier(ev.Event.Name) + " += " + handler + ";");
-                    writer.Line(frame + ".Session.TrackCleanup(() => " + target + "." + CSharpNames.Identifier(ev.Event.Name) + " -= " + handler + ");");
+                    var eventTarget = CSharpNames.MemberTarget(ev.Event.Symbol, owner.Type, target);
+                    writer.Line(eventTarget + "." + CSharpNames.Identifier(ev.Event.Name) + " += " + handler + ";");
+                    writer.Line(frame + ".Session.TrackCleanup(() => " + eventTarget + "." + CSharpNames.Identifier(ev.Event.Name) + " -= " + handler + ");");
                 }
                 else
                 {
@@ -88,7 +89,7 @@ internal sealed class AssignmentEmitter
             case BoundDynamicSetAssignment dynamicSet: Dynamic(dynamicSet, owner.Type, target, frame); break;
             case BoundAdaptedSetAssignment adapted:
                 new AdaptedAssignmentEmitter(_context, _values).Emit(adapted, target, frame,
-                    ForTarget(adapted.Member, target, frame), Set);
+                    ForTarget(adapted.Member, target, frame), (member, receiver, value) => Set(member, owner.Type, receiver, value));
                 break;
             case BoundRawAssignment raw: writer.Line(_values.ExpandTrusted(raw.CSharp, frame, target)); break;
             default: _context.Error("The backend does not recognize assignment '" + assignment.GetType().Name + "'.", assignment.Span); break;
@@ -106,11 +107,11 @@ internal sealed class AssignmentEmitter
         var descriptor = member.TargetDescriptor == null ? _context.Descriptor(member) : _values.Emit(member.TargetDescriptor, parent);
         var frame = _context.Temporary("target"); _context.Writer.Line("var " + frame + " = " + parent + ".ForTarget(" + target + ", " + descriptor + ");"); return frame;
     }
-    internal static string Get(BoundMember member, string target) => member.Kind == BoundMemberKind.AttachedProperty ? member.Getter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Getter) + "(" + target + ")" : target + "." + CSharpNames.Identifier(member.Name);
-    private string SetExpression(BoundMember member, string target, string value)
+    internal static string Get(BoundMember member, ITypeSymbol targetType, string target) => member.Kind == BoundMemberKind.AttachedProperty ? member.Getter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Getter) + "(" + target + ")" : CSharpNames.MemberTarget(member.Symbol, targetType, target) + "." + CSharpNames.Identifier(member.Name);
+    private string SetExpression(BoundMember member, ITypeSymbol targetType, string target, string value)
     {
         if (member.Setter?.IsInitOnly == true) return _context.InitSetter(member.Setter) + "(" + (member.Setter.ContainingType.IsValueType ? "ref " : string.Empty) + target + ", " + value + ")";
-        return member.Kind == BoundMemberKind.AttachedProperty ? member.Setter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Setter) + "(" + target + ", " + value + ")" : target + "." + CSharpNames.Identifier(member.Name) + " = " + value;
+        return member.Kind == BoundMemberKind.AttachedProperty ? member.Setter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Setter) + "(" + target + ", " + value + ")" : CSharpNames.MemberTarget(member.Symbol, targetType, target) + "." + CSharpNames.Identifier(member.Name) + " = " + value;
     }
-    private void Set(BoundMember member, string target, string value) => _context.Writer.Line(SetExpression(member, target, value) + ";");
+    private void Set(BoundMember member, ITypeSymbol targetType, string target, string value) => _context.Writer.Line(SetExpression(member, targetType, target, value) + ";");
 }

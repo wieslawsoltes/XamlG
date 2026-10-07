@@ -98,7 +98,7 @@ public sealed class ObjectBinder
             if (content.Any(n => n is XamlElementSyntax || n is XamlTextSyntax t && (!string.IsNullOrWhiteSpace(t.Value) || scope.PreserveSpace)))
             {
                 var contentProperty = _context.Types.GetContentProperty(type);
-                var member = contentProperty == null ? null : _context.Members.Resolve(type, contentProperty.Name, scope, syntax.NameSpan);
+                var member = contentProperty == null ? null : _context.Members.Resolve(type, contentProperty, scope, syntax.NameSpan);
                 _context.Members.BindNodes(builder, member, content, scope, syntax.Span);
             }
             foreach (var rule in _context.Profile.ObjectBindingRules) rule.Complete(_context, builder);

@@ -14,7 +14,7 @@ The suites do not cover every custom transformer used by every XAML framework. I
 
 ## Implementation audit beyond the pinned tests
 
-Compare behavior against the pinned source as well as its tests. Native compiler regressions cover implementation details. The two upstream harnesses also link 62 additional cases from `tests/XamlG.XamlX.ParityCases` to execute identical assertions through both compilers. These authored differential tests use the `ParityRegression` category and separate TRX files; they do not increase the count of unmodified upstream assertions.
+Compare behavior against the pinned source as well as its tests. Native compiler regressions cover implementation details. The two upstream harnesses also link 74 additional cases from `tests/XamlG.XamlX.ParityCases` to execute identical assertions through both compilers. These authored differential tests use the `ParityRegression` category and separate TRX files; they do not increase the count of unmodified upstream assertions.
 
 | Upstream behavior | XamlG implementation and evidence |
 | --- | --- |
@@ -29,10 +29,12 @@ Compare behavior against the pinned source as well as its tests. Native compiler
 | Member-specific text conversions | Property elements, attached getters and constructor arguments retain conversion metadata. String elements and `x:Arguments` preserve their namespace scopes. Static `Parse` takes precedence over type-level converters, while member converters override it. `TextConversionContextTests` executes these paths. |
 | Intrinsic value-type probing | `ValueTypeProbe` shares intrinsic normalization and static-member resolution with binding. Shared `IntrinsicValueTests` covers typed static values, collection replacement and constructor selection. Native `IntrinsicTypeProbeTests` covers arrays, known and forward references, and diagnostics. `x:Array`, `x:Reference` and property-element namespace declarations extend beyond the pinned upstream parser/intrinsics and are tested natively. |
 | Intrinsic object/property-element forms | `IntrinsicMarkupBinder` supports `TypeName`, `Member` and `Name` property elements, preserves generic-argument namespace scopes, and diagnoses duplicate/unknown arguments. `IntrinsicObjectTests` covers these forms, forward references, Boolean collection values and framework rule overrides. |
+| Inherited content and qualified members | `MemberBinder` retains the metadata-selected content property and resolves qualified properties/events on their stated owner. Emission qualifies receivers when a derived member hides that symbol. Shared `InheritedMemberTests` covers scalar content, attributes/property elements, static/runtime collection getters, collection replacement and event adders. |
+| Converted reference objects | The portable `XamlTextObjectExpressionRule` uses `Parse` and type converters for text-only reference objects; shared `ObjectConversionTests` executes both forms. The pinned XamlX imperative backend does not compile these forms as roots: `DefinePopulateMethod` casts the converted value to `XamlValueWithManipulationNode` and throws `InvalidCastException`. Converted roots are therefore not claimed as an upstream-supported missing feature. |
 
 This is an ongoing source audit. Passing the current suites does not close the remaining work:
 
-- Audit inherited metadata and converted root forms against the actual upstream transform/emitter combination before classifying differences as missing features or backend constraints.
+- Finish the inherited-metadata and converted-content comparison, including string-valued child expressions. Text-only converted root forms have been classified against the actual upstream transform/emitter combination above.
 - Complete the framework-transform comparison beyond the portable corpus, including Avalonia animation, binding, selector and resource behavior. Existing framework tests and theme gates remain relevant but do not certify untested combinations.
 
 ## Run

@@ -19,6 +19,9 @@ internal static class CSharpNames
         return string.Concat(bytes.Take(12).Select(b => b.ToString("x2", CultureInfo.InvariantCulture)));
     }
     public static string Method(IMethodSymbol method) => Identifier(method.Name) + (method.IsGenericMethod ? "<" + string.Join(", ", method.TypeArguments.Select(t => t.CSharpName())) + ">" : string.Empty);
+    public static string MemberTarget(ISymbol member, ITypeSymbol targetType, string target) =>
+        SymbolEqualityComparer.Default.Equals(targetType.Members(member.Name).FirstOrDefault(candidate => candidate.Kind == member.Kind), member)
+            ? target : "((" + member.ContainingType.CSharpName() + ")" + target + ")";
     public static string Constant(object? value) => value switch
     {
         null => "null", string text => Literal(text), char character => SymbolDisplay.FormatLiteral(character, true), bool boolean => boolean ? "true" : "false",

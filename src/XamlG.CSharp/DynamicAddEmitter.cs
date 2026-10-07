@@ -40,7 +40,7 @@ internal sealed class DynamicAddEmitter(EmissionContext context)
                     ? nullable.TypeArguments[0] : type;
                 catchAll = type.SpecialType == SpecialType.System_Object;
                 writer.Open((index == 0 ? "if" : "else if") + " (" + (catchAll ? "true" : "__value is " + patternType.CSharpName()) + ")");
-                Call(method, plan.Collection);
+                Call(method, plan.Receiver, plan.Collection);
                 writer.Close();
                 if (catchAll) break;
             }
@@ -48,7 +48,7 @@ internal sealed class DynamicAddEmitter(EmissionContext context)
             {
                 writer.Open("else");
                 writer.Open("if (__value is null)");
-                if (acceptsNull != null) Call(acceptsNull, plan.Collection);
+                if (acceptsNull != null) Call(acceptsNull, plan.Receiver, plan.Collection);
                 else writer.Line("throw new global::System.NullReferenceException(\"A null XAML value cannot be unboxed into a non-nullable collection item.\");");
                 writer.Close();
                 writer.Line("throw new global::System.InvalidCastException(\"No XAML collection overload accepts the runtime value.\");");
@@ -57,10 +57,10 @@ internal sealed class DynamicAddEmitter(EmissionContext context)
             writer.Close();
         }
 
-        void Call(IMethodSymbol method, BoundMember? collection)
+        void Call(IMethodSymbol method, ITypeSymbol targetType, BoundMember? collection)
         {
             var key = method.Parameters.Length == 2 ? "(" + method.Parameters[0].Type.CSharpName() + ")__key, " : string.Empty;
-            var receiver = collection == null ? "__target" : AssignmentEmitter.Get(collection, "__target");
+            var receiver = collection == null ? "__target" : AssignmentEmitter.Get(collection, targetType, "__target");
             writer.Line("((" + method.ContainingType.CSharpName() + ")" + receiver + ")." + CSharpNames.Method(method) + "(" + key +
                 "(" + method.Parameters.Last().Type.CSharpName() + ")__value!);");
             writer.Line("return;");
