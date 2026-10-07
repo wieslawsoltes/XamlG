@@ -10,6 +10,10 @@ internal static class AvaloniaStyleMetadata
     public const string Selector = "Avalonia.Styling.Selector";
     public const string Selectors = "Avalonia.Styling.Selectors";
     public const string Style = "Avalonia.Styling.Style";
+    public const string ContainerQuery = "Avalonia.Styling.ContainerQuery";
+    public const string StyleQuery = "Avalonia.Styling.StyleQuery";
+    public const string StyleQueries = "Avalonia.Styling.StyleQueries";
+    public const string QueryComparison = "Avalonia.Styling.StyleQueryComparisonOperator";
     public const string ControlTheme = "Avalonia.Styling.ControlTheme";
     public const string ControlTemplate = "Avalonia.Markup.Xaml.Templates.ControlTemplate";
     public const string Setter = "Avalonia.Styling.Setter";

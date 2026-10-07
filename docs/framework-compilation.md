@@ -8,6 +8,8 @@ The source-located selector parser lowers type selectors, `:is`, universal selec
 
 Style, ControlTheme and ControlTemplate scopes carry the target type. `Setter.Property` resolves an `AvaloniaProperty<T>` field and `Setter.Value` is converted against `T`, including brush/interface conversions and supported markup values. Property assignment is emitted before Value regardless of XML attribute order. Class lists become collection operations. These transformations are in the framework profile, not the portable compiler.
 
+`ContainerQuery.Query` supports the pinned framework's width/height features, `min-`/`max-` comparisons, `and`, and comma-separated alternatives. Attribute and property-element forms lower to typed `StyleQueries` calls. The parser reports located diagnostics without loading Avalonia. Tests execute the same input through the test-only Avalonia 12.1.3 runtime compiler and XamlG, including named containers reacting to layout changes. Compatibility retains two upstream quirks: bare `height` uses the maximum-height comparison, and conjunction grouping follows the compiled transform's behavior rather than the different reflection parser.
+
 ```xml
 <StackPanel xmlns="https://github.com/avaloniaui">
   <StackPanel.Styles>
