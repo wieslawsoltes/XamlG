@@ -20,7 +20,7 @@ using System.Threading.Channels;
 
 if (args.Any(argument => argument is "--help" or "-h"))
 {
-    Console.WriteLine("XamlG Studio companion\nUsage: xamlg-studio [--port=4893] [--stdio=true] [--web-root=PATH] [--origins=ORIGIN,...]\nPairs one browser IDE with authenticated MCP clients. Set distinct XAMLG_STUDIO_OWNER_TOKEN (browser) and XAMLG_STUDIO_TOKEN (MCP client), or use the generated tokens printed to stderr. Provider credentials remain in the host environment.");
+    Console.WriteLine("XamlG Studio companion\nUsage: xamlg-studio [--port=4893] [--stdio=true] [--web-root=PATH] [--origins=ORIGIN,...] [--chatgpt=true] [--chatgpt-store=PATH]\nPairs one browser IDE with authenticated MCP clients. Set distinct XAMLG_STUDIO_OWNER_TOKEN (browser) and XAMLG_STUDIO_TOKEN (MCP client), or use the generated tokens printed to stderr. Provider keys and ChatGPT account credentials remain in the companion. Account credentials persist only after an explicit remember choice.");
     return;
 }
 
@@ -64,7 +64,32 @@ using var geminiClient = (Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?
         clientOptions: new() { HttpClientFactory = () => providerHttp }) : null;
 if (geminiClient != null) providers.Add(new GeminiAgentProvider(geminiClient));
 using var mcpTasks = new AutomationMcpTaskStore();
-using var agents = new AgentWorkbench(bridge, providers, new BrowserAgentWorkspace(bridge), mcpTasks);
+ChatGptAccountManager? chatGpt = null; string? chatGptError = null;
+if (builder.Configuration.GetValue("chatgpt", true))
+{
+    try
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (builder.Configuration["chatgpt-store"] == null && string.IsNullOrEmpty(appData)) throw new ChatGptAccountException("local_data_directory_unavailable");
+        var directory = builder.Configuration["chatgpt-store"] ?? Path.Combine(appData, "XamlG", "Studio", "ChatGPT");
+        var accountOptions = new ChatGptAccountOptions();
+        if (builder.Configuration["chatgpt-auth-origin"] != null || builder.Configuration["chatgpt-api-endpoint"] != null)
+        {
+            if (builder.Configuration["chatgpt-store"] == null ||
+                !Uri.TryCreate(builder.Configuration["chatgpt-auth-origin"], UriKind.Absolute, out var authFixture) ||
+                !Uri.TryCreate(builder.Configuration["chatgpt-api-endpoint"], UriKind.Absolute, out var apiFixture) ||
+                authFixture.Scheme != "http" || authFixture.Host != "127.0.0.1" || apiFixture.Scheme != "http" || apiFixture.Host != "127.0.0.1" ||
+                authFixture.GetLeftPart(UriPartial.Authority) != apiFixture.GetLeftPart(UriPartial.Authority))
+                throw new ChatGptAccountException("account_fixtures_require_matching_loopback_endpoints_and_explicit_store");
+            accountOptions = accountOptions with { AuthenticationOrigin = authFixture, ApiEndpoint = apiFixture };
+        }
+        chatGpt = await ChatGptAccountManager.CreateAsync(new ChatGptFileCredentialStore(directory), accountOptions);
+    }
+    catch (Exception error) when (error is IOException or UnauthorizedAccessException or CryptographicException or JsonException or ChatGptAccountException or ArgumentException)
+    { chatGptError = "Account mode is unavailable. Check endpoint/store configuration, owner-only permissions, or close another companion using this store."; }
+}
+await using var chatGptLifetime = chatGpt;
+using var agents = new AgentWorkbench(bridge, providers, new BrowserAgentWorkspace(bridge), mcpTasks, chatGpt, chatGptError);
 var mcp = builder.Services.AddMcpServer(options => options.ServerInfo = new Implementation { Name = "XamlG Studio", Version = "0.1.0" })
     .WithAutomation(bridge).WithAutomationTasks(mcpTasks, () => bridge.CurrentSessionLifetime);
 if (builder.Configuration.GetValue("stdio", false))
@@ -122,8 +147,12 @@ app.MapPost("/agent/{action}", async (string action, HttpContext context) =>
         using var body = await JsonDocument.ParseAsync(context.Request.Body, new JsonDocumentOptions { MaxDepth = 64 }, context.RequestAborted);
         return Results.Json(await agents.ExecuteAsync(action, body.RootElement, context.RequestAborted, (CancellationToken)context.Items["OwnerSession"]!), AutomationJson.Options);
     }
-    catch (Exception error) when (error is ArgumentException or InvalidOperationException or JsonException or KeyNotFoundException or AutomationException or AgentProviderException)
+    catch (Exception error) when (error is ArgumentException or InvalidOperationException or JsonException or KeyNotFoundException or AutomationException or AgentProviderException or ChatGptAccountException)
     { return Results.Json(new { error = error.Message }, AutomationJson.Options, statusCode: 400); }
+    catch (HttpRequestException)
+    { return Results.Json(new { error = "The provider connection failed. Credentials were retained; retry after checking the connection." }, statusCode: 502); }
+    catch (OperationCanceledException) when (!context.RequestAborted.IsCancellationRequested)
+    { return Results.Json(new { error = "The provider request timed out. Retry when the connection is available." }, statusCode: 504); }
 });
 app.MapGet("/agent/events", async (HttpContext context) =>
 {

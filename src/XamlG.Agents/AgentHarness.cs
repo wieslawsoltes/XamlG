@@ -71,7 +71,8 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
             if (task.OutputLimitToExceed is { } output && options.Limits.OutputTokensPerRequest <= output)
                 throw new InvalidOperationException($"Raise the output allowance above {output:N0} tokens before resuming.");
             if (task.Status is AgentTaskStatus.Failed or AgentTaskStatus.Cancelled) throw new InvalidOperationException("Start a new task after denial, cancellation or an invalid response.");
-            using var workspaceRun = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, task.WorkspaceLifetime);
+            using var workspaceRun = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, task.WorkspaceLifetime,
+                task.Provider is IAgentProviderSession session ? session.GetSessionLifetime() : default);
             using var lease = new AutomationLease(options.Policy, options.LeaseDuration, workspaceRun.Token);
             lease.Token.ThrowIfCancellationRequested();
             lock (task.Sync)

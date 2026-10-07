@@ -11,7 +11,7 @@ namespace XamlG.Agents.OpenAI;
 /// encrypted content remain intact in memory and are never included in public transcripts.
 /// Construct SDK clients with server-side credentials and inject them into this adapter.
 /// </summary>
-public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelClient? models = null) : IAgentProvider
+public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelClient? models = null, bool chatGptPlan = false) : IAgentProvider
 {
     public string Id => "openai";
     public async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken cancellationToken = default)
@@ -27,11 +27,11 @@ public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelCl
         catch (JsonException) { throw new AgentProviderException("invalid_response_json", false); }
     }
 
-    public int GetContextBytes(AgentRequest request) => ModelReaderWriter.Write(Options(request)).ToMemory().Length;
+    public int GetContextBytes(AgentRequest request) => ModelReaderWriter.Write(Options(request, chatGptPlan)).ToMemory().Length;
 
     public async Task<AgentReply> GenerateAsync(AgentRequest request, Func<string, ValueTask> textDelta, CancellationToken cancellationToken)
     {
-        var options = Options(request);
+        var options = Options(request, chatGptPlan);
         ResponseResult? terminal = null; var incomplete = false; var publicCharacters = 0;
         try
         {
@@ -69,6 +69,14 @@ public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelCl
         {
             try
             {
+                if (chatGptPlan)
+                {
+                    // The pinned SDK preserves unmodeled namespace fields in native items.
+                    // Reject foreign namespaces before mapping a call to an IDE capability.
+                    using var wire = JsonDocument.Parse(ModelReaderWriter.Write(call).ToMemory());
+                    if (!wire.RootElement.TryGetProperty("namespace", out var ns) || ns.ValueKind != JsonValueKind.String || ns.GetString() != "xamlg")
+                        throw new AgentProviderException("invalid_tool_namespace", false, canResume: false);
+                }
                 using var arguments = JsonDocument.Parse(call.FunctionArguments.ToMemory(), new JsonDocumentOptions { MaxDepth = 64 });
                 calls.Add(new(call.CallId, call.FunctionName, arguments.RootElement.Clone()));
             }
@@ -80,7 +88,7 @@ public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelCl
         return new(terminal.GetOutputText() ?? string.Empty, calls, usage, terminal.OutputItems.ToArray(), incomplete);
     }
 
-    private static CreateResponseOptions Options(AgentRequest request)
+    internal static CreateResponseOptions Options(AgentRequest request, bool chatGptPlan = false)
     {
         var items = new List<ResponseItem>();
         foreach (var message in request.Messages)
@@ -99,12 +107,20 @@ public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelCl
         var options = new CreateResponseOptions(request.Model, items)
         {
             Instructions = request.Instructions, StoredOutputEnabled = false, StreamingEnabled = true,
-            MaxOutputTokenCount = request.MaxOutputTokens
+            MaxOutputTokenCount = chatGptPlan ? null : request.MaxOutputTokens
         };
         options.IncludedProperties.Add(IncludedResponseProperty.ReasoningEncryptedContent);
-        foreach (var tool in request.Tools)
-            options.Tools.Add(ResponseTool.CreateFunctionTool(functionName: tool.Name, functionDescription: tool.Description,
-                functionParameters: BinaryData.FromString(tool.InputSchema.GetRawText()), strictModeEnabled: false));
+        if (chatGptPlan && request.Tools.Count != 0)
+        {
+            // Namespace tools are a supported API wire shape not yet represented by a named
+            // SDK class. The official SDK's persistable-model extension preserves it losslessly.
+            var toolNamespace = BinaryData.FromObjectAsJson(new { type = "namespace", name = "xamlg", description = "XamlG IDE operations",
+                tools = request.Tools.Select(tool => new { type = "function", name = tool.Name, description = tool.Description, parameters = tool.InputSchema, strict = false }) });
+            options.Tools.Add(ModelReaderWriter.Read<ResponseTool>(toolNamespace)!);
+        }
+        else foreach (var tool in request.Tools)
+                options.Tools.Add(ResponseTool.CreateFunctionTool(functionName: tool.Name, functionDescription: tool.Description,
+                    functionParameters: BinaryData.FromString(tool.InputSchema.GetRawText()), strictModeEnabled: false));
         return options;
     }
 }

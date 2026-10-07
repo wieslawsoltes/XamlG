@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using XamlG.Agents;
+using XamlG.Agents.OpenAI;
 using XamlG.Automation;
 using XamlG.Mcp;
 
@@ -18,8 +19,11 @@ public sealed class AgentWorkbench : IDisposable
     private CancellationTokenSource? _runCancellation;
     private string? _runningId;
     private readonly AutomationMcpTaskStore? _mcpTasks;
-    public AgentWorkbench(IAutomationHost host, IEnumerable<IAgentProvider> providers, IAgentWorkspace? workspace = null, AutomationMcpTaskStore? mcpTasks = null)
-    { _providers = providers.ToDictionary(p => p.Id, StringComparer.Ordinal); _harness = new(host, workspace); _mcpTasks = mcpTasks; }
+    private readonly ChatGptAccountManager? _chatGpt;
+    private readonly string? _chatGptError;
+    public AgentWorkbench(IAutomationHost host, IEnumerable<IAgentProvider> providers, IAgentWorkspace? workspace = null, AutomationMcpTaskStore? mcpTasks = null,
+        ChatGptAccountManager? chatGpt = null, string? chatGptError = null)
+    { _providers = providers.ToDictionary(p => p.Id, StringComparer.Ordinal); _harness = new(host, workspace); _mcpTasks = mcpTasks; _chatGpt = chatGpt; _chatGptError = chatGptError; }
     public AgentHarness Harness => _harness;
 
     public async Task<JsonElement> ExecuteAsync(string action, JsonElement arguments, CancellationToken cancellationToken, CancellationToken ownerSession = default)
@@ -29,9 +33,11 @@ public sealed class AgentWorkbench : IDisposable
             case "state":
                 return AutomationJson.Element(new
                 {
-                    providers = _providers.Keys.Order(StringComparer.Ordinal), tasks = _harness.Tasks.Select(task => new
+                    providers = _providers.Keys.Concat(_chatGpt == null ? [] : new[] { ChatGptAccountAgentProvider.ProviderId }).Order(StringComparer.Ordinal),
+                    chatGpt = _chatGpt?.State, chatGptError = _chatGptError, tasks = _harness.Tasks.Select(task => new
                     {
                         task.Id, task.Name, task.ProviderId, task.Model, task.Status, task.StatusReason, task.Draft, task.IsPreviousWorkspace,
+                        account = task.Provider is ChatGptAccountAgentProvider account ? new { id = account.AccountId, label = account.AccountLabel + " · " + account.AccountId[..8] } : null,
                         task.TotalTokens, task.ReportedTokens, task.EstimatedTokens, task.CheckpointCount, task.Plan, task.PlanRevision, task.Queue,
                         task.LastUsage, task.NativeContextBytes, task.RetryAfterUtc, task.OutputLimitToExceed,
                         changes = task.Changes == null ? null : new { task.Changes.Revision, files = task.Changes.Files.Select(file => new { file.Path, beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
@@ -42,12 +48,27 @@ public sealed class AgentWorkbench : IDisposable
                     operations = _mcpTasks?.LocalInventory.Select(task => new { task.TaskId, status = task.Status.ToString(), task.CreatedAt, task.LastUpdatedAt })
                 });
             case "models":
-                return AutomationJson.Element(await Provider(Read<ProviderArgs>(arguments).Provider).ListModelsAsync(cancellationToken));
+                var modelRequest = Read<ProviderArgs>(arguments);
+                return AutomationJson.Element(await Provider(modelRequest.Provider, modelRequest.AccountId).ListModelsAsync(cancellationToken));
+            case "model_choices":
+                var choices = Read<ProviderArgs>(arguments); var provider = Provider(choices.Provider, choices.AccountId);
+                return AutomationJson.Element(provider is ChatGptAccountAgentProvider accountProvider
+                    ? await accountProvider.ListModelChoicesAsync(cancellationToken)
+                    : (await provider.ListModelsAsync(cancellationToken)).Select(model => new ChatGptModel(model, model)).ToArray());
+            case "chatgpt_sign_in":
+                var signIn = Read<AccountSignInArgs>(arguments);
+                return AutomationJson.Element(await Accounts().BeginSignInAsync(signIn.AccountId, signIn.Label, signIn.Remember, signIn.RetrySignInId, signIn.RequestPlanConsent, ownerSession, cancellationToken));
+            case "chatgpt_cancel_sign_in": await Accounts().CancelSignInAsync(Read<IdArgs>(arguments).Id, cancellationToken); break;
+            case "chatgpt_select": await Accounts().SelectAsync(Read<IdArgs>(arguments).Id, cancellationToken); break;
+            case "chatgpt_configure":
+                var configure = Read<AccountConfigureArgs>(arguments);
+                await Accounts().ConfigureAsync(configure.Id, configure.Label, configure.Remember, cancellationToken); break;
+            case "chatgpt_sign_out": return AutomationJson.Element(await Accounts().SignOutAsync(Read<IdArgs>(arguments).Id, cancellationToken));
             case "operation_cancel": _mcpTasks?.CancelLocal(Read<IdArgs>(arguments).Id); break;
             case "operations_clear": _mcpTasks?.ClearFinishedLocal(); break;
             case "create":
                 var create = Read<CreateArgs>(arguments);
-                return AutomationJson.Element(_harness.CreateTask(create.Name, Provider(create.Provider), create.Model, ownerSession));
+                return AutomationJson.Element(_harness.CreateTask(create.Name, Provider(create.Provider, create.AccountId), create.Model, ownerSession));
             case "rename":
                 var rename = Read<TextArgs>(arguments); _harness.RenameTask(rename.Id, rename.Text); break;
             case "draft":
@@ -74,7 +95,9 @@ public sealed class AgentWorkbench : IDisposable
             case "compact":
                 var compact = Read<CompactArgs>(arguments);
                 if (!compact.Confirmed) throw new InvalidOperationException("Review the provider request and confirm compaction first.");
-                return AutomationJson.Element(new { compacted = await _harness.CompactAsync(compact.Id, compact.Options, cancellationToken) });
+                using (var compactionLife = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, ownerSession,
+                    _harness.GetTask(compact.Id).Provider is ChatGptAccountAgentProvider compactAccount ? compactAccount.GetSessionLifetime() : default))
+                    return AutomationJson.Element(new { compacted = await _harness.CompactAsync(compact.Id, compact.Options, compactionLife.Token) });
             case "stop": Stop(); break;
             case "run":
                 var run = Read<RunArgs>(arguments);
@@ -96,7 +119,8 @@ public sealed class AgentWorkbench : IDisposable
                 {
                     if (_run is { IsCompleted: false }) throw new InvalidOperationException("An agent is already running.");
                     ownerSession.ThrowIfCancellationRequested();
-                    _runCancellation?.Dispose(); _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, ownerSession);
+                    var accountLife = task.Provider is ChatGptAccountAgentProvider runAccount ? runAccount.GetSessionLifetime() : default;
+                    _runCancellation?.Dispose(); _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, ownerSession, accountLife);
                     _runningId = run.Id;
                     _run = RunAsync(run, _runCancellation.Token);
                 }
@@ -155,7 +179,10 @@ public sealed class AgentWorkbench : IDisposable
         finally { _pending.TryRemove(item.Id, out _); }
     }
 
-    private IAgentProvider Provider(string id) => _providers.TryGetValue(id, out var provider) ? provider : throw new ArgumentException("Provider is not configured in the companion.");
+    private ChatGptAccountManager Accounts() => _chatGpt ?? throw new InvalidOperationException(_chatGptError ?? "ChatGPT account mode is disabled in the companion.");
+    private IAgentProvider Provider(string id, string? accountId = null) => id == ChatGptAccountAgentProvider.ProviderId ?
+        Accounts().CreateProvider(accountId ?? throw new ArgumentException("Select an explicit ChatGPT account for this request.")) :
+        _providers.TryGetValue(id, out var provider) ? provider : throw new ArgumentException("Provider is not configured in the companion.");
     private static T Read<T>(JsonElement arguments) => arguments.Deserialize<T>(AutomationJson.Options) ?? throw new ArgumentException("Arguments are required.");
     public void Stop() { lock (_gate) _runCancellation?.Cancel(); _harness.Stop(); }
     public void Dispose() { _lifetime.Cancel(); _harness.Dispose(); _runCancellation?.Dispose(); _lifetime.Dispose(); }
@@ -163,8 +190,10 @@ public sealed class AgentWorkbench : IDisposable
     { public TaskCompletionSource<JsonElement> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously); }
     public sealed record IdArgs(string Id);
     public sealed record TextArgs(string Id, string Text);
-    public sealed record ProviderArgs(string Provider);
-    public sealed record CreateArgs(string Name, string Provider, string Model);
+    public sealed record ProviderArgs(string Provider, string? AccountId = null);
+    public sealed record AccountSignInArgs(string? AccountId = null, string? Label = null, bool Remember = false, string? RetrySignInId = null, bool RequestPlanConsent = false);
+    public sealed record AccountConfigureArgs(string Id, string Label, bool Remember);
+    public sealed record CreateArgs(string Name, string Provider, string Model, string? AccountId = null);
     public sealed record RunArgs(string Id, string? Message, AgentRunOptions Options, bool Confirmed = false,
         bool FullAccessAcknowledged = false, string? QueuedMessageId = null, long? ExpectedQueueRevision = null);
     public sealed record QueueArgs(string Id, long ExpectedRevision);

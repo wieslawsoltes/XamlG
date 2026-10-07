@@ -7,5 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="../XamlG.Agents/XamlG.Agents.csproj" />
     <PackageReference Include="OpenAI" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
   </ItemGroup>
 </Project>

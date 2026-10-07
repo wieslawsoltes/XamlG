@@ -45,6 +45,14 @@ public interface IAgentProvider
     int GetContextBytes(AgentRequest request);
 }
 
+/// <summary>Optional host/account lifetime for a complete agent run, including tool execution,
+/// approval waits and context compaction. A provider may throw when its session is unavailable.</summary>
+public interface IAgentProviderSession
+{
+    CancellationToken GetSessionLifetime();
+}
+public sealed record AgentProviderFailure(int HttpStatus, string ResponseShape, string? RequestId = null, string? ErrorParameter = null);
+
 public sealed class AgentProviderException(string code, bool retryable, TimeSpan? retryAfter = null, bool? canResume = null)
     : Exception("Provider request failed: " + code)
 {
@@ -52,6 +60,8 @@ public sealed class AgentProviderException(string code, bool retryable, TimeSpan
     public bool Retryable { get; } = retryable;
     public TimeSpan? RetryAfter { get; } = retryAfter;
     public AgentUsage? Usage { get; init; }
+    /// <summary>Bounded transport metadata, never raw response bodies or credentials.</summary>
+    public AgentProviderFailure? Details { get; init; }
     /// <summary>Whether an explicit new run may retry the pending request. A rejected or
     /// malformed generation is terminal; configuration/transport errors may be repaired.</summary>
     public bool CanResume { get; } = canResume ?? (retryable ||

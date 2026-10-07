@@ -16,7 +16,7 @@ public partial class AgentWorkbench
     private DotNetObjectReference<AgentWorkbench>? _reference;
     private WorkbenchState _state = new();
     private string _provider = "", _model = "", _name = "New task", _taskName = "", _selectedId = "", _draft = "", _answer = "", _liveText = "";
-    private string[] _models = [];
+    private ModelChoiceView[] _models = [];
     private FileChange[] _changePreview = [];
     private string? _error;
     private RunReview? _runReview;
@@ -50,7 +50,7 @@ public partial class AgentWorkbench
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
     }
     [JSInvokable] public Task AgentRefresh() => RefreshAsync();
-    [JSInvokable] public void AgentDisconnected() { _connected = false; _liveText = ""; _runReview = null; _fullAccessAcknowledged = false; StateHasChanged(); }
+    [JSInvokable] public void AgentDisconnected() { _connected = false; _liveText = ""; _runReview = null; _fullAccessAcknowledged = false; _signInLaunchUrl = null; _signInLaunchId = null; StateHasChanged(); }
     [JSInvokable] public void AgentStreamError(string message) { _error = message; StateHasChanged(); }
     [JSInvokable] public async Task AgentStream(EventView item)
     {
@@ -73,7 +73,8 @@ public partial class AgentWorkbench
                     if (_state.Tasks.FirstOrDefault(previous => previous.Id == task.Id) is { } previous && previous.Queue.Revision > task.Queue.Revision)
                         task.Queue = previous.Queue;
                 _state = next;
-                if (!_state.Providers.Contains(_provider)) _provider = _state.Providers.FirstOrDefault() ?? "";
+                UpdateAccountState();
+                if (!_state.Providers.Contains(_provider)) { _provider = _state.Providers.FirstOrDefault() ?? ""; ProviderChanged(); }
                 if (Selected == null) Select(_state.Tasks.FirstOrDefault()?.Id ?? "");
                 EnsureQueueSelection();
                 foreach (var id in _queueEditors.Keys.Where(id => !_state.Tasks.Any(task => task.Id == id)).ToArray()) _queueEditors.Remove(id);
@@ -103,13 +104,21 @@ public partial class AgentWorkbench
     {
         try
         {
-            _error = null; var task = await RequestAsync<TaskView>("create", new { name = _name, provider = _provider, model = _model });
+            _error = null; var task = await RequestAsync<TaskView>("create", new { name = _name, provider = _provider, model = _model, accountId = _provider == ChatGptProvider ? ActiveAccount?.Id : null });
             await RefreshAsync(); Select(task.Id);
         }
         catch (JSException error) { _error = error.Message; }
     }
     private async Task DiscoverModelsAsync()
-    { try { _error = null; _models = await RequestAsync<string[]>("models", new { provider = _provider }); } catch (JSException error) { _error = error.Message; } }
+    {
+        try
+        {
+            _error = null; var provider = _provider; var accountId = provider == ChatGptProvider ? ActiveAccount?.Id : null;
+            var models = await RequestAsync<ModelChoiceView[]>("model_choices", new { provider, accountId });
+            if (_provider == provider && (provider != ChatGptProvider || ActiveAccount?.Id == accountId)) _models = models;
+        }
+        catch (JSException error) { _error = error.Message; }
+    }
     private object Options() => new
     {
         policy = new { profile = _profile, scopes = _scopes, tools = JsonSerializer.Deserialize<Dictionary<string, string>>(_toolRules), neverAsk = _neverAsk },
@@ -126,9 +135,10 @@ public partial class AgentWorkbench
         {
             _error = null;
             var options = JsonSerializer.SerializeToElement(Options());
-            _runReview = new(Selected.Id, Selected.Name, Selected.ProviderId, Selected.Model, _profile, message,
+            _runReview = new(Selected.Id, Selected.Name, ProviderLabel(Selected.ProviderId) + (Selected.Account == null ? "" : " · " + Selected.Account.Label), Selected.Model, _profile, message,
                 queued?.Id, queued == null ? null : Selected.Queue.Revision, compact ? "Generate a paid, tool-free public checkpoint. Keep the original goal, latest request and complete recent native turns. This does not send the composer draft or run IDE operations." : queued?.Text ?? message, options,
                 $"{_requests:N0} requests and {_tools:N0} tool calls per run; {_outputTokens:N0} output tokens per request; {_taskTokens:N0} cumulative task tokens. " +
+                (Selected.Account == null ? "" : "ChatGPT plan usage: output allowance is a local estimate, not a server cap. A response can exceed the remaining token budget. ") +
                 $"{_contextBytes:N0} context bytes, {_toolResultBytes:N0} bytes per tool result, {_retries} automatic retries, {_timeoutMinutes}-minute requests and a {_leaseMinutes}-minute permission lease.", compact);
             _fullAccessAcknowledged = false; _focusRunReview = true;
         }
@@ -229,7 +239,7 @@ public partial class AgentWorkbench
         }
         _reference?.Dispose(); _lifetime.Dispose();
     }
-    public sealed class WorkbenchState { public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; }
+    public sealed class WorkbenchState { public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; public AccountStateView? ChatGpt { get; set; } public string? ChatGptError { get; set; } }
     public sealed class OperationView
     {
         public string TaskId { get; set; } = "";
@@ -241,6 +251,7 @@ public partial class AgentWorkbench
     {
         public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string Status { get; set; } = ""; public string? StatusReason { get; set; }
         public string ProviderId { get; set; } = ""; public string Model { get; set; } = "";
+        public AccountBindingView? Account { get; set; }
         public string Draft { get; set; } = ""; public long TotalTokens { get; set; } public int CheckpointCount { get; set; }
         public bool IsPreviousWorkspace { get; set; }
         public ChangeView? LatestRunChanges { get; set; }

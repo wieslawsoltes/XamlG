@@ -9,6 +9,49 @@
     }
     else
     {
+        @if (_state.ChatGptError != null) { <p role="status">@_state.ChatGptError</p> }
+        @if (_state.ChatGpt is { } accounts)
+        {
+            <details class="agent-accounts" open="@(_provider == ChatGptProvider && ActiveAccount is not { SignedIn: true, PlanEnabled: true })"><summary>ChatGPT accounts</summary>
+                <p>Use your ChatGPT plan through the local companion. Each task keeps the account selected when it was created.</p>
+                <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">ChatGPT usage and app access</a>
+                @if (accounts.StorageError != null) { <p role="alert">Account storage could not be updated. Check the companion's storage permissions before continuing.</p> }
+                @if (accounts.Accounts.Length > 0)
+                {
+                    <label>Active account <select value="@accounts.ActiveAccountId" @onchange="ChooseAccountAsync" disabled="@_accountBusy"><option value="" disabled>Select an account</option>@foreach (var account in accounts.Accounts) { <option value="@account.Id">@account.Label · @account.Email · @account.Id[..Math.Min(8, account.Id.Length)] · @(account.SignedIn ? "signed in" : "signed out")</option> }</select></label>
+                    @if (ActiveAccount is { } active)
+                    {
+                        <p>@(active.PlanEnabled ? "ChatGPT plan access granted." : "Sign in and grant ChatGPT plan access to run requests.")</p>
+                        <label>Account label <input @bind="_accountLabel" maxlength="100" /></label>
+                        <label><input type="checkbox" @bind="_rememberAccount" /> Remember credentials on this computer</label>
+                        <button @onclick="ConfigureAccountAsync" disabled="@(_accountBusy || SigningIn)">Save account preferences</button>
+                        <button @onclick="() => BeginAccountSignInAsync(true)" disabled="@(_accountBusy || SigningIn)">Continue with ChatGPT</button>
+                        @if (active.SignedIn && !active.PlanEnabled) { <button @onclick="() => BeginAccountSignInAsync(true, false, true)" disabled="@(_accountBusy || SigningIn)">Enable ChatGPT plan usage</button> }
+                        <button @onclick="SignOutAccountAsync" disabled="@(_accountBusy || !active.SignedIn)">Sign out and stop account tasks</button>
+                        @if (active.LastFailure is { } failure)
+                        { <details><summary>Last account request error · @failure.Time.ToLocalTime().ToString("T")</summary><p>HTTP @failure.Details.HttpStatus · @failure.Code · @failure.Details.ResponseShape</p><p>Parameter: @(failure.Details.ErrorParameter ?? "—") · Request ID: @(failure.Details.RequestId ?? "—")</p></details> }
+                    }
+                }
+                <details open="@(accounts.Accounts.Length == 0)"><summary>@(accounts.Accounts.Length == 0 ? "Sign in" : "Add another account or workspace")</summary>
+                    <label>New account label <input @bind="_newAccountLabel" maxlength="100" placeholder="Optional label" /></label>
+                    <label><input type="checkbox" @bind="_rememberNewAccount" /> Remember credentials on this computer</label>
+                    <button @onclick="() => BeginAccountSignInAsync(false)" disabled="@(_accountBusy || SigningIn)">Continue with ChatGPT</button>
+                </details>
+                <p>Registration details stay in the companion. Tokens stay in memory unless remembered in protected local storage.</p>
+                @if (accounts.SignIn is { } signIn)
+                {
+                    <p role="status">@AccountSignInMessage(signIn)</p>
+                    @if (signIn.CanRetryRegistration) { <button @onclick="() => BeginAccountSignInAsync(false, true)" disabled="@_accountBusy">Retry registration sign-in</button> }
+                    @if (SigningIn)
+                    {
+                        <p>Sign-in expires at @signIn.ExpiresAt.ToLocalTime().ToString("T").</p>
+                        @if (_signInLaunchUrl != null) { <a href="@_signInLaunchUrl" target="_blank" rel="noopener noreferrer">Open ChatGPT sign-in if the window did not open</a> }
+                        <button @onclick="CancelAccountSignInAsync" disabled="@_accountBusy">Cancel sign-in</button>
+                    }
+                }
+                @if (_accountMessage != null) { <p role="status">@_accountMessage</p> }
+            </details>
+        }
         <details class="agent-operations">
             <summary>MCP operations (@(_state.Operations?.Length ?? 0))</summary>
             <p>Background waits expire after two minutes. Cancelling stops a wait immediately.</p>
@@ -23,12 +66,13 @@
         <details class="agent-create" open="@(_state.Tasks.Length == 0)">
             <summary>New task</summary>
             @if (_state.Providers.Length == 0) { <p>Configure a provider key in the companion environment, then restart it.</p> }
-            <label>Provider <select aria-label="Provider" @bind="_provider">@foreach (var provider in _state.Providers) { <option>@provider</option> }</select></label>
+            <label>Provider <select aria-label="Provider" @bind="_provider" @bind:after="ProviderChanged">@foreach (var provider in _state.Providers) { <option value="@provider">@ProviderLabel(provider)</option> }</select></label>
+            @if (_provider == ChatGptProvider) { <p>New task account: @(ActiveAccount?.Label ?? "Select and sign in to an account above"). Uses ChatGPT plan allowance; account mode never falls back to API-key billing.</p> }
             <label>Model <input @bind="_model" list="agent-models" placeholder="Model ID" /></label>
-            <datalist id="agent-models">@foreach (var model in _models) { <option value="@model" /> }</datalist>
-            <button @onclick="DiscoverModelsAsync" disabled="@(string.IsNullOrEmpty(_provider))">Discover models</button>
+            <datalist id="agent-models">@foreach (var model in _models) { <option value="@model.Slug">@model.DisplayName</option> }</datalist>
+            <button @onclick="DiscoverModelsAsync" disabled="@(string.IsNullOrEmpty(_provider) || !ProviderReady)">Discover models</button>
             <label>Task name <input @bind="_name" maxlength="200" /></label>
-            <button @onclick="CreateAsync" disabled="@(string.IsNullOrWhiteSpace(_model) || string.IsNullOrWhiteSpace(_provider) || _state.Tasks.Length >= 8)">Create task</button>
+            <button @onclick="CreateAsync" disabled="@(string.IsNullOrWhiteSpace(_model) || string.IsNullOrWhiteSpace(_provider) || !ProviderReady || _state.Tasks.Length >= 8)">Create task</button>
         </details>
         @if (_state.Tasks.Length > 0)
         {
@@ -44,6 +88,7 @@
                 <button @onclick="CopyThreadAsync">Copy public thread</button><button @onclick="BeginHandoffAsync">New task with context</button>
             </div>
             <p role="status">@selected.Status · @selected.TotalTokens.ToString("N0") tokens · @selected.CheckpointCount checkpoints @selected.StatusReason</p>
+            @if (selected.Account is { } taskAccount) { <p>ChatGPT plan account: @taskAccount.Label. Output allowance is an estimate, not a server cap; one response can exceed the remaining task budget.</p> }
             <p>@selected.ReportedTokens.ToString("N0") provider-reported tokens · @selected.EstimatedTokens.ToString("N0") estimated tokens · @((selected.NativeContextBytes / 1024d).ToString("N1")) KiB context</p>
             @if (selected.RetryAfterUtc is { } cooldown && cooldown > DateTimeOffset.UtcNow) { <p>Provider cooldown until @cooldown.ToLocalTime().ToString("T").</p> }
             @if (selected.OutputLimitToExceed is { } outputLimit) { <p>Resume requires an effective output allowance above @outputLimit.ToString("N0") tokens.</p> }
@@ -63,7 +108,7 @@
                 <label>Exact tool rules (JSON object) <textarea @bind="_toolRules" rows="2" spellcheck="false" placeholder='{"xamlg_runtime_run":"deny"}' /></label>
                 <label>Requests per run <input type="number" min="1" max="10000" @bind="_requests" /></label>
                 <label>Tool calls per run <input type="number" min="1" max="10000" @bind="_tools" /></label>
-                <label>Output tokens per request <input type="number" min="1" max="1000000" @bind="_outputTokens" /></label>
+                <label>@(selected.Account == null ? "Output tokens per request" : "Output reserve (not a cap)") <input type="number" min="1" max="1000000" @bind="_outputTokens" /></label>
                 <label>Task token budget <input type="number" min="1" max="100000000" @bind="_taskTokens" /></label>
                 <label>Context bytes <input type="number" min="1024" max="16000000" @bind="_contextBytes" /></label>
                 <label>Tool result bytes <input type="number" min="1024" max="8388608" @bind="_toolResultBytes" /></label>
@@ -172,10 +217,11 @@
         <div class="authoring-backdrop"><section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Review task context">
             <h2>New task with context</h2><p>Edit this public excerpt, then create a draft for a new task. Run it after reviewing its own permissions.</p>
             <label>New task name <input @bind="_name" maxlength="200" /></label>
-            <label>Provider <select @bind="_provider">@foreach (var provider in _state.Providers) { <option>@provider</option> }</select></label>
+            <label>Provider <select @bind="_provider" @bind:after="ProviderChanged">@foreach (var provider in _state.Providers) { <option value="@provider">@ProviderLabel(provider)</option> }</select></label>
+            @if (_provider == ChatGptProvider) { <p>ChatGPT account: @(ActiveAccount?.Label ?? "Select and sign in to an account before creating this task").</p> }
             <label>Model <input @bind="_model" /></label>
             <textarea aria-label="Context handoff" @bind="_handoff" maxlength="262144" rows="16" />
-            <footer><button @onclick="() => _handoff = null" disabled="@_handoffBusy">Cancel</button><button @onclick="CreateWithContextAsync" disabled="@(_handoffBusy || _state.Tasks.Length >= 8 || string.IsNullOrWhiteSpace(_model))">Create with reviewed context</button></footer>
+            <footer><button @onclick="() => _handoff = null" disabled="@_handoffBusy">Cancel</button><button @onclick="CreateWithContextAsync" disabled="@(_handoffBusy || _state.Tasks.Length >= 8 || !ProviderReady || string.IsNullOrWhiteSpace(_model))">Create with reviewed context</button></footer>
         </section></div>
     }
     @if (_restoreReview is { } restore)

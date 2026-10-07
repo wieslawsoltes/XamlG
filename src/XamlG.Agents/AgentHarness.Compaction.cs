@@ -17,7 +17,8 @@ public sealed partial class AgentHarness
         var status = task.Status;
         try
         {
-            using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, task.WorkspaceLifetime);
+            using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, task.WorkspaceLifetime,
+                task.Provider is IAgentProviderSession session ? session.GetSessionLifetime() : default);
             using var lease = new AutomationLease(options.Policy, options.LeaseDuration, lifetime.Token);
             _activeLease = lease; task.Status = AgentTaskStatus.Running;
             var tools = host.Tools.Concat(LocalTools(task, null, lease.Token).Tools).ToArray();

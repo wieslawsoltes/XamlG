@@ -325,6 +325,18 @@ export function saveAgentNumericPreferences(value) {
     }
     localStorage.setItem('xamlg.agent.numeric.v1', JSON.stringify(saved));
 }
+export async function beginChatGptSignIn(argumentsValue) {
+  const popup = window.open('about:blank', '_blank');
+  if (popup) popup.opener = null;
+  try {
+    const result = await agentRequest('chatgpt_sign_in', argumentsValue);
+    const launch = new URL(result.launchUrl);
+    if (launch.protocol !== 'http:' || launch.hostname !== '127.0.0.1' || !launch.port || launch.pathname !== '/auth/start' || launch.username || launch.password)
+      throw new Error('Invalid companion sign-in link.');
+    if (popup && !popup.closed) popup.location.replace(launch.href);
+    return result;
+  } catch (error) { if (popup && !popup.closed) popup.close(); throw error; }
+}
 export async function agentRequest(action, argumentsValue = {}) {
     if (!agentConnection) throw new Error('Connect the local companion in Agent access first.');
     const connection = agentConnection;

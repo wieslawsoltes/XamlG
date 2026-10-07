@@ -32,7 +32,7 @@ public partial class AgentWorkbench
         try
         {
             var text = _handoff;
-            var task = await RequestAsync<TaskView>("create", new { name = _name, provider = _provider, model = _model });
+            var task = await RequestAsync<TaskView>("create", new { name = _name, provider = _provider, model = _model, accountId = _provider == ChatGptProvider ? ActiveAccount?.Id : null });
             await RequestAsync<JsonElement>("draft", new { id = task.Id, text });
             _handoff = null; await RefreshAsync(); Select(task.Id); _draft = text;
         }

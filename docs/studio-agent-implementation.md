@@ -100,6 +100,24 @@ The companion rejects redirects and disables SDK retries; the harness owns retry
 accounting. The official OpenAI SDK currently marks Responses APIs with
 `OPENAI001`; the adapter suppresses that diagnostic.
 
+ChatGPT account mode is available without an API
+key: open **Coding agent → ChatGPT accounts**, choose **Continue with ChatGPT**,
+complete consent in the opened window, then select **ChatGPT account · ChatGPT
+plan usage** for a new task and discover models. A manual loopback launch link
+is shown if the window was blocked. Use **Enable ChatGPT plan usage** if identity
+sign-in succeeded without plan permission. Account selection and context handoff
+remain explicit; existing tasks retain their original account.
+
+The default account store is `XamlG/Studio/ChatGPT` under .NET's local application
+data directory. `--chatgpt-store=PATH` selects a separate protected store; keep it
+outside the project. One companion owns each store at a time. `--chatgpt=false`
+disables account mode, which is useful for independent API-key-only fixtures.
+Account registration metadata survives restart. Tokens survive restart only if
+**Remember credentials on this computer** was selected; Unix protects these files
+with permissions and Windows uses current-user DPAPI encryption. **Sign out**
+stops account tasks and attempts remote revocation before clearing local tokens.
+The workbench reports when that revocation could not be confirmed.
+
 External MCP clients use authenticated Streamable HTTP at `/mcp`, or launch the
 companion with `--stdio=true`. With stdio, the loopback browser bridge remains
 available and host logs go to stderr. The defaults accept the official Pages
@@ -295,18 +313,14 @@ reveal resource documents as well as the main XAML file. The new runtime APIs an
 browser UI compile; their native/browser acceptance tests remain deferred until
 feature implementation is complete.
 
-Full reference parity remains in progress: account-mode support and remaining
-provider protocol/recovery details; the remaining Roslyn
+Full reference parity remains in progress: remaining provider protocol/recovery
+details and account-mode behavioral acceptance; the remaining Roslyn
 authoring surface for the multi-file C# workspace; and the corresponding UI and protocol
 acceptance coverage. This ledger does not claim those capabilities from a build
 or from the existence of a tool name.
 
-The remaining implementation is concentrated in three areas:
+The remaining implementation is concentrated in two areas:
 
-- ChatGPT account sign-in, model discovery and account-backed Responses inference
-  through the companion, including token refresh/logout and explicit credential
-  storage choices. The API-key provider adapters already exist; account mode is
-  still unimplemented.
 - Remaining Roslyn authoring and symbol-navigation coverage, particularly broader
   semantic source actions and coordinated XAML/C# renames beyond the implemented
   generated-field route. Existing rename rejects unsupported inheritance/generated
@@ -401,6 +415,64 @@ for compiler settings and flow inspection. Behavioral validation remains pending
 settings persistence/undo/conflicts, diagnostic policies, selected references,
 non-preview emission, generated bodies, nested functions, control/data-flow
 selection, cancellation and truncation. No full suite was run during this pass.
+
+ChatGPT account mode is now implemented in the reusable OpenAI package and the
+existing agent workbench. The companion exposes account operations only through
+its owner/session-protected routes. Users can register separate accounts/workspaces,
+select an account, request plan consent explicitly, remember credentials, sign
+out, and discover account-specific model slugs/display names in provider order.
+Each task captures its original registration ID; changing the picker does not
+retarget a task or its context handoff. Account requests require an explicit
+registration ID, and account mode never falls back to an API key.
+
+The OAuth service follows the official [registration flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in):
+stable host ID, dynamic client registration, exact loopback callback, state/nonce,
+PKCE, signed ID-token verification through Microsoft.IdentityModel, issuer/audience,
+authorized-party and returning-subject checks, and separate granted-scope checks.
+Its temporary listener binds an ephemeral IPv4 loopback port before publishing a
+one-use launch ticket. Only the listener redirects to an authorization URL with
+the retained ID-token hint; the IDE never receives that URL or the credentials.
+Failed initial code exchanges can restart sign-in with the issued registration
+ID and fresh state/nonce/PKCE. Explicit plan consent uses `prompt=consent`; ordinary
+reauthorization does not force consent.
+
+Registration metadata is persisted even in the default memory-only token mode.
+The file store holds an exclusive process lock, rejects links, and writes complete
+snapshots atomically. Unix uses a 0700 directory and 0600 files; this is protected
+plaintext, not a keychain. Windows encrypts snapshots with current-user DPAPI.
+An embedding application can supply `IChatGptCredentialStore` instead. Stored
+registrations are bound to their authentication and inference endpoints, preventing a
+production credential store from being reused by a local fixture. Deterministic
+companion fixtures can set `--chatgpt-auth-origin=http://127.0.0.1:PORT/` and
+`--chatgpt-api-endpoint=http://127.0.0.1:PORT/v1/` together with an explicit,
+separate `--chatgpt-store=PATH`; both endpoints must use the same loopback origin.
+Refreshes are serialized, and replacements are saved before a required new-ID-token check:
+a temporarily unavailable signing-key endpoint leaves the replacement pending
+validation without replaying an obsolete refresh token. Confirmed terminal refresh
+or identity failures clear unusable credentials while retaining the registration.
+Sign-out revokes the latest known refresh token, reports unconfirmed remote
+revocation, and clears local tokens. `IAgentProviderSession` binds a complete
+reusable-harness run/compaction to its account lifetime, including approval waits
+and IDE tool execution; sign-out and reauthorization cancel that lifetime.
+
+Account inference uses the official Responses SDK at the [documented public endpoint](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference),
+with array input, instructions, streaming, `store:false`, and a function namespace.
+The pinned SDK preserves namespace tools and returned namespace fields through its
+persistable-model extension. Foreign or missing namespaces are rejected; native
+reasoning/continuation items remain intact. Unsupported request fields, including
+`max_output_tokens`, are omitted. The UI labels output as a reserve and states that
+a response can exceed the remaining local token budget. Quota and eligibility errors
+pause without automatic retry or billing fallback; temporary failures retain normal
+bounded retry behavior. Account diagnostics retain bounded status/code/parameter,
+response shape and request ID, without raw provider bodies or credentials.
+
+Targeted OpenAI-package, companion and Playground builds pass. A small SDK shape
+probe verified namespace serialization round trips; it is not account acceptance.
+Full deterministic OAuth/provider/browser coverage remains deferred with the rest
+of validation: identity and callback rejection, registration retry, stored-session
+locking/permissions, token rotation/sign-out races, account-bound tools, consent,
+model catalogs, namespace continuations, errors and UI isolation. No actual account
+was signed in and no production/paid inference was requested.
 
 Temporary reference clones and superseded publishes are removed when no longer
 needed. Package consumer caches are scoped to temporary directories. Large failed
