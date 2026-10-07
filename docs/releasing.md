@@ -1,6 +1,6 @@
 # Build, package and release
 
-`eng/release-manifest.json` is the explicit inventory of nineteen shipping packages: sixteen compiler/library/integration packages and the `xamlg`, `xamlg-lsp` and `xamlg-studio` tools. `XamlG.Avalonia` is the single-reference integration package. Tests, the test-only XamlX baseline assembly and the browser application are not NuGet library packages.
+`eng/release-manifest.json` is the explicit inventory of twenty-one shipping packages: eighteen compiler/library/integration packages and the `xamlg`, `xamlg-lsp` and `xamlg-studio` tools. `XamlG.Avalonia` is the single-reference integration package. Tests, the test-only XamlX baseline assembly and the browser application are not NuGet library packages.
 
 ## Candidate validation
 

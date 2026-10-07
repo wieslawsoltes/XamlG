@@ -10,6 +10,8 @@
   <ItemGroup>
     <ProjectReference Include="../../src/XamlG.Mcp/XamlG.Mcp.csproj" />
     <ProjectReference Include="../../src/XamlG.Agents.OpenAI/XamlG.Agents.OpenAI.csproj" />
+    <ProjectReference Include="../../src/XamlG.Agents.Anthropic/XamlG.Agents.Anthropic.csproj" />
+    <ProjectReference Include="../../src/XamlG.Agents.Gemini/XamlG.Agents.Gemini.csproj" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" />
   </ItemGroup>
 </Project>

@@ -103,7 +103,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                         }
                         catch (AgentProviderException error)
                         {
-                            if (!error.Retryable && (error.Code.StartsWith("invalid_", StringComparison.Ordinal) || error.Code is "duplicate_terminal_event" or "response_too_large")) throw;
+                            if (!error.CanResume) throw;
                             if (!error.Retryable || retry >= options.Limits.AutomaticRetries || error.RetryAfter > TimeSpan.FromSeconds(30))
                             { Pause(task, error.Message); return; }
                             var delay = error.RetryAfter ?? TimeSpan.FromMilliseconds(Math.Min(30000, 500 * Math.Pow(2, retry)) + Random.Shared.Next(250));

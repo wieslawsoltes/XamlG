@@ -17,8 +17,14 @@ public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelCl
     public async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken cancellationToken = default)
     {
         if (models == null) throw new InvalidOperationException("Supply the official model client to enable discovery.");
-        var result = await models.GetModelsAsync(cancellationToken);
-        return result.Value.Select(m => m.Id).Order(StringComparer.Ordinal).ToArray();
+        try
+        {
+            var result = await models.GetModelsAsync(cancellationToken);
+            return result.Value.Select(m => m.Id).Order(StringComparer.Ordinal).ToArray();
+        }
+        catch (ClientResultException error) { throw new AgentProviderException("http_" + error.Status, error.Status is 408 or 429 or >= 500); }
+        catch (HttpRequestException) { throw new AgentProviderException("connection_error", true); }
+        catch (JsonException) { throw new AgentProviderException("invalid_response_json", false); }
     }
 
     public int GetContextBytes(AgentRequest request) => ModelReaderWriter.Write(Options(request)).ToMemory().Length;

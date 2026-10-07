@@ -18,6 +18,8 @@
     { "id": "XamlG.Mcp", "project": "src/XamlG.Mcp/XamlG.Mcp.csproj" },
     { "id": "XamlG.Agents", "project": "src/XamlG.Agents/XamlG.Agents.csproj" },
     { "id": "XamlG.Agents.OpenAI", "project": "src/XamlG.Agents.OpenAI/XamlG.Agents.OpenAI.csproj" },
+    { "id": "XamlG.Agents.Anthropic", "project": "src/XamlG.Agents.Anthropic/XamlG.Agents.Anthropic.csproj" },
+    { "id": "XamlG.Agents.Gemini", "project": "src/XamlG.Agents.Gemini/XamlG.Agents.Gemini.csproj" },
     { "id": "XamlG.Studio.Host", "project": "tools/XamlG.Studio.Host/XamlG.Studio.Host.csproj", "command": "xamlg-studio" }
   ]
 }

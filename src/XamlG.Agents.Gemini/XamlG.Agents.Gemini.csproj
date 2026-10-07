@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Official Google Gen AI C# SDK adapter for the reusable XamlG coding-agent harness.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../XamlG.Agents/XamlG.Agents.csproj" />
+    <PackageReference Include="Google.GenAI" />
+  </ItemGroup>
+</Project>

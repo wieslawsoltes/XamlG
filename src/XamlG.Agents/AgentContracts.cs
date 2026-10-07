@@ -43,12 +43,16 @@ public interface IAgentProvider
     int GetContextBytes(AgentRequest request);
 }
 
-public sealed class AgentProviderException(string code, bool retryable, TimeSpan? retryAfter = null)
+public sealed class AgentProviderException(string code, bool retryable, TimeSpan? retryAfter = null, bool? canResume = null)
     : Exception("Provider request failed: " + code)
 {
     public string Code { get; } = code;
     public bool Retryable { get; } = retryable;
     public TimeSpan? RetryAfter { get; } = retryAfter;
+    /// <summary>Whether an explicit new run may retry the pending request. A rejected or
+    /// malformed generation is terminal; configuration/transport errors may be repaired.</summary>
+    public bool CanResume { get; } = canResume ?? (retryable ||
+        (!code.StartsWith("invalid_", StringComparison.Ordinal) && code is not ("duplicate_terminal_event" or "response_too_large")));
 }
 
 public sealed record AgentLimits

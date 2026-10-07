@@ -13,6 +13,8 @@
     <Project Path="src/XamlG.LanguageServer/XamlG.LanguageServer.csproj" />
     <Project Path="src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" />
     <Project Path="src/XamlG.Agents.OpenAI/XamlG.Agents.OpenAI.csproj" />
+    <Project Path="src/XamlG.Agents.Anthropic/XamlG.Agents.Anthropic.csproj" />
+    <Project Path="src/XamlG.Agents.Gemini/XamlG.Agents.Gemini.csproj" />
     <Project Path="src/XamlG.Agents/XamlG.Agents.csproj" />
     <Project Path="src/XamlG.Automation/XamlG.Automation.csproj" />
     <Project Path="src/XamlG.Avalonia/XamlG.Avalonia.csproj" />

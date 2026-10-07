@@ -73,12 +73,15 @@ otherwise the host generates one. Sharing begins disabled and disconnecting
 revokes in-flight operations. Browser sharing policy and agent run policy both
 apply. Runtime actions execute the application running in the preview.
 
-Set `OPENAI_API_KEY` in the companion environment to enable the current official
-OpenAI SDK adapter, then use **Coding agent** to discover models or enter a model
-ID. Provider credentials are not sent to browser code, transcript exports or MCP
-clients. `OPENAI_ENDPOINT` optionally supplies an HTTPS gateway or an HTTP
-loopback endpoint for deterministic protocol testing. The official SDK currently
-marks Responses APIs with `OPENAI001`; the adapter suppresses that diagnostic.
+Set `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` in the companion
+environment to enable the respective official C# SDK adapters. Then use **Coding
+agent** to choose a provider, discover models or enter a model ID. Provider
+credentials are not sent to browser code, transcript exports or MCP clients.
+`OPENAI_ENDPOINT`, `ANTHROPIC_ENDPOINT` and `GEMINI_ENDPOINT` optionally supply
+HTTPS gateways or HTTP loopback endpoints for deterministic protocol testing.
+The companion rejects redirects and disables SDK retries; the harness owns retry
+accounting. The official OpenAI SDK currently marks Responses APIs with
+`OPENAI001`; the adapter suppresses that diagnostic.
 
 External MCP clients use authenticated Streamable HTTP at `/mcp`, or launch the
 companion with `--stdio=true`. With stdio, the loopback browser bridge remains
@@ -96,19 +99,20 @@ consumer example that uses only NuGet references outside this repository.
 ## Local evidence and remaining work
 
 - 468 real-Avalonia tests passed, including fourteen runtime inspector tests.
-- 19 automation/MCP/agent tests passed, including actual official MCP and OpenAI
+- 34 automation/MCP/agent tests passed, including actual official MCP, OpenAI,
+  Anthropic and Gemini
   SDK transports, permission enforcement, native tool continuation, no replay on
   resume, queued messages, compaction and conflict-checked source restoration.
 - The five new packages built, installed and ran through a separate consumer
   with an initially empty package cache. Its temporary files are removed even
   when validation fails.
-- CI passed all 35 browser scenarios at the initial PR checkpoint. The new runtime
-  browser scenario also passes: it constructs a C# DataContext, invokes its method,
+- CI passed all 36 browser scenarios at the runtime expansion checkpoint. The runtime
+  browser scenario constructs a C# DataContext, invokes its method,
   installs and updates a real binding, inspects style value frames, and creates,
   reparents and removes controls without changing source. Coverage includes actual rendering, authoring, designer gestures,
   source undo, file moves, editor lifetimes, isolation, mobile layout and HTTP MCP.
-- The workbench test uses a local Responses fixture through the official SDK and
-  the real companion/browser. It edits XAML, compiles, reviews and selectively
+- Workbench browser tests use local provider fixtures through all three official
+  SDKs and the real companion/browser. Each discovers models, edits XAML, compiles, reviews and selectively
   restores source, compacts context and exports the public thread. No paid
   provider account was used. CI starts and removes its own companion processes.
 
@@ -118,8 +122,8 @@ changes, event watches, binding expressions and style/value-frame diagnostics.
 Template-owned visuals require template/source edits; tree operations reject
 unsupported ownership. Diagnostic frame metadata uses the loaded Avalonia runtime.
 
-Full reference parity remains in progress: additional official provider adapters
-and account-mode support; MCP subscriptions/notifications and session routing;
+Full reference parity remains in progress: account-mode support and additional
+provider recovery/limit controls; MCP subscriptions/notifications and session routing;
 typed runtime input and additional designer/runtime UI; a full multi-file C#
 workspace and Roslyn authoring surface; and the corresponding UI and protocol
 acceptance coverage. This ledger does not claim those capabilities from a build

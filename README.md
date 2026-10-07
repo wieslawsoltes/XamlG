@@ -78,6 +78,8 @@ XAML project → immutable source syntax → Roslyn binding → typed operations
 | `XamlG.Mcp` | Official C# MCP SDK integration, resources/prompts and authenticated browser bridge. |
 | `XamlG.Agents` | Provider-independent tasks, streaming events, approvals, budgets, compaction and source change review. |
 | `XamlG.Agents.OpenAI` | Official OpenAI Responses SDK adapter with lossless native tool continuation. |
+| `XamlG.Agents.Anthropic` | Official Anthropic Messages SDK adapter retaining signed thinking and native tool results. |
+| `XamlG.Agents.Gemini` | Official Google Gen AI SDK adapter retaining thought signatures and native function results. |
 | `XamlG.Studio.Host` | Installable `xamlg-studio` companion for MCP clients and the Dockyard agent workbench. |
 
 Core compiler/tooling libraries target .NET Standard 2.0. Workspace/LSP, Avalonia integration and executable hosts target .NET 10; generated-code validation uses that runtime.
@@ -184,7 +186,7 @@ Six PR workflows own native/MSBuild, real-host, upstream, theme, browser and pac
 
 The pinned comparison executes **222 original-XamlX baseline cases** separately from **217 XamlG runtime/diagnostic cases**. Five internal AST/IL-specific assertions are outside that source-backend comparison. Additional shared regressions run through both compilers and are counted separately from the original upstream cases. The separate theme gate compiles the original Simple and Fluent documents/code-behind and realizes seventeen controls in Light and Dark variants; compile-only success is insufficient. No production package depends on XamlX.
 
-Release CI builds **19 shipping packages**, installs clean consumers and records hashes/source provenance. Tagged publication additionally requires upstream, theme-construction and browser validation. NuGet publication is an explicit environment-protected action. See [validation](docs/validation.md), [releases](docs/releasing.md) and the [Studio implementation ledger](docs/studio-agent-implementation.md).
+Release CI builds **21 shipping packages**, installs clean consumers and records hashes/source provenance. Tagged publication additionally requires upstream, theme-construction and browser validation. NuGet publication is an explicit environment-protected action. See [validation](docs/validation.md), [releases](docs/releasing.md) and the [Studio implementation ledger](docs/studio-agent-implementation.md).
 
 ## License
 

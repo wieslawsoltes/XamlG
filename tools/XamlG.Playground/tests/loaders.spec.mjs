@@ -52,6 +52,7 @@ test('unsupported indirect loader calls surface original C# diagnostics rather t
   await setProject(page, code + '\npublic static class UnsafeLoader { public static System.Action<object> Load = AvaloniaXamlLoader.Load; }');
   await page.getByRole('button', { name: 'Compile', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Compilation has errors');
+  await page.getByRole('tab', { name: 'Problems', exact: true }).click();
   await expect(page.locator('.diagnostics')).toContainText('XG3400');
   await expect(page.locator('.diagnostics')).toContainText('Code.cs');
 });

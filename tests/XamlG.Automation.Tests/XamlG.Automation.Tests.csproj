@@ -10,6 +10,8 @@
     <ProjectReference Include="../../src/XamlG.Automation/XamlG.Automation.csproj" />
     <ProjectReference Include="../../src/XamlG.Mcp/XamlG.Mcp.csproj" />
     <ProjectReference Include="../../src/XamlG.Agents.OpenAI/XamlG.Agents.OpenAI.csproj" />
+    <ProjectReference Include="../../src/XamlG.Agents.Anthropic/XamlG.Agents.Anthropic.csproj" />
+    <ProjectReference Include="../../src/XamlG.Agents.Gemini/XamlG.Agents.Gemini.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />

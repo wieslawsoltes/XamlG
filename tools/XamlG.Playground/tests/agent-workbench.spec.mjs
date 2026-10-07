@@ -3,7 +3,8 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 
-test('workbench runs official SDK tools, reviews the source change and restores it', async ({ page, request }) => {
+for (const provider of ['openai', 'anthropic', 'gemini']) {
+test(`workbench runs ${provider} official SDK tools, reviews the source change and restores it`, async ({ page, request }) => {
   test.setTimeout(90000); page.setDefaultTimeout(15000);
   test.skip(!process.env.XAMLG_TEST_HOST_DLL, 'Build the companion and set XAMLG_TEST_HOST_DLL for the full agent transport test.');
   const requests = [], failures = [];
@@ -11,24 +12,29 @@ test('workbench runs official SDK tools, reviews the source change and restores 
   const fixture = createServer(async (incoming, response) => {
     try {
       let body = ''; for await (const part of incoming) body += part;
-      if (incoming.method === 'GET') { response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ object: 'list', data: [{ id: 'test-model', object: 'model', created: 1, owned_by: 'fixture' }] })); return; }
+      if (incoming.method === 'GET') {
+        const models = provider === 'openai' ? { object: 'list', data: [{ id: 'test-model', object: 'model', created: 1, owned_by: 'fixture' }] } :
+          provider === 'anthropic' ? { data: [{ id: 'test-model', display_name: 'Test model', type: 'model', created_at: '2026-01-01T00:00:00Z' }], has_more: false, first_id: 'test-model', last_id: 'test-model' } :
+          { models: [{ name: 'models/test-model', displayName: 'Test model', supportedGenerationMethods: ['generateContent'] }] };
+        response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(models)); return;
+      }
       const input = JSON.parse(body); requests.push(input);
       const round = requests.length;
       const call = (name, args) => ({ type: 'function_call', id: `fc_${round}`, call_id: `call_${round}`, name, arguments: JSON.stringify(args), status: 'completed' });
+      const result = id => provider === 'openai' ? JSON.parse(input.input.find(item => item.type === 'function_call_output' && item.call_id === id).output) :
+        provider === 'anthropic' ? JSON.parse(input.messages.flatMap(message => Array.isArray(message.content) ? message.content : []).find(item => item.type === 'tool_result' && item.tool_use_id === id).content) :
+        input.contents.flatMap(message => message.parts).find(item => item.functionResponse?.id === id).functionResponse.response;
       let output;
       if (round === 1) output = [call('xamlg_project_get', {})];
       else if (round === 2) {
-        const result = input.input.find(item => item.type === 'function_call_output' && item.call_id === 'call_1');
-        output = [call('xamlg_document_write', { path: 'View.axaml', text: xaml, expectedRevision: JSON.parse(result.output).revision })];
+        output = [call('xamlg_document_write', { path: 'View.axaml', text: xaml, expectedRevision: result('call_1').revision })];
       } else if (round === 3) output = [call('xamlg_compiler_compile', {})];
       else {
-        const result = input.input.find(item => item.type === 'function_call_output' && item.call_id === 'call_3');
-        if (!JSON.parse(result.output).success) throw new Error('The agent edit did not compile.');
+        if (!result('call_3').success) throw new Error('The agent edit did not compile.');
         output = [{ type: 'message', id: 'msg_done', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'Updated and compiled the real project.', annotations: [] }] }];
       }
-      const event = { type: 'response.completed', sequence_number: round, response: { id: `resp_${round}`, object: 'response', created_at: 123, model: 'test-model', status: 'completed', output, usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } } };
       response.setHeader('Content-Type', 'text/event-stream');
-      response.end(`event: response.completed\ndata: ${JSON.stringify(event)}\n\n`);
+      response.end(providerEvents(provider, output, round).map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
     } catch (error) { failures.push(error.message); response.statusCode = 500; response.end('Fixture failed'); }
   });
   fixture.listen(0, '127.0.0.1'); await once(fixture, 'listening');
@@ -38,8 +44,12 @@ test('workbench runs official SDK tools, reviews the source change and restores 
   const companionPort = reservation.address().port; await new Promise(resolve => reservation.close(resolve));
   const token = 'xamlg-agent-browser-test-token-0123456789';
   const origin = new URL(process.env.PLAYGROUND_URL || 'http://127.0.0.1:8765/').origin;
+  const environment = { ...process.env, XAMLG_STUDIO_TOKEN: token };
+  for (const name of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY']) delete environment[name];
+  environment[`${provider.toUpperCase()}_API_KEY`] = 'test-only-not-a-real-key';
+  environment[`${provider.toUpperCase()}_ENDPOINT`] = `http://127.0.0.1:${fixturePort}${provider === 'openai' ? '/v1' : ''}`;
   const host = spawn(process.env.XAMLG_TEST_DOTNET || 'dotnet', [process.env.XAMLG_TEST_HOST_DLL, `--port=${companionPort}`, `--origins=${origin}`], {
-    env: { ...process.env, XAMLG_STUDIO_TOKEN: token, OPENAI_API_KEY: 'test-only-not-a-real-key', OPENAI_ENDPOINT: `http://127.0.0.1:${fixturePort}/v1` }, stdio: ['ignore', 'pipe', 'pipe']
+    env: environment, stdio: ['ignore', 'pipe', 'pipe']
   });
   let hostLog = ''; host.stdout.on('data', part => { hostLog += part; }); host.stderr.on('data', part => { hostLog += part; });
   try {
@@ -59,7 +69,9 @@ test('workbench runs official SDK tools, reviews the source change and restores 
     const original = await page.evaluate(() => window.xamlgAutomation.call('xamlg_document_read', { path: 'View.axaml' }));
     await page.getByTestId('agent-workbench').click();
     const workbench = page.getByRole('region', { name: 'Coding agent workbench' });
-    await expect(workbench.getByLabel('Provider', { exact: true })).toHaveValue('openai');
+    await expect(workbench.getByLabel('Provider', { exact: true })).toHaveValue(provider);
+    await workbench.getByRole('button', { name: 'Discover models' }).click();
+    await expect(workbench.locator('#agent-models option')).toHaveCount(1);
     await workbench.getByLabel('Model', { exact: true }).fill('test-model');
     await workbench.getByLabel('Task name', { exact: true }).fill('Change and review');
     await workbench.getByRole('button', { name: 'Create task', exact: true }).click();
@@ -69,7 +81,7 @@ test('workbench runs official SDK tools, reviews the source change and restores 
     await workbench.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(workbench.getByRole('status')).toContainText('completed', { timeout: 30000 });
     expect(failures).toEqual([]); expect(requests).toHaveLength(4);
-    expect(requests.every(item => item.store === false)).toBe(true);
+    if (provider === 'openai') expect(requests.every(item => item.store === false)).toBe(true);
     expect((await page.evaluate(() => window.xamlgAutomation.call('xamlg_document_read', { path: 'View.axaml' }))).text).toBe(xaml);
     await workbench.getByText('Review 1 changed source files', { exact: true }).click();
     await workbench.getByLabel(/View.axaml \(/).check();
@@ -99,3 +111,21 @@ test('workbench runs official SDK tools, reviews the source change and restores 
     fixture.closeAllConnections(); await new Promise(resolve => fixture.close(resolve));
   }
 });
+}
+
+function providerEvents(provider, output, round) {
+  if (provider === 'openai') return [{ type: 'response.completed', sequence_number: round,
+    response: { id: `resp_${round}`, object: 'response', created_at: 123, model: 'test-model', status: 'completed', output, usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } } }];
+  if (provider === 'gemini') return [{ candidates: [{ index: 0, content: { role: 'model', parts: output.map(item => item.type === 'function_call' ?
+    { functionCall: { id: item.call_id, name: item.name, args: JSON.parse(item.arguments) } } : { text: item.content[0].text }) }, finishReason: 'STOP' }],
+    usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 } }];
+  const events = [{ type: 'message_start', message: { id: `msg_${round}`, type: 'message', role: 'assistant', model: 'test-model', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0 } } }];
+  output.forEach((item, index) => {
+    events.push({ type: 'content_block_start', index, content_block: item.type === 'function_call' ? { type: 'tool_use', id: item.call_id, name: item.name, input: {} } : { type: 'text', text: '' } });
+    events.push({ type: 'content_block_delta', index, delta: item.type === 'function_call' ? { type: 'input_json_delta', partial_json: item.arguments } : { type: 'text_delta', text: item.content[0].text } });
+    events.push({ type: 'content_block_stop', index });
+  });
+  events.push({ type: 'message_delta', delta: { stop_reason: output.some(item => item.type === 'function_call') ? 'tool_use' : 'end_turn', stop_sequence: null }, usage: { output_tokens: 5 } });
+  events.push({ type: 'message_stop' });
+  return events;
+}

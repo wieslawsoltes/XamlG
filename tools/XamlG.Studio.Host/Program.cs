@@ -9,6 +9,8 @@ using XamlG.Automation;
 using XamlG.Mcp;
 using XamlG.Agents;
 using XamlG.Agents.OpenAI;
+using XamlG.Agents.Anthropic;
+using XamlG.Agents.Gemini;
 using XamlG.Studio.Host;
 using OpenAI.Models;
 using OpenAI.Responses;
@@ -35,10 +37,12 @@ foreach (var origin in origins)
         throw new InvalidOperationException("Origins must be exact HTTP(S) origins without paths or credentials.");
 var bridge = new BrowserAutomationBridge();
 var providers = new List<IAgentProvider>();
+using var providerHttp = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false })
+{ Timeout = Timeout.InfiniteTimeSpan, MaxResponseContentBufferSize = 8 * 1024 * 1024 };
 if (Environment.GetEnvironmentVariable("OPENAI_API_KEY") is { Length: > 0 } openAiKey)
 {
-    var responseOptions = new ResponsesClientOptions { RetryPolicy = new ClientRetryPolicy(0) };
-    var modelOptions = new OpenAI.OpenAIClientOptions();
+    var responseOptions = new ResponsesClientOptions { RetryPolicy = new ClientRetryPolicy(0), Transport = new HttpClientPipelineTransport(providerHttp) };
+    var modelOptions = new OpenAI.OpenAIClientOptions { RetryPolicy = new ClientRetryPolicy(0), Transport = new HttpClientPipelineTransport(providerHttp) };
     if (Environment.GetEnvironmentVariable("OPENAI_ENDPOINT") is { Length: > 0 } endpoint)
     {
         if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) || uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
@@ -48,6 +52,15 @@ if (Environment.GetEnvironmentVariable("OPENAI_API_KEY") is { Length: > 0 } open
     }
     providers.Add(new OpenAIAgentProvider(new ResponsesClient(new System.ClientModel.ApiKeyCredential(openAiKey), responseOptions), new OpenAIModelClient(new System.ClientModel.ApiKeyCredential(openAiKey), modelOptions)));
 }
+using var anthropicClient = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY") is { Length: > 0 } anthropicKey
+    ? new Anthropic.AnthropicClient { ApiKey = anthropicKey, MaxRetries = 0, HttpClient = providerHttp,
+        BaseUrl = ProviderEndpoint("ANTHROPIC_ENDPOINT", "https://api.anthropic.com").AbsoluteUri.TrimEnd('/') } : null;
+if (anthropicClient != null) providers.Add(new AnthropicAgentProvider(anthropicClient));
+using var geminiClient = (Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?? Environment.GetEnvironmentVariable("GOOGLE_API_KEY")) is { Length: > 0 } geminiKey
+    ? new Google.GenAI.Client(enterprise: false, apiKey: geminiKey,
+        httpOptions: new() { BaseUrl = ProviderEndpoint("GEMINI_ENDPOINT", "https://generativelanguage.googleapis.com").AbsoluteUri.TrimEnd('/'), RetryOptions = new() { Attempts = 1 } },
+        clientOptions: new() { HttpClientFactory = () => providerHttp }) : null;
+if (geminiClient != null) providers.Add(new GeminiAgentProvider(geminiClient));
 using var agents = new AgentWorkbench(bridge, providers, new BrowserAgentWorkspace(bridge));
 bridge.CatalogChanged += () => { if (!bridge.IsConnected) agents.Stop(); };
 var mcp = builder.Services.AddMcpServer(options => options.ServerInfo = new Implementation { Name = "XamlG Studio", Version = "0.1.0" })
@@ -156,3 +169,12 @@ await app.RunAsync();
 
 static bool EqualToken(string supplied, string expected) =>
     CryptographicOperations.FixedTimeEquals(SHA256.HashData(Encoding.UTF8.GetBytes(supplied)), SHA256.HashData(Encoding.UTF8.GetBytes(expected)));
+
+static Uri ProviderEndpoint(string variable, string defaultEndpoint)
+{
+    var endpoint = Environment.GetEnvironmentVariable(variable) ?? defaultEndpoint;
+    if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) || uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
+        (uri.Scheme != "https" && !(uri.Scheme == "http" && uri.IsLoopback)))
+        throw new InvalidOperationException(variable + " must use HTTPS, or HTTP on loopback, without credentials or a query.");
+    return uri;
+}

@@ -12,6 +12,7 @@ function source(page, path) {
   return page.evaluate(path => monaco.editor.getModels().find(m => m.uri.path.endsWith('/' + path))?.getValue(), path);
 }
 async function command(page, path, word, action) {
+  await expect(page.getByRole('button', { name: 'Compile', exact: true })).toBeEnabled();
   await page.evaluate(({ path, word, action }) => {
     const editor = monaco.editor.getEditors().find(e => e.getModel()?.uri.path.endsWith('/' + path));
     if (!editor) throw new Error('Missing source editor ' + path);
@@ -20,7 +21,7 @@ async function command(page, path, word, action) {
     if (offset < 0) throw new Error('Missing trigger ' + word);
     const position = model.getPositionAt(offset);
     editor.setSelection(new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column));
-    editor.getAction('xamlg.' + action).run();
+    return editor.getAction('xamlg.' + action).run();
   }, { path, word, action });
 }
 
