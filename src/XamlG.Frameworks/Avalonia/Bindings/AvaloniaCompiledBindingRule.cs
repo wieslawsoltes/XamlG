@@ -56,9 +56,14 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
         if (!target.Annotations.TryGet(Results, out var results))
             target.Annotations.Set(Results, results = new());
         if (results.TryGetValue(span, out var known)) return known;
+        // A property may declare that its own binding supplies the collection type.
+        results.Add(span, null);
         var input = readInput();
+        if (!inferDataContext && input != null && target.Annotations.TryGet(AvaloniaBindingScope.Key, out var configuration) && configuration.HasDataTypeMetadata &&
+            context.PropertyScope is { } property && ReferenceEquals(property.Target, target))
+            inferDataContext = AvaloniaItemInferenceDependencies.Requires(context, target, property.Member);
         var result = input == null ? null : BindCore(context, target, targetType, input, inferDataContext);
-        results.Add(span, result);
+        results[span] = result;
         return result;
     }
 
@@ -73,13 +78,14 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
             return null;
         }
         var configuration = target.Annotations.TryGet(AvaloniaBindingScope.Key, out var current) ? current : new(null, false);
+        var itemType = inferDataContext ? null : AvaloniaItemTypeInference.Read(context);
         var pathScope = input.Path.Scope ?? input.Scope;
         var path = BindingPathParser.Parse(input.Path.Text, input.Path.Span, context.Diagnostics.Add, context.Cancellation);
         if (path == null) return null;
         var declaredType = input.DataType == null ? null : AvaloniaBindingScopeRule.ResolveDataType(
             context, input.DataType.Text, input.DataType.Scope ?? input.Scope, input.DataType.Span);
         // Avalonia fixes DataContext paths before the general binding Source/DataType transform.
-        ITypeSymbol? sourceType = inferDataContext || input.DataType == null ? configuration.DataType : declaredType;
+        ITypeSymbol? sourceType = inferDataContext || input.DataType == null ? itemType ?? configuration.DataType : declaredType;
         if (inferDataContext && sourceType == null && path.Segments.IsEmpty)
         {
             context.Report("XG3209", "DataContext binding inference requires an inherited data type.", input.Path.Span);

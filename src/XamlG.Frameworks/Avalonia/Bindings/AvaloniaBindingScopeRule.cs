@@ -20,11 +20,13 @@ public sealed class AvaloniaBindingScopeRule(bool compileBindingsByDefault = tru
         }
         // DataContext bindings are compiled against the inherited type before their result
         // establishes this object's type. The bound value is reused for its assignment.
-        target.Annotations.Set(AvaloniaBindingScope.Key, new(inherited.DataType, compile));
+        target.Annotations.Set(AvaloniaBindingScope.Key, inherited with { CompileBindings = compile });
         var metadata = AvaloniaDataTypeMetadata.Read(context, target);
-        var dataType = metadata.HasType ? metadata.Type :
-            AvaloniaStyleScope.Is(target.Type, AvaloniaBindingMetadata.DataTemplateContract) ? null : inherited.DataType;
-        target.Annotations.Set(AvaloniaBindingScope.Key, new(dataType, compile));
+        var itemType = metadata.HasType ? null : AvaloniaItemTypeInference.Read(context);
+        var template = AvaloniaStyleScope.Is(target.Type, AvaloniaBindingMetadata.DataTemplateContract);
+        var dataType = metadata.HasType ? metadata.Type : itemType ?? (template ? null : inherited.DataType);
+        target.Annotations.Set(AvaloniaBindingScope.Key, new(dataType, compile)
+        { HasDataTypeMetadata = metadata.HasType || itemType != null || template || inherited.HasDataTypeMetadata });
     }
     public void Complete(BindingContext context, ObjectBindingBuilder target) { }
     public bool TryBindAttribute(BindingContext context, ObjectBindingBuilder target, XamlAttributeSyntax attribute, NamespaceScope scope)

@@ -16,6 +16,7 @@ internal static class AvaloniaBindingMetadata
     public const string TreeDataTemplate = "Avalonia.Markup.Xaml.Templates.TreeDataTemplate";
     public const string DataTemplateContract = "Avalonia.Controls.Templates.IDataTemplate";
     public const string DataTypeAttribute = "Avalonia.Metadata.DataTypeAttribute";
+    public const string InheritDataTypeFromItems = "Avalonia.Metadata.InheritDataTypeFromItemsAttribute";
     public const string DataType = "DataType";
     public const string CompileBindings = "CompileBindings";
     public const string DataContext = "DataContext";

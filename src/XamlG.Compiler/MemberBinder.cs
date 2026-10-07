@@ -77,6 +77,7 @@ public sealed class MemberBinder
     {
         var member = Resolve(target.Type, attribute.Name, scope, attribute.NameSpan, attribute.Value);
         if (member == null) return;
+        using var propertyScope = _context.EnterPropertyScope(target, member);
         if (member.Setter?.IsInitOnly == true && _context.Types.Find("System.Runtime.CompilerServices.UnsafeAccessorAttribute") == null)
         { _context.Report("XG1031", "Init-only Populate requires a target runtime with UnsafeAccessor support (.NET 8 or later).", attribute.NameSpan); return; }
         if (member.Kind is BoundMemberKind.Event or BoundMemberKind.AttachedEvent)
@@ -94,6 +95,7 @@ public sealed class MemberBinder
     }
     public void BindNodes(ObjectBindingBuilder target, BoundMember? member, IEnumerable<XamlSyntaxNode> children, NamespaceScope scope, TextSpan span)
     {
+        using var propertyScope = member == null ? null : _context.EnterPropertyScope(target, member);
         var contentType = member?.ValueType ?? target.Type;
         var contentIsCollection = (member == null || member.Getter != null) && _context.Types.AddMethods(contentType).Any();
         var nodes = new ContentWhitespaceNormalizer(_context).Normalize(children, contentType, contentIsCollection, scope);

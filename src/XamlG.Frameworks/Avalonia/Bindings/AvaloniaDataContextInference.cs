@@ -13,28 +13,7 @@ internal static class AvaloniaDataContextInference
         dataType = null;
         var nodes = property.Values.Where(node => node is XamlElementSyntax || node is XamlTextSyntax text && !string.IsNullOrWhiteSpace(text.Value)).ToArray();
         if (nodes.Length != 1) return false;
-        INamedTypeSymbol? type;
-        Func<CompiledBindingInput?>? readInput = null;
-        if (nodes[0] is XamlTextSyntax text)
-        {
-            if (!text.Value.StartsWith("{", StringComparison.Ordinal) || text.Value.StartsWith("{}", StringComparison.Ordinal)) return false;
-            var markup = MarkupExtensionParser.Parse(text.Value, text.Span, _ => { });
-            if (markup == null || IsIntrinsic(property.Scope, markup.Name)) return false;
-            type = context.ResolveType(markup.Name, property.Scope, markup.Span, report: false, extension: true);
-            if (type != null && AvaloniaCompiledBindingRule.ShouldCompile(target, type))
-                readInput = () => CompiledBindingInputReader.FromMarkup(context, markup, property.Scope);
-        }
-        else if (nodes[0] is XamlElementSyntax element)
-        {
-            var scope = property.Scope.Push(element);
-            if (IsIntrinsic(scope, element.Name)) return false;
-            type = context.Values.PeekNodeType(element, property.Scope) as INamedTypeSymbol;
-            if (type != null && AvaloniaCompiledBindingRule.ShouldCompile(target, type) && context.Types.Find(AvaloniaBindingMetadata.CompiledExtension) is { } compiled)
-                readInput = () => CompiledBindingInputReader.FromElement(context, element, property.Scope, compiled);
-            else if (type != null && context.Types.MarkupExtensionMethod(type) == null && AvaloniaStyleScope.Is(type, AvaloniaMetadata.BindingBase))
-                return false;
-        }
-        else return false;
+        var readInput = CompiledBindingValueReader.Read(context, target, nodes[0], property.Scope, out var type);
         if (type == null) return false;
         if (AvaloniaCompiledBindingRule.ShouldCompile(target, type))
         {
@@ -42,6 +21,8 @@ internal static class AvaloniaDataContextInference
                 context.Types.Special(SpecialType.System_Object), nodes[0].Span, readInput, inferDataContext: true)?.ValueType;
             return true;
         }
+        if (nodes[0] is XamlElementSyntax && context.Types.MarkupExtensionMethod(type) == null && AvaloniaStyleScope.Is(type, AvaloniaMetadata.BindingBase))
+            return false;
         if (AvaloniaStyleScope.Is(type, AvaloniaMetadata.BindingBase) ||
             type.HasMetadataName(AvaloniaBindingMetadata.ReflectionExtension) || type.HasMetadataName(AvaloniaBindingMetadata.BindingExtension))
             return true;
@@ -49,6 +30,4 @@ internal static class AvaloniaDataContextInference
         return true;
     }
 
-    private static bool IsIntrinsic(NamespaceScope scope, string name) =>
-        scope.Expand(name).Namespace is { } ns && XamlNames.IsLanguage(ns);
 }
