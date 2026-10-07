@@ -59,7 +59,7 @@ jobs:
         run: dotnet test tests/XamlG.XamlX.${{ matrix.suite }}.Tests -c Release --no-build --filter Category=ParityRegression --logger 'trx;LogFileName=${{ matrix.suite }}-parity.trx' --results-directory artifacts/tests
       - name: Require every shared regression to pass
         if: always()
-        run: python scripts/verify-test-results.py artifacts/tests/${{ matrix.suite }}-parity.trx --expected 85
+        run: python scripts/verify-test-results.py artifacts/tests/${{ matrix.suite }}-parity.trx --expected 161
       - uses: actions/upload-artifact@v4
         if: always()
         with:
