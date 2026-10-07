@@ -14,4 +14,18 @@ public sealed class XamlPropertyBindingScope : IDisposable
     public BoundMember Member { get; }
     public XamlPropertyBindingScope? Parent { get; }
     public void Dispose() => _context.PropertyScope = Parent;
+
+    internal static IDisposable Suspend(BindingContext context) => new Suspension(context);
+
+    private sealed class Suspension : IDisposable
+    {
+        private readonly BindingContext _context;
+        private readonly XamlPropertyBindingScope? _previous;
+        public Suspension(BindingContext context)
+        {
+            _context = context; _previous = context.PropertyScope;
+            context.PropertyScope = null;
+        }
+        public void Dispose() => _context.PropertyScope = _previous;
+    }
 }

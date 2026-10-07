@@ -10,12 +10,12 @@ namespace XamlG.Frameworks.Avalonia.Bindings;
 /// <summary>Finds collection properties consumed by descendant item scopes before those values are bound.</summary>
 internal sealed class AvaloniaItemInferenceDependencies(BindingContext context, ObjectBindingBuilder owner)
 {
-    private static readonly XamlAnnotationKey<HashSet<string>> Key = new("Avalonia.ItemInferenceDependencies");
+    private static readonly XamlAnnotationKey<Dictionary<string, XamlElementSyntax>> Key = new("Avalonia.ItemInferenceDependencies");
     private static readonly string[] DataTypeAttributes = { AvaloniaBindingMetadata.DataTypeAttribute };
-    private readonly HashSet<string> _sources = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, XamlElementSyntax> _sources = new(StringComparer.Ordinal);
     private readonly List<ObjectBindingBuilder> _objects = context.Ancestors.Skip(1).Reverse().ToList();
 
-    public static bool Requires(BindingContext context, ObjectBindingBuilder target, BoundMember member)
+    public static XamlElementSyntax? Consumer(BindingContext context, ObjectBindingBuilder target, BoundMember member)
     {
         if (!target.Annotations.TryGet(Key, out var sources))
         {
@@ -23,7 +23,7 @@ internal sealed class AvaloniaItemInferenceDependencies(BindingContext context, 
             reader.Visit(target);
             target.Annotations.Set(Key, sources = reader._sources);
         }
-        return sources.Contains(member.Name);
+        return sources.TryGetValue(member.Name, out var consumer) ? consumer : null;
     }
 
     private void Visit(ObjectBindingBuilder target)
@@ -54,7 +54,7 @@ internal sealed class AvaloniaItemInferenceDependencies(BindingContext context, 
             {
                 var sourceOwner = item.Ancestor == null ? _objects.Last() : _objects.LastOrDefault(candidate =>
                     context.Types.Compilation.ClassifyCommonConversion(candidate.Type, item.Ancestor).IsImplicit);
-                if (ReferenceEquals(sourceOwner, owner)) _sources.Add(item.Source);
+                if (ReferenceEquals(sourceOwner, owner) && !_sources.ContainsKey(item.Source)) _sources.Add(item.Source, target.Syntax);
             }
             Visit(target);
         }

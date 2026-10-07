@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
 using XamlG.Frameworks.Avalonia.Styling;
@@ -9,16 +8,11 @@ namespace XamlG.Frameworks.Avalonia.Bindings;
 
 internal sealed class BindingSourceResolver(BindingContext context, ObjectBindingBuilder target)
 {
-    public (INamedTypeSymbol? Type, INamedTypeSymbol? DataType) Named(string name, TextSpan span)
+    public (INamedTypeSymbol? Type, ITypeSymbol? DataType) Named(string name, TextSpan span)
     {
-        var syntax = context.Syntax.Root;
-        if (syntax == null) return (null, null);
-        var scopeRoot = context.Ancestors.Where(a => a.NameScopeId == target.NameScopeId).LastOrDefault()?.Syntax ?? syntax;
-        var found = scopeRoot.DescendantsAndSelf().FirstOrDefault(e => Scope(e).Directive(e, "Name")?.Value == name);
-        if (found == null) { context.Report("XG3203", "Named binding source was not found: " + name, span); return (null, null); }
-        var scope = Scope(found);
-        var type = context.ResolveType(found.Name, scope, span, scope.Directive(found, "TypeArguments")?.Value);
-        return (type, DataType(found));
+        var found = AvaloniaNamedSourceScopes.Get(context).Find(name);
+        if (found.Type == null) context.Report("XG3203", "Named binding source was not found: " + name, span);
+        return found;
     }
 
     public (INamedTypeSymbol? Type, ITypeSymbol? DataType, int Level) Parent(BindingPathSegment segment, NamespaceScope scope)
@@ -41,21 +35,4 @@ internal sealed class BindingSourceResolver(BindingContext context, ObjectBindin
         return (type, data, level);
     }
 
-    public NamespaceScope Scope(XamlElementSyntax element)
-    {
-        var scope = NamespaceScope.Empty;
-        foreach (var ancestor in context.Syntax.Root!.DescendantsAndSelf().Where(e => e.Span.Contains(element.Span)).OrderByDescending(e => e.Span.Length))
-            scope = scope.Push(ancestor);
-        return scope;
-    }
-    private INamedTypeSymbol? DataType(XamlElementSyntax element)
-    {
-        foreach (var ancestor in context.Syntax.Root!.DescendantsAndSelf().Where(e => e.Span.Contains(element.Span)).OrderBy(e => e.Span.Length))
-        {
-            var scope = Scope(ancestor);
-            var declared = scope.Directive(ancestor, AvaloniaBindingMetadata.DataType);
-            if (declared != null) return AvaloniaBindingScopeRule.ResolveDataType(context, declared.Value, scope, declared.ValueSpan);
-        }
-        return null;
-    }
 }

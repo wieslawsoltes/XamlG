@@ -31,6 +31,7 @@ public sealed class BindingContext
     public Stack<ObjectBindingBuilder> Ancestors { get; } = new();
     public XamlPropertyBindingScope? PropertyScope { get; internal set; }
     public XamlPropertyBindingScope EnterPropertyScope(ObjectBindingBuilder target, BoundMember member) => new(this, target, member);
+    public IDisposable SuspendPropertyScope() => XamlPropertyBindingScope.Suspend(this);
     public int NewNameScope() => ++_scopeCounter;
     public string NewObjectKey() => "n" + _objectCounter++;
     public void Report(string code, string message, TextSpan span, XamlSeverity severity = XamlSeverity.Error) => Diagnostics.Add(new(code, message, span, severity));

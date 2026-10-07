@@ -10,6 +10,10 @@ public sealed class AvaloniaBindingScopeRule(bool compileBindingsByDefault = tru
 {
     public void Initialize(BindingContext context, ObjectBindingBuilder target)
     {
+        var scopes = AvaloniaNamedSourceScopes.Get(context);
+        scopes.CompileBindingsByDefault = compileBindingsByDefault;
+        if (scopes.Restore(target)) return;
+        using var metadataScope = scopes.EnterMetadata(target.Syntax);
         var parent = context.Ancestors.Skip(1).FirstOrDefault();
         var inherited = parent != null && parent.Annotations.TryGet(AvaloniaBindingScope.Key, out var known) ? known : new(null, compileBindingsByDefault);
         var compile = inherited.CompileBindings;
@@ -20,13 +24,16 @@ public sealed class AvaloniaBindingScopeRule(bool compileBindingsByDefault = tru
         }
         // DataContext bindings are compiled against the inherited type before their result
         // establishes this object's type. The bound value is reused for its assignment.
-        target.Annotations.Set(AvaloniaBindingScope.Key, inherited with { CompileBindings = compile });
+        target.Annotations.Set(AvaloniaBindingScope.Key, inherited with { CompileBindings = compile, HasOwnDataTypeMetadata = false });
         var metadata = AvaloniaDataTypeMetadata.Read(context, target);
         var itemType = metadata.HasType ? null : AvaloniaItemTypeInference.Read(context);
         var template = AvaloniaStyleScope.Is(target.Type, AvaloniaBindingMetadata.DataTemplateContract);
         var dataType = metadata.HasType ? metadata.Type : itemType ?? (template ? null : inherited.DataType);
         target.Annotations.Set(AvaloniaBindingScope.Key, new(dataType, compile)
-        { HasDataTypeMetadata = metadata.HasType || itemType != null || template || inherited.HasDataTypeMetadata });
+        {
+            HasDataTypeMetadata = metadata.HasType || itemType != null || template || inherited.HasDataTypeMetadata,
+            HasOwnDataTypeMetadata = metadata.HasType || itemType != null || template
+        });
     }
     public void Complete(BindingContext context, ObjectBindingBuilder target) { }
     public bool TryBindAttribute(BindingContext context, ObjectBindingBuilder target, XamlAttributeSyntax attribute, NamespaceScope scope)

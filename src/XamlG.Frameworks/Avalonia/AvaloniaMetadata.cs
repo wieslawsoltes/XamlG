@@ -28,6 +28,7 @@ public static class AvaloniaMetadata
     public const string NamespaceItem = RuntimeNamespace + "AvaloniaXamlIlXmlNamespaceInfo";
     public const string NameScope = "Avalonia.Controls.NameScope";
     public const string NameScopeContract = "Avalonia.Controls.INameScope";
+    public const string Named = "Avalonia.INamed";
     public const string Control = "Avalonia.Controls.Control";
     public const string BindingBase = "Avalonia.Data.BindingBase";
     public const string BindingAdapter = "XamlG.AvaloniaRuntime.AvaloniaBindingAdapter";

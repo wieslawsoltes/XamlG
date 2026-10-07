@@ -11,6 +11,11 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
 {
     private static readonly XamlAnnotationKey<Dictionary<TextSpan, CompiledBindingResult?>> Results = new("Avalonia.CompiledBindings");
 
+    internal static void ShareResults(ObjectBindingBuilder source, ObjectBindingBuilder target)
+    {
+        if (source.Annotations.TryGet(Results, out var results)) target.Annotations.Set(Results, results);
+    }
+
     public bool TryBind(BindingContext context, MarkupExtensionSyntax syntax, ITypeSymbol targetType,
         NamespaceScope scope, out BoundExpression? expression)
     {
@@ -59,9 +64,14 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
         // A property may declare that its own binding supplies the collection type.
         results.Add(span, null);
         var input = readInput();
+        XamlElementSyntax? consumer = null;
         if (!inferDataContext && input != null && target.Annotations.TryGet(AvaloniaBindingScope.Key, out var configuration) && configuration.HasDataTypeMetadata &&
             context.PropertyScope is { } property && ReferenceEquals(property.Target, target))
-            inferDataContext = AvaloniaItemInferenceDependencies.Requires(context, target, property.Member);
+        {
+            consumer = AvaloniaItemInferenceDependencies.Consumer(context, target, property.Member);
+            inferDataContext = consumer != null;
+        }
+        using var metadataScope = consumer == null ? null : AvaloniaNamedSourceScopes.Get(context).EnterMetadata(consumer);
         var result = input == null ? null : BindCore(context, target, targetType, input, inferDataContext);
         results[span] = result;
         return result;

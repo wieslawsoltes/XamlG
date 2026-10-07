@@ -49,7 +49,7 @@ internal sealed class EmissionContext
         foreach (var pair in _descriptors)
         {
             var type = pair.Key.ContainingType.CSharpName(); var name = CSharpNames.Literal(pair.Key.Name); string expression;
-            if (pair.Key is IPropertySymbol) expression = "typeof(" + type + ").GetProperty(" + name + ", global::System.Reflection.BindingFlags.Public | global::System.Reflection.BindingFlags.NonPublic | global::System.Reflection.BindingFlags.Instance)";
+            if (pair.Key is IPropertySymbol) expression = "typeof(" + type + ").GetProperty(" + name + ", global::System.Reflection.BindingFlags.Public | global::System.Reflection.BindingFlags.NonPublic | global::System.Reflection.BindingFlags.Instance | global::System.Reflection.BindingFlags.DeclaredOnly)";
             else if (pair.Key is IEventSymbol) expression = "typeof(" + type + ").GetEvent(" + name + ", global::System.Reflection.BindingFlags.Public | global::System.Reflection.BindingFlags.NonPublic | global::System.Reflection.BindingFlags.Instance)";
             else if (pair.Key is IMethodSymbol method) expression = "typeof(" + type + ").GetMethod(" + name + ", new global::System.Type[] { " + string.Join(", ", method.Parameters.Select(p => "typeof(" + p.Type.CSharpName() + ")")) + " })";
             else expression = "null";

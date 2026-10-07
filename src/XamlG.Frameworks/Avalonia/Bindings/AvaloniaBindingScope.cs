@@ -7,4 +7,5 @@ internal sealed record AvaloniaBindingScope(ITypeSymbol? DataType, bool CompileB
 {
     public static readonly XamlAnnotationKey<AvaloniaBindingScope> Key = new("Avalonia.BindingScope");
     public bool HasDataTypeMetadata { get; init; }
+    public bool HasOwnDataTypeMetadata { get; init; }
 }
