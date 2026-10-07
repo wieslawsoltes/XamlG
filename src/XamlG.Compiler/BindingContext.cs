@@ -6,7 +6,7 @@ namespace XamlG.Compiler;
 
 public sealed class BindingContext
 {
-    private readonly Dictionary<int, Dictionary<string, ITypeSymbol>> _names = new();
+    private readonly Dictionary<int, Dictionary<string, (ITypeSymbol Type, TextSpan Span)>> _names = new();
     private int _scopeCounter;
     private int _objectCounter;
     public BindingContext(XamlSyntaxTree syntax, RoslynTypeSystem types, XamlFrameworkProfile profile, XamlCompilerOptions options, CancellationToken cancellation)
@@ -36,9 +36,10 @@ public sealed class BindingContext
     {
         if (!_names.TryGetValue(scope, out var names)) _names[scope] = names = new(StringComparer.Ordinal);
         if (names.ContainsKey(name)) Report("XG1012", $"Duplicate name '{name}' in the same name scope.", span);
-        else names.Add(name, type);
+        else names.Add(name, (type, span));
     }
-    public ITypeSymbol? FindName(int scope, string name) => _names.TryGetValue(scope, out var names) && names.TryGetValue(name, out var type) ? type : null;
+    public ITypeSymbol? FindName(int scope, string name) => _names.TryGetValue(scope, out var names) && names.TryGetValue(name, out var definition) ? definition.Type : null;
+    public TextSpan? FindNameSpan(int scope, string name) => _names.TryGetValue(scope, out var names) && names.TryGetValue(name, out var definition) ? definition.Span : null;
     public INamedTypeSymbol? ResolveType(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, bool extension = false, NamespaceScope? typeArgumentScope = null)
     {
         var parsed = XamlTypeNameParser.Parse(name, span, d => { if (report) Diagnostics.Add(d); });

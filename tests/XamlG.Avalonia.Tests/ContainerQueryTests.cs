@@ -85,7 +85,7 @@ public sealed class ContainerQueryTests
         Assert.NotNull(Record.Exception(() => AvaloniaRuntimeXamlLoader.Load(xaml)));
         var project = new ResourceProjectFixture(new[] { ("Query.axaml", xaml) });
         Assert.False(project.Result.Success);
-        var diagnostic = Assert.Single(project.Result.Documents.Single().Output.Diagnostics.Where(d => d.Code == "XG3111"));
+        var diagnostic = Assert.Single(project.Result.Documents.Single().Output.Diagnostics, d => d.Code == "XG3111");
         Assert.Equal(XamlSeverity.Error, diagnostic.Severity);
         var start = xaml.IndexOf(query, StringComparison.Ordinal);
         Assert.InRange(diagnostic.Span.Start, start, start + query.Length);

@@ -32,8 +32,9 @@ internal sealed class DeferredContentBinder
         if (invoke != null && (invoke.Parameters.Length != 1 || !invoke.Parameters[0].Type.HasMetadataName(ClrNames.IServiceProvider)))
         { _context.Report("XG1013", "Deferred content delegates must accept one IServiceProvider.", span); return null; }
         var returnType = invoke?.ReturnType ?? _context.Types.Special(SpecialType.System_Object);
-        var value = _context.Values.BindNode(nodes[0], returnType, scope, _context.NewNameScope());
+        var nameScope = _context.NewNameScope();
+        var value = _context.Values.BindNode(nodes[0], returnType, scope, nameScope);
         return value == null ? null : new BoundDeferredExpression(value, member.ValueType, span)
-        { Customizer = customizer, FactoryReturnType = returnType };
+        { Customizer = customizer, FactoryReturnType = returnType, NameScopeId = nameScope };
     }
 }

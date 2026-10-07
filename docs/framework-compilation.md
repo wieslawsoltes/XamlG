@@ -10,6 +10,8 @@ Style, ControlTheme and ControlTemplate scopes carry the target type. `Setter.Pr
 
 `ContainerQuery.Query` supports the pinned framework's width/height features, `min-`/`max-` comparisons, `and`, and comma-separated alternatives. Attribute and property-element forms lower to typed `StyleQueries` calls. The parser reports located diagnostics without loading Avalonia. Tests execute the same input through the test-only Avalonia 12.1.3 runtime compiler and XamlG, including named containers reacting to layout changes. Compatibility retains two upstream quirks: bare `height` uses the maximum-height comparison, and conjunction grouping follows the compiled transform's behavior rather than the different reflection parser.
 
+Control templates validate inherited `TemplatePart` metadata against their deferred namescope. Required missing parts and incompatible part types are errors; optional missing parts are informational. A derived declaration overrides the same part from a base control. Names in an outer graph or nested data template do not satisfy the containing control template's requirements, and wrong-type diagnostics point to the part's name.
+
 ```xml
 <StackPanel xmlns="https://github.com/avaloniaui">
   <StackPanel.Styles>

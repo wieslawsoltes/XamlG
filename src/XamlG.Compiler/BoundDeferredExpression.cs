@@ -6,5 +6,6 @@ public sealed record BoundDeferredExpression(BoundExpression Content, ITypeSymbo
 {
     public IMethodSymbol? Customizer { get; init; }
     public ITypeSymbol? FactoryReturnType { get; init; }
+    public int? NameScopeId { get; init; }
     public bool UsesFunctionPointer => Customizer?.Parameters[0].Type.SpecialType == SpecialType.System_IntPtr;
 }
