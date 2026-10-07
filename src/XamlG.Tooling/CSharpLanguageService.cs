@@ -12,7 +12,7 @@ namespace XamlG.Tooling;
 /// <summary>In-memory C# authoring over the host's actual Roslyn compilation, including generated
 /// sources. Uses compiler APIs only: no MSBuild evaluation, desktop workspace services or code execution.
 /// All positions are UTF-16 offsets into the supplied immutable syntax trees.</summary>
-public sealed class CSharpLanguageService
+public sealed partial class CSharpLanguageService
 {
     private readonly CSharpCompilation _compilation;
     private readonly ImmutableHashSet<string> _editable;

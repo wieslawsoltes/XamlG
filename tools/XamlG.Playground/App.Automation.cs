@@ -57,7 +57,7 @@ public partial class App
         AddAutomation<NoArguments>("capabilities", "Discover the current IDE tool catalog and protocol limits.", AutomationScope.Project, AutomationEffect.Read,
             (_, _) => new { revision = SourceRevision, tools = _automation.Tools, limits = new { sourceOffsets = "UTF-16", maxRead = 262144 }, runtime = Preview.Root != null });
         AddAutomation<NoArguments>("project_get", "Read project document inventory, revisions and undo/redo availability.", AutomationScope.Project, AutomationEffect.Read,
-            (_, _) => new { revision = SourceRevision, documents = WorkspaceTexts().Select(p => new { path = p.Key, length = p.Value.Length, language = p.Key.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ? "csharp" : "xaml" }), canUndo = _workspaceEdits.CanUndo, canRedo = _workspaceEdits.CanRedo });
+            (_, _) => new { revision = SourceRevision, documents = WorkspaceTexts().Select(p => new { path = p.Key, length = p.Value.Length, language = p.Key == CompilerSettingsPath ? "json" : p.Key.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ? "csharp" : "xaml" }), canUndo = _workspaceEdits.CanUndo, canRedo = _workspaceEdits.CanRedo });
         AddAutomation<DocumentRead>("document_read", "Read a bounded UTF-16 source range from the actual editor buffers.", AutomationScope.Source, AutomationEffect.Read,
             (args, _) =>
             {
@@ -100,7 +100,7 @@ public partial class App
                 RestoreWorkspace(_workspaceEdits.Apply(args.ExpectedRevision, edits, context.Caller + ": edit source", candidate => ValidateWorkspace(candidate.Documents)));
                 return new { revision = SourceRevision };
             });
-        AddAutomation<DocumentWrite>("document_write", "Create or replace a C# or XAML project source document. Requires the current project revision.", AutomationScope.Source, AutomationEffect.Edit,
+        AddAutomation<DocumentWrite>("document_write", "Create or replace C#, XAML or the compiler settings JSON document. Requires the current project revision and validates settings before publication.", AutomationScope.Source, AutomationEffect.Edit,
             (args, context) =>
             {
                 CheckSourceRevision(args.ExpectedRevision); ValidateDocumentPath(args.Path);
@@ -113,7 +113,7 @@ public partial class App
             (args, context) =>
             {
                 CheckSourceRevision(args.ExpectedRevision);
-                if (args.Path is "View.axaml" or "Code.cs") throw new ArgumentException("The main source documents cannot be removed.");
+                if (args.Path is "View.axaml" or "Code.cs" or CompilerSettingsPath) throw new ArgumentException("The main source and compiler settings documents cannot be removed.");
                 var texts = WorkspaceTexts(); if (!texts.Remove(args.Path)) throw new KeyNotFoundException("Unknown document.");
                 RestoreWorkspace(_workspaceEdits.ReplaceAll(args.ExpectedRevision, texts, context.Caller + ": remove " + args.Path));
                 return new { revision = SourceRevision };
@@ -123,7 +123,7 @@ public partial class App
         AddAutomation<RevisionArguments>("project_redo", "Redo the last normal project source transaction.", AutomationScope.Project, AutomationEffect.Edit,
             (args, _) => { CheckSourceRevision(args.ExpectedRevision); RestoreWorkspace(_workspaceEdits.Redo(args.ExpectedRevision)); return new { revision = SourceRevision }; });
         AddAutomation<NoArguments>("project_export", "Export the current editable project as inert JSON, without a download dialog or execution.", AutomationScope.Project, AutomationEffect.Read,
-            (_, _) => new { revision = SourceRevision, format = "xamlg-project", version = 3, xaml = _document.Current.Text, code = _code, resources = ResourceTexts(), codeFiles = CodeTexts(), documents = WorkspaceTexts() });
+            (_, _) => new { revision = SourceRevision, format = "xamlg-project", version = 4, xaml = _document.Current.Text, code = _code, resources = ResourceTexts(), codeFiles = CodeTexts(), compilerOptions = Compiler.Settings, documents = WorkspaceTexts() });
         AddAutomation<RestoreSourceArguments>("project_restore", "Selectively restore reviewed source changes in one undo transaction. Checks the current revision and every expected file before applying.", AutomationScope.Source, AutomationEffect.Edit,
             (args, context) =>
             {
@@ -137,7 +137,7 @@ public partial class App
                     if (texts.GetValueOrDefault(file.Path) != file.After) throw new AutomationException("revision_conflict", "The reviewed file has changed: " + file.Path);
                     if (file.Before == null)
                     {
-                        if (file.Path is "View.axaml" or "Code.cs") throw new ArgumentException("The main documents cannot be removed.");
+                        if (file.Path is "View.axaml" or "Code.cs" or CompilerSettingsPath) throw new ArgumentException("The main source and compiler settings documents cannot be removed.");
                         texts.Remove(file.Path);
                     }
                     else texts[file.Path] = file.Before;
@@ -146,7 +146,8 @@ public partial class App
                 RestoreWorkspace(_workspaceEdits.ReplaceAll(args.ExpectedRevision, texts, context.Caller + ": restore reviewed source"));
                 return new { revision = SourceRevision, documents = WorkspaceTexts() };
             });
-        AddAutomation<NoArguments>("compiler_compile", "Compile the current XAML project and C# using XamlG and Roslyn. Does not execute application code.", AutomationScope.Compiler, AutomationEffect.Read,
+        AddCompilerAutomation();
+        AddAutomation<NoArguments>("compiler_compile", "Compile the current XAML project and C# using XamlG, Roslyn and the project's compiler options. Does not execute application code.", AutomationScope.Compiler, AutomationEffect.Read,
             (_, context) => { var result = AnalyzeAutomation(context.CancellationToken); return new { revision = SourceRevision, result.Success, result.Diagnostics, result.ElapsedMilliseconds }; });
         AddAutomation<NoArguments>("compiler_references", "Read the actual Roslyn metadata references and compilation options.", AutomationScope.Compiler, AutomationEffect.Read,
             (_, context) =>
@@ -319,15 +320,14 @@ public partial class App
     { if (offset < 0 || offset > length || count is < 1 or > 262144) throw new ArgumentException("Invalid source range. Count must be 1–262144 UTF-16 units."); }
     private static void ValidateDocumentPath(string path)
     {
-        if (path is "View.axaml" or "Code.cs") return;
+        if (path is "View.axaml" or "Code.cs" or CompilerSettingsPath) return;
         var normalized = IsCSharpPath(path) ? CSharpProjectDocumentStore.NormalizePath(path) : XamlProjectDocumentStore.NormalizePath(path);
         if (path != normalized) throw new ArgumentException("Use a normalized project-relative C# or XAML path.");
     }
     private BrowserCompilation AnalyzeAutomation(CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        if (_result != null && ReferenceEquals(_result.Analysis.Syntax, _document.Current) && _result.CodeText == _code &&
-            _result.ResourceRevision == Compiler.Resources.Revision && _result.CodeRevision == Compiler.CodeFiles.Revision) return _result;
+        if (IsCompilationCurrent(_result)) return _result!;
         _result = Compiler.Analyze(_document.Current, _code, cancellationToken: token);
         NotifyCompilerResources();
         return _result;

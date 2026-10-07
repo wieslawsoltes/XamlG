@@ -10,7 +10,7 @@ namespace XamlG.Playground;
 public partial class App
 {
     private readonly XamlWorkspaceEditSession _workspaceEdits = new(new Dictionary<string, string>
-    { ["View.axaml"] = PlaygroundExamples.All[0].Xaml, ["Code.cs"] = PlaygroundExamples.All[0].Code });
+    { ["View.axaml"] = PlaygroundExamples.All[0].Xaml, ["Code.cs"] = PlaygroundExamples.All[0].Code, [CompilerSettingsPath] = DefaultCompilerSettingsText });
     private EditorCommandRequest? _authoringRequest;
     private long _authoringRevision;
     private XamlAnalysis? _authoringAnalysis;
@@ -27,6 +27,7 @@ public partial class App
         var sources = ResourceTexts();
         foreach (var item in CodeTexts()) sources.Add(item.Key, item.Value);
         sources.Add("View.axaml", _document.Current.Text); sources.Add("Code.cs", _code);
+        sources.Add(CompilerSettingsPath, _compilerSettingsText);
         return sources;
     }
     private void RecordWorkspace(string description = "Edit project source")
@@ -42,9 +43,11 @@ public partial class App
     }
     private void RestoreWorkspace(XamlWorkspaceSnapshot snapshot, string? preferredResourcePath = null)
     {
+        var settingsText = snapshot.Documents[CompilerSettingsPath];
+        Compiler.SetSettings(ParseCompilerSettings(settingsText)); _compilerSettingsText = settingsText;
         // Keep the main syntax revision monotonic so an old realized visual cannot target a new buffer.
         UpdateXaml(snapshot.Documents["View.axaml"]); _code = snapshot.Documents["Code.cs"];
-        var resources = snapshot.Documents.Where(p => p.Key != "View.axaml" && p.Key != "Code.cs")
+        var resources = snapshot.Documents.Where(p => p.Key != "View.axaml" && p.Key != "Code.cs" && p.Key != CompilerSettingsPath)
             .Where(p => !IsCSharpPath(p.Key))
             .ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         var current = Compiler.Resources.Snapshot;

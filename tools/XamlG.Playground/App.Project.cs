@@ -13,6 +13,7 @@ public partial class App
     private async Task LoadResourceExampleAsync()
     {
         if (_busy) return;
+        ResetCompilerSettings();
         Compiler.CodeFiles.ReplaceAll(new Dictionary<string, string>());
         Compiler.Resources.ReplaceAll(new Dictionary<string, string>(StringComparer.Ordinal)
         {

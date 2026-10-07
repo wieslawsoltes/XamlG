@@ -118,15 +118,14 @@ public partial class App
     private void ValidateDesignerWorkspace(IReadOnlyDictionary<string, string> documents)
     {
         ValidateWorkspace(documents);
-        var resources = documents.Where(pair => pair.Key != "View.axaml" && !IsCSharpPath(pair.Key))
+        var resources = documents.Where(pair => pair.Key != "View.axaml" && pair.Key != CompilerSettingsPath && !IsCSharpPath(pair.Key))
             .Select(pair => XamlSyntaxTree.Parse(pair.Value, pair.Key)).ToArray();
-        var analysis = Compiler.Analyze(XamlSyntaxTree.Parse(documents["View.axaml"], "View.axaml"), documents["Code.cs"], resourceDocuments: resources);
+        var analysis = Compiler.Analyze(XamlSyntaxTree.Parse(documents["View.axaml"], "View.axaml"), documents["Code.cs"], resourceDocuments: resources, settings: ParseCompilerSettings(documents[CompilerSettingsPath]));
         if (!analysis.Success) throw new InvalidOperationException(string.Join("; ", analysis.Diagnostics.Where(diagnostic => diagnostic.Severity == "Error").Select(diagnostic => diagnostic.Message)));
     }
     private Task<AvaloniaVisualNode> ShowTrustedCompilationAsync(BrowserCompilation result)
     {
-        if (!ReferenceEquals(result.Analysis.Syntax, _document.Current) || result.CodeText != _code ||
-            result.ResourceRevision != Compiler.Resources.Revision || result.CodeRevision != Compiler.CodeFiles.Revision)
+        if (!IsCompilationCurrent(result))
             throw new InvalidOperationException("Source changed after compilation. Run the current source again.");
         var revision = SourceRevision;
         return Preview.ShowAsync(Compiler.Run(result), revision);

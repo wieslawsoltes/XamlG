@@ -18,6 +18,12 @@ public partial class App
 
     private void AddCSharpAutomation()
     {
+        AddAutomation<CSharpOperationsArguments>("csharp_operations", "Inspect real Roslyn IOperation trees in source or generated C#. UTF-16 (offset=0,length=0) selects all executable roots; other ranges select an enclosing operation or declaration. Flat IDs, types, constants, calls, conversions and truncation are result-local.", AutomationScope.Compiler, AutomationEffect.Read,
+            (args, context) => new { revision = SourceRevision, operations = CSharpLanguage(context.CancellationToken).GetOperations(args.Path, args.Offset, args.Length, args.MaxDepth, args.MaxNodes, context.CancellationToken) });
+        AddAutomation<CSharpControlFlowArguments>("csharp_control_flow", "Inspect Roslyn's actual control-flow graph for the body containing a UTF-16 offset, including nested local functions/lambdas. Returns bounded blocks, reachability, branches, regions, captures and lowered operations; does not execute code. IDs belong to this result.", AutomationScope.Compiler, AutomationEffect.Read,
+            (args, context) => new { revision = SourceRevision, controlFlow = CSharpLanguage(context.CancellationToken).GetControlFlow(args.Path, args.Offset, args.MaxBlocks, args.MaxNodes, args.MaxDepth, args.MaxRegions, args.MaxSymbols, context.CancellationToken) });
+        AddAutomation<CSharpDataFlowArguments>("csharp_data_flow", "Analyze Roslyn data flow for a C# expression, statement, contiguous statement range or body in source or generated code. Returns the actual analyzed region, success, bounded symbol tables and read/write/assignment/capture/flow sets.", AutomationScope.Compiler, AutomationEffect.Read,
+            (args, context) => new { revision = SourceRevision, dataFlow = CSharpLanguage(context.CancellationToken).GetDataFlow(args.Path, args.Offset, args.Length, args.MaxSymbols, context.CancellationToken) });
         AddAutomation<PositionArguments>("csharp_hover", "Read C# symbol, type, constant, documentation and exact source/generated declarations at a UTF-16 offset.", AutomationScope.Compiler, AutomationEffect.Read,
             (args, context) => new { revision = SourceRevision, hover = CSharpLanguage(context.CancellationToken).GetSymbol(args.Path, args.Offset, context.CancellationToken) });
         AddAutomation<CSharpCompleteArguments>("csharp_complete", "Complete accessible C# symbols in lexical scope or on a receiver, with replacement span and explicit truncation.", AutomationScope.Compiler, AutomationEffect.Read,
@@ -129,6 +135,9 @@ public partial class App
     }
 
     public sealed record CSharpCompleteArguments(string Path, int Offset, int MaxResults = 200);
+    public sealed record CSharpOperationsArguments(string Path, int Offset = 0, int Length = 0, int MaxDepth = 12, int MaxNodes = 2000);
+    public sealed record CSharpControlFlowArguments(string Path, int Offset, int MaxBlocks = 500, int MaxNodes = 2000, int MaxDepth = 12, int MaxRegions = 1000, int MaxSymbols = 1000);
+    public sealed record CSharpDataFlowArguments(string Path, int Offset, int Length = 0, int MaxSymbols = 1000);
     public sealed record CSharpReferenceArguments(string Path, int Offset, bool IncludeDeclaration = true, int MaxResults = 1000);
     public sealed record CSharpActionArguments(string Path, int Offset, string Title, long ExpectedRevision);
 }

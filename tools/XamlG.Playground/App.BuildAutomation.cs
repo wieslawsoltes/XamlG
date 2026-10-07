@@ -69,8 +69,8 @@ public partial class App
                 byte[] bytes; string name, mime;
                 if (args.Target == "project-json")
                 {
-                    bytes = JsonSerializer.SerializeToUtf8Bytes(new { format = "xamlg-project", version = 3, xaml = _document.Current.Text,
-                        code = _code, resources = ResourceTexts(), codeFiles = CodeTexts() }); name = "xamlg-project.json"; mime = "application/json";
+                    bytes = JsonSerializer.SerializeToUtf8Bytes(new { format = "xamlg-project", version = 4, xaml = _document.Current.Text,
+                        code = _code, resources = ResourceTexts(), codeFiles = CodeTexts(), compilerOptions = Compiler.Settings }, AutomationJson.Options); name = "xamlg-project.json"; mime = "application/json";
                 }
                 else if (args.Target == "source-zip")
                 {
@@ -106,7 +106,8 @@ public partial class App
                         emitCompilation.Emit(image, cancellationToken: context.CancellationToken);
                     if (!emitted.Success) throw new InvalidOperationException(string.Join("\n", emitted.Diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error).Take(50)));
                     bytes = args.Target == "symbols" ? symbols.ToArray() : image.ToArray();
-                    name = args.Target == "symbols" ? "XamlG.Preview.pdb" : "XamlG.Preview.dll"; mime = "application/octet-stream";
+                    name = args.Target == "symbols" ? "XamlG.Preview.pdb" : "XamlG.Preview" + (emitCompilation.Options.OutputKind switch
+                    { OutputKind.NetModule => ".netmodule", OutputKind.WindowsRuntimeMetadata => ".winmd", OutputKind.DynamicallyLinkedLibrary => ".dll", _ => ".exe" }); mime = "application/octet-stream";
                 }
                 else throw new ArgumentException("Unknown build target.");
                 return _buildArtifacts.Add(context.PrincipalId ?? context.Caller, name, mime, SourceRevision, bytes);

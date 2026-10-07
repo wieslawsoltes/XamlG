@@ -11,7 +11,7 @@ namespace XamlG.Playground;
 
 public partial class App
 {
-    private static readonly string[] InspectorTabs = { "C# output", "C# files", "Resources", "Syntax", "Bound tree", "Visual tree", "Properties", "Designer", "Runtime", "Pipeline" };
+    private static readonly string[] InspectorTabs = { "C# output", "C# files", "Resources", "Syntax", "Bound tree", "Visual tree", "Properties", "Designer", "Runtime", "Compiler", "Pipeline" };
     private XamlDocumentSession _document = new(PlaygroundExamples.All[0].Xaml, "View.axaml");
     private string _code = PlaygroundExamples.All[0].Code;
     private BrowserCompilation? _result;
@@ -85,8 +85,8 @@ public partial class App
             _result = Compiler.Analyze(_document.Current, _code);
             NotifyCompilerResources();
             _status = _result.Success ? $"Compilation succeeded · {_result.Project?.Documents.Length ?? 1} documents · {_result.ElapsedMilliseconds:0.0} ms" : "Compilation has errors";
-            if (_xamlEditor != null) await _xamlEditor.SetDiagnosticsAsync(_result.Diagnostics.Where(d => d.Path == "View.axaml"));
-            if (_codeEditor != null) await _codeEditor.SetDiagnosticsAsync(_result.Diagnostics.Where(d => d.Path == "Code.cs"));
+            if (_xamlEditor != null) await _xamlEditor.SetDiagnosticsAsync(_result.Diagnostics.Where(d => !d.IsSuppressed && d.Path == "View.axaml"));
+            if (_codeEditor != null) await _codeEditor.SetDiagnosticsAsync(_result.Diagnostics.Where(d => !d.IsSuppressed && d.Path == "Code.cs"));
         }
         catch (Exception error) { _result = null; Report(error); }
         finally { _busy = false; }
@@ -123,6 +123,7 @@ public partial class App
         Compiler.Resources.ReplaceAll(new Dictionary<string, string>());
         Compiler.CodeFiles.ReplaceAll(new Dictionary<string, string>());
         _document = new(example.Xaml, "View.axaml"); _code = example.Code;
+        ResetCompilerSettings();
         _selectedElement = null; _error = null; _result = null;
         ResetWorkspaceHistory();
         await CompileSnapshotAsync();
@@ -153,7 +154,7 @@ public partial class App
     private async Task SaveDraftAsync()
     {
         RecordWorkspace();
-        if (_module != null) await _module.InvokeVoidAsync("saveDraft", _document.Current.Text, _code, ResourceTexts(), CodeTexts());
+        if (_module != null) await _module.InvokeVoidAsync("saveDraft", _document.Current.Text, _code, ResourceTexts(), CodeTexts(), Compiler.Settings);
     }
     private async Task RestoreDraftAsync()
     {
@@ -174,6 +175,7 @@ public partial class App
                 }
             documents.Add("View.axaml", draft.GetProperty("xaml").GetString() ?? string.Empty);
             documents.Add("Code.cs", draft.GetProperty("code").GetString() ?? string.Empty);
+            documents.Add(CompilerSettingsPath, draft.TryGetProperty("compilerOptions", out var settings) && settings.ValueKind != JsonValueKind.Null ? settings.GetRawText() : DefaultCompilerSettingsText);
             ValidateWorkspace(documents);
             await RetireAutomationWorkspaceAsync();
             RestoreWorkspace(_workspaceEdits.ReplaceAll(SourceRevision, documents, "Restore draft", recordHistory: false));
@@ -187,14 +189,13 @@ public partial class App
     {
         if (_module == null || _busy) return;
         await CaptureEditorsAsync();
-        var current = _result?.Success == true && ReferenceEquals(_result.Analysis.Syntax, _document.Current) &&
-            _result.ResourceRevision == Compiler.Resources.Revision && _result.CodeRevision == Compiler.CodeFiles.Revision && _result.CodeText == _code;
+        var current = _result?.Success == true && IsCompilationCurrent(_result);
         var content = JsonSerializer.Serialize(new
         {
-            format = "xamlg-project", version = 3, xaml = _document.Current.Text, code = _code, resources = ResourceTexts(), codeFiles = CodeTexts(),
+            format = "xamlg-project", version = 4, xaml = _document.Current.Text, code = _code, resources = ResourceTexts(), codeFiles = CodeTexts(), compilerOptions = Compiler.Settings,
             generated = current ? _result!.Analysis.Output.Source : null,
             generatedFiles = current ? _result!.Project?.Documents.ToDictionary(d => d.Output.HintName, d => d.Output.Source, StringComparer.Ordinal) : null
-        }, new JsonSerializerOptions { WriteIndented = true });
+        }, CompilerSettingsJson);
         await _module.InvokeVoidAsync("download", "xamlg-project.json", content, "application/json");
     }
     private async Task RevealDiagnosticAsync(PlaygroundDiagnostic diagnostic)

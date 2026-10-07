@@ -30,6 +30,8 @@ public partial class App
     private async Task ShowIsolatedCompilationAsync()
     {
         if (_result?.Success != true || _isolatedPreview == null) throw new InvalidOperationException("No valid isolated compilation is available.");
+        if (!IsCompilationCurrent(_result)) throw new InvalidOperationException("The isolated compilation was superseded by project changes. Compile again before running.");
+        BrowserCompilerService.EnsureBrowserRunnable(_result);
         var generation = _isolationGeneration;
         var result = await _isolatedPreview.RunAsync(SandboxPayloadBuilder.Create(_result));
         if (generation != _isolationGeneration || !_isolationVisible) throw new OperationCanceledException("The isolated execution result was superseded.");

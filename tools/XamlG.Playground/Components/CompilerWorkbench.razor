@@ -1,0 +1,47 @@
+@inject IJSRuntime JavaScript
+
+<section class="runtime-workbench compiler-workbench" aria-label="Roslyn compiler workbench">
+    <header><strong>Roslyn compiler</strong><button @onclick="CompileAsync" disabled="@_busy">Compile project</button></header>
+    @if (_error != null) { <p role="alert" class="runtime-error">@_error</p> }
+    @if (_state is { } state)
+    {
+        <p>Project revision @state.Revision · settings revision @state.SettingsRevision · @_state.AvailableReferences.Count available metadata references</p>
+        <p>Saved options are part of project undo, agent change review, drafts and exports. Compilation does not execute application code.</p>
+        @if (_dirty && _baseText != state.Text) { <p role="status">Compiler settings changed while this draft was open. Keep a copy of your changes before discarding the draft and reloading.</p> }
+        <fieldset disabled="@(_busy || _model == null)"><legend>Compiler options</legend>
+            @foreach (var option in StringOptions)
+            { <label>@option.Title <select value="@Option(option.Key)?.ToString()" @onchange="args => SetOption(option.Key, args.Value?.ToString())">@foreach (var value in state.Choices[option.Key]) { <option>@value</option> }</select></label> }
+            @foreach (var option in BooleanOptions)
+            { <label><input type="checkbox" checked="@(Option(option.Key) is true)" @onchange="args => SetOption(option.Key, args.Value is true)" /> @option.Title</label> }
+            <label>Warning level <input type="number" min="0" max="9999" value="@_model?.WarningLevel" @onchange="SetWarningLevel" /></label>
+            <label>Conditional symbols <input value="@string.Join(", ", _model?.PreprocessorSymbols ?? [])" @onchange="SetSymbols" placeholder="DEBUG, TRACE" /></label>
+            <label>Main type <input value="@_model?.MainTypeName" @onchange='args => SetOption("mainTypeName", args.Value?.ToString())' /></label>
+            <label>Module name <input value="@_model?.ModuleName" @onchange='args => SetOption("moduleName", args.Value?.ToString())' /></label>
+        </fieldset>
+        <p>The browser preview runs DLL output with AnyCpu. Other output kinds and platforms can be compiled and exported.</p>
+        <details><summary>Metadata references</summary>
+            <label><input type="checkbox" checked="@(_model?.ReferenceNames == null)" @onchange="SetAllReferences" disabled="@(_busy || _model == null)" /> Use all host references</label>
+            <label>Find reference <input @bind="_referenceFilter" @bind:event="oninput" /></label>
+            <div class="runtime-property-list">
+                @foreach (var reference in state.AvailableReferences.Where(name => name.Contains(_referenceFilter, StringComparison.OrdinalIgnoreCase)))
+                { <label><input type="checkbox" checked="@(_model?.ReferenceNames == null || _model.ReferenceNames.Contains(reference, StringComparer.Ordinal))" @onchange="args => SetReference(reference, args)" disabled="@(_busy || _model == null)" /> @reference</label> }
+            </div>
+        </details>
+        <details><summary>Complete settings JSON · diagnostic overrides</summary>
+            <p>Diagnostic overrides map IDs to Default, Error, Warn, Info, Hidden or Suppress. Unknown and duplicate settings keys are rejected on save.</p>
+            <textarea aria-label="Compiler settings JSON" rows="16" maxlength="65536" @bind="_text" @bind:event="oninput" @bind:after="DraftChanged" disabled="@_busy" spellcheck="false" />
+        </details>
+        <div class="runtime-actions"><button @onclick="ApplyAsync" disabled="@(_busy || !_dirty || _model == null || _baseText != state.Text)">Save compiler options</button><button @onclick="() => Guard(() => RefreshCoreAsync(true))" disabled="@_busy">Discard draft and reload options</button></div>
+    }
+    <details><summary>Compiler and Roslyn operations</summary>
+        <label>Find operation <input @bind="_toolFilter" @bind:event="oninput" /></label>
+        <label>Tool <select value="@_toolName" @onchange="SelectTool"><option value="">Select operation</option>@foreach (var toolOption in CompilerTools) { <option value="@toolOption.Name">@toolOption.Name</option> }</select></label>
+        @if (SelectedTool is { } tool)
+        {
+            <p>@tool.Description</p><details><summary>Argument schema</summary><pre>@Pretty(tool.InputSchema)</pre></details>
+            <button @onclick="FillToolArguments" disabled="@_busy">Fill current revision</button><textarea aria-label="Compiler operation arguments" rows="7" @bind="_toolArguments" spellcheck="false" />
+            <button @onclick="ExecuteToolAsync" disabled="@_busy">Execute compiler operation</button>
+        }
+    </details>
+    @if (_result is { } result) { <details class="runtime-result" open><summary>Operation result</summary><button @onclick="ExportResultAsync">Export result</button><pre>@Excerpt(Pretty(result))</pre></details> }
+</section>

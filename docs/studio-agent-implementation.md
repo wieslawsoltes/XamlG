@@ -301,6 +301,27 @@ authoring surface for the multi-file C# workspace; and the corresponding UI and 
 acceptance coverage. This ledger does not claim those capabilities from a build
 or from the existence of a tool name.
 
+The remaining implementation is concentrated in three areas:
+
+- ChatGPT account sign-in, model discovery and account-backed Responses inference
+  through the companion, including token refresh/logout and explicit credential
+  storage choices. The API-key provider adapters already exist; account mode is
+  still unimplemented.
+- Remaining Roslyn authoring and symbol-navigation coverage, particularly broader
+  semantic source actions and coordinated XAML/C# renames beyond the implemented
+  generated-field route. Existing rename rejects unsupported inheritance/generated
+  dependencies. Operation/control/data-flow inspection and compiler settings are
+  now implemented as described below.
+- Agent workbench parity: bounded safe Markdown, Enter/IME handling, independent
+  per-task review state, source navigation and selective diff-block restoration,
+  plus the remaining reference provider/recovery edge cases.
+
+After these features, update the acceptance fixtures and run the full native,
+browser, MCP, provider-transport, Pages-origin and package-consumer validation.
+Close failures, document exact boundaries and update the draft PR. Earlier test
+counts in this ledger do not certify the current feature additions. The published Pages
+app receives this integration only after the PR reaches main.
+
 Reference-valued method/provider results and explicit property/dictionary reads now
 receive bounded retained-object handles, including accessibility text-range and
 array results. Object-path reads, writes, method calls, dictionary operations and
@@ -343,6 +364,43 @@ pending for group gestures, resource-template provenance, one-step undo, source 
 runtime conflicts, min/max constraints, layout-policy behavior, cancellation and
 the owner/remote permission boundary. The default policy emits Canvas offsets or
 margins and explicit dimensions; it is not a general layout constraint solver.
+
+The Compiler workbench now edits actual Roslyn parse/compilation options: language
+version, conditional symbols, nullable/unsafe/overflow, optimization, platform,
+output kind, metadata visibility, diagnostics, main type and module name. Metadata
+selection uses the assemblies already supplied by the browser host. A validated
+`CompilerSettings.json` workspace document participates in revision checks,
+atomic source edits, undo, agent review, draft restore and project/source exports.
+Unknown or duplicate settings keys and unavailable metadata names are rejected
+before publication. Draft/project JSON is version 4; older drafts receive defaults.
+The preview requires DLL/AnyCpu output; other targets remain available for compile
+and artifact export. Settings changes invalidate cached compilation and preview
+admission. Diagnostics include suppressed status and warning-as-error metadata.
+
+`compiler_options_get/set/write` and `compiler_snapshot` expose the same settings,
+effective references, source/generated trees and assembly identity. Compiler
+controls use the private local owner entry point while remote policies remain in
+force. The workbench retains a settings draft across unrelated source edits and
+rejects saving over a settings document that changed since the draft was captured.
+Auxiliary C# files can be moved through a revision-checked workspace transaction.
+
+The reusable C# service now supplies actual `IOperation` trees, control-flow graphs
+and data-flow analysis for source and generated files. MCP exposes
+`csharp_operations`, `csharp_control_flow` and `csharp_data_flow` through the same
+Compiler workbench catalog. Operation results use flat result-local parent/child
+IDs with types, constants, symbols, implicit operations, conversions and operators.
+Flow graphs include reachability, branch semantics, regions, locals and captures;
+offsets inside local functions/lambdas select their own graphs. Data-flow results
+identify the analyzed region and expose declarations, read/write, assignment,
+capture and flow sets through a shared symbol table. Counts, depths, metadata and
+locations are bounded with explicit truncation; Roslyn's cyclic graphs are never
+serialized directly. These operations compile/analyze code without executing it.
+
+Targeted tooling and integrated Playground builds pass without warnings or errors
+for compiler settings and flow inspection. Behavioral validation remains pending:
+settings persistence/undo/conflicts, diagnostic policies, selected references,
+non-preview emission, generated bodies, nested functions, control/data-flow
+selection, cancellation and truncation. No full suite was run during this pass.
 
 Temporary reference clones and superseded publishes are removed when no longer
 needed. Package consumer caches are scoped to temporary directories. Large failed
