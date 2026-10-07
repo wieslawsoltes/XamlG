@@ -9,6 +9,8 @@ namespace XamlG.Frameworks.Avalonia.Bindings;
 /// <summary>Both binding syntaxes lower through one typed path binder. Runtime reflection is never a fallback for a failed compiled path.</summary>
 public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
 {
+    private static readonly XamlAnnotationKey<Dictionary<TextSpan, CompiledBindingResult?>> Results = new("Avalonia.CompiledBindings");
+
     public bool TryBind(BindingContext context, MarkupExtensionSyntax syntax, ITypeSymbol targetType,
         NamespaceScope scope, out BoundExpression? expression)
     {
@@ -16,8 +18,8 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
         var target = context.Ancestors.FirstOrDefault();
         var type = target == null ? null : context.ResolveType(syntax.Name, scope, syntax.Span, report: false, extension: true);
         if (target == null || type == null || !ShouldCompile(target, type)) return false;
-        var input = CompiledBindingInputReader.FromMarkup(context, syntax, scope);
-        if (input != null) expression = BindCore(context, target, targetType, input);
+        expression = Bind(context, target, targetType, syntax.Span,
+            () => CompiledBindingInputReader.FromMarkup(context, syntax, scope))?.Expression;
         return true;
     }
 
@@ -34,12 +36,12 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
             context.Report("XG3202", "CompiledBindingExtension is unavailable.", syntax.Span);
             return true;
         }
-        var input = CompiledBindingInputReader.FromElement(context, syntax, parentScope, compiledType);
-        if (input != null) expression = BindCore(context, target, targetType, input);
+        expression = Bind(context, target, targetType, syntax.Span,
+            () => CompiledBindingInputReader.FromElement(context, syntax, parentScope, compiledType))?.Expression;
         return true;
     }
 
-    private static bool ShouldCompile(ObjectBindingBuilder target, INamedTypeSymbol type)
+    internal static bool ShouldCompile(ObjectBindingBuilder target, INamedTypeSymbol type)
     {
         if (type.HasMetadataName(AvaloniaBindingMetadata.CompiledBinding) || type.HasMetadataName(AvaloniaBindingMetadata.CompiledExtension))
             return true;
@@ -47,8 +49,21 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
                (type.HasMetadataName(AvaloniaBindingMetadata.ReflectionBinding) || type.HasMetadataName(AvaloniaBindingMetadata.BindingExtension));
     }
 
-    private static BoundExpression? BindCore(BindingContext context, ObjectBindingBuilder target,
-        ITypeSymbol targetType, CompiledBindingInput input)
+    internal static CompiledBindingResult? Bind(BindingContext context, ObjectBindingBuilder target,
+        ITypeSymbol targetType, TextSpan span, Func<CompiledBindingInput?> readInput, bool inferDataContext = false)
+    {
+        // Scope inference precedes assignment binding. Reuse its objects, path and diagnostics.
+        if (!target.Annotations.TryGet(Results, out var results))
+            target.Annotations.Set(Results, results = new());
+        if (results.TryGetValue(span, out var known)) return known;
+        var input = readInput();
+        var result = input == null ? null : BindCore(context, target, targetType, input, inferDataContext);
+        results.Add(span, result);
+        return result;
+    }
+
+    private static CompiledBindingResult? BindCore(BindingContext context, ObjectBindingBuilder target,
+        ITypeSymbol targetType, CompiledBindingInput input, bool inferDataContext)
     {
         var compiledType = context.Types.Find(AvaloniaBindingMetadata.CompiledExtension);
         var span = input.ObjectSyntax.Span;
@@ -61,8 +76,15 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
         var pathScope = input.Path.Scope ?? input.Scope;
         var path = BindingPathParser.Parse(input.Path.Text, input.Path.Span, context.Diagnostics.Add, context.Cancellation);
         if (path == null) return null;
-        ITypeSymbol? sourceType = input.DataType == null ? configuration.DataType :
-            AvaloniaBindingScopeRule.ResolveDataType(context, input.DataType.Text, input.DataType.Scope ?? input.Scope, input.DataType.Span);
+        var declaredType = input.DataType == null ? null : AvaloniaBindingScopeRule.ResolveDataType(
+            context, input.DataType.Text, input.DataType.Scope ?? input.Scope, input.DataType.Span);
+        // Avalonia fixes DataContext paths before the general binding Source/DataType transform.
+        ITypeSymbol? sourceType = inferDataContext || input.DataType == null ? configuration.DataType : declaredType;
+        if (inferDataContext && sourceType == null && path.Segments.IsEmpty)
+        {
+            context.Report("XG3209", "DataContext binding inference requires an inherited data type.", input.Path.Span);
+            return null;
+        }
         var extension = context.Objects.Bind(input.ObjectSyntax, input.ParentScope, compiledType, false,
             target.NameScopeId, ImmutableArray<XamlSyntaxNode>.Empty);
         if (extension == null) return null;
@@ -78,7 +100,7 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
             context.Report("XG3210", "A binding cannot combine a source argument with a source-qualified path.", input.Path.Span);
             return null;
         }
-        if (input.DataType == null)
+        if (!inferDataContext && input.DataType == null)
         {
             if (source is BoundReferenceExpression namedReference)
                 sourceType = new BindingSourceResolver(context, target).Named(namedReference.Name, namedReference.Span).Type;
@@ -118,6 +140,6 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
             context.Report("XG3202", "The compiled binding value provider is unavailable.", span);
             return null;
         }
-        return new BoundMarkupExpression(extension, provide, provide.ReturnType, span);
+        return new(new BoundMarkupExpression(extension, provide, provide.ReturnType, span), bound.ValueType);
     }
 }

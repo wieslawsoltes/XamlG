@@ -12,31 +12,18 @@ public sealed class AvaloniaBindingScopeRule(bool compileBindingsByDefault = tru
     {
         var parent = context.Ancestors.Skip(1).FirstOrDefault();
         var inherited = parent != null && parent.Annotations.TryGet(AvaloniaBindingScope.Key, out var known) ? known : new(null, compileBindingsByDefault);
-        var dataType = inherited.DataType;
-        var metadata = AvaloniaDataTypeMetadata.Read(context, target);
-        if (metadata.HasDirective || metadata.Type != null) dataType = metadata.Type;
-        else if (AvaloniaStyleScope.Is(target.Type, AvaloniaBindingMetadata.DataTemplateContract))
-            dataType = null; // Every IDataTemplate owns a separate data-context type scope.
-        else
-        {
-            var contextElement = target.Syntax.Children.OfType<XamlElementSyntax>().FirstOrDefault(e =>
-                e.LocalName.EndsWith("." + AvaloniaBindingMetadata.DataContext, StringComparison.Ordinal));
-            var values = contextElement?.Children.OfType<XamlElementSyntax>().ToArray();
-            if (contextElement != null && values is { Length: 1 })
-            {
-                var contextScope = target.Scope.Push(contextElement);
-                var inferred = context.Values.PeekNodeType(values[0], contextScope);
-                var binding = context.Types.Find(AvaloniaMetadata.BindingBase);
-                if (inferred is INamedTypeSymbol named && (binding == null || !context.Types.Compilation.ClassifyCommonConversion(named, binding).IsImplicit))
-                    dataType = named;
-            }
-        }
         var compile = inherited.CompileBindings;
         var directive = target.Scope.Directive(target.Syntax, AvaloniaBindingMetadata.CompileBindings);
         if (directive != null)
         {
             if (!bool.TryParse(directive.Value, out compile)) context.Report("XG3201", "x:CompileBindings requires True or False.", directive.ValueSpan);
         }
+        // DataContext bindings are compiled against the inherited type before their result
+        // establishes this object's type. The bound value is reused for its assignment.
+        target.Annotations.Set(AvaloniaBindingScope.Key, new(inherited.DataType, compile));
+        var metadata = AvaloniaDataTypeMetadata.Read(context, target);
+        var dataType = metadata.HasType ? metadata.Type :
+            AvaloniaStyleScope.Is(target.Type, AvaloniaBindingMetadata.DataTemplateContract) ? null : inherited.DataType;
         target.Annotations.Set(AvaloniaBindingScope.Key, new(dataType, compile));
     }
     public void Complete(BindingContext context, ObjectBindingBuilder target) { }
