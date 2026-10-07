@@ -18,6 +18,21 @@ public sealed class ObjectConversionTests : CompilerTestBase
         Assert.Equal(expected, ((ConvertedReference)root.Value!).Text);
     }
 
+    [Theory]
+    [InlineData("ParsedReference", "<x:String>hello</x:String>", "parse:hello")]
+    [InlineData("ConvertedReference", "<x:String>hello</x:String>", "converter:hello")]
+    [InlineData("ParsedReference", "<HelloValue/>", "parse:hello")]
+    [InlineData("ConvertedReference", "<HelloValue/>", "converter:hello")]
+    public void StringValuedChildrenUseTheObjectConversion(string type, string content, string expected)
+    {
+        var root = (ConstructorContainer)CompileAndRun("<ConstructorContainer" + Namespace + "><ConstructorContainer.Value><" + type + ">" + content + "</" + type + "></ConstructorContainer.Value></ConstructorContainer>");
+        Assert.Equal(expected, ((ConvertedReference)root.Value!).Text);
+    }
+}
+
+public sealed class HelloValue
+{
+    public string ProvideValue() => "hello";
 }
 
 [TypeConverter(typeof(ReferenceConverter))]
