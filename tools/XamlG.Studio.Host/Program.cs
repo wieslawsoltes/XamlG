@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.FileProviders;
@@ -19,7 +20,7 @@ using System.Threading.Channels;
 
 if (args.Any(argument => argument is "--help" or "-h"))
 {
-    Console.WriteLine("XamlG Studio companion\nUsage: xamlg-studio [--port=4893] [--stdio=true] [--web-root=PATH] [--origins=ORIGIN,...]\nPairs the browser IDE with authenticated MCP and agent clients. Set XAMLG_STUDIO_TOKEN or use the generated local token printed to stderr. Provider credentials remain in the host environment.");
+    Console.WriteLine("XamlG Studio companion\nUsage: xamlg-studio [--port=4893] [--stdio=true] [--web-root=PATH] [--origins=ORIGIN,...]\nPairs one browser IDE with authenticated MCP clients. Set distinct XAMLG_STUDIO_OWNER_TOKEN (browser) and XAMLG_STUDIO_TOKEN (MCP client), or use the generated tokens printed to stderr. Provider credentials remain in the host environment.");
     return;
 }
 
@@ -28,8 +29,9 @@ var port = builder.Configuration.GetValue("port", 4893);
 if (port is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
 builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = AutomationSchema.MaximumArgumentBytes);
-var token = Environment.GetEnvironmentVariable("XAMLG_STUDIO_TOKEN") ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-if (token.Length < 32) throw new InvalidOperationException("XAMLG_STUDIO_TOKEN must contain at least 32 characters.");
+var ownerToken = LocalToken("XAMLG_STUDIO_OWNER_TOKEN");
+var clientToken = LocalToken("XAMLG_STUDIO_TOKEN");
+if (EqualToken(ownerToken, clientToken)) throw new InvalidOperationException("Owner and MCP client tokens must be distinct.");
 var origins = (builder.Configuration["origins"] ?? $"http://127.0.0.1:{port},http://127.0.0.1:8765,http://localhost:8765")
     .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
 foreach (var origin in origins)
@@ -62,7 +64,6 @@ using var geminiClient = (Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?
         clientOptions: new() { HttpClientFactory = () => providerHttp }) : null;
 if (geminiClient != null) providers.Add(new GeminiAgentProvider(geminiClient));
 using var agents = new AgentWorkbench(bridge, providers, new BrowserAgentWorkspace(bridge));
-bridge.CatalogChanged += () => { if (!bridge.IsConnected) agents.Stop(); };
 var mcp = builder.Services.AddMcpServer(options => options.ServerInfo = new Implementation { Name = "XamlG Studio", Version = "0.1.0" })
     .WithAutomation(bridge);
 if (builder.Configuration.GetValue("stdio", false))
@@ -85,15 +86,29 @@ app.Use(async (context, next) =>
     {
         context.Response.Headers.AccessControlAllowOrigin = origin;
         context.Response.Headers.Vary = "Origin";
-        context.Response.Headers.AccessControlAllowHeaders = "Authorization,Content-Type";
+        context.Response.Headers.AccessControlAllowHeaders = "Authorization,Content-Type,X-Xamlg-Owner-Session";
         context.Response.Headers.AccessControlAllowMethods = "GET,POST,OPTIONS";
         if (HttpMethods.IsOptions(context.Request.Method)) { context.Response.StatusCode = 204; return; }
     }
     if (context.Request.Path.StartsWithSegments("/mcp") || context.Request.Path.StartsWithSegments("/agent"))
     {
         var supplied = context.Request.Headers.Authorization.ToString();
-        if (!EqualToken(supplied.StartsWith("Bearer ", StringComparison.Ordinal) ? supplied[7..] : "", token))
+        var isOwner = context.Request.Path.StartsWithSegments("/agent");
+        if (!EqualToken(supplied.StartsWith("Bearer ", StringComparison.Ordinal) ? supplied[7..] : "", isOwner ? ownerToken : clientToken))
         { context.Response.StatusCode = 401; return; }
+        context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, isOwner ? "studio-owner" : "mcp-client")], "LocalToken"));
+        if (isOwner)
+        {
+            if (!bridge.TryGetOwnerSession(context.Request.Headers["X-Xamlg-Owner-Session"].ToString(), out var ownerSession))
+            { context.Response.StatusCode = 409; await context.Response.WriteAsJsonAsync(new { error = "Pair the browser before using the workbench. The owner session has ended." }); return; }
+            context.Items["OwnerSession"] = ownerSession;
+            var aborted = context.RequestAborted;
+            using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(aborted, ownerSession);
+            context.RequestAborted = lifetime.Token;
+            try { await next(context); }
+            finally { context.RequestAborted = aborted; }
+            return;
+        }
     }
     await next(context);
 });
@@ -104,7 +119,7 @@ app.MapPost("/agent/{action}", async (string action, HttpContext context) =>
     try
     {
         using var body = await JsonDocument.ParseAsync(context.Request.Body, new JsonDocumentOptions { MaxDepth = 64 }, context.RequestAborted);
-        return Results.Json(await agents.ExecuteAsync(action, body.RootElement, context.RequestAborted), AutomationJson.Options);
+        return Results.Json(await agents.ExecuteAsync(action, body.RootElement, context.RequestAborted, (CancellationToken)context.Items["OwnerSession"]!), AutomationJson.Options);
     }
     catch (Exception error) when (error is ArgumentException or InvalidOperationException or JsonException or KeyNotFoundException or AutomationException or AgentProviderException)
     { return Results.Json(new { error = error.Message }, AutomationJson.Options, statusCode: 400); }
@@ -140,7 +155,7 @@ app.Map("/bridge", async context =>
         pairing.CancelAfter(TimeSpan.FromSeconds(10));
         var hello = await BrowserAutomationBridge.ReceiveAsync(socket, pairing.Token);
         if (hello == null || hello.Value.GetProperty("kind").GetString() != "hello" ||
-            !EqualToken(hello.Value.GetProperty("token").GetString() ?? "", token))
+            !EqualToken(hello.Value.GetProperty("token").GetString() ?? "", ownerToken))
         { await socket.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Pairing rejected", context.RequestAborted); return; }
         var catalog = hello.Value.GetProperty("catalog").Deserialize<BrowserCatalog>(AutomationJson.Options)
             ?? throw new AutomationException("invalid_catalog", "Missing browser catalog.");
@@ -164,11 +179,19 @@ if (webRoot != null)
     app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
     app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ServeUnknownFileTypes = true, DefaultContentType = "application/octet-stream" });
 }
-Console.Error.WriteLine($"XamlG companion: http://127.0.0.1:{port}\nLocal access token: {token}");
+Console.Error.WriteLine($"XamlG companion: http://127.0.0.1:{port}\nOwner token (browser only): {ownerToken}\nMCP client token: {clientToken}");
 await app.RunAsync();
 
 static bool EqualToken(string supplied, string expected) =>
     CryptographicOperations.FixedTimeEquals(SHA256.HashData(Encoding.UTF8.GetBytes(supplied)), SHA256.HashData(Encoding.UTF8.GetBytes(expected)));
+
+static string LocalToken(string variable)
+{
+    var value = Environment.GetEnvironmentVariable(variable) ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+    if (value.Length is < 32 or > 256 || value.Any(char.IsWhiteSpace))
+        throw new InvalidOperationException(variable + " must contain 32–256 non-whitespace characters.");
+    return value;
+}
 
 static Uri ProviderEndpoint(string variable, string defaultEndpoint)
 {

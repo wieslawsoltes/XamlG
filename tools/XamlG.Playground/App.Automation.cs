@@ -340,7 +340,7 @@ public partial class App
     [JSInvokable]
     public JsonElement AutomationCatalog() => AutomationJson.Element(new { tools = _automation.Tools, resources = _automation.Resources, prompts = _automation.Prompts });
     [JSInvokable]
-    public async Task<JsonElement> AutomationInvoke(string id, string method, string name, JsonElement arguments)
+    public async Task<JsonElement> AutomationInvoke(string id, string method, string name, JsonElement arguments, string caller)
     {
         if (!_sharing) throw new AutomationException("unavailable", "Agent access is disabled.");
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_automationLifetime.Token);
@@ -351,7 +351,8 @@ public partial class App
             await _automationGate.WaitAsync(cancellation.Token); entered = true;
             if (!_sharing || !_ready || _busy) throw new AutomationException("unavailable", "Enable agent access and wait for the current IDE operation.");
             await CaptureEditorsAsync(); // Include edits still queued in Monaco before validating revisions.
-            var context = new AutomationCallContext("MCP", cancellation.Token);
+            if (string.IsNullOrWhiteSpace(caller) || caller.Length > 200) throw new ArgumentException("Invalid automation caller label.");
+            var context = new AutomationCallContext(caller, cancellation.Token);
             var result = method switch
             {
                 "call" => await _automation.CallAsync(name, arguments, context),

@@ -44,7 +44,8 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
   const companionPort = reservation.address().port; await new Promise(resolve => reservation.close(resolve));
   const token = 'xamlg-agent-browser-test-token-0123456789';
   const origin = new URL(process.env.PLAYGROUND_URL || 'http://127.0.0.1:8765/').origin;
-  const environment = { ...process.env, XAMLG_STUDIO_TOKEN: token };
+  const environment = { ...process.env, XAMLG_STUDIO_OWNER_TOKEN: token,
+    XAMLG_STUDIO_TOKEN: 'xamlg-external-client-test-token-9876543210' };
   for (const name of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY']) delete environment[name];
   environment[`${provider.toUpperCase()}_API_KEY`] = 'test-only-not-a-real-key';
   environment[`${provider.toUpperCase()}_ENDPOINT`] = `http://127.0.0.1:${fixturePort}${provider === 'openai' ? '/v1' : ''}`;
@@ -62,7 +63,7 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await page.getByLabel('Enable access to this live project').check();
     await page.getByLabel('Permission profile', { exact: true }).selectOption('FullAccess');
     await page.getByLabel('Companion WebSocket').fill(`ws://127.0.0.1:${companionPort}/bridge`);
-    await page.getByLabel('Local access token').fill(token);
+    await page.getByLabel('Owner token').fill(token);
     await page.getByRole('button', { name: 'Connect companion' }).click();
     await expect(page.getByRole('dialog', { name: 'Agent access' }).getByRole('status')).toContainText('Connected');
     await page.getByRole('button', { name: 'Close', exact: true }).click();

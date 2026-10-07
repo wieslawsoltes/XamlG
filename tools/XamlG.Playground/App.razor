@@ -154,7 +154,7 @@
         <label>Permission profile <select aria-label="Permission profile" @bind="_automationProfile">@foreach (var profile in Enum.GetValues<XamlG.Automation.PermissionProfile>()) { <option value="@profile">@profile</option> }</select></label>
         <p>Runtime operations execute application code. Source edits use the project’s normal revision checks and undo.</p>
         <label>Companion WebSocket <input @bind="_companionUrl" /></label>
-        <label>Local access token <input type="password" autocomplete="off" @bind="_companionToken" /></label>
+        <label>Owner token <input type="password" autocomplete="off" @bind="_companionToken" /></label>
         <div><button @onclick="ConnectAutomationAsync" disabled="@(!_sharing)">Connect companion</button><button @onclick="DisconnectAutomationAsync">Revoke &amp; disconnect</button></div>
         <p role="status">@_connectionStatus · @_automation.Tools.Count tools</p>
         <details><summary>Tool catalog</summary>@foreach (var tool in _automation.Tools) { <p><code>@tool.Name</code> — @tool.Description</p> }</details>

@@ -65,10 +65,21 @@ test('HTTP MCP reaches the paired browser project through the companion', async 
   await page.getByTestId('agent-access').click();
   const base = process.env.XAMLG_TEST_MCP_URL;
   const token = process.env.XAMLG_TEST_MCP_TOKEN;
+  const ownerToken = process.env.XAMLG_TEST_OWNER_TOKEN;
+  let ownerSession;
+  page.on('websocket', socket => socket.on('framereceived', event => {
+    const message = JSON.parse(String(event.payload));
+    if (message.kind === 'ready') ownerSession = message.ownerSession;
+  }));
   await page.getByLabel('Companion WebSocket').fill(base.replace('http:', 'ws:') + '/bridge');
-  await page.getByLabel('Local access token').fill(token);
+  await page.getByLabel('Owner token').fill(ownerToken);
   await page.getByRole('button', { name: 'Connect companion' }).click();
   await expect(page.getByRole('dialog', { name: 'Agent access' }).getByRole('status')).toContainText('Connected');
+  await expect(page.getByLabel('Owner token')).toHaveValue('');
+  expect((await request.post(base + '/agent/state', { headers: { Authorization: `Bearer ${ownerToken}`, 'X-Xamlg-Owner-Session': ownerSession }, data: {} })).status()).toBe(200);
+  expect((await request.post(base + '/agent/state', { headers: { Authorization: `Bearer ${token}` }, data: {} })).status()).toBe(401);
+  expect((await request.post(base + '/agent/state', { headers: { Authorization: `Bearer ${ownerToken}` }, data: {} })).status()).toBe(409);
+  expect((await request.post(base + '/mcp', { headers: { Authorization: `Bearer ${ownerToken}` }, data: {} })).status()).toBe(401);
   let session, sequence = 0;
   async function rpc(method, params) {
     const response = await request.post(base + '/mcp', {
@@ -89,6 +100,9 @@ test('HTTP MCP reaches the paired browser project through the companion', async 
   expect(result.isError).not.toBe(true);
   expect(result.structuredContent.documents.some(d => d.path === 'View.axaml')).toBe(true);
   await page.getByRole('button', { name: 'Revoke & disconnect' }).click();
+  await expect.poll(async () => (await request.post(base + '/agent/state', {
+    headers: { Authorization: `Bearer ${ownerToken}`, 'X-Xamlg-Owner-Session': ownerSession }, data: {}
+  })).status()).toBe(409);
 });
 
 test('floating, docking and layout restoration retain the source buffers and Avalonia preview', async ({ page }) => {

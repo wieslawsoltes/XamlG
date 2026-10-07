@@ -70,8 +70,12 @@ dotnet run --project tools/XamlG.Studio.Host -c Release -- --web-root=artifacts/
 
 The companion binds to `http://127.0.0.1:4893`. Open that address, enable **Agent
 access**, and pair `ws://127.0.0.1:4893/bridge` with the local token printed by the
-companion. A configured `XAMLG_STUDIO_TOKEN` must contain at least 32 characters;
-otherwise the host generates one. Sharing begins disabled and disconnecting
+companion as **Owner token**. The host prints separate owner and MCP client tokens.
+Set `XAMLG_STUDIO_OWNER_TOKEN` for browser pairing/workbench access and
+`XAMLG_STUDIO_TOKEN` for external MCP clients, or let the host generate both.
+Configured tokens must be distinct and contain 32–256 non-whitespace characters.
+The workbench additionally requires the private lease of the currently paired
+browser; detaching cancels its requests and agent run. Sharing begins disabled and disconnecting
 revokes in-flight operations. Browser sharing policy and agent run policy both
 apply. Runtime actions execute the application running in the preview.
 
@@ -89,7 +93,7 @@ External MCP clients use authenticated Streamable HTTP at `/mcp`, or launch the
 companion with `--stdio=true`. With stdio, the loopback browser bridge remains
 available and host logs go to stderr. Add an exact browser origin with
 `--origins=http://127.0.0.1:8765` when serving the IDE separately. HTTP Host and
-Origin checks and the local pairing token apply independently of cloud credentials.
+Origin checks and the separate local tokens apply independently of cloud credentials.
 
 `XamlG.Automation` has no IDE dependency. Implement `IAutomationHost` or build an
 `AutomationCatalog`, add typed handlers, and use `.WithAutomation(host)` on the
@@ -103,13 +107,17 @@ consumer example that uses only NuGet references outside this repository.
 - The merged native solution passed 1,165 tests, including 704 real-Avalonia tests.
   The runtime inspector's fifteen focused tests also pass after adding source
   provenance for objects and deferred resource keys.
-- 34 automation/MCP/agent tests passed, including actual official MCP, OpenAI,
+- 37 automation/MCP/agent tests passed, including actual official MCP, OpenAI,
   Anthropic and Gemini
   SDK transports, permission enforcement, native tool continuation, no replay on
   resume, queued messages, compaction and conflict-checked source restoration.
-- The five new packages built, installed and ran through a separate consumer
-  with an initially empty package cache. Its temporary files are removed even
-  when validation fails.
+  WebSocket tests cover concurrent admission limits, cancellation, expired owner
+  leases and pending calls rejected when their browser disconnects.
+- All 21 shipping packages built and passed the release-consumer suite at
+  `cf9b8b9`, with consumer fixture updates at `fa15505`. The seven new packages
+  built, installed and ran through a separate consumer with an initially empty
+  package cache. Temporary caches and the 30 MiB candidate package set were
+  removed after validation; the small inventory and logs are retained locally.
 - All 38 browser scenarios passed locally after the main merge and provider expansion. The runtime
   browser scenario constructs a C# DataContext, invokes its method,
   installs and updates a real binding, inspects style value frames, and creates,
@@ -119,6 +127,9 @@ consumer example that uses only NuGet references outside this repository.
   SDKs and the real companion/browser. Each discovers models, edits XAML, compiles, reviews and selectively
   restores source, compacts context and exports the public thread. No paid
   provider account was used. CI starts and removes its own companion processes.
+- All eight automation/workbench browser scenarios also passed after separating
+  owner and MCP credentials. HTTP checks reject client access to the workbench,
+  owner credentials at the MCP endpoint, missing leases and expired browser leases.
 
 Runtime tools now include bounded object-path inspection and mutation, loaded type
 discovery, public method invocation with Task/ValueTask results, live control tree

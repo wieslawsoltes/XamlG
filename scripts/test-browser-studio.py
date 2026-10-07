@@ -28,8 +28,9 @@ def main():
         port = reservation.getsockname()[1]
     origin_url = urlsplit(os.environ.get('PLAYGROUND_URL', 'http://127.0.0.1:8765/'))
     origin = f'{origin_url.scheme}://{origin_url.netloc}'
-    token = secrets.token_hex(32)
-    environment = dict(os.environ, XAMLG_STUDIO_TOKEN=token, XAMLG_TEST_MCP_TOKEN=token,
+    token, owner_token = secrets.token_hex(32), secrets.token_hex(32)
+    environment = dict(os.environ, XAMLG_STUDIO_TOKEN=token, XAMLG_STUDIO_OWNER_TOKEN=owner_token,
+        XAMLG_TEST_MCP_TOKEN=token, XAMLG_TEST_OWNER_TOKEN=owner_token,
         XAMLG_TEST_MCP_URL=f'http://127.0.0.1:{port}', XAMLG_TEST_HOST_DLL=str(host_dll), XAMLG_TEST_DOTNET=dotnet)
     # This host tests local transports only. Individual provider fixtures inject synthetic keys.
     for name in ('OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY'):
@@ -50,7 +51,7 @@ def main():
                     time.sleep(0.1)
             if not ready:
                 log.seek(0)
-                raise RuntimeError('Companion did not start: ' + log.read().replace(token, '[local test token]'))
+                raise RuntimeError('Companion did not start: ' + log.read().replace(token, '[MCP test token]').replace(owner_token, '[owner test token]'))
             subprocess.run([shutil.which('npx'), 'playwright', 'test', *args.tests], cwd=ROOT / 'tools/XamlG.Playground', env=environment, check=True)
         finally:
             host.terminate()

@@ -1,5 +1,6 @@
-using System.Collections.Concurrent;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using XamlG.Automation;
 
@@ -11,31 +12,54 @@ namespace XamlG.Mcp;
 /// </summary>
 public sealed class BrowserAutomationBridge : IAutomationHost
 {
-    private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> _pending = new();
     private readonly SemaphoreSlim _sendGate = new(1);
     private readonly object _gate = new();
-    private WebSocket? _socket;
+    private Session? _session;
     private long _nextId;
-    private BrowserCatalog _catalog = new([], [], []);
-    public bool IsConnected { get { lock (_gate) return _socket?.State == WebSocketState.Open; } }
-    public IReadOnlyList<AutomationTool> Tools => _catalog.Tools;
-    public IReadOnlyList<AutomationResource> Resources => _catalog.Resources;
-    public IReadOnlyList<AutomationPrompt> Prompts => _catalog.Prompts;
+    public bool IsConnected { get { lock (_gate) return _session is { Closing: false } session && session.Socket.State == WebSocketState.Open; } }
+    public IReadOnlyList<AutomationTool> Tools { get { lock (_gate) return _session?.Catalog.Tools ?? []; } }
+    public IReadOnlyList<AutomationResource> Resources { get { lock (_gate) return _session?.Catalog.Resources ?? []; } }
+    public IReadOnlyList<AutomationPrompt> Prompts { get { lock (_gate) return _session?.Catalog.Prompts ?? []; } }
     public event Action? CatalogChanged;
+
+    /// <summary>Checks the private lease delivered only to the paired browser. Owner HTTP
+    /// requests must also authenticate separately; the lease alone is not a credential.</summary>
+    public bool TryGetOwnerSession(string lease, out CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            cancellationToken = default;
+            if (_session is not { Closing: false } session || session.Socket.State != WebSocketState.Open ||
+                !CryptographicOperations.FixedTimeEquals(SHA256.HashData(Encoding.UTF8.GetBytes(lease)), session.LeaseHash)) return false;
+            cancellationToken = session.Lifetime.Token;
+            return true;
+        }
+    }
 
     public async Task RunAsync(WebSocket socket, BrowserCatalog catalog, CancellationToken cancellationToken)
     {
-        if (catalog.Tools.Count is < 1 or > 1024 || catalog.Tools.Select(t => t.Name).Distinct(StringComparer.Ordinal).Count() != catalog.Tools.Count)
-            throw new AutomationException("invalid_catalog", "Invalid or duplicate browser tool catalog.");
+        if (catalog.Tools == null || catalog.Resources == null || catalog.Prompts == null ||
+            catalog.Tools.Count is < 1 or > 1024 || catalog.Resources.Count > 1024 || catalog.Prompts.Count > 128 ||
+            catalog.Tools.Any(t => t == null || string.IsNullOrWhiteSpace(t.Name) || t.Name.Length > 64 ||
+                !Enum.IsDefined(t.Scope) || !Enum.IsDefined(t.Effect) || t.InputSchema.ValueKind != JsonValueKind.Object) ||
+            catalog.Resources.Any(r => r == null || string.IsNullOrWhiteSpace(r.Uri)) ||
+            catalog.Prompts.Any(p => p == null || string.IsNullOrWhiteSpace(p.Name)) ||
+            catalog.Tools.Select(t => t.Name).Distinct(StringComparer.Ordinal).Count() != catalog.Tools.Count ||
+            catalog.Resources.Select(r => r.Uri).Distinct(StringComparer.Ordinal).Count() != catalog.Resources.Count ||
+            catalog.Prompts.Select(p => p.Name).Distinct(StringComparer.Ordinal).Count() != catalog.Prompts.Count)
+            throw new AutomationException("invalid_catalog", "Invalid or duplicate browser catalog.");
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var session = new Session(socket, new(Array.AsReadOnly(catalog.Tools.ToArray()),
+            Array.AsReadOnly(catalog.Resources.ToArray()), Array.AsReadOnly(catalog.Prompts.ToArray())), lifetime);
         lock (_gate)
         {
-            if (_socket != null) throw new AutomationException("already_paired", "This companion is already paired with an IDE.");
-            _socket = socket; _catalog = catalog;
+            if (_session != null) throw new AutomationException("already_paired", "This companion is already paired with an IDE.");
+            _session = session;
         }
         try
         {
-            await SendAsync(socket, new { kind = "ready" }, cancellationToken);
-            CatalogChanged?.Invoke();
+            await SendAsync(socket, new { kind = "ready", ownerSession = session.Lease }, cancellationToken);
+            NotifyCatalogChanged();
             while (!cancellationToken.IsCancellationRequested && socket.State == WebSocketState.Open)
             {
                 var message = await ReceiveAsync(socket, cancellationToken);
@@ -43,7 +67,9 @@ public sealed class BrowserAutomationBridge : IAutomationHost
                 var item = message.Value;
                 if (!item.TryGetProperty("id", out var idValue) || !idValue.TryGetInt64(out var id))
                     throw new AutomationException("invalid_message", "A response ID is required.");
-                if (!_pending.TryGetValue(id, out var completion)) continue; // Late cancelled reply.
+                TaskCompletionSource<JsonElement>? completion;
+                lock (_gate) session.Pending.TryGetValue(id, out completion);
+                if (completion == null) continue; // Late cancelled reply.
                 if (item.TryGetProperty("error", out var error))
                     completion.TrySetException(new AutomationException("ide_error", error.GetProperty("message").GetString() ?? "IDE operation failed."));
                 else if (item.TryGetProperty("result", out var result)) completion.TrySetResult(result.Clone());
@@ -52,42 +78,64 @@ public sealed class BrowserAutomationBridge : IAutomationHost
         }
         finally
         {
-            lock (_gate) { _socket = null; _catalog = new([], [], []); }
-            foreach (var completion in _pending.Values)
-                completion.TrySetException(new AutomationException("disconnected", "The IDE disconnected. Inspect live state before retrying an operation."));
-            CatalogChanged?.Invoke();
+            lock (_gate)
+            {
+                // Detach and retire exactly this session before a new browser can pair.
+                session.Closing = true;
+                foreach (var completion in session.Pending.Values)
+                    completion.TrySetException(Disconnected());
+                session.Pending.Clear();
+            }
+            try { lifetime.Cancel(); }
+            finally
+            {
+                lock (_gate) _session = null;
+                NotifyCatalogChanged();
+            }
         }
     }
 
     public async ValueTask<JsonElement> CallAsync(string name, JsonElement arguments, AutomationCallContext context)
     {
-        var tool = Tools.SingleOrDefault(t => t.Name == name) ?? throw new AutomationException("unknown_tool", "Unknown tool or no paired IDE.");
+        Session session;
+        lock (_gate) session = _session ?? throw Disconnected();
+        var tool = session.Catalog.Tools.SingleOrDefault(t => t.Name == name) ?? throw new AutomationException("unknown_tool", "Unknown tool or no paired IDE.");
         AutomationSchema.Validate(tool.InputSchema, arguments);
-        return await RequestAsync("call", name, arguments, context.CancellationToken);
+        return await RequestAsync(session, "call", name, arguments, context);
     }
 
     public async ValueTask<string> ReadResourceAsync(string uri, AutomationCallContext context)
     {
-        if (!Resources.Any(r => r.Uri == uri)) throw new AutomationException("unknown_resource", "Unknown resource or no paired IDE.");
-        return (await RequestAsync("resource", uri, AutomationJson.Element(new { }), context.CancellationToken)).GetString()!;
+        Session session;
+        lock (_gate) session = _session ?? throw Disconnected();
+        if (!session.Catalog.Resources.Any(r => r.Uri == uri)) throw new AutomationException("unknown_resource", "Unknown resource or no paired IDE.");
+        return (await RequestAsync(session, "resource", uri, AutomationJson.Element(new { }), context)).GetString()!;
     }
 
-    private async Task<JsonElement> RequestAsync(string method, string name, JsonElement arguments, CancellationToken cancellationToken)
+    private async Task<JsonElement> RequestAsync(Session session, string method, string name, JsonElement arguments, AutomationCallContext context)
     {
-        WebSocket socket;
-        lock (_gate) socket = _socket ?? throw new AutomationException("disconnected", "Pair the browser IDE first.");
-        if (_pending.Count >= 32) throw new AutomationException("busy", "The companion request limit is reached.");
+        context.CancellationToken.ThrowIfCancellationRequested();
+        if (context.Caller.Length > 200) throw new ArgumentException("Caller label exceeds 200 characters.");
+        var socket = session.Socket;
         var id = Interlocked.Increment(ref _nextId);
         var completion = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pending.TryAdd(id, completion);
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        CancellationTokenSource deadline;
+        lock (_gate)
+        {
+            if (!ReferenceEquals(_session, session) || session.Closing || socket.State != WebSocketState.Open) throw Disconnected();
+            if (session.Pending.Count >= 32) throw new AutomationException("busy", "The companion request limit is reached.");
+            deadline = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken, session.Lifetime.Token);
+            session.Pending.Add(id, completion);
+        }
+        using var deadlineLifetime = deadline;
         deadline.CancelAfter(TimeSpan.FromMinutes(10));
         try
         {
-            await SendAsync(socket, new { kind = "request", id, method, name, arguments }, deadline.Token);
+            await SendAsync(socket, new { kind = "request", id, method, name, arguments, caller = context.Caller }, deadline.Token);
             try { return await completion.Task.WaitAsync(deadline.Token); }
             catch (OperationCanceledException)
             {
+                if (session.Lifetime.IsCancellationRequested) throw Disconnected();
                 try
                 {
                     using var cancelDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
@@ -97,7 +145,27 @@ public sealed class BrowserAutomationBridge : IAutomationHost
                 throw;
             }
         }
-        finally { _pending.TryRemove(id, out _); }
+        catch (OperationCanceledException) when (session.Lifetime.IsCancellationRequested) { throw Disconnected(); }
+        finally { lock (_gate) session.Pending.Remove(id); }
+    }
+
+    private static AutomationException Disconnected() => new("disconnected", "The IDE disconnected. Inspect live state before retrying an operation.");
+    private void NotifyCatalogChanged()
+    {
+        if (CatalogChanged is not { } changed) return;
+        foreach (Action observer in changed.GetInvocationList())
+            try { observer(); } catch (Exception error) when (error is not OutOfMemoryException) { }
+    }
+
+    private sealed class Session(WebSocket socket, BrowserCatalog catalog, CancellationTokenSource lifetime)
+    {
+        public WebSocket Socket { get; } = socket;
+        public BrowserCatalog Catalog { get; } = catalog;
+        public CancellationTokenSource Lifetime { get; } = lifetime;
+        public bool Closing { get; set; }
+        public string Lease { get; } = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        public byte[] LeaseHash => field ??= SHA256.HashData(Encoding.UTF8.GetBytes(Lease));
+        public Dictionary<long, TaskCompletionSource<JsonElement>> Pending { get; } = [];
     }
 
     private async Task SendAsync<T>(WebSocket socket, T value, CancellationToken cancellationToken)

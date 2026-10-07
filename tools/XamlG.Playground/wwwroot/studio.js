@@ -181,8 +181,8 @@ export function installAutomation(owner) {
     automationOwner = owner;
     window.xamlgAutomation = Object.freeze({
         catalog: () => owner.invokeMethodAsync('AutomationCatalog'),
-        call: (name, args = {}) => owner.invokeMethodAsync('AutomationInvoke', crypto.randomUUID(), 'call', name, args),
-        resource: uri => owner.invokeMethodAsync('AutomationInvoke', crypto.randomUUID(), 'resource', uri, {})
+        call: (name, args = {}) => owner.invokeMethodAsync('AutomationInvoke', crypto.randomUUID(), 'call', name, args, 'Browser automation'),
+        resource: uri => owner.invokeMethodAsync('AutomationInvoke', crypto.randomUUID(), 'resource', uri, {}, 'Browser automation')
     });
 }
 export async function connectAutomation(address, token) {
@@ -191,39 +191,46 @@ export async function connectAutomation(address, token) {
         throw new Error('Use a WebSocket URL without credentials, query or fragment.');
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))
         throw new Error('The companion must run on loopback.');
-    if (token.length < 32) throw new Error('Enter the companion’s local token.');
+    if (token.length < 32) throw new Error('Enter the companion’s owner token.');
     if (!automationOwner) throw new Error('The IDE is not ready.');
     disconnectAutomation();
     const catalog = await automationOwner.invokeMethodAsync('AutomationCatalog');
     const agentAccess = { base: url.origin.replace(/^ws/, 'http'), token };
     await new Promise((resolve, reject) => {
         const socket = new WebSocket(url); automationSocket = socket;
+        const pending = new Set();
         let paired = false;
         const timeout = setTimeout(() => { socket.close(); reject(new Error('Companion pairing timed out.')); }, 10000);
         socket.onopen = () => { socket.send(JSON.stringify({ kind: 'hello', token, catalog })); token = ''; };
         socket.onerror = () => { clearTimeout(timeout); reject(new Error('Unable to connect to the companion.')); };
         socket.onclose = () => {
             clearTimeout(timeout);
+            for (const id of pending) automationOwner?.invokeMethodAsync('AutomationCancel', id).catch(() => {});
             if (automationSocket === socket) { agentConnection = null; agentStream?.abort(); agentOwner?.invokeMethodAsync('AgentDisconnected').catch(() => {}); }
             if (!paired) reject(new Error('The companion rejected pairing.'));
         };
         socket.onmessage = async event => {
+            if (automationSocket !== socket) { socket.close(); return; }
             if (typeof event.data !== 'string' || event.data.length > 8 * 1024 * 1024) { socket.close(); return; }
             let request;
             try { request = JSON.parse(event.data); } catch { socket.close(); return; }
             if (request.kind === 'ready') {
-                paired = true; clearTimeout(timeout); agentConnection = agentAccess;
+                if (paired || typeof request.ownerSession !== 'string' || request.ownerSession.length !== 64) { socket.close(); return; }
+                paired = true; clearTimeout(timeout); agentAccess.session = request.ownerSession; agentConnection = agentAccess;
                 startAgentStream(); agentOwner?.invokeMethodAsync('AgentRefresh').catch(() => {}); resolve(); return;
             }
             if (!paired) return;
-            if (request.kind === 'cancel') { await automationOwner.invokeMethodAsync('AutomationCancel', String(request.id)); return; }
+            const id = `${agentAccess.session}:${request.id}`;
+            if (request.kind === 'cancel') { await automationOwner.invokeMethodAsync('AutomationCancel', id); return; }
             if (request.kind !== 'request') return;
+            if (pending.has(id)) { socket.close(); return; }
+            pending.add(id);
             try {
-                const result = await automationOwner.invokeMethodAsync('AutomationInvoke', String(request.id), request.method, request.name, request.arguments ?? {});
+                const result = await automationOwner.invokeMethodAsync('AutomationInvoke', id, request.method, request.name, request.arguments ?? {}, request.caller ?? 'MCP');
                 if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ id: request.id, result }));
             } catch (error) {
                 if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ id: request.id, error: { code: 'ide_error', message: String(error.message || error) } }));
-            }
+            } finally { pending.delete(id); }
         };
     });
 }
@@ -240,7 +247,7 @@ export async function agentRequest(action, argumentsValue = {}) {
     if (!agentConnection) throw new Error('Connect the local companion in Agent access first.');
     const connection = agentConnection;
     const response = await fetch(`${connection.base}/agent/${encodeURIComponent(action)}`, {
-        method: 'POST', headers: { Authorization: `Bearer ${connection.token}`, 'Content-Type': 'application/json' },
+        method: 'POST', headers: { Authorization: `Bearer ${connection.token}`, 'X-Xamlg-Owner-Session': connection.session, 'Content-Type': 'application/json' },
         body: JSON.stringify(argumentsValue), cache: 'no-store', signal: agentStream?.signal
     });
     const body = await response.text();
@@ -255,7 +262,7 @@ async function startAgentStream() {
     if (!connection) return;
     try {
         const response = await fetch(`${connection.base}/agent/events`, {
-            headers: { Authorization: `Bearer ${connection.token}` }, cache: 'no-store', signal: controller.signal
+            headers: { Authorization: `Bearer ${connection.token}`, 'X-Xamlg-Owner-Session': connection.session }, cache: 'no-store', signal: controller.signal
         });
         if (!response.ok) throw new Error(`Agent event stream returned ${response.status}.`);
         const reader = response.body.getReader(), decoder = new TextDecoder();

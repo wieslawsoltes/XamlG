@@ -20,7 +20,7 @@ public sealed class AgentWorkbench : IDisposable
     { _providers = providers.ToDictionary(p => p.Id, StringComparer.Ordinal); _harness = new(host, workspace); }
     public AgentHarness Harness => _harness;
 
-    public async Task<JsonElement> ExecuteAsync(string action, JsonElement arguments, CancellationToken cancellationToken)
+    public async Task<JsonElement> ExecuteAsync(string action, JsonElement arguments, CancellationToken cancellationToken, CancellationToken ownerSession = default)
     {
         switch (action)
         {
@@ -62,9 +62,10 @@ public sealed class AgentWorkbench : IDisposable
                 lock (_gate)
                 {
                     if (_run is { IsCompleted: false }) throw new InvalidOperationException("An agent is already running.");
-                    _runCancellation?.Dispose(); _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+                    ownerSession.ThrowIfCancellationRequested();
+                    _runCancellation?.Dispose(); _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, ownerSession);
                     _runningId = run.Id;
-                    _run = RunAsync(run);
+                    _run = RunAsync(run, _runCancellation.Token);
                 }
                 break;
             case "respond":
@@ -84,7 +85,7 @@ public sealed class AgentWorkbench : IDisposable
         return AutomationJson.Element(new { accepted = true });
     }
 
-    private async Task RunAsync(RunArgs args)
+    private async Task RunAsync(RunArgs args, CancellationToken cancellationToken)
     {
         // Begin after the caller has recorded ownership, and never tie a run to one HTTP poll.
         await Task.Yield();
@@ -92,7 +93,7 @@ public sealed class AgentWorkbench : IDisposable
         {
             await _harness.RunAsync(args.Id, args.Message, args.Options,
                 async (review, token) => (await AskAsync("approval", AutomationJson.Element(review), token)).Deserialize<AgentApproval>(AutomationJson.Options),
-                async (question, token) => (await AskAsync("question", AutomationJson.Element(question), token)).GetString()!, _runCancellation!.Token);
+                async (question, token) => (await AskAsync("question", AutomationJson.Element(question), token)).GetString()!, cancellationToken);
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         { /* The harness retains the failure in task status and its public thread. */ }
