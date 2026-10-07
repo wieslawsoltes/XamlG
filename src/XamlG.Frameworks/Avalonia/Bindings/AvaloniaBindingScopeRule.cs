@@ -13,19 +13,11 @@ public sealed class AvaloniaBindingScopeRule(bool compileBindingsByDefault = tru
         var parent = context.Ancestors.Skip(1).FirstOrDefault();
         var inherited = parent != null && parent.Annotations.TryGet(AvaloniaBindingScope.Key, out var known) ? known : new(null, compileBindingsByDefault);
         var dataType = inherited.DataType;
-        var declared = target.Scope.Directive(target.Syntax, AvaloniaBindingMetadata.DataType);
-        var source = declared == null ? (string?)null : declared.Value;
-        var span = declared?.ValueSpan ?? target.Syntax.NameSpan;
-        if (source == null && (target.Type.HasMetadataName(AvaloniaBindingMetadata.DataTemplate) || target.Type.HasMetadataName(AvaloniaBindingMetadata.TreeDataTemplate)))
-        {
-            var attribute = AvaloniaStyleObjectRule.TextMember(target.Syntax, AvaloniaBindingMetadata.DataType);
-            if (attribute is { } item) { source = item.Text; span = item.Span; }
-            else dataType = null; // A new template must not silently inherit its owner's view-model type.
-        }
-        if (source != null)
-            dataType = ResolveDataType(context, source, target.Scope, span);
-        else if (!target.Type.HasMetadataName(AvaloniaBindingMetadata.DataTemplate) &&
-                 !target.Type.HasMetadataName(AvaloniaBindingMetadata.TreeDataTemplate))
+        var metadata = AvaloniaDataTypeMetadata.Read(context, target);
+        if (metadata.HasDirective || metadata.Type != null) dataType = metadata.Type;
+        else if (AvaloniaStyleScope.Is(target.Type, AvaloniaBindingMetadata.DataTemplateContract))
+            dataType = null; // Every IDataTemplate owns a separate data-context type scope.
+        else
         {
             var contextElement = target.Syntax.Children.OfType<XamlElementSyntax>().FirstOrDefault(e =>
                 e.LocalName.EndsWith("." + AvaloniaBindingMetadata.DataContext, StringComparison.Ordinal));
@@ -51,7 +43,13 @@ public sealed class AvaloniaBindingScopeRule(bool compileBindingsByDefault = tru
     public bool TryBindAttribute(BindingContext context, ObjectBindingBuilder target, XamlAttributeSyntax attribute, NamespaceScope scope)
     {
         var name = scope.Expand(attribute.Name, true);
-        return name.Namespace != null && XamlNames.IsLanguage(name.Namespace) && name.LocalName is AvaloniaBindingMetadata.DataType or AvaloniaBindingMetadata.CompileBindings;
+        if (name.Namespace == null || !XamlNames.IsLanguage(name.Namespace) || name.LocalName is not (AvaloniaBindingMetadata.DataType or AvaloniaBindingMetadata.CompileBindings)) return false;
+        if (name.LocalName == AvaloniaBindingMetadata.DataType && target.Annotations.TryGet(AvaloniaDataTypeMetadata.MappedDirective, out var property))
+        {
+            var member = context.Members.Resolve(target.Type, property, scope, attribute.NameSpan);
+            context.Members.BindNodes(target, member, new[] { new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan) }, scope, attribute.Span);
+        }
+        return true;
     }
     internal static INamedTypeSymbol? ResolveDataType(BindingContext context, string text, NamespaceScope scope, TextSpan span)
     {

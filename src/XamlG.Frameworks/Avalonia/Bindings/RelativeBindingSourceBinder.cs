@@ -51,7 +51,7 @@ internal sealed class RelativeBindingSourceBinder(BindingContext context, Object
         var builder = _expressions.New(AvaloniaBindingMetadata.PathBuilder, span);
         if (builder == null) return null;
         ITypeSymbol? sourceType;
-        INamedTypeSymbol? rootedDataType = null;
+        ITypeSymbol? rootedDataType = null;
         switch (mode)
         {
             case "DataContext":

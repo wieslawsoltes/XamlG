@@ -14,6 +14,8 @@ internal static class AvaloniaBindingMetadata
     public const string AccessorFactory = "Avalonia.Markup.Xaml.MarkupExtensions.CompiledBindings.PropertyInfoAccessorFactory";
     public const string DataTemplate = "Avalonia.Markup.Xaml.Templates.DataTemplate";
     public const string TreeDataTemplate = "Avalonia.Markup.Xaml.Templates.TreeDataTemplate";
+    public const string DataTemplateContract = "Avalonia.Controls.Templates.IDataTemplate";
+    public const string DataTypeAttribute = "Avalonia.Metadata.DataTypeAttribute";
     public const string DataType = "DataType";
     public const string CompileBindings = "CompileBindings";
     public const string DataContext = "DataContext";

@@ -48,6 +48,8 @@ The native Avalonia suite now also references the pinned `Avalonia.Markup.Xaml.L
 
 `TemplatePriorityTests` adds 16 differential cases covering explicit styled/attached properties, CLR-wrapper bypass, style-trigger overrides, custom template scopes, literal/static/dynamic resources, binding priorities, direct properties, implicit/explicit content and assigned binding values. A native live-edit check also verifies source declarations and the generated setter. `BoundStaticSetter` supplies typed method/descriptor symbols without adding Avalonia names to the portable backend; `BoundMember.IsImplicitContent` preserves the pinned compiler's different handling of implicit content.
 
+`DataTypeMetadataTests` adds 18 differential cases for `x:DataType`, annotated CLR properties, template matching and compiled template bodies. The directive assigns an annotated `DataType` property unless that property was explicitly assigned; in that case the directive still takes precedence for binding scope. Symbol-based member binding retains an inherited annotated property even when an unannotated derived property hides it. All `IDataTemplate` implementations establish a separate data-context type scope, and custom `[DataType]` properties support attribute and property-element values. Compiled `DataContext` and item-collection inference remain separate audit work.
+
 ## Run
 
 ```sh

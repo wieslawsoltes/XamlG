@@ -15,8 +15,8 @@ public sealed class MemberBinder
         if (member == null) return null;
         return ApplyRules(target, member, scope);
     }
-    internal BoundMember Resolve(ITypeSymbol target, IPropertySymbol property, NamespaceScope scope, TextSpan span) =>
-        ApplyRules(target, BindProperty(property, span) with { IsImplicitContent = true }, scope);
+    public BoundMember Resolve(ITypeSymbol target, IPropertySymbol property, NamespaceScope scope, TextSpan span, bool isImplicitContent = false) =>
+        ApplyRules(target, BindProperty(property, span) with { IsImplicitContent = isImplicitContent }, scope);
     private BoundMember ApplyRules(ITypeSymbol target, BoundMember member, NamespaceScope scope)
     {
         foreach (var rule in _context.Profile.MemberBindingRules) member = rule.Bind(_context, target, member, scope);

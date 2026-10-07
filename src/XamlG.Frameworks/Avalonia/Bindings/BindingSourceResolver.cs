@@ -21,7 +21,7 @@ internal sealed class BindingSourceResolver(BindingContext context, ObjectBindin
         return (type, DataType(found));
     }
 
-    public (INamedTypeSymbol? Type, INamedTypeSymbol? DataType, int Level) Parent(BindingPathSegment segment, NamespaceScope scope)
+    public (INamedTypeSymbol? Type, ITypeSymbol? DataType, int Level) Parent(BindingPathSegment segment, NamespaceScope scope)
     {
         INamedTypeSymbol? type = null; var level = 0;
         if (segment.Arguments.Length > 2) { context.Report("XG3204", "A parent source accepts a type and optional level.", segment.Span); return (null, null, 0); }

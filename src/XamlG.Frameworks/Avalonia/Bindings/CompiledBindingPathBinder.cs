@@ -19,7 +19,7 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
         if (builder == null) return null;
         var type = initialSource?.SourceType ?? sourceType;
         var writable = false;
-        INamedTypeSymbol? rootedDataType = initialSource?.DataType;
+        ITypeSymbol? rootedDataType = initialSource?.DataType;
         var resolver = new BindingSourceResolver(context, target);
         for (var index = 0; index < syntax.Segments.Length; index++)
         {
