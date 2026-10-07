@@ -14,6 +14,8 @@ Control templates validate inherited `TemplatePart` metadata against their defer
 
 Style warnings follow the pinned compiler's scope and severity. Repeated literal setter names in direct style/theme content produce warnings; aliases and explicit `Setters` property elements retain upstream's different warning behavior. Compilation preserves both setters, so Avalonia can still reject them when applying the style. Item-container warnings check the known owner's `ItemTemplate` or `DataTemplates`, direct template content and the upstream `ContentControl` restriction. Merged-dictionary warnings retain the upstream exclusion for nodes wrapped in target-type metadata.
 
+Explicit styled and attached property assignments inside control-template scopes use `BindingPriority.Template`, allowing style triggers to override their values. Typed static setter metadata preserves member identity, source declarations, initialization timing and live setters. Direct properties and implicit content assignments retain the pinned compiler's CLR-setter behavior. Bindings keep their own priorities; properties marked with `Avalonia.Data.AssignBindingAttribute` store binding objects as values.
+
 ```xml
 <StackPanel xmlns="https://github.com/avaloniaui">
   <StackPanel.Styles>

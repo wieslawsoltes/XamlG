@@ -12,7 +12,7 @@ public static class AvaloniaMetadata
     public const string WhitespaceSignificant = "Avalonia.Metadata.WhitespaceSignificantCollectionAttribute";
     public const string TrimSurroundingWhitespace = "Avalonia.Metadata.TrimSurroundingWhitespaceAttribute";
     public const string UsableDuringInitialization = "Avalonia.Metadata.UsableDuringInitializationAttribute";
-    public const string AssignBinding = "Avalonia.Metadata.AssignBindingAttribute";
+    public const string AssignBinding = "Avalonia.Data.AssignBindingAttribute";
     public const string AddChild = "Avalonia.Metadata.IAddChild";
     public const string AddChildGeneric = "Avalonia.Metadata.IAddChild`1";
     public const string Loader = "Avalonia.Markup.Xaml.AvaloniaXamlLoader";

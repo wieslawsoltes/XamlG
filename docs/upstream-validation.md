@@ -36,7 +36,7 @@ Compare behavior against the pinned source as well as its tests. Native compiler
 This is an ongoing source audit. Passing the current suites does not close the remaining work:
 
 - Complete the framework-transform comparison beyond the portable corpus, including Avalonia animation, binding, selector and resource behavior. Existing framework tests and theme gates remain relevant but do not certify untested combinations.
-- The Avalonia 12.1.3 transform inventory is still being reviewed, including template property priorities, runtime source information and the remaining binding/resource transforms.
+- The Avalonia 12.1.3 transform inventory is still being reviewed, including registered-property special values, data-context metadata/inference, runtime source information and the remaining binding/resource transforms.
 
 The native Avalonia suite now also references the pinned `Avalonia.Markup.Xaml.Loader` 12.1.3 package solely for differential tests. `ContainerQueryTests` compares compiled query construction, invalid-input rejection and named-container layout behavior against that compiler. Production projects retain no XamlX or runtime-XAML-loader dependency. The query parser and binder emit typed public `StyleQueries` calls and preserve the pinned compiled transform's height/conjunction behavior, which differs from Avalonia's reflection query parser.
 
@@ -45,6 +45,8 @@ The native Avalonia suite now also references the pinned `Avalonia.Markup.Xaml.L
 `StyleScopeTests` compares derived styles/themes, custom template scopes declared through an interface, object-form and qualified target properties, selectorless owning-control inference, invalid theme scopes and `x:SetterTargetType` precedence against the same compiler. Template property references use those semantic scopes when resolving `TemplateBinding` values.
 
 `StyleWarningTests` adds 30 differential cases for duplicate setters, item containers in data templates and styles in merged dictionaries. These check warning severity/count, negative scopes, successful construction and Avalonia's runtime duplicate-setter exception. The implementation preserves observed upstream restrictions: duplicate detection compares direct-content literal property names; container warnings require a `ContentControl`; target-type metadata wrappers suppress the immediate-parent merged-dictionary check.
+
+`TemplatePriorityTests` adds 16 differential cases covering explicit styled/attached properties, CLR-wrapper bypass, style-trigger overrides, custom template scopes, literal/static/dynamic resources, binding priorities, direct properties, implicit/explicit content and assigned binding values. A native live-edit check also verifies source declarations and the generated setter. `BoundStaticSetter` supplies typed method/descriptor symbols without adding Avalonia names to the portable backend; `BoundMember.IsImplicitContent` preserves the pinned compiler's different handling of implicit content.
 
 ## Run
 

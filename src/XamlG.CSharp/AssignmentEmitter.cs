@@ -110,6 +110,11 @@ internal sealed class AssignmentEmitter
     internal static string Get(BoundMember member, ITypeSymbol targetType, string target) => member.Kind == BoundMemberKind.AttachedProperty ? member.Getter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Getter) + "(" + target + ")" : CSharpNames.MemberTarget(member.Symbol, targetType, target) + "." + CSharpNames.Identifier(member.Name);
     private string SetExpression(BoundMember member, ITypeSymbol targetType, string target, string value)
     {
+        if (member.StaticSetter is { } accessor)
+        {
+            var arguments = new[] { target }.Concat(accessor.Descriptors.Select(field => field.ContainingType.CSharpName() + "." + CSharpNames.Identifier(field.Name))).Concat(new[] { value });
+            return accessor.Method.ContainingType.CSharpName() + "." + CSharpNames.Method(accessor.Method) + "(" + string.Join(", ", arguments) + ")";
+        }
         if (member.Setter?.IsInitOnly == true) return _context.InitSetter(member.Setter) + "(" + (member.Setter.ContainingType.IsValueType ? "ref " : string.Empty) + target + ", " + value + ")";
         return member.Kind == BoundMemberKind.AttachedProperty ? member.Setter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Setter) + "(" + target + ", " + value + ")" : CSharpNames.MemberTarget(member.Symbol, targetType, target) + "." + CSharpNames.Identifier(member.Name) + " = " + value;
     }

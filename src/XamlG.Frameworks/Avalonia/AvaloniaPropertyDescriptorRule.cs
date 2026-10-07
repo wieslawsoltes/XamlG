@@ -1,5 +1,6 @@
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
+using XamlG.Frameworks.Avalonia.Styling;
 using XamlG.Roslyn;
 using XamlG.Syntax;
 
@@ -14,6 +15,7 @@ public sealed class AvaloniaPropertyDescriptorRule : IXamlMemberBindingRule
         var owner = member.Kind == BoundMemberKind.AttachedProperty ? member.Symbol.ContainingType : targetType;
         var field = owner.Members(member.Name + AvaloniaMetadata.PropertySuffix).OfType<IFieldSymbol>()
             .FirstOrDefault(f => f.IsStatic && context.Types.IsAccessible(f) && context.Types.Compilation.ClassifyCommonConversion(f.Type, propertyType).IsImplicit);
-        return field == null ? member : member with { TargetDescriptor = new BoundStaticExpression(field, field.Type, member.Span) };
+        return field == null ? member : AvaloniaTemplatePriority.Apply(context,
+            member with { TargetDescriptor = new BoundStaticExpression(field, field.Type, member.Span) }, field);
     }
 }

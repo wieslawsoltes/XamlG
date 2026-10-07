@@ -7,6 +7,9 @@ namespace XamlG.AvaloniaRuntime;
 /// remains responsible for validation, read-only enforcement, notifications and binding lifetime.</summary>
 public static class AvaloniaRegisteredSetter
 {
+    public static void AssignTemplate<T>(AvaloniaObject target, StyledProperty<T> property, T value) =>
+        target.SetValue(property, value, BindingPriority.Template);
+
     public static IDisposable? Assign(AvaloniaObject target, AvaloniaProperty property, object? value)
     {
         ArgumentNullException.ThrowIfNull(target);
