@@ -16,7 +16,7 @@ namespace XamlG.AvaloniaRuntime.Inspection;
 
 /// <summary>
 /// Dispatcher-affine inspection of an actual preview. Handles follow object identity, never
-/// child indices. Removed objects and handles from a replaced preview cannot be mutated.
+/// child indices. Removed tree objects and handles from a replaced preview cannot be mutated.
 /// Runtime mutations are deliberately separate from source/designer transactions.
 /// </summary>
 public sealed partial class AvaloniaRuntimeInspector : IDisposable
@@ -70,6 +70,7 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
             { _eventCleanup[watch](); _eventCleanup.Remove(watch); }
             RetireBindings(old.Key);
             RetireObjectWatches(old.Key);
+            RetireObjectHandles(old.Key);
             _objects.Remove(old.Key);
         }
         foreach (var obj in ordered)
@@ -99,7 +100,7 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
                 var diagnostic = obj.GetDiagnostic(property);
                 result.Add(new(Key(property), property.Name, TypeName(property.OwnerType), TypeName(property.PropertyType),
                     property.IsAttached ? "attached" : property.IsDirect ? "direct" : "styled", property.IsReadOnly,
-                    DescribeValue(diagnostic.Value), obj.IsSet(property), obj.IsAnimating(property), diagnostic.Priority.ToString()));
+                    DescribeObjectValue(diagnostic.Value, objectId), obj.IsSet(property), obj.IsAnimating(property), diagnostic.Priority.ToString()));
             }
             catch (Exception error)
             {
@@ -115,7 +116,7 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
                          .OrderBy(p => p.Name, StringComparer.Ordinal))
             {
                 RuntimeValue? value = null; string? error = null;
-                try { value = DescribeValue(property.GetValue(obj)); }
+                try { value = DescribeObjectValue(property.GetValue(obj), objectId); }
                 catch (Exception exception) { error = ErrorText(exception); }
                 result.Add(new("clr:" + property.Name, property.Name, TypeName(property.DeclaringType!),
                     TypeName(property.PropertyType), "clr", property.SetMethod?.IsPublic != true, value, Error: error));
@@ -174,13 +175,13 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
     {
         var obj = Resolve(objectId) as StyledElement ?? throw new InvalidOperationException("The object has no resources.");
         if (obj.Resources.Count > MaximumNodes) throw new InvalidOperationException("Too many resource entries.");
-        return obj.Resources.ToDictionary(p => Convert.ToString(p.Key, CultureInfo.InvariantCulture) ?? "", p => DescribeValue(p.Value));
+        return obj.Resources.ToDictionary(p => Convert.ToString(p.Key, CultureInfo.InvariantCulture) ?? "", p => DescribeObjectValue(p.Value, objectId));
     }
 
     public RuntimeValue FindResource(string objectId, string key)
     {
         var obj = Resolve(objectId) as StyledElement ?? throw new InvalidOperationException("The object has no resources.");
-        return obj.TryFindResource(key, out var value) ? DescribeValue(value) : throw new KeyNotFoundException("Resource not found: " + key);
+        return obj.TryFindResource(key, out var value) ? DescribeObjectValue(value, objectId) : throw new KeyNotFoundException("Resource not found: " + key);
     }
 
     public void SetResource(string objectId, string key, JsonElement value, string? typeName, bool remove, long expectedRevision)
@@ -304,7 +305,9 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
         VerifyAccess();
         if (value == null) return new("null", null);
         var type = TypeName(value.GetType());
-        if (value is AvaloniaObject obj) return new(type, null, _objects.ContainsKey(Id(obj)) ? Id(obj) : null);
+        if (value is AvaloniaObject obj)
+            return _identities.TryGetValue(obj, out var identity) && _objects.ContainsKey(identity.Id)
+                ? new(type, null, identity.Id, ReferenceKind: "tree") : new(type, null);
         if (value is string text) return new(type, text.Length <= 16384 ? text : text[..16384], Truncated: text.Length > 16384);
         if (value is bool or byte or sbyte or short or ushort or int or uint or long or ulong or decimal) return new(type, value);
         if (value is double d && double.IsFinite(d)) return new(type, d);
@@ -409,7 +412,7 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        VerifyAccess(); ClearEventWatches(); ClearObjectWatches(); DisposeInput(); DisposeAccessibility();
+        VerifyAccess(); ClearEventWatches(); ClearObjectWatches(); DisposeInput(); DisposeObjectHandles(); DisposeAccessibility();
         foreach (var subscription in _ownedBindings.Values) subscription.Dispose();
         _ownedBindings.Clear();
         foreach (var obj in _objects.Values) obj.PropertyChanged -= OnPropertyChanged;

@@ -297,11 +297,31 @@ feature implementation is complete.
 
 Full reference parity remains in progress: account-mode support and remaining
 provider protocol/recovery details;
-handles for arbitrary method/provider result objects; additional source-backed
-designer controls; the remaining Roslyn
+additional source-backed designer controls; the remaining Roslyn
 authoring surface for the multi-file C# workspace; and the corresponding UI and protocol
 acceptance coverage. This ledger does not claim those capabilities from a build
 or from the existence of a tool name.
+
+Reference-valued method/provider results and explicit property/dictionary reads now
+receive bounded retained-object handles, including accessibility text-range and
+array results. Object-path reads, writes, method calls, dictionary operations and
+typed arguments accept tree, peer and retained IDs. Public interface discovery and
+the optional `interfaceName` select explicit interface implementations without
+depending on the concrete implementation type being public. Tree-only mutations
+continue to require a current tree node. Snapshots and the change journal do not
+acquire arbitrary-object leases merely by recording a value.
+
+At most 512 references are retained for five minutes. An origin is a tree node or
+peer; children receive independent leases with the same origin. Removed origins,
+expired leases and replaced previews reject access. A dispatcher timer releases
+expired references; local UI and MCP expose inventory and explicit release without
+disposing application objects. Capacity exhaustion returns metadata and an explicit
+reference error rather than failing or replaying an already-completed method. The
+Runtime workbench includes retained-object navigation, public-interface selection,
+member paging and release controls. Targeted runtime-library and browser compilation
+passed without warnings or errors. Behavioral coverage remains deferred: verify
+GC retention/release, absolute expiry, origin removal, explicit interfaces and typed
+peer/text-range arguments during the final native/browser validation pass.
 
 Temporary reference clones and superseded publishes are removed when no longer
 needed. Package consumer caches are scoped to temporary directories. Large failed

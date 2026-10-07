@@ -41,13 +41,43 @@
                             <label>Property value (JSON) <textarea @bind="_propertyJson" rows="3" spellcheck="false" /></label>
                             <button @onclick="SetPropertyAsync" disabled="@(_busy || selectedProperty.ReadOnly)">Set live property</button>
                             <button @onclick="ClearPropertyAsync" disabled="@(_busy || selectedProperty.ReadOnly || selectedProperty.Kind == "clr")">Clear local value</button>
+                            @if (selectedProperty.Value?.ObjectId is { } propertyObjectId) { <button @onclick="() => OpenObjectReferenceAsync(propertyObjectId)" disabled="@_busy">Inspect property object</button> }
+                            @if (selectedProperty.Value?.ReferenceError is { } referenceError) { <p role="status">@referenceError</p> }
                         }
                     }
                     @if (_panel == "Objects")
                     {
+                        <label>Object handle <input @bind="_objectId" placeholder="Use selected tree object" /></label>
                         <label>Object path <input @bind="_objectPath" placeholder="DataContext.Child" /></label><button @onclick="InspectObjectAsync" disabled="@_busy">Inspect object</button>
-                        <label>Exact method signature <input @bind="_method" placeholder="Save()" /></label>
+                        <p>Leave the path empty when inspecting a returned object or accessibility peer handle.</p>
+                        @if (_objectInspection is { } inspected)
+                        {
+                            <label>Public interface <select @bind="_objectInterface"><option value="">Object members</option>@foreach (var contract in inspected.Interfaces ?? []) { <option value="@contract">@contract.Split(',')[0]</option> }</select></label>
+                            <small>Choose an interface and inspect again to access explicit implementations.</small>
+                            <div class="runtime-property-list">
+                                @foreach (var member in inspected.Members)
+                                {
+                                    <div><strong>@member.Name</strong> · @Display(member.Value) <small>@member.Error @member.Value?.ReferenceError</small>
+                                        @if (member.Value?.ObjectId is { } memberId) { <button @onclick="() => OpenObjectReferenceAsync(memberId)" disabled="@_busy">Inspect</button> }
+                                    </div>
+                                }
+                            </div>
+                            <button @onclick="() => Guard(() => InspectObjectCoreAsync(Math.Max(0, inspected.Offset - 100)))" disabled="@(_busy || inspected.Offset == 0)">Previous members</button>
+                            <button @onclick="() => Guard(() => InspectObjectCoreAsync(inspected.Offset + 100))" disabled="@(_busy || !inspected.HasMore)">Next members</button>
+                            <datalist id="runtime-method-options">@foreach (var signature in inspected.Methods) { <option value="@signature" /> }</datalist>
+                        }
+                        <label>Exact method signature <input @bind="_method" placeholder="Save()" list="runtime-method-options" /></label>
                         <label>Method arguments <textarea @bind="_methodArguments" rows="2" spellcheck="false" /></label><button @onclick="InvokeMethodAsync" disabled="@(_busy || _method.Length == 0)">Invoke method</button>
+                        <details><summary>Retained objects</summary>
+                            <p>Returned objects expire after five minutes. Releasing a handle frees the inspector's reference to the object.</p>
+                            <button @onclick="ReadObjectHandlesAsync" disabled="@_busy">Refresh retained objects</button><button @onclick="() => ReleaseObjectHandlesAsync()" disabled="@_busy">Release all retained objects</button>
+                            @if (_objectHandles is { } handles)
+                            {
+                                <p>@handles.Handles.Count / @handles.Capacity retained</p>
+                                @foreach (var handle in handles.Handles)
+                                { <div><code>@handle.Id</code> · @handle.Type · expires @handle.ExpiresAt.ToLocalTime().ToString("T") <button @onclick="() => OpenObjectReferenceAsync(handle.Id)" disabled="@_busy">Inspect</button><button @onclick="() => ReleaseObjectHandlesAsync(handle.Id)" disabled="@_busy">Release</button></div> }
+                            }
+                        </details>
                     }
                     @if (_panel is "Bindings" or "Styles" or "Resources")
                     {

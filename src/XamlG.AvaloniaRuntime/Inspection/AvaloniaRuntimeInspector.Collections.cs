@@ -13,37 +13,36 @@ public sealed partial class AvaloniaRuntimeInspector
     public RuntimeDictionarySnapshot DictionaryEntries(string objectId, IReadOnlyList<string>? path = null, int offset = 0, int count = 100)
     {
         if (offset is < 0 or > 100000 || count is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(offset));
-        var target = FollowPath(Resolve(objectId), path) ?? throw new InvalidOperationException("The dictionary target is null.");
+        var target = FollowPath(ResolveObjectTarget(objectId), path) ?? throw new InvalidOperationException("The dictionary target is null.");
         var dictionary = DictionaryAccess.Create(target); ObserveObject(objectId, path, target);
         var entries = dictionary.Keys().Cast<object>().Skip(offset).Take(count).Select(key =>
-            new RuntimeDictionaryEntry(DescribeValue(key), DescribeValue(dictionary.Get(key)), TypeName(key.GetType()))).ToArray();
+            new RuntimeDictionaryEntry(DescribeObjectValue(key, objectId), DescribeObjectValue(dictionary.Get(key), objectId), TypeName(key.GetType()))).ToArray();
         return new(Revision, TypeName(dictionary.KeyType), TypeName(dictionary.ValueType), dictionary.ReadOnly, dictionary.Count(), offset,
             offset + entries.Length < dictionary.Count(), entries);
     }
     public RuntimeValue ReadDictionaryEntry(string objectId, IReadOnlyList<string>? path, RuntimeArgument key, string? keyType = null)
     {
-        var target = FollowPath(Resolve(objectId), path) ?? throw new InvalidOperationException("The dictionary target is null.");
+        var target = FollowPath(ResolveObjectTarget(objectId), path) ?? throw new InvalidOperationException("The dictionary target is null.");
         var dictionary = DictionaryAccess.Create(target); var converted = DictionaryKey(dictionary, key, keyType);
         if (!dictionary.Contains(converted)) throw new KeyNotFoundException("The dictionary does not contain that key.");
-        ObserveObject(objectId, path, target); return DescribeValue(dictionary.Get(converted));
+        ObserveObject(objectId, path, target); return DescribeObjectValue(dictionary.Get(converted), objectId);
     }
     public RuntimeValue SetDictionaryEntry(string objectId, IReadOnlyList<string>? path, RuntimeArgument key, RuntimeArgument? value,
         bool remove, long expectedRevision, string? keyType = null)
     {
-        var target = FollowPath(ResolveForMutation(objectId, expectedRevision), path) ?? throw new InvalidOperationException("The dictionary target is null.");
+        var target = FollowPath(ResolveObjectTarget(objectId, expectedRevision), path) ?? throw new InvalidOperationException("The dictionary target is null.");
         var dictionary = DictionaryAccess.Create(target);
         if (dictionary.ReadOnly) throw new InvalidOperationException("The dictionary is read-only.");
         var convertedKey = DictionaryKey(dictionary, key, keyType);
         var convertedValue = remove ? null : ConvertArgument(value ?? throw new ArgumentException("Supply a value when setting a dictionary entry."), dictionary.ValueType);
-        ResolveForMutation(objectId, expectedRevision);
-        if (!ReferenceEquals(FollowPath(Resolve(objectId), path), target)) throw new InvalidOperationException("The dictionary path changed while preparing the edit.");
+        if (!ReferenceEquals(FollowPath(ResolveObjectTarget(objectId, expectedRevision), path), target)) throw new InvalidOperationException("The dictionary path changed while preparing the edit.");
         if (Revision != expectedRevision) throw new InvalidOperationException("The runtime changed while resolving the dictionary path.");
         ObserveObject(objectId, path, target);
         if (remove)
         { if (!dictionary.Contains(convertedKey)) throw new KeyNotFoundException("The dictionary does not contain that key."); dictionary.Remove!(convertedKey); }
         else dictionary.Set!(convertedKey, convertedValue);
         Changed(objectId, "dictionary", remove ? "remove" : "set", null);
-        return DescribeValue(remove ? null : dictionary.Get(convertedKey));
+        return DescribeObjectValue(remove ? null : dictionary.Get(convertedKey), objectId);
     }
     private object DictionaryKey(DictionaryAccess dictionary, RuntimeArgument key, string? keyType)
     {
@@ -83,7 +82,7 @@ public sealed partial class AvaloniaRuntimeInspector
                 {
                     // A path may now point at another view model or collection. Old
                     // publishers must not update that new object's revision/history.
-                    if (!watch.Target.TryGetTarget(out var observed) || !_objects.TryGetValue(root, out var owner) ||
+                    if (!watch.Target.TryGetTarget(out var observed) || !TryKnownObjectTarget(root, out var owner) ||
                         !ReferenceEquals(FollowPath(owner, observedPath), observed))
                     { watch.Cleanup(); _objectWatches.Remove(key); return; }
                     var description = label.Length == 0 ? eventName : label + "." + eventName;

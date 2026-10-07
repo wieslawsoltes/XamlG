@@ -36,11 +36,11 @@ public sealed partial class AvaloniaRuntimeInspector
         var members = interfaces.SelectMany(item => item.GetProperties()).Where(property => property.GetMethod != null && property.GetIndexParameters().Length == 0)
             .DistinctBy(property => property.Name).OrderBy(property => property.Name, StringComparer.Ordinal).Take(128).Select(property =>
             {
-                try { return new RuntimeMember(property.Name, TypeName(property.PropertyType), "property", property.SetMethod == null, DescribeAccessibilityValue(property.GetValue(provider))); }
+                try { return new RuntimeMember(property.Name, TypeName(property.PropertyType), "property", property.SetMethod == null, DescribeAccessibilityValue(property.GetValue(provider), peerId)); }
                 catch (Exception error) { return new RuntimeMember(property.Name, TypeName(property.PropertyType), "property", true, null, ErrorText(error)); }
             }).ToArray();
         var methods = interfaces.SelectMany(item => item.GetMethods()).Where(Callable).Select(Signature).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).Take(128).ToArray();
-        return new(Revision, peerId, TypeName(type), members, methods);
+        return new(Revision, peerId, TypeName(type), members, methods, DescribeObjectValue(provider, peerId));
     }
 
     public async Task<RuntimeValue> InvokeAccessibilityProviderAsync(string peerId, string providerName, string signature,
@@ -66,7 +66,8 @@ public sealed partial class AvaloniaRuntimeInspector
             await task.WaitAsync(cancellationToken); VerifyAccess();
             result = method.ReturnType.IsGenericType ? task.GetType().GetProperty("Result")?.GetValue(task) : null;
         }
-        return DescribeAccessibilityValue(result);
+        CaptureAccessibility();
+        return DescribeAccessibilityValue(result, peerId);
     }
 
     public RuntimeValue AccessibilityAction(string peerId, RuntimeAccessibilityAction action, long expectedRevision)
@@ -102,7 +103,7 @@ public sealed partial class AvaloniaRuntimeInspector
             foreach (var child in children) pending.Enqueue((child, PeerId(next.Peer), next.Depth + 1));
         }
         foreach (var old in _accessibilityCleanup.Keys.Where(peer => !seen.Contains(peer)).ToArray())
-        { _accessibilityCleanup[old](); _accessibilityCleanup.Remove(old); }
+        { _accessibilityCleanup[old](); _accessibilityCleanup.Remove(old); RetireObjectWatches(PeerId(old)); RetireObjectHandles(PeerId(old)); }
         _accessibilityPeers.Clear();
         foreach (var entry in entries)
         {
@@ -124,7 +125,7 @@ public sealed partial class AvaloniaRuntimeInspector
         var values = new Dictionary<string, RuntimeValue>(StringComparer.Ordinal);
         var errors = new Dictionary<string, string>(StringComparer.Ordinal);
         void Read(string name, Func<object?> get)
-        { try { values[name] = DescribeAccessibilityValue(get()); } catch (Exception error) { errors[name] = ErrorText(error); } }
+        { try { values[name] = DescribeAccessibilityValue(get(), PeerId(peer)); } catch (Exception error) { errors[name] = ErrorText(error); } }
         Read("name", peer.GetName); Read("automationId", peer.GetAutomationId); Read("className", peer.GetClassName);
         Read("controlType", () => peer.GetAutomationControlType().ToString()); Read("helpText", peer.GetHelpText); Read("placeholder", peer.GetPlaceholderText);
         Read("enabled", () => peer.IsEnabled()); Read("offscreen", () => peer.IsOffscreen());
@@ -154,16 +155,17 @@ public sealed partial class AvaloniaRuntimeInspector
         return (type, GetAccessibilityProvider.MakeGenericMethod(type).Invoke(peer, null) ?? throw new InvalidOperationException("This peer no longer supports that provider."));
     }
     private string PeerId(AutomationPeer peer) => _accessibilityIds.GetValue(peer, _ => new(SessionId + ":a" + ++_nextAccessibilityId)).Id;
-    private RuntimeValue DescribeAccessibilityValue(object? value)
+    private RuntimeValue DescribeAccessibilityValue(object? value, string originId)
     {
         if (value is Rect bounds) return new(TypeName(typeof(Rect)), new { bounds.X, bounds.Y, bounds.Width, bounds.Height });
-        if (value is AutomationPeer peer) return new(TypeName(peer.GetType()), new { peerId = _accessibilityPeers.ContainsKey(PeerId(peer)) ? PeerId(peer) : null });
+        if (value is AutomationPeer peer)
+            return DescribeObjectValue(value, originId) with { Value = new { peerId = _accessibilityPeers.ContainsKey(PeerId(peer)) ? PeerId(peer) : null } };
         if (value is IEnumerable<AutomationPeer> peers)
         {
             var ids = peers.Take(501).Select(peer => _accessibilityPeers.ContainsKey(PeerId(peer)) ? PeerId(peer) : null).ToArray();
-            return new(TypeName(value.GetType()), ids.Take(500).ToArray(), Truncated: ids.Length > 500);
+            return DescribeObjectValue(value, originId) with { Value = ids.Take(500).ToArray(), Truncated = ids.Length > 500 };
         }
-        return DescribeValue(value);
+        return DescribeObjectValue(value, originId);
     }
     private void DisposeAccessibility()
     {

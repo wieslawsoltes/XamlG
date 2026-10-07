@@ -21,11 +21,14 @@ public partial class RuntimeWorkbench : IDisposable
     private RuntimeProperty[] _properties = [];
     private RuntimeAccessibilitySnapshot? _accessibility;
     private RuntimeAccessibilityProvider? _provider;
+    private RuntimeObjectInspection? _objectInspection;
+    private RuntimeObjectHandles? _objectHandles;
     private JsonElement? _details;
     private string _selectedId = "", _treeFilter = "", _treeMode = "visual", _propertyFilter = "", _propertyKey = "", _propertyJson = "null", _classes = "";
     private string _panel = "Properties", _key = "Enter", _text = "", _button = "Left", _modifiers = "", _objectPath = "DataContext", _method = "", _methodArguments = "[]";
     private string _peerId = "", _providerName = "", _providerMethod = "", _providerArguments = "[]", _event = "";
     private string _toolName = "", _toolArguments = "{}", _toolFilter = "";
+    private string _objectId = "", _objectInterface = "";
     private string? _error;
     private double? _x, _y;
     private double _wheelX, _wheelY = -1;
@@ -42,8 +45,11 @@ public partial class RuntimeWorkbench : IDisposable
     private AutomationTool? SelectedTool => Tools.FirstOrDefault(tool => tool.Name == _toolName);
     private string[] Modifiers => _modifiers.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
     private string[] ObjectPath => _objectPath.Length == 0 ? [] : _objectPath.Split('.', StringSplitOptions.TrimEntries);
+    private string ObjectTarget => _objectId.Length == 0 ? _selectedId : _objectId;
+    private string? ObjectInterface => string.IsNullOrWhiteSpace(_objectInterface) ? null : _objectInterface;
     private static string Pretty(object? value) => JsonSerializer.Serialize(value, new JsonSerializerOptions(AutomationJson.Options) { WriteIndented = true });
-    private static string Display(RuntimeValue? value) => value == null ? "" : value.Value is JsonElement element && element.ValueKind == JsonValueKind.String ? element.GetString() ?? "" : JsonSerializer.Serialize(value.Value);
+    private static string Display(RuntimeValue? value) => value == null ? "" : value.ObjectId is { } id ? value.Type + " · " + id :
+        value.Value is JsonElement element && element.ValueKind == JsonValueKind.String ? element.GetString() ?? "" : JsonSerializer.Serialize(value.Value);
     private static string Excerpt(string text) => text.Length <= 65536 ? text : text[..65536] + "\n[display excerpt; export the result for complete content]";
     private static string NodeTitle(RuntimeNode node) => (string.IsNullOrEmpty(node.Name) ? "" : node.Name + " · ") + node.Type.Split('.').Last();
     private string PeerTitle(RuntimeAccessibilityNode peer) => Display(peer.Properties.GetValueOrDefault("name")) + " · " + Display(peer.Properties.GetValueOrDefault("controlType"));
@@ -57,6 +63,7 @@ public partial class RuntimeWorkbench : IDisposable
     {
         if (_observedPreview == PreviewRevision) return;
         _observedPreview = PreviewRevision; _snapshot = null; _nodes.Clear(); _selectedId = ""; _properties = []; _details = null; _accessibility = null; _provider = null; _changeSequence = 0;
+        _objectHandles = null; _objectInspection = null; _objectId = ""; _objectInterface = "";
         if (PreviewRevision >= 0)
         { if (_busy) _refreshAfterBusy = true; else await RefreshAsync(); }
     }
@@ -91,7 +98,7 @@ public partial class RuntimeWorkbench : IDisposable
         await ReadPropertiesAsync();
     }
     private Task SelectNodeAsync(string id) => Guard(async () =>
-    { _selectedId = id; _propertyKey = ""; _details = null; _method = ""; _classes = string.Join(' ', Selected?.Classes.Where(value => !value.StartsWith(':')) ?? []); await ReadPropertiesAsync(); });
+    { _selectedId = id; _propertyKey = ""; _details = null; _method = ""; _objectId = ""; _objectInterface = ""; _objectInspection = null; _classes = string.Join(' ', Selected?.Classes.Where(value => !value.StartsWith(':')) ?? []); await ReadPropertiesAsync(); });
     private async Task ReadPropertiesAsync()
     {
         _properties = (await CallAsync("xamlg_runtime_properties", new { objectId = _selectedId })).GetProperty("properties").Deserialize<RuntimeProperty[]>(AutomationJson.Options)!;
@@ -110,12 +117,33 @@ public partial class RuntimeWorkbench : IDisposable
     private Task LayoutAsync() => MutateAsync("xamlg_runtime_layout", new { objectId = _selectedId, expectedRevision = _revision });
     private Task BringIntoViewAsync() => MutateAsync("xamlg_runtime_bring_into_view", new { objectId = _selectedId, expectedRevision = _revision });
     private Task ReadDetailsAsync(string suffix) => Guard(async () => { _details = await CallAsync("xamlg_runtime_" + suffix, new { objectId = _selectedId }); });
-    private Task InspectObjectAsync() => Guard(async () => { _details = await CallAsync("xamlg_runtime_object_inspect", new { objectId = _selectedId, path = ObjectPath }); });
+    private Task InspectObjectAsync() => Guard(() => InspectObjectCoreAsync());
+    private async Task InspectObjectCoreAsync(int offset = 0)
+    {
+        _details = await CallAsync("xamlg_runtime_object_inspect", new { objectId = ObjectTarget, path = ObjectPath, interfaceName = ObjectInterface, offset });
+        _objectInspection = _details.Value.Deserialize<RuntimeObjectInspection>(AutomationJson.Options)!;
+        _method = _objectInspection.Methods.FirstOrDefault() ?? "";
+    }
+    private Task OpenObjectReferenceAsync(string id) => Guard(async () =>
+    {
+        _panel = "Objects"; _objectId = id; _objectPath = ""; _objectInterface = ""; _objectInspection = null;
+        await InspectObjectCoreAsync();
+    });
+    private Task ReadObjectHandlesAsync() => Guard(ReadObjectHandlesCoreAsync);
+    private async Task ReadObjectHandlesCoreAsync() => _objectHandles =
+        (await CallAsync("xamlg_runtime_object_handles", new { })).Deserialize<RuntimeObjectHandles>(AutomationJson.Options)!;
+    private Task ReleaseObjectHandlesAsync(string? id = null) => Guard(async () =>
+    {
+        _details = await CallAsync("xamlg_runtime_object_handles_release", new { objectIds = id == null ? null : new[] { id } });
+        if (id == null || _objectId == id) { _objectId = ""; _objectPath = "DataContext"; _objectInterface = ""; _objectInspection = null; }
+        await ReadObjectHandlesCoreAsync();
+    });
     private Task InvokeMethodAsync() => Guard(async () =>
     {
         var arguments = JsonSerializer.Deserialize<JsonElement>(_methodArguments);
-        _details = await CallAsync("xamlg_runtime_method_invoke", new { objectId = _selectedId, path = ObjectPath, signature = _method, arguments, expectedRevision = _revision });
+        _details = await CallAsync("xamlg_runtime_method_invoke", new { objectId = ObjectTarget, path = ObjectPath, interfaceName = ObjectInterface, signature = _method, arguments, expectedRevision = _revision });
         await RefreshCoreAsync();
+        await ReadObjectHandlesCoreAsync();
     });
     private Task SendKeyAsync() => MutateAsync("xamlg_runtime_input_key", new { objectId = _selectedId, key = _key, modifiers = Modifiers, expectedRevision = _revision });
     private Task SendTextAsync() => MutateAsync("xamlg_runtime_input_text", new { objectId = _selectedId, text = _text, expectedRevision = _revision });
@@ -145,6 +173,7 @@ public partial class RuntimeWorkbench : IDisposable
         var arguments = JsonSerializer.Deserialize<JsonElement>(_providerArguments);
         _details = await CallAsync("xamlg_runtime_accessibility_invoke", new { peerId = _peerId, provider = _providerName, signature = _providerMethod, arguments, expectedRevision = _revision });
         await RefreshCoreAsync();
+        await ReadObjectHandlesCoreAsync();
     });
     private Task AccessibilityActionAsync(RuntimeAccessibilityAction action) => MutateAsync("xamlg_runtime_accessibility_action", new { peerId = _peerId, action, expectedRevision = _revision });
     private void SelectTool(ChangeEventArgs args) { _toolName = args.Value?.ToString() ?? ""; PrepareToolArguments(); }

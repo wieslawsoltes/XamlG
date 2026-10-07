@@ -13,7 +13,7 @@ public sealed partial class AvaloniaRuntimeInspector
     /// is available before a deferred resource is instantiated.</summary>
     public RuntimeSourceInspection Source(string objectId, IReadOnlyList<string>? path = null, RuntimeArgument? resourceKey = null)
     {
-        var target = FollowPath(Resolve(objectId), path);
+        var target = FollowPath(ResolveObjectTarget(objectId), path);
         FrameworkSourceInfo? frameworkSource; XamlSourceInfo? source = null;
         if (resourceKey != null)
         {
@@ -34,65 +34,73 @@ public sealed partial class AvaloniaRuntimeInspector
     }
 
     /// <summary>Read one level of a live object path, including DataContext, collections and public application members.</summary>
-    public RuntimeObjectInspection InspectObject(string objectId, IReadOnlyList<string>? path = null, int offset = 0, int count = 100, bool includeNonPublic = false)
+    public RuntimeObjectInspection InspectObject(string objectId, IReadOnlyList<string>? path = null, int offset = 0, int count = 100, bool includeNonPublic = false, string? interfaceName = null)
     {
         if (offset is < 0 or > 100000 || count is < 1 or > 500) throw new ArgumentOutOfRangeException(nameof(offset));
-        var target = FollowPath(Resolve(objectId), path);
+        var target = FollowPath(ResolveObjectTarget(objectId), path);
         ObserveObject(objectId, path, target);
         if (target == null) return new(Revision, DescribeValue(null), 0, 0, false, [], []);
         var flags = MemberFlags(includeNonPublic);
-        var members = Members(target, flags).ToArray();
+        var contract = ObjectInterface(target, interfaceName);
+        var members = Members(target, flags, contract).ToArray();
         if (members.Length > 100000) throw new InvalidOperationException("Too many object members.");
         var result = members.Skip(offset).Take(count).Select(member =>
         {
-            try { return new RuntimeMember(member.Name, TypeName(member.Type), member.Kind, member.Set == null, DescribeValue(member.Get())); }
+            try { return new RuntimeMember(member.Name, TypeName(member.Type), member.Kind, member.Set == null, DescribeObjectValue(member.Get(), objectId)); }
             catch (Exception error) { return new RuntimeMember(member.Name, TypeName(member.Type), member.Kind, member.Set == null, null, ErrorText(error)); }
         }).ToArray();
-        var methods = target.GetType().GetMethods(flags).Where(Callable).Select(Signature).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).Take(500).ToArray();
-        return new(Revision, DescribeValue(target), members.Length, offset, offset + result.Length < members.Length, result, methods);
+        var methods = ObjectMethods(target, flags, contract).Select(Signature).Order(StringComparer.Ordinal).Take(500).ToArray();
+        return new(Revision, DescribeObjectValue(target, objectId), members.Length, offset, offset + result.Length < members.Length, result, methods,
+            PublicObjectInterfaces(target).Take(128).Select(type => type.AssemblyQualifiedName ?? TypeName(type)).ToArray());
     }
 
-    public RuntimeValue ReadObject(string objectId, IReadOnlyList<string> path)
+    public RuntimeValue ReadObject(string objectId, IReadOnlyList<string> path, string? interfaceName = null)
     {
-        var target = FollowPath(Resolve(objectId), path); ObserveObject(objectId, path, target); return DescribeValue(target);
+        var target = FollowPath(ResolveObjectTarget(objectId), path, interfaceName);
+        if (interfaceName == null) ObserveObject(objectId, path, target);
+        return DescribeObjectValue(target, objectId);
     }
 
-    public RuntimeValue SetObjectMember(string objectId, IReadOnlyList<string> path, RuntimeArgument argument, long expectedRevision)
+    public RuntimeValue SetObjectMember(string objectId, IReadOnlyList<string> path, RuntimeArgument argument, long expectedRevision, string? interfaceName = null)
     {
-        var root = ResolveForMutation(objectId, expectedRevision);
-        var member = WritablePath(root, path);
+        var root = ResolveObjectTarget(objectId, expectedRevision);
+        var member = WritablePath(root, path, interfaceName);
         var value = ConvertArgument(argument, member.Type);
         // Resolving a referenced tree object can discover an intervening topology change.
-        ResolveForMutation(objectId, expectedRevision);
+        ResolveObjectTarget(objectId, expectedRevision);
         member.Set!(value); Changed(objectId, "member", string.Join('.', path), DescribeValue(value));
-        return DescribeValue(member.Get());
+        return DescribeObjectValue(member.Get(), objectId);
     }
 
     public RuntimeValue CreateObjectMember(string objectId, IReadOnlyList<string> path, string typeName,
-        IReadOnlyDictionary<string, RuntimeArgument>? initialValues, long expectedRevision)
+        IReadOnlyDictionary<string, RuntimeArgument>? initialValues, long expectedRevision, string? interfaceName = null)
     {
-        var root = ResolveForMutation(objectId, expectedRevision);
-        var member = WritablePath(root, path);
+        var root = ResolveObjectTarget(objectId, expectedRevision);
+        var member = WritablePath(root, path, interfaceName);
         var type = ResolveType(typeName);
         if (!member.Type.IsAssignableFrom(type)) throw new ArgumentException("The requested type is not assignable to this member.");
         var value = Construct(type, initialValues);
-        ResolveForMutation(objectId, expectedRevision);
+        ResolveObjectTarget(objectId, expectedRevision);
         member.Set!(value); Changed(objectId, "member", string.Join('.', path), DescribeValue(value));
-        return DescribeValue(value);
+        return DescribeObjectValue(value, objectId);
     }
 
     /// <summary>Invokes an exact public signature; getters/setters are exposed by member tools.</summary>
     public async Task<RuntimeValue> InvokeMethodAsync(string objectId, IReadOnlyList<string>? path, string signature,
-        IReadOnlyList<RuntimeArgument> arguments, long expectedRevision, CancellationToken cancellationToken = default)
+        IReadOnlyList<RuntimeArgument> arguments, long expectedRevision, CancellationToken cancellationToken = default, string? interfaceName = null)
     {
-        var target = FollowPath(ResolveForMutation(objectId, expectedRevision), path) ?? throw new InvalidOperationException("The target is null.");
+        var target = FollowPath(ResolveObjectTarget(objectId, expectedRevision), path) ?? throw new InvalidOperationException("The target is null.");
+        var originId = ObjectOrigin(objectId);
         if (arguments.Count > 32) throw new ArgumentException("At most 32 method arguments are supported.");
-        var method = target.GetType().GetMethods(MemberFlags(false)).Where(Callable).SingleOrDefault(method => Signature(method) == signature)
+        var method = ObjectMethods(target, MemberFlags(false), ObjectInterface(target, interfaceName)).SingleOrDefault(method => Signature(method) == signature)
             ?? throw new ArgumentException("Use an exact method signature returned by object inspection.");
         var parameters = method.GetParameters();
         if (parameters.Length != arguments.Count) throw new ArgumentException("The argument count does not match the signature.");
         var values = parameters.Select((parameter, index) => ConvertArgument(arguments[index], parameter.ParameterType)).ToArray();
-        ResolveForMutation(objectId, expectedRevision); cancellationToken.ThrowIfCancellationRequested();
+        var current = FollowPath(ResolveObjectTarget(objectId, expectedRevision), path);
+        if (!target.GetType().IsValueType && !ReferenceEquals(current, target)) throw new InvalidOperationException("The object path changed while preparing the invocation.");
+        if (Revision != expectedRevision) throw new InvalidOperationException("The runtime changed while resolving the invocation target.");
+        cancellationToken.ThrowIfCancellationRequested();
         object? result;
         try { result = method.Invoke(target, values); }
         catch (TargetInvocationException error) { throw new InvalidOperationException(ErrorText(error), error.InnerException); }
@@ -108,7 +116,8 @@ public sealed partial class AvaloniaRuntimeInspector
             VerifyAccess();
             result = method.ReturnType.IsGenericType ? task.GetType().GetProperty("Result")?.GetValue(task) : null;
         }
-        return DescribeValue(result);
+        if (IsPeerHandle(originId)) CaptureAccessibility(); else Capture();
+        return DescribeObjectValue(result, originId);
     }
 
     public IReadOnlyList<RuntimeType> Types(string query = "", int offset = 0, int count = 100)
@@ -126,12 +135,12 @@ public sealed partial class AvaloniaRuntimeInspector
         {
             if (argument.Value is { ValueKind: not (System.Text.Json.JsonValueKind.Undefined or System.Text.Json.JsonValueKind.Null) })
                 throw new ArgumentException("Supply either a literal value or a live object reference.");
-            var value = FollowPath(Resolve(argument.ObjectId), argument.Path);
+            var value = FollowPath(ResolveObjectTarget(argument.ObjectId), argument.Path, argument.InterfaceName);
             if (value != null && !type.IsInstanceOfType(value)) throw new ArgumentException("The referenced object is not assignable to " + TypeName(type));
             if (value == null && type.IsValueType && Nullable.GetUnderlyingType(type) == null) throw new ArgumentException("Null is not valid for this member.");
             return value;
         }
-        if (argument.Path is { Length: > 0 }) throw new ArgumentException("A reference path requires an object ID.");
+        if (argument.Path is { Length: > 0 } || argument.InterfaceName != null) throw new ArgumentException("A reference path or interface requires an object ID.");
         return ConvertValue(argument.Value ?? System.Text.Json.JsonSerializer.SerializeToElement<object?>(null), type);
     }
 
@@ -165,18 +174,23 @@ public sealed partial class AvaloniaRuntimeInspector
         return value;
     }
 
-    private static object? FollowPath(object? root, IReadOnlyList<string>? path)
+    private static object? FollowPath(object? root, IReadOnlyList<string>? path, string? terminalInterface = null)
     {
         ValidatePath(path);
-        foreach (var segment in path ?? []) root = FindMember(root ?? throw new InvalidOperationException("A path member is null."), segment).Get();
+        if (terminalInterface != null && (path == null || path.Count == 0)) throw new ArgumentException("An interface member read requires a non-empty path.");
+        for (var index = 0; index < (path?.Count ?? 0); index++)
+        {
+            if (root == null) throw new InvalidOperationException("A path member is null.");
+            root = FindMember(root, path![index], index == path.Count - 1 ? ObjectInterface(root, terminalInterface) : null).Get();
+        }
         return root;
     }
-    private static MemberAccessor WritablePath(object root, IReadOnlyList<string> path)
+    private static MemberAccessor WritablePath(object root, IReadOnlyList<string> path, string? interfaceName = null)
     {
         ValidatePath(path);
         if (path.Count == 0) throw new ArgumentException("Select a member below the root object.");
         var parent = FollowPath(root, path.Take(path.Count - 1).ToArray()) ?? throw new InvalidOperationException("The parent member is null.");
-        var member = FindMember(parent, path[^1]);
+        var member = FindMember(parent, path[^1], ObjectInterface(parent, interfaceName));
         if (member.Set == null) throw new InvalidOperationException("The member is read-only.");
         return member;
     }
@@ -185,10 +199,18 @@ public sealed partial class AvaloniaRuntimeInspector
         if (path?.Count > 32 || path?.Any(segment => string.IsNullOrEmpty(segment) || segment.Length > 1024) == true)
             throw new ArgumentException("Use at most 32 property names, dictionary keys or numeric indices.");
     }
-    private static MemberAccessor FindMember(object target, string name) => Members(target, MemberFlags(false)).FirstOrDefault(member => member.Name == name)
+    private static MemberAccessor FindMember(object target, string name, Type? contract = null) => Members(target, MemberFlags(false), contract).FirstOrDefault(member => member.Name == name)
         ?? throw new ArgumentException("Unknown public object member: " + name);
-    private static IEnumerable<MemberAccessor> Members(object target, BindingFlags flags)
+    private static IEnumerable<MemberAccessor> Members(object target, BindingFlags flags, Type? contract = null)
     {
+        if (contract != null)
+        {
+            foreach (var property in contract.GetInterfaces().Prepend(contract).SelectMany(type => type.GetProperties())
+                .Where(property => property.GetMethod != null && property.GetIndexParameters().Length == 0)
+                .DistinctBy(property => property.Name).OrderBy(property => property.Name, StringComparer.Ordinal))
+                yield return new(property.Name, property.PropertyType, "interface", () => property.GetValue(target), property.SetMethod == null ? null : value => property.SetValue(target, value));
+            yield break;
+        }
         if (target is IDictionary dictionary)
         {
             foreach (var key in dictionary.Keys.Cast<object>().Take(100001))

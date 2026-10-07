@@ -28,7 +28,7 @@ public sealed partial class AvaloniaRuntimeInspector
             if (values.Length > 1000) throw new InvalidOperationException("Too many values in a diagnostic frame.");
             return new RuntimeValueFrame(index, DiagnosticMember(frame, "Type")?.ToString() ?? "unknown", DiagnosticMember(frame, "Priority")?.ToString() ?? "unknown",
                 DiagnosticMember(frame, "IsActive") is true, source == null ? "null" : TypeName(source.GetType()), source is Style style ? style.Selector?.ToString() : null,
-                values.Select(value => new RuntimeFrameValue(Key((AvaloniaProperty)DiagnosticMember(value, "Property")!), DescribeValue(DiagnosticMember(value, "Value")))).ToArray());
+                values.Select(value => new RuntimeFrameValue(Key((AvaloniaProperty)DiagnosticMember(value, "Property")!), DescribeObjectValue(DiagnosticMember(value, "Value"), objectId))).ToArray());
         }).ToArray();
     }
 
@@ -40,7 +40,7 @@ public sealed partial class AvaloniaRuntimeInspector
             var binding = BindingOperations.GetBindingExpressionBase(obj, property);
             if (binding == null) continue;
             bindings.Add(new(Key(property), TypeName(binding.GetType()), DiagnosticMember(binding, "Description") as string, DiagnosticMember(binding, "ErrorType")?.ToString(),
-                DiagnosticMember(binding, "IsRunning") as bool?, DiagnosticMember(binding, "Priority")?.ToString(), DescribeValue(obj.GetValue(property))));
+                DiagnosticMember(binding, "IsRunning") as bool?, DiagnosticMember(binding, "Priority")?.ToString(), DescribeObjectValue(obj.GetValue(property), objectId)));
         }
         return bindings;
     }
@@ -77,7 +77,7 @@ public sealed partial class AvaloniaRuntimeInspector
         if (obj.Styles.Count > 10000) throw new InvalidOperationException("Too many local styles.");
         return obj.Styles.Select((item, index) => new RuntimeStyle(index, TypeName(item.GetType()), (item as Style)?.Selector?.ToString(),
             item is StyleBase style ? style.Setters.OfType<Setter>().Take(1000).Where(setter => setter.Property != null)
-                .Select(setter => new RuntimeFrameValue(Key(setter.Property!), DescribeValue(setter.Value))).ToArray() : [])).ToArray();
+                .Select(setter => new RuntimeFrameValue(Key(setter.Property!), DescribeObjectValue(setter.Value, objectId))).ToArray() : [])).ToArray();
     }
 
     public int AddStyle(string objectId, string targetType, string? className, IReadOnlyDictionary<string, RuntimeArgument> setters, long expectedRevision)

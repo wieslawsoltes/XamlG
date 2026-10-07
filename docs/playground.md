@@ -67,6 +67,29 @@ disabled; remote clients retain the separate permission gate. Typed runtime inpu
 uses Avalonia's private platform APIs, so `XamlG.AvaloniaRuntime` pins its dependency
 to exactly `12.1.3`.
 
+The **Objects** section also inspects returned objects. Property, dictionary and
+method results expose an `objectId` and `referenceKind` when a live reference is
+available. Use that ID with an empty path to inspect the result, or pass it in a
+typed method argument such as `{ "objectId": "…" }`. Tree, accessibility-peer and
+retained object IDs are accepted by object-path and dictionary operations; tree
+operations such as reparenting still require a current tree node.
+
+Choose a listed public interface and inspect again to read explicit interface
+members or invoke their exact signatures. This includes accessibility text-range
+objects returned by providers. MCP uses the optional `interfaceName` argument;
+member reads/writes apply it to the final path member, and method calls apply it
+to the selected target.
+
+The inspector retains at most 512 non-scalar reference objects with absolute
+five-minute leases. A lease keeps the original object's identity even if a source
+property later changes. It retires when its originating tree node or peer leaves
+the preview, when the preview is replaced, or when explicitly released. Inspect
+and release these leases under **Objects → Retained objects**, or with
+`xamlg_runtime_object_handles` / `xamlg_runtime_object_handles_release`. Releasing
+does not call application `Dispose` methods. Expiry releases inspector references
+on the dispatcher; every access checks the deadline. A full handle table reports
+`referenceError` on the returned value without replaying a completed method.
+
 ## Explicit execution modes
 
 **Run preview** executes trusted generated code in the editor tab for visual design, with the studio's browser-origin capabilities. Review code before using it.
