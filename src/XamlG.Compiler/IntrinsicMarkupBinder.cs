@@ -7,7 +7,7 @@ namespace XamlG.Compiler;
 
 /// <summary>Normalizes intrinsic markup and object forms while preserving the namespace
 /// scopes of property values and explicit generic arguments independently.</summary>
-internal sealed class IntrinsicMarkupBinder(BindingContext context)
+internal sealed class IntrinsicMarkupBinder(BindingContext context, bool report = true)
 {
     public BoundExpression? Bind(MarkupExtensionSyntax syntax, ITypeSymbol target, NamespaceScope scope)
     {
@@ -89,9 +89,9 @@ internal sealed class IntrinsicMarkupBinder(BindingContext context)
         switch (kind)
         {
             case "Type":
-                var type = context.Values.ResolveTypeLiteral(argument, scope, span, typeArguments, typeArgumentScope: typeArgumentScope);
+                var type = context.Values.ResolveTypeLiteral(argument, scope, span, typeArguments, report, typeArgumentScope);
                 return type == null ? null : new BoundTypeExpression(type, context.Types.Find(ClrNames.Type)!, span);
-            case "Static": return new MarkupBinder(context).Static(argument, target, scope, span, typeArguments, typeArgumentScope);
+            case "Static": return new MarkupBinder(context).Static(argument, target, scope, span, typeArguments, typeArgumentScope, report);
             case "Reference": return new BoundReferenceExpression(argument, target, span);
             default: return null;
         }
@@ -100,5 +100,5 @@ internal sealed class IntrinsicMarkupBinder(BindingContext context)
     private static string? ArgumentProperty(string kind) => kind switch { "Type" => "TypeName", "Static" => "Member", "Reference" => "Name", _ => null };
     private bool IsIgnored(ExpandedName name, NamespaceScope scope) => name.Namespace != null &&
         (name.Namespace == XamlNames.Compatibility || scope.IgnoredNamespaces.Contains(name.Namespace) || context.Types.Configuration.IgnoredNamespaces.Contains(name.Namespace));
-    private BoundExpression? Invalid(string message, TextSpan span) { context.Report("XG1009", message, span); return null; }
+    private BoundExpression? Invalid(string message, TextSpan span) { if (report) context.Report("XG1009", message, span); return null; }
 }

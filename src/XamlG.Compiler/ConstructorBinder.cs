@@ -29,7 +29,7 @@ internal sealed class ConstructorBinder
                 }
                 else
                 {
-                    var type = _context.Values.PeekValueType(argument, scope);
+                    var type = _context.Values.PeekValueType(argument, scope, target.NameScopeId);
                     if (type == null && !parameter.AcceptsNull()) { valid = false; break; }
                     if (type != null && !_context.Types.Compilation.ClassifyCommonConversion(type, parameter).IsImplicit)
                     {

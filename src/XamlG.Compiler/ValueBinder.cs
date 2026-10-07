@@ -171,11 +171,7 @@ public sealed class ValueBinder
         }
         return _context.ResolveType(element.Name, nested, element.NameSpan, nested.Directive(element, "TypeArguments")?.Value, report: false);
     }
-    public ITypeSymbol? PeekValueType(XamlSyntaxNode syntax, NamespaceScope scope)
-    {
-        var type = PeekNodeType(syntax, scope);
-        return type == null ? null : _context.Types.MarkupExtensionMethod(type)?.ReturnType ?? type;
-    }
+    public ITypeSymbol? PeekValueType(XamlSyntaxNode syntax, NamespaceScope scope, int nameScope = 0) => new ValueTypeProbe(_context).Peek(syntax, scope, nameScope);
     public bool TryGetStringLiteral(XamlSyntaxNode syntax, NamespaceScope scope, out string value)
     {
         if (syntax is XamlTextSyntax text) { value = text.Value; return true; }

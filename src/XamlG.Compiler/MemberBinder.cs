@@ -127,7 +127,7 @@ public sealed class MemberBinder
             if (isCollection)
             {
                 if (member?.CanWrite == true && canReplace && new CollectionReplacementBinder(_context).TryBind(target, member, node, scope)) continue;
-                var nodeType = _context.Values.PeekValueType(node, scope);
+                var nodeType = _context.Values.PeekValueType(node, scope, target.NameScopeId);
                 // The first value can replace the collection; later values add to that instance.
                 if (member?.CanWrite == true && canReplace && nodeType != null && _context.Types.Compilation.ClassifyCommonConversion(nodeType, member.ValueType).IsImplicit)
                 {
@@ -157,7 +157,7 @@ public sealed class MemberBinder
         var methods = _context.Types.AddMethods(type).Where(m => m.Parameters.Length == (key == null ? 1 : 2)).ToArray();
         if (!new CollectionKeyBinder(_context).TryBind(key, elementScope, ref methods, out var boundKey)) return;
         if (new DynamicCollectionBinder(_context).TryBind(target, member, syntax, scope, boundKey, methods)) return;
-        var nodeType = _context.Values.PeekValueType(syntax, scope);
+        var nodeType = _context.Values.PeekValueType(syntax, scope, target.NameScopeId);
         var isLiteral = _context.Values.TryGetStringLiteral(syntax, scope, out var literal);
         if (syntax is XamlTextSyntax && isLiteral)
         {

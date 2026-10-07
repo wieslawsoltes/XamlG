@@ -31,19 +31,20 @@ internal sealed class MarkupBinder
         var method = _context.Types.MarkupExtensionMethod(obj.Type);
         return method == null ? null : new BoundMarkupExpression(obj, method, method.ReturnType, span);
     }
-    public BoundExpression? Static(string text, ITypeSymbol target, NamespaceScope scope, TextSpan span, string? typeArguments = null, NamespaceScope? typeArgumentScope = null)
+    public BoundExpression? Static(string text, ITypeSymbol target, NamespaceScope scope, TextSpan span, string? typeArguments = null, NamespaceScope? typeArgumentScope = null, bool report = true)
     {
         text = text.Trim();
         var dot = text.LastIndexOf('.');
-        if (dot < 1) return Missing("x:Static requires Type.Member.", span);
-        var owner = _context.ResolveType(text.Substring(0, dot), scope, span, typeArguments, typeArgumentScope: typeArgumentScope);
+        if (dot < 1) return report ? Missing("x:Static requires Type.Member.", span) : null;
+        var owner = _context.ResolveType(text.Substring(0, dot), scope, span, typeArguments, report, typeArgumentScope: typeArgumentScope);
         if (owner == null) return null;
         var member = owner.Members(text.Substring(dot + 1)).FirstOrDefault(m => m.IsStatic && _context.Types.IsAccessible(m) &&
             (m is IFieldSymbol || m is IPropertySymbol p && p.GetMethod != null && _context.Types.IsAccessible(p.GetMethod)));
-        if (member == null) return Missing($"Static member '{text}' was not found or is inaccessible.", span);
+        if (member == null) return report ? Missing($"Static member '{text}' was not found or is inaccessible.", span) : null;
         _context.Symbols.Add(new(span, member, "static"));
         var type = member is IFieldSymbol field ? field.Type : ((IPropertySymbol)member).Type;
-        return _context.Values.Coerce(new BoundStaticExpression(member, type, span), target, span);
+        var value = new BoundStaticExpression(member, type, span);
+        return report ? _context.Values.Coerce(value, target, span) : value;
     }
     private BoundExpression? Missing(string message, TextSpan span) { _context.Report("XG1009", message, span); return null; }
 }

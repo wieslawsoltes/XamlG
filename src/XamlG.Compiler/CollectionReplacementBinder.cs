@@ -11,7 +11,7 @@ internal sealed class CollectionReplacementBinder(BindingContext context)
     public bool TryBind(ObjectBindingBuilder target, BoundMember member, XamlSyntaxNode syntax, NamespaceScope scope)
     {
         if (syntax is XamlElementSyntax element && scope.Push(element).Directive(element, "Key") != null) return false;
-        if (syntax is not XamlTextSyntax && context.Values.PeekValueType(syntax, scope)?.SpecialType is not (SpecialType.System_Object or SpecialType.System_String))
+        if (syntax is not XamlTextSyntax && context.Values.PeekValueType(syntax, scope, target.NameScopeId)?.SpecialType is not (SpecialType.System_Object or SpecialType.System_String))
         {
             if (syntax is not XamlElementSyntax intrinsic) return false;
             var name = scope.Push(intrinsic).Expand(intrinsic.Name);

@@ -17,7 +17,7 @@ internal sealed class DynamicCollectionBinder(BindingContext context)
         {
             if (!text.Value.StartsWith("{", StringComparison.Ordinal) || text.Value.StartsWith("{}", StringComparison.Ordinal)) return false;
         }
-        else if (context.Values.PeekValueType(syntax, scope)?.SpecialType != SpecialType.System_Object) return false;
+        else if (context.Values.PeekValueType(syntax, scope, target.NameScopeId)?.SpecialType != SpecialType.System_Object) return false;
 
         var value = context.Values.BindNode(syntax, context.Types.Special(SpecialType.System_Object), scope, target.NameScopeId, normalizeText: false);
         if (value == null) return true;
