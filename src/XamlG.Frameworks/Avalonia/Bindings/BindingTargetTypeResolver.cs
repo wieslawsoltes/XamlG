@@ -9,7 +9,7 @@ namespace XamlG.Frameworks.Avalonia.Bindings;
 internal static class BindingTargetTypeResolver
 {
     public static INamedTypeSymbol Resolve(BindingContext context, ObjectBindingBuilder target) =>
-        target.Type.HasMetadataName(AvaloniaStyleMetadata.Setter)
+        AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Setter)
             ? AvaloniaStyleObjectRule.FindTarget(context, target) ?? target.Type
             : target.Type;
 
@@ -25,9 +25,9 @@ internal static class BindingTargetTypeResolver
                 return declared;
             if (contract != null && context.Types.Compilation.ClassifyCommonConversion(ancestor.Type, contract).IsImplicit)
                 return ancestor.Type;
-            if (ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate) ||
-                ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) ||
-                ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.Style))
+            if (AvaloniaStyleScope.IsTemplate(ancestor.Type) ||
+                AvaloniaStyleScope.Is(ancestor.Type, AvaloniaStyleMetadata.ControlTheme) ||
+                AvaloniaStyleScope.Is(ancestor.Type, AvaloniaStyleMetadata.Style))
                 return null;
         }
         return null;

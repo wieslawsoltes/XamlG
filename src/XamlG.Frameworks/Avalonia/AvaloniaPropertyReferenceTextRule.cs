@@ -27,8 +27,8 @@ public sealed class AvaloniaPropertyReferenceTextRule : IXamlTextConversionRule
                 // nested template. An unknown selector owner must remain unknown.
                 if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector) && selector.HasTemplateScope)
                 { owner = selector.TemplateOwnerType; break; }
-                if (ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate) ||
-                    ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme))
+                if (AvaloniaStyleScope.IsTemplate(ancestor.Type) ||
+                    AvaloniaStyleScope.Is(ancestor.Type, AvaloniaStyleMetadata.ControlTheme))
                 {
                     if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.TargetType, out var templateType)) owner = templateType;
                     break;
@@ -39,8 +39,8 @@ public sealed class AvaloniaPropertyReferenceTextRule : IXamlTextConversionRule
             // A standalone Style has no enclosing theme or concrete ControlTemplate.
             // Only use its target when there was no intervening template boundary.
             if (owner == null && !context.Ancestors.Any(ancestor =>
-                ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate) ||
-                ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) ||
+                AvaloniaStyleScope.IsTemplate(ancestor.Type) ||
+                AvaloniaStyleScope.Is(ancestor.Type, AvaloniaStyleMetadata.ControlTheme) ||
                 ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector) && selector.HasTemplateScope))
                 owner = styleFallback;
         }
@@ -54,9 +54,9 @@ public sealed class AvaloniaPropertyReferenceTextRule : IXamlTextConversionRule
                 { owner = declared; break; }
                 if (animatable != null && context.Types.Compilation.ClassifyCommonConversion(ancestor.Type, animatable).IsImplicit)
                 { owner = ancestor.Type; break; }
-                if (ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.Style) ||
-                    ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) ||
-                    ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate)) break;
+                if (AvaloniaStyleScope.Is(ancestor.Type, AvaloniaStyleMetadata.Style) ||
+                    AvaloniaStyleScope.Is(ancestor.Type, AvaloniaStyleMetadata.ControlTheme) ||
+                    AvaloniaStyleScope.IsTemplate(ancestor.Type)) break;
             }
         }
         // Constructor ranking is speculative: an unsuccessful conversion must not

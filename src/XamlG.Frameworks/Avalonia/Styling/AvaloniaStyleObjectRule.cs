@@ -12,16 +12,12 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
     {
         var inherited = FindTarget(context, target);
         var declared = target.Scope.Directive(target.Syntax, AvaloniaStyleMetadata.SetterTargetType);
-        if (declared != null)
-        {
-            inherited = AvaloniaBindingScopeRule.ResolveDataType(context, declared.Value, target.Scope, declared.ValueSpan);
-            if (inherited != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, inherited);
-        }
-        if (target.Type.HasMetadataName(AvaloniaStyleMetadata.Style))
+        var declaredType = declared == null ? null : AvaloniaBindingScopeRule.ResolveDataType(context, declared.Value, target.Scope, declared.ValueSpan);
+        if (AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Style))
         {
             target.Annotations.Set(AvaloniaStyleAnnotations.AssignedProperties, new HashSet<ISymbol>(SymbolEqualityComparer.Default));
             var source = TextMember(target.Syntax, AvaloniaStyleMetadata.SelectorMember);
-            if (source is { } selector)
+            if (source is { } selector && !string.IsNullOrWhiteSpace(selector.Text))
             {
                 var syntax = AvaloniaSelectorParser.Parse(selector.Text, selector.Span, context.Diagnostics.Add, context.Cancellation);
                 var bound = syntax == null ? null : new AvaloniaSelectorBinder(context, target.Scope, inherited, FindNestingSelector(context, target)).Bind(syntax);
@@ -31,39 +27,49 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
                     if (bound.TargetType != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, bound.TargetType);
                 }
             }
-            else if (inherited != null)
-                target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, inherited);
+            else
+            {
+                var owner = FindStyleOwner(context, target);
+                if (owner != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, owner);
+                if (source != null && context.Types.Find(AvaloniaStyleMetadata.Selector) is { } selectorType)
+                    target.Annotations.Set(AvaloniaStyleAnnotations.Selector, new BoundSelector(new BoundConstantExpression(null, selectorType, source.Value.Span), owner));
+            }
         }
-        else if (target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) || target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate))
+        else if (AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.ControlTheme) || AvaloniaStyleScope.IsTemplate(target.Type))
         {
             // Always determine the nearest semantic owner. An outer template's target
             // must not shadow a concrete control receiving a nested template.
-            if (declared == null && target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate))
+            var theme = AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.ControlTheme);
+            if (!theme)
                 inherited = BindingTargetTypeResolver.FindTemplateOwner(context, target);
-            var source = TextMember(target.Syntax, AvaloniaStyleMetadata.TargetTypeMember);
-            var type = source is { } explicitType
-                ? (context.Values.BindText(explicitType.Text, context.Types.Find(ClrNames.Type)!, target.Scope, explicitType.Span) as BoundTypeExpression)?.ReferencedType as INamedTypeSymbol
-                : inherited;
+            var hasTarget = AvaloniaStyleTargetType.TryRead(context, target, out var type);
+            if (!hasTarget)
+            {
+                if (theme) context.Report("XG3116", "ControlTheme requires an explicit TargetType.", target.Syntax.NameSpan);
+                else type = inherited ?? context.Types.Find(AvaloniaMetadata.Control);
+            }
             if (type != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, type);
-            if (target.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme))
+            if (theme)
                 target.Annotations.Set(AvaloniaStyleAnnotations.AssignedProperties, new HashSet<ISymbol>(SymbolEqualityComparer.Default));
         }
-        else if (target.Type.HasMetadataName(AvaloniaStyleMetadata.Setter))
+        else if (AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Setter))
         {
             var source = TextMember(target.Syntax, AvaloniaStyleMetadata.PropertyMember);
-            if (source is not { } property) return;
-            var resolved = AvaloniaRegisteredPropertyResolver.Resolve(context, inherited, property.Text, target.Scope, property.Span);
-            if (resolved == null) return;
-            target.Annotations.Set(AvaloniaStyleAnnotations.SetterProperty, resolved);
-            var parent = context.Ancestors.Skip(1).FirstOrDefault();
-            if (parent != null && parent.Annotations.TryGet(AvaloniaStyleAnnotations.AssignedProperties, out var assigned) && !assigned.Add(resolved.Field))
-                context.Report("XG3107", "A style cannot assign the same registered property twice: " + property.Text, property.Span);
+            if (source is { } property && AvaloniaRegisteredPropertyResolver.Resolve(context, declaredType ?? inherited, property.Text, target.Scope, property.Span) is { } resolved)
+            {
+                target.Annotations.Set(AvaloniaStyleAnnotations.SetterProperty, resolved);
+                var parent = context.Ancestors.Skip(1).FirstOrDefault();
+                if (parent != null && parent.Annotations.TryGet(AvaloniaStyleAnnotations.AssignedProperties, out var assigned) && !assigned.Add(resolved.Field))
+                    context.Report("XG3107", "A style cannot assign the same registered property twice: " + property.Text, property.Span);
+            }
         }
+        // The directive wraps the inferred style metadata and is nearest to its setters.
+        if (declaredType != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, declaredType);
     }
 
     public void Complete(BindingContext context, ObjectBindingBuilder target)
     {
-        if (!target.Type.HasMetadataName(AvaloniaStyleMetadata.Setter)) return;
+        if (!AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Setter)) return;
         // Property precedes Value regardless of XML attribute order: ISetterValue.Initialize
         // observes the registered property when the Value setter is called.
         var property = target.Assignments.OfType<BoundSetAssignment>().FirstOrDefault(a => a.Member.Name == AvaloniaStyleMetadata.PropertyMember);
@@ -76,9 +82,19 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
         {
             if (ReferenceEquals(current, ancestor)) continue;
             if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector)) return selector;
-            if (ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTheme) ||
-                ancestor.Type.HasMetadataName(AvaloniaStyleMetadata.ControlTemplate)) break;
+            if (AvaloniaStyleScope.Is(ancestor.Type, AvaloniaStyleMetadata.ControlTheme) ||
+                AvaloniaStyleScope.IsTemplate(ancestor.Type)) break;
         }
+        return null;
+    }
+
+    private static INamedTypeSymbol? FindStyleOwner(BindingContext context, ObjectBindingBuilder current)
+    {
+        var parent = context.Ancestors.FirstOrDefault(ancestor => !ReferenceEquals(ancestor, current) && !AvaloniaStyleScope.Is(ancestor.Type, AvaloniaStyleMetadata.Styles));
+        if (parent == null) return null;
+        if (AvaloniaStyleScope.Is(parent.Type, AvaloniaStyleMetadata.StyledElement)) return parent.Type;
+        if (AvaloniaStyleScope.Is(parent.Type, AvaloniaStyleMetadata.ControlTheme))
+            context.Report("XG3116", "A Style inside a ControlTheme requires a selector.", current.Syntax.NameSpan);
         return null;
     }
 
@@ -91,7 +107,7 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
 
     internal static (string Text, TextSpan Span)? TextMember(XamlElementSyntax element, string name)
     {
-        var attribute = element.Attributes.FirstOrDefault(a => a.Name == name);
+        var attribute = element.Attributes.FirstOrDefault(a => a.Name == name || a.LocalName.EndsWith("." + name, StringComparison.Ordinal));
         if (attribute != null) return (attribute.Value, attribute.ValueSpan);
         var property = element.Children.OfType<XamlElementSyntax>().FirstOrDefault(e => e.LocalName.EndsWith("." + name, StringComparison.Ordinal));
         if (property == null || property.Children.OfType<XamlElementSyntax>().Any()) return null;

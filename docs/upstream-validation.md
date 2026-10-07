@@ -36,11 +36,13 @@ Compare behavior against the pinned source as well as its tests. Native compiler
 This is an ongoing source audit. Passing the current suites does not close the remaining work:
 
 - Complete the framework-transform comparison beyond the portable corpus, including Avalonia animation, binding, selector and resource behavior. Existing framework tests and theme gates remain relevant but do not certify untested combinations.
-- The Avalonia 12.1.3 source comparison has identified concrete follow-up work: duplicate-setter warning severity (currently an error in XamlG), warnings for item containers placed inside data templates, and metadata scopes for custom template implementations and derived style classes. The transform inventory is still being reviewed.
+- The Avalonia 12.1.3 source comparison has identified concrete follow-up work: duplicate-setter warning severity (currently an error in XamlG), warnings for item containers placed inside data templates, and styles included in merged resource dictionaries. The transform inventory is still being reviewed.
 
 The native Avalonia suite now also references the pinned `Avalonia.Markup.Xaml.Loader` 12.1.3 package solely for differential tests. `ContainerQueryTests` compares compiled query construction, invalid-input rejection and named-container layout behavior against that compiler. Production projects retain no XamlX or runtime-XAML-loader dependency. The query parser and binder emit typed public `StyleQueries` calls and preserve the pinned compiled transform's height/conjunction behavior, which differs from Avalonia's reflection query parser.
 
 `TemplatePartTests` compares missing/incorrect part diagnostics, inherited and overridden declarations, explicit/inferred target types and nested/outer namescope isolation against the same package. `BoundDeferredExpression.NameScopeId` retains the scope allocated by binding, and the name registry preserves declaration spans for those diagnostics.
+
+`StyleScopeTests` compares derived styles/themes, custom template scopes declared through an interface, object-form and qualified target properties, selectorless owning-control inference, invalid theme scopes and `x:SetterTargetType` precedence against the same compiler. Template property references use those semantic scopes when resolving `TemplateBinding` values.
 
 ## Run
 

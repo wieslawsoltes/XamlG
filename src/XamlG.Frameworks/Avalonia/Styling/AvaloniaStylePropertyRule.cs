@@ -12,7 +12,7 @@ public sealed class AvaloniaStylePropertyRule : IXamlPropertyBindingRule
     public bool TryBind(BindingContext context, ObjectBindingBuilder target, BoundMember member,
         ImmutableArray<XamlSyntaxNode> values, NamespaceScope scope, TextSpan span, bool isAttribute)
     {
-        if (target.Type.HasMetadataName(AvaloniaStyleMetadata.Style) && member.Name == AvaloniaStyleMetadata.SelectorMember)
+        if (AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Style) && member.Name == AvaloniaStyleMetadata.SelectorMember)
         {
             if (target.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector))
                 context.Members.AddSet(target, member, selector.Expression, span);
@@ -27,7 +27,7 @@ public sealed class AvaloniaStylePropertyRule : IXamlPropertyBindingRule
                     target.Assignments.Add(new BoundAddAssignment(member, add, ImmutableArray.Create<BoundExpression>(new BoundConstantExpression(name, add.Parameters[0].Type, item.Span)), item.Span));
             return true;
         }
-        if (!target.Type.HasMetadataName(AvaloniaStyleMetadata.Setter)) return false;
+        if (!AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Setter)) return false;
         if (member.Name == AvaloniaStyleMetadata.PropertyMember)
         {
             if (target.Annotations.TryGet(AvaloniaStyleAnnotations.SetterProperty, out var property))
