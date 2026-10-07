@@ -19,7 +19,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
     public IReadOnlyList<AgentTask> Tasks => _tasks.Values.ToArray();
     public event Action<AgentEvent>? EventPublished;
 
-    public AgentTask CreateTask(string name, IAgentProvider provider, string model)
+    public AgentTask CreateTask(string name, IAgentProvider provider, string model, CancellationToken workspaceLifetime = default)
     {
         lock (_taskGate)
         {
@@ -27,7 +27,8 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
         if (_tasks.Count >= 8) throw new InvalidOperationException("At most eight tasks can be retained.");
         if (string.IsNullOrWhiteSpace(name) || name.Length > 200 || string.IsNullOrWhiteSpace(model) || model.Length > 200)
             throw new ArgumentException("A task name and model ID of at most 200 characters are required.");
-        var task = new AgentTask(Guid.NewGuid().ToString("N"), name, provider, model);
+        workspaceLifetime.ThrowIfCancellationRequested();
+        var task = new AgentTask(Guid.NewGuid().ToString("N"), name, provider, model, workspaceLifetime);
         _tasks.TryAdd(task.Id, task); return task;
         }
     }
@@ -57,43 +58,59 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
         Func<AutomationReview, CancellationToken, Task<AgentApproval>>? review,
         Func<AgentQuestion, CancellationToken, Task<string>>? askUser, CancellationToken cancellationToken)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this); options.Limits.Validate();
+        ObjectDisposedException.ThrowIf(_disposed, this); options.Limits.Validate(); options.Compaction.Validate();
         var task = GetTask(id);
         if (!await _runGate.WaitAsync(0, cancellationToken)) throw new InvalidOperationException("An agent is already running in this IDE.");
         var started = false;
+        var previousStatus = task.Status;
+        var preparing = false;
         try
         {
-            EnsureIdle(task);
+            EnsureIdle(task); EnsureCurrentWorkspace(task);
+            if (task.RetryAfterUtc > DateTimeOffset.UtcNow) throw new InvalidOperationException($"The provider cooldown lasts until {task.RetryAfterUtc:O}. Resume after that deadline.");
+            if (task.OutputLimitToExceed is { } output && options.Limits.OutputTokensPerRequest <= output)
+                throw new InvalidOperationException($"Raise the output allowance above {output:N0} tokens before resuming.");
             if (task.Status is AgentTaskStatus.Failed or AgentTaskStatus.Cancelled) throw new InvalidOperationException("Start a new task after denial, cancellation or an invalid response.");
-            using var lease = new AutomationLease(options.Policy, options.LeaseDuration, cancellationToken);
+            using var workspaceRun = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, task.WorkspaceLifetime);
+            using var lease = new AutomationLease(options.Policy, options.LeaseDuration, workspaceRun.Token);
             lease.Token.ThrowIfCancellationRequested();
             lock (task.Sync)
             {
-                var queuedIndex = -1;
                 if (queuedRun != null)
-                {
-                    queuedIndex = QueuedIndex(task, queuedRun.Id, queuedRun.Revision);
-                    message = task.FollowUps[queuedIndex].Text;
-                }
+                    message = task.FollowUps[QueuedIndex(task, queuedRun.Id, queuedRun.Revision)].Text;
                 if (message != null)
                 {
                     if (task.PendingReply != null || task.Status == AgentTaskStatus.Paused) throw new InvalidOperationException("Resume the pending turn before adding a follow-up.");
                     if (string.IsNullOrWhiteSpace(message) || message.Length > 262144) throw new ArgumentException("A bounded, nonempty task message is required.");
+                    if (task.UserRequests.Sum(request => (long)request.Length) + message.Length > 2_000_000)
+                        throw new InvalidOperationException("Retained user requests reached the task limit. Create a new task with a reviewed context handoff.");
+                }
+                else if (task.Status != AgentTaskStatus.Paused) throw new InvalidOperationException("Only a paused task can be resumed without a new message.");
+                task.Status = AgentTaskStatus.Preparing; preparing = true;
+            }
+            _activeLease = lease;
+            // Checkpoint and catalog failures must not consume the reviewed message.
+            var checkpoint = workspace != null && (message != null || task.BeforeRun == null)
+                ? await CaptureWorkspaceAsync(lease.Token) : null;
+            var local = LocalTools(task, askUser, lease.Token);
+            var tools = host.Tools.Concat(local.Tools).ToArray();
+            var catalog = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
+            lease.Token.ThrowIfCancellationRequested(); EnsureCurrentWorkspace(task);
+            lock (task.Sync)
+            {
+                var queuedIndex = queuedRun == null ? -1 : QueuedIndex(task, queuedRun.Id, queuedRun.Revision);
+                if (message != null)
+                {
                     task.Goal ??= message; task.LatestRequest = message;
                     task.UserRequests.Add(message); task.Messages.Add(new(AgentMessageKind.User, message));
                     if (queuedIndex >= 0) { task.FollowUps.RemoveAt(queuedIndex); task.QueueRevision++; }
                 }
-                else if (task.Status != AgentTaskStatus.Paused) throw new InvalidOperationException("Only a paused task can be resumed without a new message.");
+                task.BeforeRun ??= checkpoint;
+                if (checkpoint != null) task.BeforeLatestRun = checkpoint;
+                started = true; task.Status = AgentTaskStatus.Running; task.StatusReason = null;
             }
-            started = true;
-            _activeLease = lease; task.Status = AgentTaskStatus.Running; task.StatusReason = null;
             if (message != null) Publish(task, "user", message);
-            if (workspace != null && task.BeforeRun == null)
-                task.BeforeRun = await CaptureWorkspaceAsync(lease.Token);
-            var local = LocalTools(task, askUser, lease.Token);
-            var tools = host.Tools.Concat(local.Tools).ToArray();
-            var catalog = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
-            var requests = 0; var calls = 0;
+            var budget = new RunBudget(); var calls = 0;
             while (true)
             {
                 lease.Token.ThrowIfCancellationRequested();
@@ -101,47 +118,19 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 if (task.PendingReply == null)
                 {
                     var request = new AgentRequest(task.Model, options.Instructions, task.Messages.ToArray(), tools, options.Limits.OutputTokensPerRequest);
-                    task.ContextBytes = task.Provider.GetContextBytes(request);
-                    if (task.ContextBytes > options.Limits.ContextBytes && options.AutomaticCompaction && task.Messages.Count > 1)
+                    task.NativeContextBytes = task.Provider.GetContextBytes(request);
+                    if (NeedsCompaction(task, options) && options.AutomaticCompaction && options.Compaction.AutomaticInputTokens > 0 && task.Messages.Count > 1)
                     {
-                        try { CompactContext(task, Math.Min(1_000_000, options.Limits.ContextBytes / 2)); }
-                        catch (InvalidOperationException error) { Pause(task, error.Message); return; }
+                        if (!await CompactContextAsync(task, options, tools, lease, budget)) return;
                         request = request with { Messages = task.Messages.ToArray() };
-                        task.ContextBytes = task.Provider.GetContextBytes(request);
+                        task.NativeContextBytes = task.Provider.GetContextBytes(request);
                     }
-                    if (task.ContextBytes > options.Limits.ContextBytes) { Pause(task, "Request context limit reached. Compact context or raise the limit."); return; }
-                    AgentReply reply;
-                    var retry = 0;
-                    while (true)
-                    {
-                        if (requests >= options.Limits.RequestsPerRun) { Pause(task, "Request limit reached."); return; }
-                        requests++;
-                        using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(lease.Token);
-                        requestTimeout.CancelAfter(options.Limits.RequestTimeout);
-                        try
-                        {
-                            Publish(task, "request", $"Request {requests}");
-                            reply = await task.Provider.GenerateAsync(request, text =>
-                            { Publish(task, "text_delta", text); return ValueTask.CompletedTask; }, requestTimeout.Token);
-                            break;
-                        }
-                        catch (AgentProviderException error)
-                        {
-                            if (!error.CanResume) throw;
-                            if (!error.Retryable || retry >= options.Limits.AutomaticRetries || error.RetryAfter > TimeSpan.FromSeconds(30))
-                            { Pause(task, error.Message); return; }
-                            var delay = error.RetryAfter ?? TimeSpan.FromMilliseconds(Math.Min(30000, 500 * Math.Pow(2, retry)) + Random.Shared.Next(250));
-                            retry++; Publish(task, "retry", $"Retry {retry}: {error.Code}");
-                            await Task.Delay(delay, lease.Token);
-                        }
-                        catch (OperationCanceledException) when (!lease.Token.IsCancellationRequested)
-                        { Pause(task, "Provider request timed out. Resume preserves completed operations."); return; }
-                    }
-                    if (reply.Usage.InputTokens < 0 || reply.Usage.OutputTokens < 0) throw new AutomationException("invalid_response", "Invalid provider usage.");
-                    if (reply.Usage.Estimated) task.EstimatedTokens = checked(task.EstimatedTokens + reply.Usage.Total);
-                    else task.ReportedTokens = checked(task.ReportedTokens + reply.Usage.Total);
-                    if (reply.OutputLimitReached)
-                    { Pause(task, "Provider output limit reached. Raise the output limit and resume; the incomplete reply was not committed."); return; }
+                    if (task.NativeContextBytes > options.Limits.ContextBytes || _tasks.Values.Sum(value => (long)value.NativeContextBytes) > 64_000_000)
+                    { Pause(task, "Request or retained task context limit reached. Compact context, delete unused tasks or raise the request limit."); return; }
+                    if (options.Compaction.ModelContextWindowTokens > 0 && (task.NativeContextBytes + 3L) / 4 + options.Limits.OutputTokensPerRequest > options.Compaction.ModelContextWindowTokens)
+                    { Pause(task, "Estimated input plus output reserve exceeds the configured model context window."); return; }
+                    var reply = await RequestProviderAsync(task, request, options, lease, budget);
+                    if (reply == null) return;
                     // Validate the entire batch before committing it or executing a single operation.
                     if (reply.ToolCalls.Count > 1024 || reply.ToolCalls.Select(t => t.Id).Distinct(StringComparer.Ordinal).Count() != reply.ToolCalls.Count)
                         throw new AutomationException("invalid_response", "Invalid tool batch.");
@@ -152,6 +141,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                         AutomationSchema.Validate(tool.InputSchema, call.Arguments);
                     }
                     task.Messages.Add(new(AgentMessageKind.Assistant, reply.Text, Native: reply.Native));
+                    task.NativeContextBytes = task.Provider.GetContextBytes(request with { Messages = task.Messages.ToArray() });
                     Publish(task, "assistant", reply.Text);
                     if (reply.ToolCalls.Count == 0)
                     {
@@ -163,6 +153,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 var pending = task.PendingReply;
                 if (pending.ToolCalls.Count - task.NextTool > options.Limits.ToolsPerRun - calls)
                 { Pause(task, "Tool-call budget cannot fit the pending batch. Review the limit and resume."); return; }
+                if (!ReserveToolResults(task, options, tools)) return;
                 while (task.NextTool < pending.ToolCalls.Count)
                 {
                     lease.Token.ThrowIfCancellationRequested();
@@ -193,7 +184,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                     catch (Exception error) when (error is AutomationException or ArgumentException or InvalidOperationException or KeyNotFoundException)
                     { result = AutomationJson.Element(new { error = new { code = (error as AutomationException)?.Code ?? "operation_failed", message = error.Message } }); }
                     var text = result.GetRawText();
-                    if (Encoding.UTF8.GetByteCount(text) > options.Limits.ToolResultBytes)
+                    if (Encoding.UTF8.GetByteCount(text) > task.PendingResultBytes)
                         text = "{\"error\":\"Tool result exceeds the configured byte limit. Request smaller ranges. The operation ran and will not be replayed.\",\"omitted\":true}";
                     // Commit the result and cursor before observers or another provider request.
                     task.Messages.Add(new(AgentMessageKind.ToolResult, text, call.Id)); task.NextTool++;
@@ -209,13 +200,16 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
         { task.StatusReason = error.Message; Publish(task, "run_rejected", error.Message); throw; }
         finally
         {
-            if (started && workspace != null && task.BeforeRun != null)
+            if (!started && preparing) task.Status = previousStatus;
+            if (started && workspace != null && task.BeforeRun != null && !task.IsPreviousWorkspace)
             {
                 try
                 {
-                    using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(task.WorkspaceLifetime);
+                    deadline.CancelAfter(TimeSpan.FromSeconds(10));
                     var after = await CaptureWorkspaceAsync(deadline.Token);
                     task.Changes = new(after.Revision, Diff(task.BeforeRun.Documents, after.Documents));
+                    if (task.BeforeLatestRun != null) task.LatestRunChanges = new(after.Revision, Diff(task.BeforeLatestRun.Documents, after.Documents));
                     Publish(task, "changes", $"{task.Changes.Files.Count} source files changed.");
                 }
                 catch (Exception error) when (error is not OutOfMemoryException)
@@ -262,7 +256,9 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
     }, AutomationJson.Options);
 
     private static void EnsureIdle(AgentTask task)
-    { if (task.Status is AgentTaskStatus.Running or AgentTaskStatus.AwaitingApproval or AgentTaskStatus.AwaitingAnswer) throw new InvalidOperationException("This task is running."); }
+    { if (task.Status is AgentTaskStatus.Preparing or AgentTaskStatus.Running or AgentTaskStatus.AwaitingApproval or AgentTaskStatus.AwaitingAnswer) throw new InvalidOperationException("This task is running."); }
+    private static void EnsureCurrentWorkspace(AgentTask task)
+    { if (task.IsPreviousWorkspace) throw new InvalidOperationException("This task belongs to a previous workspace. Create a new task for the current project."); }
     private void Pause(AgentTask task, string reason) { task.Status = AgentTaskStatus.Paused; task.StatusReason = reason; Publish(task, "paused", reason); }
     private void Publish(AgentTask task, string kind, string text, string? callId = null)
     {

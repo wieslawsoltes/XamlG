@@ -115,6 +115,7 @@ public partial class App
     private async Task SelectExampleAsync(ChangeEventArgs args)
     {
         if (_busy || !int.TryParse(args.Value?.ToString(), out var index) || index < 0 || index >= PlaygroundExamples.All.Count) return;
+        await RetireAutomationWorkspaceAsync();
         _exampleIndex = index;
         var example = PlaygroundExamples.All[index];
         Compiler.Resources.ReplaceAll(new Dictionary<string, string>());
@@ -183,6 +184,7 @@ public partial class App
             documents.Add("View.axaml", draft.GetProperty("xaml").GetString() ?? string.Empty);
             documents.Add("Code.cs", draft.GetProperty("code").GetString() ?? string.Empty);
             ValidateWorkspace(documents);
+            await RetireAutomationWorkspaceAsync();
             RestoreWorkspace(_workspaceEdits.ReplaceAll(SourceRevision, documents, "Restore draft", recordHistory: false));
             ResetWorkspaceHistory();
             await CompileSnapshotAsync();

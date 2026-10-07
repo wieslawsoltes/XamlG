@@ -30,11 +30,19 @@
                 <button @onclick='() => CommandAsync("rename", new { id = selected.Id, text = _taskName })' disabled="@IsRunning(selected)">Rename</button>
                 <button @onclick='() => CommandAsync("delete", new { id = selected.Id })' disabled="@IsRunning(selected)">Delete</button>
                 <button @onclick="ExportAsync">Export thread</button>
+                <button @onclick="CopyThreadAsync">Copy public thread</button><button @onclick="BeginHandoffAsync">New task with context</button>
             </div>
             <p role="status">@selected.Status · @selected.TotalTokens.ToString("N0") tokens · @selected.CheckpointCount checkpoints @selected.StatusReason</p>
+            <p>@selected.ReportedTokens.ToString("N0") provider-reported tokens · @selected.EstimatedTokens.ToString("N0") estimated tokens · @((selected.NativeContextBytes / 1024d).ToString("N1")) KiB context</p>
+            @if (selected.RetryAfterUtc is { } cooldown && cooldown > DateTimeOffset.UtcNow) { <p>Provider cooldown until @cooldown.ToLocalTime().ToString("T").</p> }
+            @if (selected.OutputLimitToExceed is { } outputLimit) { <p>Resume requires an effective output allowance above @outputLimit.ToString("N0") tokens.</p> }
+            @if (selected.IsPreviousWorkspace) { <p class="empty">Previous workspace: this task remains available for review and export. Create a new task to work on the current project.</p> }
             <details class="agent-options">
                 <summary>Run permissions and limits</summary>
-                <p>The live project's access policy also applies to every operation.</p>
+                <p>Settings belong to the selected task. The live project's access policy also applies to every operation.</p>
+                <button @onclick="() => SetPreset(false)">Extended limits</button><button @onclick="() => SetPreset(true)">Large limits</button>
+                <button @onclick="SaveNumericPreferencesAsync">Save numeric defaults</button><button @onclick="ResetPermissions">Reset task permissions</button>
+                <p>Saved defaults contain numeric limits only. New tasks begin with Ask permissions.</p>
                 <label>Task permission profile <select aria-label="Task permission profile" @bind="_profile">@foreach (var profile in Profiles) { <option>@profile</option> }</select></label>
                 <label><input type="checkbox" @bind="_neverAsk" /> Deny operations that require a review</label>
                 @foreach (var scope in Scopes)
@@ -52,15 +60,20 @@
                 <label>Request timeout minutes <input type="number" min="1" max="30" @bind="_timeoutMinutes" /></label>
                 <label>Lease minutes <input type="number" min="1" max="60" @bind="_leaseMinutes" /></label>
                 <label><input type="checkbox" @bind="_autoCompact" /> Compact context automatically at complete tool boundaries</label>
+                <label>Automatic compaction input tokens (0 disables) <input type="number" min="0" max="2000000" @bind="Preferences.Numeric.AutomaticInputTokens" /></label>
+                <label>Model context window tokens (0 unspecified) <input type="number" min="0" max="4000000" @bind="Preferences.Numeric.ModelContextWindowTokens" /></label>
+                <label>Recent complete turns to retain <input type="number" min="0" max="16" @bind="Preferences.Numeric.RecentCompleteTurns" /></label>
+                <label>Checkpoint output tokens <input type="number" min="256" max="8192" @bind="Preferences.Numeric.CheckpointOutputTokens" /></label>
             </details>
             @if (selected.Plan.Length > 0)
             {
                 <ol class="agent-plan">@foreach (var step in selected.Plan) { <li><strong>@step.Status</strong> @step.Text</li> }</ol>
             }
-            <div class="agent-thread" aria-label="Agent thread" aria-live="polite">
+            <button @onclick="FollowThreadAsync">Follow latest</button>
+            <div class="agent-thread" aria-label="Agent thread" aria-live="polite" data-task-id="@selected.Id" @ref="_threadElement">
                 @foreach (var item in selected.Events.Where(e => e.Kind is not "text_delta"))
                 {
-                    <article @key="item.Sequence" class="agent-message agent-@item.Kind"><small>@item.Kind</small><pre>@item.Text</pre></article>
+                    <article @key="item.Sequence" data-sequence="@item.Sequence" class="agent-message agent-@item.Kind"><small>@item.Kind</small><button @onclick="() => CopyTextAsync(item.Text)">Copy</button><pre>@item.Text</pre></article>
                 }
                 @if (_liveText.Length != 0) { <article class="agent-message"><small>assistant · streaming</small><pre>@_liveText</pre></article> }
             </div>
@@ -87,11 +100,11 @@
             }
             <label>Message <textarea value="@_draft" @oninput="DraftChangedAsync" rows="4" maxlength="262144" placeholder="Describe the change or investigation" /></label>
             <div class="agent-run-actions">
-                <button class="primary" @onclick="RunAsync" disabled="@(AnyRunning || selected.Status is "paused" or "cancelled" or "failed" || string.IsNullOrWhiteSpace(_draft))">Run</button>
-                <button @onclick="ResumeAsync" disabled="@(AnyRunning || selected.Status != "paused")">Resume</button>
-                <button @onclick="QueueDraftAsync" disabled="@(_queueBusy || string.IsNullOrWhiteSpace(_draft) || selected.Status is "cancelled" or "failed")">Queue follow-up</button>
+                <button class="primary" @onclick="RunAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || selected.Status is "paused" or "cancelled" or "failed" || string.IsNullOrWhiteSpace(_draft))">Run</button>
+                <button @onclick="ResumeAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || selected.Status != "paused" || selected.RetryAfterUtc > DateTimeOffset.UtcNow)">Resume</button>
+                <button @onclick="QueueDraftAsync" disabled="@(selected.IsPreviousWorkspace || _queueBusy || string.IsNullOrWhiteSpace(_draft) || selected.Status is "cancelled" or "failed")">Queue follow-up</button>
                 <button @onclick='() => CommandAsync("stop", new { })' disabled="@(!_state.Tasks.Any(IsRunning))">Stop &amp; revoke</button>
-                <button @onclick='() => CommandAsync("compact", new { id = selected.Id })' disabled="@IsRunning(selected)">Compact context</button>
+                <button @onclick="ReviewCompaction" disabled="@(selected.IsPreviousWorkspace || AnyRunning)">Compact context</button>
             </div>
             @if (selected.Queue.Messages.Length > 0)
             {
@@ -107,11 +120,12 @@
                     <button @onclick="() => MoveQueueAsync(-1)" disabled="@(_queueBusy || QueueIndex <= 0)">Move up</button>
                     <button @onclick="() => MoveQueueAsync(1)" disabled="@(_queueBusy || QueueIndex < 0 || QueueIndex >= selected.Queue.Messages.Length - 1)">Move down</button>
                     <button @onclick="RemoveQueueAsync" disabled="@_queueBusy">Remove queued message</button>
-                    <button @onclick="ReviewQueuedRun" disabled="@(_queueBusy || AnyRunning || selected.Status is not ("ready" or "completed") || QueueIndex < 0)">Send selected message</button>
+                    <button @onclick="ReviewQueuedRun" disabled="@(selected.IsPreviousWorkspace || _queueBusy || AnyRunning || selected.Status is not ("ready" or "completed") || QueueIndex < 0)">Send selected message</button>
                     <button @onclick="ClearQueueAsync" disabled="@_queueBusy">Clear queue</button>
                 </details>
             }
-            @if (selected.Changes is { Files.Length: > 0 } changes)
+            <label>Source comparison <select value="@(_latestRun ? "latest" : "task")" @onchange="ChangeBaseline"><option value="task">Since task start</option><option value="latest">Since latest run</option></select></label>
+            @if (SelectedChanges is { Files.Length: > 0 } changes)
             {
                 <details class="agent-changes">
                     <summary>Review @changes.Files.Length changed source files</summary>
@@ -120,21 +134,53 @@
                         <label><input type="checkbox" checked="@_restorePaths.Contains(file.Path)" @onchange="args => SelectRestore(file.Path, args)" /> @file.Path (@file.BeforeLength → @file.AfterLength characters)</label>
                     }
                     <button @onclick="PreviewChangesAsync">Show before and after</button>
-                    <button @onclick="RestoreAsync" disabled="@(IsRunning(selected) || _restorePaths.Count == 0)">Restore selected files</button>
+                    <button @onclick="PreviewDiffAsync">Unified diff</button><button @onclick="ExportPatchAsync">Save review patch</button>
+                    <button @onclick="ReviewRestore" disabled="@(selected.IsPreviousWorkspace || AnyRunning || _restorePaths.Count == 0)">Restore selected files</button>
                     @foreach (var file in _changePreview)
                     {
-                        <details><summary>@file.Path</summary><h4>Before</h4><pre>@file.Before</pre><h4>After</h4><pre>@file.After</pre></details>
+                        <details><summary>@file.Path</summary><h4>Before</h4><pre>@SourceExcerpt(file.Before)</pre><h4>After</h4><pre>@SourceExcerpt(file.After)</pre></details>
                     }
+                    @foreach (var file in _diffPreview)
+                    {
+                        <details open><summary>@file.Path</summary>
+                            @if (file.Coarse) { <p>Large changed region shown as replacement lines.</p> }
+                            @if (file.Truncated) { <p>Display excerpt; the review patch contains the complete captured changes.</p> }
+                            <div class="agent-diff">@foreach (var line in file.Lines) { <button class="diff-@line.Kind" @onclick="() => SelectDiffLine(file.Path, line)"><span>@line.BeforeLine</span><span>@line.AfterLine</span><code>@line.Text</code></button> }</div>
+                        </details>
+                    }
+                    <label>Review feedback <textarea @bind="_reviewFeedback" maxlength="8000" rows="3" /></label>
+                    @if (_feedbackTarget != null) { <p>A selected diff line is attached to this feedback.</p><button @onclick="() => _feedbackTarget = null">Clear line target</button> }
+                    <button @onclick="QueueReviewFeedbackAsync" disabled="@(selected.IsPreviousWorkspace || _queueBusy || string.IsNullOrWhiteSpace(_reviewFeedback))">Queue review feedback</button>
                 </details>
             }
         }
     }
     @if (_error != null) { <p class="runtime-error" role="alert">@_error</p> }
+    @if (_handoff != null)
+    {
+        <div class="authoring-backdrop"><section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Review task context">
+            <h2>New task with context</h2><p>Edit this public excerpt, then create a draft for a new task. Run it after reviewing its own permissions.</p>
+            <label>New task name <input @bind="_name" maxlength="200" /></label>
+            <label>Provider <select @bind="_provider">@foreach (var provider in _state.Providers) { <option>@provider</option> }</select></label>
+            <label>Model <input @bind="_model" /></label>
+            <textarea aria-label="Context handoff" @bind="_handoff" maxlength="262144" rows="16" />
+            <footer><button @onclick="() => _handoff = null" disabled="@_handoffBusy">Cancel</button><button @onclick="CreateWithContextAsync" disabled="@(_handoffBusy || _state.Tasks.Length >= 8 || string.IsNullOrWhiteSpace(_model))">Create with reviewed context</button></footer>
+        </section></div>
+    }
+    @if (_restoreReview is { } restore)
+    {
+        <div class="authoring-backdrop"><section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Review source restore">
+            <h2>Restore selected source</h2><p>Restore these files to the @(restore.LatestRun ? "latest-run" : "task-start") checkpoint at reviewed revision @restore.Revision. This comparison includes manual edits made during the task. Restoration creates a normal project undo step.</p>
+            <ul>@foreach (var path in restore.Paths) { <li>@path</li> }</ul>
+            <footer><button @onclick="() => _restoreReview = null">Cancel</button><button @onclick="ConfirmRestoreAsync">Confirm source restore</button></footer>
+            @if (_error != null) { <p role="alert">@_error</p> }
+        </section></div>
+    }
     @if (_runReview is { } review)
     {
         <div class="authoring-backdrop" @onkeydown='args => { if (args.Key == "Escape") CancelRunReview(); }' @onkeydown:stopPropagation="true">
             <section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Review agent run">
-                <header><h2>Review agent run</h2></header>
+                <header><h2>@(review.Compact ? "Review context compaction" : "Review agent run")</h2></header>
                 <p><strong>@review.Name</strong> · @review.Provider · @review.Model</p>
                 <p>This run uses the current live project. Permission profile: <strong>@review.Profile</strong>.</p>
                 <p>@review.Limits</p>
@@ -146,7 +192,7 @@
                 }
                 <footer>
                     <button @onclick="CancelRunReview" disabled="@_reviewBusy" @ref="_runReviewCancel">Cancel</button>
-                    <button class="primary" @onclick="ConfirmRunAsync" disabled="@(_reviewBusy || (review.Profile == "fullAccess" && !_fullAccessAcknowledged))">Confirm run</button>
+                    <button class="primary" @onclick="ConfirmRunAsync" disabled="@(_reviewBusy || (review.Profile == "fullAccess" && !_fullAccessAcknowledged))">@(review.Compact ? "Confirm compaction" : "Confirm run")</button>
                 </footer>
                 @if (_error != null) { <p class="runtime-error" role="alert">@_error</p> }
             </section>

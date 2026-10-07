@@ -39,7 +39,7 @@ foreach (var origin in origins)
         throw new InvalidOperationException("Origins must be exact HTTP(S) origins without paths or credentials.");
 var bridge = new BrowserAutomationBridge();
 var providers = new List<IAgentProvider>();
-using var providerHttp = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false })
+using var providerHttp = new HttpClient(new AgentHttpHandler(new SocketsHttpHandler { AllowAutoRedirect = false }))
 { Timeout = Timeout.InfiniteTimeSpan, MaxResponseContentBufferSize = 8 * 1024 * 1024 };
 if (Environment.GetEnvironmentVariable("OPENAI_API_KEY") is { Length: > 0 } openAiKey)
 {

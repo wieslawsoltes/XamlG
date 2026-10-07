@@ -29,9 +29,11 @@ public sealed class AgentWorkbench : IDisposable
                 {
                     providers = _providers.Keys.Order(StringComparer.Ordinal), tasks = _harness.Tasks.Select(task => new
                     {
-                        task.Id, task.Name, task.ProviderId, task.Model, task.Status, task.StatusReason, task.Draft,
+                        task.Id, task.Name, task.ProviderId, task.Model, task.Status, task.StatusReason, task.Draft, task.IsPreviousWorkspace,
                         task.TotalTokens, task.ReportedTokens, task.EstimatedTokens, task.CheckpointCount, task.Plan, task.PlanRevision, task.Queue,
+                        task.LastUsage, task.NativeContextBytes, task.RetryAfterUtc, task.OutputLimitToExceed,
                         changes = task.Changes == null ? null : new { task.Changes.Revision, files = task.Changes.Files.Select(file => new { file.Path, beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
+                        latestRunChanges = task.LatestRunChanges == null ? null : new { task.LatestRunChanges.Revision, files = task.LatestRunChanges.Files.Select(file => new { file.Path, beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
                         events = task.Events.TakeLast(80).Select(item => item with { Text = item.Text.Length > 8192 ? item.Text[..8192] + "\n[see transcript export]" : item.Text })
                     }),
                     pending = _pending.Values.Select(p => new { p.Id, p.TaskId, p.Kind, p.Content })
@@ -40,7 +42,7 @@ public sealed class AgentWorkbench : IDisposable
                 return AutomationJson.Element(await Provider(Read<ProviderArgs>(arguments).Provider).ListModelsAsync(cancellationToken));
             case "create":
                 var create = Read<CreateArgs>(arguments);
-                return AutomationJson.Element(_harness.CreateTask(create.Name, Provider(create.Provider), create.Model));
+                return AutomationJson.Element(_harness.CreateTask(create.Name, Provider(create.Provider), create.Model, ownerSession));
             case "rename":
                 var rename = Read<TextArgs>(arguments); _harness.RenameTask(rename.Id, rename.Text); break;
             case "draft":
@@ -64,11 +66,15 @@ public sealed class AgentWorkbench : IDisposable
             case "clear_queue":
                 var clear = Read<QueueArgs>(arguments); _harness.ClearQueuedMessages(clear.Id, clear.ExpectedRevision);
                 return AutomationJson.Element(_harness.GetTask(clear.Id).Queue);
-            case "compact": _harness.Compact(Read<IdArgs>(arguments).Id); break;
+            case "compact":
+                var compact = Read<CompactArgs>(arguments);
+                if (!compact.Confirmed) throw new InvalidOperationException("Review the provider request and confirm compaction first.");
+                return AutomationJson.Element(new { compacted = await _harness.CompactAsync(compact.Id, compact.Options, cancellationToken) });
             case "stop": Stop(); break;
             case "run":
                 var run = Read<RunArgs>(arguments);
                 run.Options.Limits.Validate(); var task = _harness.GetTask(run.Id);
+                if (task.IsPreviousWorkspace) throw new InvalidOperationException("This task belongs to a previous workspace. Create a new task for the current project.");
                 if (!run.Confirmed) throw new InvalidOperationException("Review and confirm this run first.");
                 if (run.Options.Policy.Profile == PermissionProfile.FullAccess && !run.FullAccessAcknowledged)
                     throw new InvalidOperationException("A fresh Full Access acknowledgement is required for this run.");
@@ -98,10 +104,20 @@ public sealed class AgentWorkbench : IDisposable
                 if (!pending.Completion.TrySetResult(response.Value.Clone())) throw new InvalidOperationException("Already answered.");
                 break;
             case "export": return AutomationJson.Element(_harness.ExportTranscript(Read<IdArgs>(arguments).Id));
-            case "changes": return AutomationJson.Element(_harness.GetTask(Read<IdArgs>(arguments).Id).Changes);
+            case "export_markdown": return AutomationJson.Element(_harness.ExportMarkdown(Read<IdArgs>(arguments).Id));
+            case "handoff": return AutomationJson.Element(_harness.CreateContextHandoff(Read<IdArgs>(arguments).Id));
+            case "diff":
+                var diff = Read<ChangesArgs>(arguments); var diffTask = _harness.GetTask(diff.Id);
+                return AutomationJson.Element((diff.LatestRun ? diffTask.LatestRunChanges : diffTask.Changes)?.Files.Select(file => AgentSourceReview.Diff(file)).ToArray());
+            case "patch":
+                var patch = Read<ChangesArgs>(arguments); var patchTask = _harness.GetTask(patch.Id);
+                return AutomationJson.Element(AgentSourceReview.Patch((patch.LatestRun ? patchTask.LatestRunChanges : patchTask.Changes) ?? throw new InvalidOperationException("No source review is available.")));
+            case "changes":
+                var changes = Read<ChangesArgs>(arguments); var changedTask = _harness.GetTask(changes.Id);
+                return AutomationJson.Element(changes.LatestRun ? changedTask.LatestRunChanges : changedTask.Changes);
             case "restore":
                 var restore = Read<RestoreArgs>(arguments);
-                return AutomationJson.Element(await _harness.RestoreChangesAsync(restore.Id, restore.Paths, restore.ExpectedRevision, cancellationToken));
+                return AutomationJson.Element(await _harness.RestoreChangesAsync(restore.Id, restore.Paths, restore.ExpectedRevision, cancellationToken, restore.LatestRun));
             default: throw new ArgumentException("Unknown agent action.");
         }
         return AutomationJson.Element(new { accepted = true });
@@ -151,7 +167,9 @@ public sealed class AgentWorkbench : IDisposable
     public sealed record QueueEditArgs(string Id, string MessageId, string Text, long ExpectedRevision);
     public sealed record QueueMoveArgs(string Id, string MessageId, int Index, long ExpectedRevision);
     public sealed record ResponseArgs(string Id, JsonElement Value);
-    public sealed record RestoreArgs(string Id, string[] Paths, long ExpectedRevision);
+    public sealed record ChangesArgs(string Id, bool LatestRun = false);
+    public sealed record CompactArgs(string Id, AgentRunOptions Options, bool Confirmed = false);
+    public sealed record RestoreArgs(string Id, string[] Paths, long ExpectedRevision, bool LatestRun = false);
 }
 
 public sealed class BrowserAgentWorkspace(IAutomationHost host) : IAgentWorkspace

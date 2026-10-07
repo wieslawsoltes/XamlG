@@ -8,7 +8,6 @@ public partial class AgentWorkbench
 {
     private static readonly string[] Profiles = ["ask", "readOnly", "plan", "autoEdit", "fullAccess", "custom"];
     private static readonly string[] Scopes = ["project", "source", "designer", "compiler", "runtime", "layout", "build", "agent"];
-    private readonly Dictionary<string, string> _scopes = new(StringComparer.Ordinal);
     private readonly HashSet<string> _restorePaths = new(StringComparer.Ordinal);
     private readonly Dictionary<string, QueueEditor> _queueEditors = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _lifetime = new();
@@ -17,27 +16,26 @@ public partial class AgentWorkbench
     private DotNetObjectReference<AgentWorkbench>? _reference;
     private WorkbenchState _state = new();
     private string _provider = "", _model = "", _name = "New task", _taskName = "", _selectedId = "", _draft = "", _answer = "", _liveText = "";
-    private string _profile = "ask", _toolRules = "{}";
     private string[] _models = [];
     private FileChange[] _changePreview = [];
     private string? _error;
     private RunReview? _runReview;
     private ElementReference _runReviewCancel;
-    private bool _connected, _refreshing, _disposed, _neverAsk, _autoCompact = true, _fullAccessAcknowledged, _reviewBusy, _focusRunReview, _queueBusy;
-    private int _requests = 128, _tools = 1024, _outputTokens = 32768, _contextBytes = 6_000_000, _leaseMinutes = 10;
-    private int _retries = 3, _timeoutMinutes = 10, _toolResultBytes = 524288;
-    private long _taskTokens = 4_000_000;
+    private bool _connected, _refreshing, _disposed, _fullAccessAcknowledged, _reviewBusy, _focusRunReview, _queueBusy, _latestRun;
     private TaskView? Selected => _state.Tasks.FirstOrDefault(task => task.Id == _selectedId);
-    private static bool IsRunning(TaskView task) => task.Status is "running" or "awaitingApproval" or "awaitingAnswer";
+    private static bool IsRunning(TaskView task) => task.Status is "preparing" or "running" or "awaitingApproval" or "awaitingAnswer";
     private bool AnyRunning => _state.Tasks.Any(IsRunning);
     private QueueEditor QueueEdit => _queueEditors.TryGetValue(_selectedId, out var value) ? value : _queueEditors[_selectedId] = new();
     private int QueueIndex => Array.FindIndex(Selected?.Queue.Messages ?? [], message => message.Id == QueueEdit.Id);
+    private ChangeView? SelectedChanges => _latestRun ? Selected?.LatestRunChanges : Selected?.Changes;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_focusRunReview) { _focusRunReview = false; await _runReviewCancel.FocusAsync(); }
+        if (_module != null && _connected && Selected != null) await _module.InvokeVoidAsync("bindAgentThread", _threadElement, Selected.Id);
         if (!firstRender) return;
         _module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+        await LoadNumericPreferencesAsync();
         _reference = DotNetObjectReference.Create(this);
         await _module.InvokeVoidAsync("installAgentWorkbench", _reference, _ownerId);
         await RefreshAsync(); _ = PollAsync();
@@ -59,7 +57,7 @@ public partial class AgentWorkbench
         if (item.TaskId == _selectedId && item.Kind == "text_delta")
         { _liveText += item.Text; if (_liveText.Length > 262144) _liveText = _liveText[^262144..]; StateHasChanged(); }
         else
-        { if (item.TaskId == _selectedId && item.Kind is "assistant" or "completed" or "failed" or "paused") _liveText = ""; await RefreshAsync(); }
+        { if (item.TaskId == _selectedId && item.Kind is "request" or "retry" or "assistant" or "completed" or "failed" or "paused") _liveText = ""; await RefreshAsync(); }
     }
     private async Task RefreshAsync()
     {
@@ -79,6 +77,7 @@ public partial class AgentWorkbench
                 if (Selected == null) Select(_state.Tasks.FirstOrDefault()?.Id ?? "");
                 EnsureQueueSelection();
                 foreach (var id in _queueEditors.Keys.Where(id => !_state.Tasks.Any(task => task.Id == id)).ToArray()) _queueEditors.Remove(id);
+                foreach (var id in _taskPreferences.Keys.Where(id => !_state.Tasks.Any(task => task.Id == id)).ToArray()) _taskPreferences.Remove(id);
             }
         }
         catch (JSException error) { _error = error.Message; }
@@ -91,7 +90,7 @@ public partial class AgentWorkbench
         catch (Exception error) when (error is JSException or JsonException or ArgumentException) { _error = error.Message; }
     }
     private void Select(string id)
-    { _selectedId = id; _draft = Selected?.Draft ?? ""; _taskName = Selected?.Name ?? ""; _liveText = ""; _changePreview = []; _restorePaths.Clear(); EnsureQueueSelection(); }
+    { _selectedId = id; _draft = Selected?.Draft ?? ""; _taskName = Selected?.Name ?? ""; _liveText = ""; _changePreview = []; _diffPreview = []; _feedbackTarget = null; _restorePaths.Clear(); EnsureQueueSelection(); }
     private Task SelectTaskAsync(ChangeEventArgs args) { Select(args.Value?.ToString() ?? ""); return Task.CompletedTask; }
     private async Task DraftChangedAsync(ChangeEventArgs args)
     {
@@ -116,25 +115,28 @@ public partial class AgentWorkbench
         policy = new { profile = _profile, scopes = _scopes, tools = JsonSerializer.Deserialize<Dictionary<string, string>>(_toolRules), neverAsk = _neverAsk },
         limits = new { requestsPerRun = _requests, toolsPerRun = _tools, outputTokensPerRequest = _outputTokens, totalTaskTokens = _taskTokens,
             contextBytes = _contextBytes, toolResultBytes = _toolResultBytes, automaticRetries = _retries, requestTimeout = TimeSpan.FromMinutes(_timeoutMinutes) },
-        leaseDuration = TimeSpan.FromMinutes(_leaseMinutes), automaticCompaction = _autoCompact
+        leaseDuration = TimeSpan.FromMinutes(_leaseMinutes), automaticCompaction = _autoCompact,
+        compaction = new { automaticInputTokens = Preferences.Numeric.AutomaticInputTokens, modelContextWindowTokens = Preferences.Numeric.ModelContextWindowTokens,
+            recentCompleteTurns = Preferences.Numeric.RecentCompleteTurns, checkpointOutputTokens = Preferences.Numeric.CheckpointOutputTokens }
     };
-    private void ReviewRun(string? message, QueuedMessageView? queued = null)
+    private void ReviewRun(string? message, QueuedMessageView? queued = null, bool compact = false)
     {
-        if (Selected == null || AnyRunning) return;
+        if (Selected == null || Selected.IsPreviousWorkspace || AnyRunning) return;
         try
         {
             _error = null;
             var options = JsonSerializer.SerializeToElement(Options());
             _runReview = new(Selected.Id, Selected.Name, Selected.ProviderId, Selected.Model, _profile, message,
-                queued?.Id, queued == null ? null : Selected.Queue.Revision, queued?.Text ?? message, options,
+                queued?.Id, queued == null ? null : Selected.Queue.Revision, compact ? "Generate a paid, tool-free public checkpoint. Keep the original goal, latest request and complete recent native turns. This does not send the composer draft or run IDE operations." : queued?.Text ?? message, options,
                 $"{_requests:N0} requests and {_tools:N0} tool calls per run; {_outputTokens:N0} output tokens per request; {_taskTokens:N0} cumulative task tokens. " +
-                $"{_contextBytes:N0} context bytes, {_toolResultBytes:N0} bytes per tool result, {_retries} automatic retries, {_timeoutMinutes}-minute requests and a {_leaseMinutes}-minute permission lease.");
+                $"{_contextBytes:N0} context bytes, {_toolResultBytes:N0} bytes per tool result, {_retries} automatic retries, {_timeoutMinutes}-minute requests and a {_leaseMinutes}-minute permission lease.", compact);
             _fullAccessAcknowledged = false; _focusRunReview = true;
         }
         catch (Exception error) when (error is JsonException or ArgumentException) { _error = error.Message; }
     }
-    private void RunAsync() => ReviewRun(_draft);
+    private void RunAsync() { if (_draft.Trim() == "/compact") ReviewRun(null, compact: true); else ReviewRun(_draft); }
     private void ResumeAsync() => ReviewRun(null);
+    private void ReviewCompaction() => ReviewRun(null, compact: true);
     private void ReviewQueuedRun()
     { if (Selected?.Queue.Messages.FirstOrDefault(message => message.Id == QueueEdit.Id) is { } queued) ReviewRun(null, queued); }
     private void CancelRunReview() { if (_reviewBusy) return; _runReview = null; _fullAccessAcknowledged = false; }
@@ -145,7 +147,8 @@ public partial class AgentWorkbench
         try
         {
             _error = null;
-            await RequestAsync<JsonElement>("run", new { id = review.Id, message = review.Message, options = review.Options,
+            if (review.Compact) await RequestAsync<JsonElement>("compact", new { id = review.Id, options = review.Options, confirmed = true });
+            else await RequestAsync<JsonElement>("run", new { id = review.Id, message = review.Message, options = review.Options,
                 confirmed = true, fullAccessAcknowledged = _fullAccessAcknowledged, queuedMessageId = review.QueuedId, expectedQueueRevision = review.QueueRevision });
             _runReview = null; _fullAccessAcknowledged = false;
             await RefreshAsync();
@@ -203,8 +206,10 @@ public partial class AgentWorkbench
     private void SelectRestore(string path, ChangeEventArgs args)
     { if (args.Value is true) _restorePaths.Add(path); else _restorePaths.Remove(path); }
     private async Task PreviewChangesAsync()
-    { try { _changePreview = (await RequestAsync<ChangeView>("changes", new { id = _selectedId })).Files; } catch (JSException error) { _error = error.Message; } }
-    private Task RestoreAsync() => CommandAsync("restore", new { id = _selectedId, paths = _restorePaths.ToArray(), expectedRevision = Selected!.Changes!.Revision });
+    { try { _changePreview = (await RequestAsync<ChangeView>("changes", new { id = _selectedId, latestRun = _latestRun })).Files; _diffPreview = []; } catch (JSException error) { _error = error.Message; } }
+    private void ChangeBaseline(ChangeEventArgs args)
+    { _latestRun = args.Value?.ToString() == "latest"; _changePreview = []; _diffPreview = []; _restorePaths.Clear(); _feedbackTarget = null; }
+    private Task RestoreAsync() => CommandAsync("restore", new { id = _selectedId, paths = _restorePaths.ToArray(), expectedRevision = SelectedChanges!.Revision, latestRun = _latestRun });
     private async Task ExportAsync()
     {
         try
@@ -219,7 +224,7 @@ public partial class AgentWorkbench
         if (_disposed) return; _disposed = true; _lifetime.Cancel();
         if (_module != null)
         {
-            try { await _module.InvokeVoidAsync("uninstallAgentWorkbench", _ownerId); await _module.DisposeAsync(); }
+            try { await _module.InvokeVoidAsync("releaseAgentThread", _threadElement); await _module.InvokeVoidAsync("uninstallAgentWorkbench", _ownerId); await _module.DisposeAsync(); }
             catch (JSDisconnectedException) { }
         }
         _reference?.Dispose(); _lifetime.Dispose();
@@ -230,6 +235,10 @@ public partial class AgentWorkbench
         public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string Status { get; set; } = ""; public string? StatusReason { get; set; }
         public string ProviderId { get; set; } = ""; public string Model { get; set; } = "";
         public string Draft { get; set; } = ""; public long TotalTokens { get; set; } public int CheckpointCount { get; set; }
+        public bool IsPreviousWorkspace { get; set; }
+        public ChangeView? LatestRunChanges { get; set; }
+        public long ReportedTokens { get; set; } public long EstimatedTokens { get; set; } public int NativeContextBytes { get; set; }
+        public DateTimeOffset? RetryAfterUtc { get; set; } public int? OutputLimitToExceed { get; set; }
         public QueueView Queue { get; set; } = new(); public PlanView[] Plan { get; set; } = []; public EventView[] Events { get; set; } = []; public ChangeView? Changes { get; set; }
     }
     public sealed class EventView { public long Sequence { get; set; } public string TaskId { get; set; } = ""; public string Kind { get; set; } = ""; public string Text { get; set; } = ""; }
@@ -241,5 +250,5 @@ public partial class AgentWorkbench
     public sealed class QueuedMessageView { public string Id { get; set; } = ""; public string Text { get; set; } = ""; }
     private sealed class QueueEditor { public string Id = "", Text = ""; public long Revision; }
     private sealed record RunReview(string Id, string Name, string Provider, string Model, string Profile, string? Message,
-        string? QueuedId, long? QueueRevision, string? Preview, JsonElement Options, string Limits);
+        string? QueuedId, long? QueueRevision, string? Preview, JsonElement Options, string Limits, bool Compact = false);
 }

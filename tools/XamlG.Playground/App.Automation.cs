@@ -373,14 +373,14 @@ public partial class App
         _sharing = false; _approval?.TrySetResult(false);
         _automationLifetime.Cancel();
     }
-    private void SetAutomationSharing(Microsoft.AspNetCore.Components.ChangeEventArgs args)
+    private async Task SetAutomationSharing(Microsoft.AspNetCore.Components.ChangeEventArgs args)
     {
         if (args.Value is true)
         {
             if (_automationLifetime.IsCancellationRequested) { _automationLifetime.Dispose(); _automationLifetime = new(); }
             _sharing = true;
         }
-        else RevokeAutomation();
+        else await DisconnectAutomationAsync();
     }
     private async Task ConnectAutomationAsync()
     {
@@ -393,6 +393,13 @@ public partial class App
         RevokeAutomation();
         if (_module != null) await _module.InvokeVoidAsync("disconnectAutomation");
         _companionToken = ""; _connectionStatus = "Disconnected";
+    }
+    private async Task RetireAutomationWorkspaceAsync()
+    {
+        await DisconnectAutomationAsync();
+        // Let cancelled operations leave the old project before installing its replacement.
+        await _automationGate.WaitAsync();
+        _automationGate.Release();
     }
     private void ApproveAutomation(bool allow) => _approval?.TrySetResult(allow);
 

@@ -245,6 +245,65 @@ export function disconnectAutomation() {
 export function installAgentWorkbench(owner, id) { agentOwner = owner; agentOwnerId = id; }
 export function uninstallAgentWorkbench(id) { if (agentOwnerId === id) { agentOwner = null; agentOwnerId = null; } }
 export function agentConnected() { return !!agentConnection; }
+export async function copyAgentText(text) { await navigator.clipboard.writeText(text); }
+const agentThreadPositions = new Map();
+const agentThreadBindings = new WeakMap();
+export function bindAgentThread(element, taskId) {
+    if (!element || agentThreadBindings.get(element)?.taskId === taskId) return;
+    releaseAgentThread(element);
+    let position = agentThreadPositions.get(taskId);
+    if (!position) {
+        position = { follow: true, top: 0, anchor: null, offset: 0 };
+        agentThreadPositions.set(taskId, position);
+        while (agentThreadPositions.size > 8) agentThreadPositions.delete(agentThreadPositions.keys().next().value);
+    }
+    function remember() {
+        if (element.dataset.taskId !== taskId) return;
+        position.top = element.scrollTop;
+        position.follow = element.scrollHeight - element.scrollTop - element.clientHeight < 32;
+        const top = element.getBoundingClientRect().top;
+        const first = [...element.querySelectorAll('[data-sequence]')].find(item => item.getBoundingClientRect().bottom >= top);
+        position.anchor = first?.dataset.sequence;
+        position.offset = first ? first.getBoundingClientRect().top - top : 0;
+    }
+    function restore() {
+        if (element.dataset.taskId !== taskId) return;
+        const selection = window.getSelection();
+        if (selection && !selection.isCollapsed && element.contains(selection.anchorNode)) return;
+        if (position.follow) element.scrollTop = element.scrollHeight;
+        else {
+            const anchor = position.anchor && [...element.querySelectorAll('[data-sequence]')].find(item => item.dataset.sequence === position.anchor);
+            element.scrollTop = anchor ? element.scrollTop + anchor.getBoundingClientRect().top - element.getBoundingClientRect().top - position.offset : position.top;
+        }
+    }
+    const observer = new MutationObserver(restore);
+    observer.observe(element, { childList: true, subtree: true, characterData: true });
+    element.addEventListener('scroll', remember, { passive: true });
+    agentThreadBindings.set(element, { taskId, observer, remember, position }); restore();
+}
+export function releaseAgentThread(element) {
+    const binding = agentThreadBindings.get(element);
+    if (binding) { binding.observer.disconnect(); element.removeEventListener('scroll', binding.remember); agentThreadBindings.delete(element); }
+}
+export function followAgentThread(element) {
+    const binding = agentThreadBindings.get(element);
+    if (binding) binding.position.follow = true;
+    if (element) element.scrollTop = element.scrollHeight;
+}
+export function loadAgentNumericPreferences() {
+    try { return JSON.parse(localStorage.getItem('xamlg.agent.numeric.v1') || 'null'); } catch { return null; }
+}
+export function saveAgentNumericPreferences(value) {
+    // Explicit allowlist: no task text, connection settings, credentials or grants.
+    const keys = ['requests', 'tools', 'outputTokens', 'taskTokens', 'contextBytes', 'toolResultBytes', 'retries', 'timeoutMinutes', 'leaseMinutes',
+        'automaticInputTokens', 'modelContextWindowTokens', 'recentCompleteTurns', 'checkpointOutputTokens'];
+    const saved = {};
+    for (const key of keys) {
+        if (!Number.isSafeInteger(value[key])) throw new Error('Numeric preferences must be whole numbers.');
+        saved[key] = value[key];
+    }
+    localStorage.setItem('xamlg.agent.numeric.v1', JSON.stringify(saved));
+}
 export async function agentRequest(action, argumentsValue = {}) {
     if (!agentConnection) throw new Error('Connect the local companion in Agent access first.');
     const connection = agentConnection;

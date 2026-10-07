@@ -145,6 +145,29 @@ Full validation is deferred until the remaining feature implementation is comple
 as requested. The evidence below records earlier checkpoints; the latest Pages
 integration and literal-name merge have not yet undergone a full validation run.
 
+Implemented since that checkpoint: tasks bind to the creating browser workspace
+lifetime; replacement and revocation disconnect that lifetime. A separate preparation
+stage captures source before accepting a reviewed queue entry. Source comparisons
+support task-start and latest-run checkpoints. The workbench adds independent task
+settings, numeric-only saved defaults, public context handoff, thread copy and reading
+position, bounded unified diffs, complete replacement patch export, line-targeted
+queued review feedback and explicit source-restore confirmation.
+
+Recovery now retains full provider Retry-After deadlines, requires increased effective
+output allowance after output stops, counts unknown failed-attempt usage separately,
+reserves bounded results before tool execution and bounds aggregate retained request
+context. Optional `AgentHttpHandler` carries canonical HTTP/retry advice through the
+official SDK transports. `CompactAsync` creates a paid tool-free public checkpoint,
+stages and validates replacement context, retains complete recent native turns, and
+preserves original history on failure. Manual compaction is reviewed, and `/compact`
+is handled locally. Automatic triggers, model-window estimates, retained turns and
+checkpoint output allowance are configurable. The older synchronous `Compact` API
+remains a local deterministic checkpoint for embedding compatibility.
+
+Targeted companion and browser compilation succeeded during this implementation;
+the full behavioral suites and package consumers are deliberately pending. Earlier
+browser fixtures need updating for the new compaction and restore confirmations.
+
 - The merged native solution passed 1,508 tests after merging main through
   `a331efe` (Avalonia class/setter contracts), including 1,017 real-Avalonia tests
   and the runtime inspector's fifteen tests for live manipulation and source
@@ -209,8 +232,8 @@ identities. Keyed location reads do not instantiate deferred resources.
 Template-owned visuals require template/source edits; tree operations reject
 unsupported ownership. Diagnostic frame metadata uses the loaded Avalonia runtime.
 
-Full reference parity remains in progress: account-mode support and additional
-provider recovery/limit controls and task/workspace identity binding; MCP resource updates, tasks and artifact handling;
+Full reference parity remains in progress: account-mode support and remaining
+provider protocol/recovery details; MCP resource updates, tasks and artifact handling;
 typed runtime input and additional designer/runtime UI; the remaining Roslyn
 authoring surface for the multi-file C# workspace; and the corresponding UI and protocol
 acceptance coverage. This ledger does not claim those capabilities from a build

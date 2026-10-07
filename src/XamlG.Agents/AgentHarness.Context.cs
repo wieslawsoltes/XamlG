@@ -8,7 +8,7 @@ public sealed partial class AgentHarness
 {
     public void QueueMessage(string id, string message)
     {
-        var task = GetTask(id);
+        var task = GetTask(id); EnsureCurrentWorkspace(task);
         ValidateQueuedText(message);
         lock (task.Sync)
         {
@@ -104,23 +104,28 @@ public sealed partial class AgentHarness
         if (Encoding.UTF8.GetByteCount(text) > maximumBytes)
             throw new InvalidOperationException("The goal and plan exceed the checkpoint limit. Increase the context limit; user requirements were preserved.");
         task.Messages.Clear(); task.Messages.Add(new(AgentMessageKind.User, text)); task.CheckpointCount++;
+        task.NativeContextBytes = Encoding.UTF8.GetByteCount(text);
         Publish(task, "checkpoint", $"Context checkpoint {task.CheckpointCount}; {Encoding.UTF8.GetByteCount(text)} bytes. Native provider history was released.");
     }
 
-    public async Task<AgentChangeReview> RestoreChangesAsync(string id, IReadOnlyList<string> paths, long expectedRevision, CancellationToken cancellationToken = default)
+    public async Task<AgentChangeReview> RestoreChangesAsync(string id, IReadOnlyList<string> paths, long expectedRevision, CancellationToken cancellationToken = default, bool latestRun = false)
     {
-        var task = GetTask(id); EnsureIdle(task);
-        if (workspace == null || task.Changes == null || task.BeforeRun == null) throw new InvalidOperationException("No workspace checkpoint is available.");
+        var task = GetTask(id); EnsureIdle(task); EnsureCurrentWorkspace(task);
+        var review = latestRun ? task.LatestRunChanges : task.Changes;
+        if (workspace == null || review == null || task.BeforeRun == null) throw new InvalidOperationException("No workspace checkpoint is available.");
         if (!await _runGate.WaitAsync(0, cancellationToken)) throw new InvalidOperationException("Stop the active agent before restoring source.");
         try
         {
             if (paths.Count is < 1 or > 1024 || paths.Distinct(StringComparer.Ordinal).Count() != paths.Count) throw new ArgumentException("Select distinct changed paths.");
-            var selected = paths.Select(path => task.Changes.Files.SingleOrDefault(f => f.Path == path)
+            using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, task.WorkspaceLifetime);
+            lifetime.Token.ThrowIfCancellationRequested();
+            var selected = paths.Select(path => review.Files.SingleOrDefault(f => f.Path == path)
                 ?? throw new ArgumentException("Unknown change path.")).ToArray();
-            var after = await workspace.RestoreAsync(expectedRevision, selected, cancellationToken);
+            var after = await workspace.RestoreAsync(expectedRevision, selected, lifetime.Token);
             task.Changes = new(after.Revision, Diff(task.BeforeRun.Documents, after.Documents));
+            if (task.BeforeLatestRun != null) task.LatestRunChanges = new(after.Revision, Diff(task.BeforeLatestRun.Documents, after.Documents));
             Publish(task, "restored", "Restored source: " + string.Join(", ", paths));
-            return task.Changes;
+            return latestRun ? task.LatestRunChanges! : task.Changes;
         }
         finally { _runGate.Release(); }
     }
