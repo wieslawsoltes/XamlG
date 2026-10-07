@@ -36,22 +36,8 @@ public sealed class ValueBinder
         if (PrimitiveValueParser.TryParse(text, target.SpecialType, out var primitive))
             return new BoundConstantExpression(primitive, target.SpecialType == SpecialType.System_Object ? _context.Types.Special(SpecialType.System_String) : target, span);
         if (PrimitiveValueParser.IsScalar(target)) return null;
-        if (target.TypeKind == TypeKind.Enum && target is INamedTypeSymbol enumeration)
-        {
-            var fields = ImmutableArray.CreateBuilder<IFieldSymbol>();
-            foreach (var name in text.Split(','))
-            {
-                var field = enumeration.GetMembers().OfType<IFieldSymbol>().FirstOrDefault(f => f.HasConstantValue && string.Equals(f.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
-                if (field == null)
-                {
-                    if (fields.Count == 0 && enumeration.EnumUnderlyingType != null && PrimitiveValueParser.TryParse(text, enumeration.EnumUnderlyingType.SpecialType, out var number))
-                        return new BoundCastExpression(new BoundConstantExpression(number, enumeration.EnumUnderlyingType, span), target, span);
-                    return null;
-                }
-                fields.Add(field);
-            }
-            return fields.Count == 0 ? null : new BoundEnumExpression(fields.ToImmutable(), target, span);
-        }
+        if (target.TypeKind == TypeKind.Enum && target is INamedTypeSymbol enumeration && TryEnum(text, enumeration, span) is { } enumValue)
+            return enumValue;
         if (target.HasMetadataName(ClrNames.Type))
         {
             var referenced = ResolveTypeLiteral(text, scope, span, report: false);
@@ -120,6 +106,35 @@ public sealed class ValueBinder
                 m.Parameters[0].Type.SpecialType == SpecialType.System_String && (m.Parameters.Length == 1 || m.Parameters[1].Type.HasMetadataName(ClrNames.IFormatProvider) || m.Parameters[1].Type.HasMetadataName(ClrNames.CultureInfo)) &&
                 _context.Types.Compilation.ClassifyCommonConversion(m.ReturnType, target).IsImplicit)
             .OrderByDescending(m => m.Parameters.Length).FirstOrDefault();
+    private static BoundExpression? TryEnum(string text, INamedTypeSymbol type, TextSpan span)
+    {
+        if (type.EnumUnderlyingType is { } underlying && long.TryParse(text, out var number))
+        {
+            // Enum literals are signed 64-bit input; assignment keeps only the underlying bits.
+            // Normalize before emission so constant casts also compile in a checked C# project.
+            object value = underlying.SpecialType switch
+            {
+                SpecialType.System_Byte => (object)unchecked((byte)number),
+                SpecialType.System_SByte => unchecked((sbyte)number),
+                SpecialType.System_Int16 => unchecked((short)number),
+                SpecialType.System_UInt16 => unchecked((ushort)number),
+                SpecialType.System_Int32 => unchecked((int)number),
+                SpecialType.System_UInt32 => unchecked((uint)number),
+                SpecialType.System_UInt64 => unchecked((ulong)number),
+                _ => number
+            };
+            return new BoundCastExpression(new BoundConstantExpression(value, underlying, span), type, span);
+        }
+        var flags = type.GetAttributes().Any(attribute => attribute.AttributeClass?.Name == "FlagsAttribute");
+        var fields = ImmutableArray.CreateBuilder<IFieldSymbol>();
+        foreach (var name in flags ? text.Split(',').Select(value => value.Trim()) : new[] { text })
+        {
+            var field = type.GetMembers(name).OfType<IFieldSymbol>().FirstOrDefault(candidate => candidate.HasConstantValue);
+            if (field == null) return null;
+            fields.Add(field);
+        }
+        return fields.Count == 0 ? null : new BoundEnumExpression(fields.ToImmutable(), type, span);
+    }
     private INamedTypeSymbol? FindConverter(ISymbol? symbol)
     {
         if (symbol == null) return null;
