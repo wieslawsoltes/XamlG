@@ -29,16 +29,13 @@ public sealed class XamlTextObjectExpressionRule : IXamlObjectExpressionRule
             if (children.Length != 1 || context.Values.PeekValueType(children[0], scope, nameScope)?.SpecialType != SpecialType.System_String) return false;
             var child = children[0];
             var valueScope = child is XamlElementSyntax element ? scope.Push(element) : scope;
-            if (context.Values.TryGetStringLiteral(child, scope, out var literal))
-            {
-                expression = context.Values.TryText(literal, type, valueScope, syntax.Span);
-                return expression != null;
-            }
             var stringType = context.Types.Special(SpecialType.System_String);
             var assignable = context.Types.Compilation.ClassifyCommonConversion(stringType, type).IsImplicit;
             if (!assignable && !context.Values.CanConvertValueType(stringType, type)) return false;
             var value = context.Values.BindNode(child, stringType, scope, nameScope);
-            expression = value == null ? null : assignable ? value : context.Values.TryConvert(value, type, valueScope, syntax.Span);
+            // An explicit string object uses runtime conversion, even if its value is constant.
+            expression = value == null ? null : assignable ? value : context.Values.TryConvert(value, type, valueScope, syntax.Span, allowTextConversion: false);
+            if (expression != null) expression = expression with { SourceInfoSpan = BoundSourceInfo.ValueLocation(context.Syntax, syntax.Span) };
             return true;
         }
         if (!syntax.Children.OfType<XamlTextSyntax>().Any()) return false;

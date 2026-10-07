@@ -12,6 +12,7 @@ public sealed record XamlRuntimeConfiguration
     public XamlMethodReference? InnerServiceProviderFactory { get; init; }
     public XamlMethodReference? DeferredContentCustomizer { get; init; }
     public XamlNameScopeConfiguration? NameScope { get; init; }
+    public XamlSourceInfoConfiguration? SourceInfo { get; init; }
     public string? DeferredDefaultTypeArgument { get; init; }
     public ImmutableArray<string> DeferredTypeArgumentAttributeProperties { get; init; } = ImmutableArray.Create("Type");
 }

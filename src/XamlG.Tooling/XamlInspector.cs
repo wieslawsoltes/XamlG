@@ -44,11 +44,11 @@ public static class XamlInspector
         var expressions = value switch
         {
             BoundSetAssignment s => ImmutableArray.Create(s.Value),
-            BoundAddAssignment a => a.Arguments,
+            BoundAddAssignment a => a.Arguments.AddRange(a.PostCall?.Arguments ?? []),
             BoundEventAssignment { Value: { } handler } => ImmutableArray.Create(handler),
             BoundDynamicSetAssignment d => ImmutableArray.Create(d.Value),
             BoundAdaptedSetAssignment a => ImmutableArray.Create(a.Value),
-            BoundCallAssignment c => c.Arguments,
+            BoundCallAssignment c => c.Arguments.AddRange(c.PostCall?.Arguments ?? []),
             _ => ImmutableArray<BoundExpression>.Empty
         };
         return new(id, value.GetType().Name, label, value.Span, null,

@@ -15,7 +15,7 @@
   </ItemGroup>
   <ItemGroup>
     <AvailableItemName Include="XamlGSource" />
-    <CompilerVisibleProperty Include="XamlGEnabled;XamlGFramework;XamlGGenerateInitializeComponent;XamlGGenerateNamedFields;XamlGCompileBindingsByDefault;AvaloniaUseCompiledBindingsByDefault;MSBuildProjectDirectory" />
+    <CompilerVisibleProperty Include="XamlGEnabled;XamlGFramework;XamlGGenerateInitializeComponent;XamlGGenerateNamedFields;XamlGCompileBindingsByDefault;AvaloniaUseCompiledBindingsByDefault;XamlGCreateSourceInfo;AvaloniaXamlCreateSourceInfo;Configuration;MSBuildProjectDirectory" />
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="XamlGCompile" />
     <CompilerVisibleItemMetadata Include="AdditionalFiles" MetadataName="XamlGLogicalPath" />
   </ItemGroup>

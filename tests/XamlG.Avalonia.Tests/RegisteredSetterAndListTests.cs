@@ -44,6 +44,13 @@ public sealed class RegisteredSetterAndListTests
         var rectangle = Assert.IsType<Rectangle>(fixture.Build("View.axaml"));
         Assert.Equal(count, rectangle.StrokeDashArray!.Count);
         if (count != 0) Assert.Equal(new[] { 1d, 2d, 3d }, rectangle.StrokeDashArray);
+        else
+        {
+            // Empty-list construction is an existing native extension: upstream omits the assignment.
+            var baseline = AvaloniaUpstreamCompilation.Compile("<Rectangle " + ResourceProjectFixture.Namespace + " StrokeDashArray=''/>");
+            Assert.Null(baseline.Error);
+            Assert.Null(Assert.IsType<Rectangle>(baseline.Root).StrokeDashArray);
+        }
     }
 
     [AvaloniaFact]

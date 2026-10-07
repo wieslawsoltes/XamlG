@@ -13,11 +13,13 @@ internal static class AvaloniaCompilation
 {
     private static readonly MetadataReference[] References = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator).Select(p => MetadataReference.CreateFromFile(p)).ToArray();
 
-    public static object Build(string xaml)
+    public static object Build(string xaml) => Build(xaml, false);
+
+    public static object Build(string xaml, bool createSourceInfo, string documentPath = "Test.axaml", object? rootInstance = null)
     {
         var compilation = CSharpCompilation.Create("XamlG.AvaloniaTest." + Guid.NewGuid().ToString("N"), references: References,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
-        var bound = new XamlCompiler().Bind(XamlSyntaxTree.Parse(xaml, "Test.axaml"), compilation, AvaloniaFrameworkProfile.Create());
+        var bound = new XamlCompiler().Bind(XamlSyntaxTree.Parse(xaml, documentPath), compilation, AvaloniaFrameworkProfile.Create(createSourceInfo: createSourceInfo));
         Assert.True(bound.Success, string.Join("\n", bound.Diagnostics));
         var emitted = new CSharpEmitter().Emit(bound);
         Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
@@ -25,6 +27,9 @@ internal static class AvaloniaCompilation
         using var stream = new MemoryStream();
         var result = compilation.Emit(stream);
         Assert.True(result.Success, string.Join("\n", result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error)) + "\n" + emitted.Source);
-        return Assembly.Load(stream.ToArray()).GetType(emitted.FactoryTypeName)!.GetMethod(emitted.BuildMethodName!)!.Invoke(null, new object?[] { null })!;
+        var factory = Assembly.Load(stream.ToArray()).GetType(emitted.FactoryTypeName)!;
+        if (rootInstance == null) return factory.GetMethod(emitted.BuildMethodName!)!.Invoke(null, new object?[] { null })!;
+        factory.GetMethod(emitted.PopulateMethodName)!.Invoke(null, new object?[] { rootInstance, null });
+        return rootInstance;
     }
 }

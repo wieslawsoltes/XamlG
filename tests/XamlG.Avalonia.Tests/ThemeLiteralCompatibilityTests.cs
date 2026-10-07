@@ -61,7 +61,7 @@ public sealed class ThemeLiteralCompatibilityTests
             <FontFamily x:Key="font">fonts/#Example</FontFamily>
             """)) });
         var root = Assert.IsType<ResourceDictionary>(project.Build("Resources.axaml"));
-        Assert.Equal(Color.Parse("#336699"), Assert.IsType<SolidColorBrush>(root["brush"]).Color);
+        Assert.Equal(Color.Parse("#336699"), Assert.IsType<global::Avalonia.Media.Immutable.ImmutableSolidColorBrush>(root["brush"]).Color);
         Assert.IsType<StreamGeometry>(root["geometry"]);
         Assert.IsType<TransformOperations>(root["transform"]);
         var font = Assert.IsType<FontFamily>(root["font"]);

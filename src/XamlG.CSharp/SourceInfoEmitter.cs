@@ -6,6 +6,29 @@ namespace XamlG.CSharp;
 
 internal sealed class SourceInfoEmitter(EmissionContext context)
 {
+    public void EmitConstructed(BoundObject value, string target)
+    {
+        if (context.Document.Runtime.SourceInfo == null || value.Type.IsValueType || value.FactoryMethod != null) return;
+        var syntax = context.Document.Syntax;
+        var attribute = syntax.FindElement(value.Syntax.Span.Start)?.Attributes.FirstOrDefault(item =>
+            item.ValueSpan.Start <= value.Syntax.NameSpan.Start && value.Syntax.NameSpan.Start < item.ValueSpan.End);
+        EmitConstructed(target, attribute?.NameSpan ?? value.Syntax.NameSpan);
+    }
+
+    public void EmitConstructed(string target, TextSpan location)
+    {
+        if (context.Document.Runtime.SourceInfo is not { } source) return;
+        var metadata = source.CreateValue(context.Document.Syntax, location);
+        var arguments = metadata.Arguments.Cast<BoundConstantExpression>().Select(argument => argument.Value switch
+        {
+            null => "null", string text => CSharpNames.Literal(text),
+            int number => number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            _ => throw new InvalidOperationException("Unexpected source-information constructor argument.")
+        });
+        context.Writer.Line(source.ObjectSetter.ContainingType.CSharpName() + "." + CSharpNames.Method(source.ObjectSetter) + "(" + target +
+            ", new " + source.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", arguments) + "));");
+    }
+
     public void Emit(BoundObject value, string frame)
     {
         var syntax = context.Document.Syntax;

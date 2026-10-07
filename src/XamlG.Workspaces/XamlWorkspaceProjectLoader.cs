@@ -31,7 +31,8 @@ public static class XamlWorkspaceProjectLoader
             ?? throw new InvalidOperationException("Roslyn did not provide a C# compilation for this project.");
         var configuration = project.AnalyzerOptions.AnalyzerConfigOptionsProvider;
         var defaults = options.CompileBindingsByDefault ?? AvaloniaBuildOptions.ReadCompileBindingsByDefault(configuration.GlobalOptions);
-        var profile = KnownFrameworkProfiles.Select(compilation, options.Framework, defaults);
+        var sourceInfo = options.CreateSourceInfo ?? AvaloniaBuildOptions.ReadCreateSourceInfo(configuration.GlobalOptions);
+        var profile = KnownFrameworkProfiles.Select(compilation, options.Framework, defaults, sourceInfo);
         var pathComparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         var documents = ImmutableDictionary.CreateBuilder<string, XamlSyntaxTree>(pathComparer);
         var resources = new List<XamlProjectDocument>();

@@ -68,7 +68,7 @@ internal static class ThemeCorpusRunner
         // Match the upstream theme projects' reflection-binding default. A compiled-binding
         // error is never retried through reflection or the original XamlX backend.
         var result = new XamlProjectCompiler().Compile(inputs, compilation,
-            AvaloniaFrameworkProfile.Create(compileBindingsByDefault: false), cancellationToken: cancellationToken);
+            AvaloniaFrameworkProfile.Create(compileBindingsByDefault: false, createSourceInfo: true), cancellationToken: cancellationToken);
         var xamlDiagnostics = result.Documents.SelectMany(document => document.Output.Diagnostics.Select(diagnostic => new
         { path = document.Input.LogicalPath, code = diagnostic.Code, message = diagnostic.Message, span = diagnostic.Span.ToString(), severity = diagnostic.Severity.ToString() })).ToArray();
         File.WriteAllText(Path.Combine(evidence, "xaml-diagnostics.json"), JsonSerializer.Serialize(xamlDiagnostics, new JsonSerializerOptions { WriteIndented = true }));
@@ -106,7 +106,7 @@ internal static class ThemeCorpusRunner
                 theme, documents = inputs.Length, physicalDocuments = expectedCount, linkedDocuments = xaml.Count(input => input.IsLinked),
                 codeFiles = trees.Length, realized,
                 assemblySha256 = Convert.ToHexString(SHA256.HashData(image.ToArray())),
-                sourceFactories = result.Documents.Length, success = true
+                sourceFactories = result.Documents.Length, createSourceInfo = true, success = true
             }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine($"PASS: {inputs.Length} unmodified {theme} documents including project links, original code-behind, root construction, {realized} realized control/theme cases.");
         }

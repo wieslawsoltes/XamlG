@@ -78,10 +78,10 @@ public sealed class ValueBinder
         }
         return null;
     }
-    public BoundExpression? TryConvert(BoundExpression value, ITypeSymbol target, NamespaceScope scope, TextSpan span, ISymbol? member = null)
+    public BoundExpression? TryConvert(BoundExpression value, ITypeSymbol target, NamespaceScope scope, TextSpan span, ISymbol? member = null, bool allowTextConversion = true)
     {
         var propertyConverter = FindConverter(member);
-        if (value is BoundConstantExpression { Value: string text })
+        if (allowTextConversion && value is BoundConstantExpression { Value: string text })
         {
             if (propertyConverter == null && _context.Types.Compilation.ClassifyCommonConversion(value.Type!, target).IsImplicit) return null;
             return TryText(text, target, scope, span, member);
@@ -90,7 +90,7 @@ public sealed class ValueBinder
         if (value.Type?.SpecialType != SpecialType.System_String) return null;
         if (target is INamedTypeSymbol nullable && nullable.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
         {
-            var inner = TryConvert(value, nullable.TypeArguments[0], scope, span, member);
+            var inner = TryConvert(value, nullable.TypeArguments[0], scope, span, member, allowTextConversion);
             return inner == null ? null : new BoundCastExpression(inner, target, span);
         }
         var parse = FindParse(target);

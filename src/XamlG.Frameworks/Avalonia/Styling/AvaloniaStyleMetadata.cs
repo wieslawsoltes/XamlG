@@ -22,6 +22,7 @@ internal static class AvaloniaStyleMetadata
     public const string StyledElement = "Avalonia.StyledElement";
     public const string Property = "Avalonia.AvaloniaProperty";
     public const string GenericProperty = "Avalonia.AvaloniaProperty`1";
+    public const string AttachedProperty = "Avalonia.AttachedProperty`1";
     public const string Template = "Avalonia.Controls.ITemplate";
     public const string Classes = "Avalonia.Controls.Classes";
     public const string SelectorMember = "Selector";

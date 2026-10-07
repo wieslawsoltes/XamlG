@@ -26,10 +26,15 @@ internal sealed class CallAssignmentEmitter(EmissionContext context, ValueEmitte
             writer.Line(assignment.Method.Parameters[parameterIndex].Type.CSharpName() + " " + local + " = " + expression + ";");
             arguments.Add(local);
         }
-        if (assignment.IncludeTarget) arguments.Insert(0, target);
+        var inputs = assignment.IncludeTarget ? new[] { target }.Concat(arguments) : arguments;
         var call = (assignment.Method.IsStatic ? assignment.Method.ContainingType.CSharpName() : target) +
-            "." + CSharpNames.Method(assignment.Method) + "(" + string.Join(", ", arguments) + ")";
-        if (!assignment.OwnResult) { writer.Line(call + ";"); return; }
+            "." + CSharpNames.Method(assignment.Method) + "(" + string.Join(", ", inputs) + ")";
+        if (!assignment.OwnResult)
+        {
+            writer.Line(call + ";");
+            new PostCallEmitter(context, values).Emit(assignment.PostCall, target, arguments, frame, assignment.Span);
+            return;
+        }
         var resultType = assignment.Method.ReturnType;
         if (!resultType.HasMetadataName("System.IDisposable") &&
             !resultType.AllInterfaces.Any(type => type.HasMetadataName("System.IDisposable")))
@@ -37,5 +42,6 @@ internal sealed class CallAssignmentEmitter(EmissionContext context, ValueEmitte
         var subscription = context.Temporary("ownedCall");
         writer.Line("global::System.IDisposable? " + subscription + " = " + call + ";");
         writer.Line(frame + ".Session.TrackCleanup(() => " + subscription + "?.Dispose());");
+        new PostCallEmitter(context, values).Emit(assignment.PostCall, target, arguments, frame, assignment.Span);
     }
 }

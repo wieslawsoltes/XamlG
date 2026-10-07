@@ -92,11 +92,7 @@ internal sealed class AvaloniaSelectorBinder(BindingContext context, NamespaceSc
                     result = Call("Nesting", step.Span, value);
                     break;
                 case SelectorStepKind.PropertyEquals:
-                    var property = AvaloniaRegisteredPropertyResolver.Resolve(context, target, step.Name, scope, step.Span);
-                    if (property == null) return null;
-                    var converted = context.Values.BindText(step.Value!, property.ValueType, scope, step.Span);
-                    if (converted == null) return null;
-                    result = Call("PropertyEquals", step.Span, value, property.Reference(step.Span), converted);
+                    result = PropertyEquals(value, target, step);
                     break;
                 case SelectorStepKind.Not:
                     var argument = Bind(step.Argument!);
@@ -115,6 +111,36 @@ internal sealed class AvaloniaSelectorBinder(BindingContext context, NamespaceSc
             value = result;
         }
         return new(value, target, templateOwner, hasTemplateScope);
+    }
+
+    private BoundExpression? PropertyEquals(BoundExpression previous, INamedTypeSymbol? target, SelectorStepSyntax step)
+    {
+        if (target == null)
+        { context.Report("XG3105", "Property selectors require a preceding target type.", step.Span); return null; }
+        RegisteredProperty? property;
+        ITypeSymbol valueType;
+        if (step.Name.StartsWith("(", StringComparison.Ordinal))
+        {
+            property = AvaloniaRegisteredPropertyResolver.Resolve(context, target, step.Name, scope, step.Span);
+            if (property == null) return null;
+            if (property.Field.Type is not INamedTypeSymbol fieldType || !fieldType.OriginalDefinition.HasMetadataName(AvaloniaStyleMetadata.AttachedProperty))
+            { context.Report("XG3103", "An attached-property selector requires an AttachedProperty registration.", step.Span); return null; }
+            valueType = property.ValueType;
+        }
+        else
+        {
+            var wrapper = target.Members(step.Name).OfType<IPropertySymbol>().FirstOrDefault(p => !p.IsStatic && !p.IsIndexer && context.Types.IsAccessible(p));
+            property = wrapper == null ? null : AvaloniaRegisteredPropertyResolver.Find(context, wrapper.ContainingType, wrapper.Name);
+            if (property == null || !SymbolEqualityComparer.Default.Equals(property.Field.ContainingType, wrapper!.ContainingType))
+            { context.Report("XG3103", $"Selector property '{step.Name}' requires a CLR property and its declaring registration.", step.Span); return null; }
+            context.Symbols.Add(new(step.Span, wrapper!, "property"));
+            // This transform uses the CLR value type but no property converter context.
+            valueType = wrapper!.Type;
+        }
+        var converted = context.Values.TryText(step.Value!, valueType, scope, step.Span);
+        if (converted == null)
+        { context.Report("XG1008", $"Cannot convert selector value '{step.Value}' to '{valueType.ToDisplayString()}'.", step.Span); return null; }
+        return Call("PropertyEquals", step.Span, previous, property.Reference(step.Span), converted);
     }
 
     private BoundExpression Text(string value, TextSpan span) => new BoundConstantExpression(value, context.Types.Special(SpecialType.System_String), span);

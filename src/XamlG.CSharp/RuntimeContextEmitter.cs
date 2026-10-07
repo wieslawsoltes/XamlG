@@ -64,11 +64,11 @@ internal sealed class RuntimeContextEmitter
         return frame;
     }
 
-    public void RegisterName(string frame, string name, string value)
+    public void RegisterName(string frame, string nameExpression, string value)
     {
-        _context.Writer.Line(frame + ".RegisterName(" + CSharpNames.Literal(name) + ", " + value + ");");
         if (_context.Document.Runtime.NameScope is { } scope)
-            _context.Writer.Line("((" + scope.ContractType.CSharpName() + ")" + frame + ".GetService(typeof(" + scope.ContractType.CSharpName() + "))!)." + CSharpNames.Method(scope.Register) + "(" + CSharpNames.Literal(name) + ", " + value + ");");
+            _context.Writer.Line("((" + scope.ContractType.CSharpName() + ")" + frame + ".GetService(typeof(" + scope.ContractType.CSharpName() + "))!)." + CSharpNames.Method(scope.Register) + "(" + nameExpression + ", " + value + ");");
+        _context.Writer.Line(frame + ".RegisterName(" + nameExpression + ", " + value + ");");
     }
 
     public void Complete(string frame, string root)

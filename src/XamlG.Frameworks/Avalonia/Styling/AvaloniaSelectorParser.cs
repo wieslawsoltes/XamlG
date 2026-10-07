@@ -38,7 +38,6 @@ public sealed class AvaloniaSelectorParser
             var sequenceStart = _position;
             var steps = ImmutableArray.CreateBuilder<SelectorStepSyntax>();
             var compound = false;
-            var afterCombinator = false;
             while (_position < _text.Length && !_failed)
             {
                 _cancellation.ThrowIfCancellationRequested();
@@ -48,26 +47,24 @@ public sealed class AvaloniaSelectorParser
                 var tokenStart = _position;
                 if (_text[_position] == '>' || At("/template/"))
                 {
-                    if (!compound || afterCombinator) { Error("A combinator requires a preceding selector.", tokenStart); break; }
+                    if (steps.Count == 0 || steps[steps.Count - 1].Kind == SelectorStepKind.Template)
+                    { Error("A combinator requires a preceding selector.", tokenStart); break; }
                     var kind = _text[_position] == '>' ? SelectorStepKind.Child : SelectorStepKind.Template;
                     _position += kind == SelectorStepKind.Child ? 1 : 10;
                     steps.Add(new(kind, string.Empty, null, Span(tokenStart)));
                     compound = false;
-                    afterCombinator = true;
                     continue;
                 }
                 if (whitespace && compound)
                 {
                     steps.Add(new(SelectorStepKind.Descendant, string.Empty, null, new(_sourceOffset + whitespaceStart, tokenStart - whitespaceStart)));
                     compound = false;
-                    afterCombinator = true;
                 }
                 SelectorStepSyntax? step = null;
                 switch (_text[_position])
                 {
                     case '^':
                         _position++;
-                        if (steps.Count != 0) { Error("The nesting selector must be first in a sequence.", tokenStart); break; }
                         step = new(SelectorStepKind.Nesting, string.Empty, null, Span(tokenStart));
                         break;
                     case '*':
@@ -125,36 +122,21 @@ public sealed class AvaloniaSelectorParser
                         }
                         var property = _text.Substring(propertyStart, _position - propertyStart).Trim();
                         if (property.Length == 0 || parenthesis != 0 || !Take('=')) { Error("Property selectors require [Property=Value].", tokenStart); break; }
-                        White();
-                        string value;
-                        if (_position < _text.Length && _text[_position] is '\'' or '"')
-                        {
-                            var quote = _text[_position++]; var valueStart = _position;
-                            while (_position < _text.Length && _text[_position] != quote) _position++;
-                            value = _text.Substring(valueStart, _position - valueStart);
-                            if (!Take(quote)) { Error("Unterminated selector property value.", tokenStart); break; }
-                            White();
-                        }
-                        else
-                        {
-                            var valueStart = _position;
-                            while (_position < _text.Length && _text[_position] != ']') _position++;
-                            value = _text.Substring(valueStart, _position - valueStart).Trim();
-                        }
+                        var valueStart = _position;
+                        while (_position < _text.Length && _text[_position] != ']') _position++;
+                        var value = _text.Substring(valueStart, _position - valueStart);
                         if (!Take(']')) { Error("Expected ']' after a property selector.", tokenStart); break; }
                         step = new(SelectorStepKind.PropertyEquals, property, value, Span(tokenStart));
                         break;
                     default:
-                        if (compound) { Error("Unexpected character in selector.", tokenStart); break; }
                         var name = Identifier(true);
                         if (name.Length == 0) { Error("Expected a selector type, class, name or pseudo-class.", tokenStart); break; }
                         step = new(SelectorStepKind.Type, name, null, Span(tokenStart));
                         break;
                 }
-                if (step != null) { steps.Add(step); compound = true; afterCombinator = false; }
+                if (step != null) { steps.Add(step); compound = true; }
             }
             if (steps.Count == 0) Error("A selector sequence cannot be empty.", sequenceStart);
-            else if (afterCombinator) Error("A selector cannot end in a combinator.", _position);
             sequences.Add(new(steps.ToImmutable(), Span(sequenceStart)));
             if (!Take(',')) break;
         }

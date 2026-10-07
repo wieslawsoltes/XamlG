@@ -15,12 +15,12 @@ internal sealed class ResourceProjectFixture
     public const string Namespace = "xmlns='https://github.com/avaloniaui' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'";
     private static readonly MetadataReference[] References = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
         .Append(typeof(XamlCompiledResourceAttribute).Assembly.Location).Distinct(StringComparer.Ordinal).Select(p => MetadataReference.CreateFromFile(p)).ToArray();
-    public ResourceProjectFixture(IEnumerable<(string Path, string Source)> documents, string? assemblyName = null, IEnumerable<MetadataReference>? references = null, string? sourceCode = null)
+    public ResourceProjectFixture(IEnumerable<(string Path, string Source)> documents, string? assemblyName = null, IEnumerable<MetadataReference>? references = null, string? sourceCode = null, bool createSourceInfo = false)
     {
         Compilation = CSharpCompilation.Create(assemblyName ?? "ResourceTest_" + Guid.NewGuid().ToString("N"),
             syntaxTrees: sourceCode == null ? null : new[] { CSharpSyntaxTree.ParseText(sourceCode, new CSharpParseOptions(LanguageVersion.Preview), "Code.cs") }, references: References.Concat(references ?? Array.Empty<MetadataReference>()),
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
-        Result = new XamlProjectCompiler().Compile(documents.Select(d => new XamlProjectDocument(XamlSyntaxTree.Parse(d.Source, d.Path), d.Path)), Compilation, AvaloniaFrameworkProfile.Create());
+        Result = new XamlProjectCompiler().Compile(documents.Select(d => new XamlProjectDocument(XamlSyntaxTree.Parse(d.Source, d.Path), d.Path)), Compilation, AvaloniaFrameworkProfile.Create(createSourceInfo: createSourceInfo));
     }
     public CSharpCompilation Compilation { get; }
     public XamlProjectCompilation Result { get; }

@@ -1,11 +1,12 @@
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlG.Compiler;
+using XamlG.Roslyn;
 
 namespace XamlG.Frameworks.Avalonia.References;
 
-/// <summary>Registers literal INamed.Name assignments as well as x:Name.
-/// Registration is emitted into both the compiler and framework namescopes, including
-/// the independent namescope belonging to each deferred template instance.</summary>
+/// <summary>Declares literal names for binding and registers string-valued INamed.Name
+/// assignments after their setters, including values supplied at runtime.</summary>
 public sealed class AvaloniaNameScopeRule : IXamlObjectBindingRule
 {
     public void Initialize(BindingContext context, ObjectBindingBuilder target)
@@ -26,5 +27,18 @@ public sealed class AvaloniaNameScopeRule : IXamlObjectBindingRule
         context.RegisterName(target.NameScopeId, name.Value, target.Type, name.Span);
     }
 
-    public void Complete(BindingContext context, ObjectBindingBuilder target) { }
+    public void Complete(BindingContext context, ObjectBindingBuilder target)
+    {
+        for (var index = 0; index < target.Assignments.Count; index++)
+        {
+            if (target.Assignments[index] is not BoundSetAssignment assignment ||
+                assignment.Member.Name != "Name" || assignment.Member.Symbol is not IPropertySymbol property ||
+                !property.ContainingType.AllInterfaces.Any(type => type.HasMetadataName(AvaloniaMetadata.Named))) continue;
+            var value = assignment.Value;
+            // Setter casts do not change the provider's static type for name registration.
+            while (value is BoundCastExpression cast) value = cast.Value;
+            if (value is not BoundConstantExpression { Value: null } && value.Type?.SpecialType == SpecialType.System_String)
+                target.Assignments[index] = assignment with { RegisterName = true };
+        }
+    }
 }
