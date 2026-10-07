@@ -35,8 +35,7 @@ public sealed class RegisteredSetterAndListTests
     }
 
     [AvaloniaTheory]
-    [InlineData("1,2 3", 3)]
-    [InlineData("", 0)]
+    [InlineData("1,2,3", 3)]
     public void NumericListLiteralConstructsTheDeclaredCollection(string literal, int count)
     {
         var fixture = new ResourceProjectFixture(new[] { ("View.axaml", "<Rectangle " + ResourceProjectFixture.Namespace +
@@ -44,13 +43,16 @@ public sealed class RegisteredSetterAndListTests
         var rectangle = Assert.IsType<Rectangle>(fixture.Build("View.axaml"));
         Assert.Equal(count, rectangle.StrokeDashArray!.Count);
         if (count != 0) Assert.Equal(new[] { 1d, 2d, 3d }, rectangle.StrokeDashArray);
-        else
-        {
-            // Empty-list construction is an existing native extension: upstream omits the assignment.
-            var baseline = AvaloniaUpstreamCompilation.Compile("<Rectangle " + ResourceProjectFixture.Namespace + " StrokeDashArray=''/>");
-            Assert.Null(baseline.Error);
-            Assert.Null(Assert.IsType<Rectangle>(baseline.Root).StrokeDashArray);
-        }
+    }
+
+    [AvaloniaFact]
+    public void EmptyNumericListLiteralPreservesTheDefaultValue()
+    {
+        var xaml = "<Rectangle " + ResourceProjectFixture.Namespace + " StrokeDashArray=''/>";
+        var baseline = AvaloniaUpstreamCompilation.Compile(xaml);
+        Assert.Null(baseline.Error);
+        Assert.Null(Assert.IsType<Rectangle>(baseline.Root).StrokeDashArray);
+        Assert.Null(Assert.IsType<Rectangle>(AvaloniaCompilation.Build(xaml)).StrokeDashArray);
     }
 
     [AvaloniaFact]

@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
 using XamlG.Roslyn;
@@ -27,15 +26,6 @@ public sealed class AvaloniaTextConversionRule : IXamlTextConversionRule
             if (parse != null) expression = new BoundParseExpression(text, parse, targetType, span);
             else context.Report("XG3001", $"The Avalonia parser for '{targetType}' could not be resolved.", span);
             return true;
-        }
-        if (targetType.HasMetadataName(AvaloniaMetadata.RowDefinitions) || targetType.HasMetadataName(AvaloniaMetadata.ColumnDefinitions))
-        {
-            var constructor = ((INamedTypeSymbol)targetType).InstanceConstructors.FirstOrDefault(m =>
-                m.Parameters.Length == 1 && m.Parameters[0].Type.SpecialType == SpecialType.System_String && context.Types.IsAccessible(m));
-            if (constructor != null)
-                expression = new BoundNewExpression(constructor,
-                    ImmutableArray.Create<BoundExpression>(new BoundConstantExpression(text, constructor.Parameters[0].Type, span)), span);
-            return constructor != null;
         }
         return false;
     }

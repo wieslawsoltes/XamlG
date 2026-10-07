@@ -54,6 +54,7 @@ public static class BoundDocumentTraversal
         BoundCastExpression cast => new[] { cast.Value },
         BoundValueConverterExpression converter => new[] { converter.Value },
         BoundArrayExpression array => array.Values,
+        BoundCollectionExpression collection => collection.Values,
         BoundNewExpression creation => creation.Arguments,
         BoundCallExpression call => call.Receiver == null ? call.Arguments.AsEnumerable() : call.Arguments.Prepend(call.Receiver),
         BoundDeferredExpression deferred => new[] { deferred.Content },
