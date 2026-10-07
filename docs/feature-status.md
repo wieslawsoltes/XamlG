@@ -7,6 +7,7 @@ This is a capability map, not a declaration of universal XAML/Avalonia parity. A
 | Area | Implementation |
 | --- | --- |
 | Portable XamlX behavior | Typed/parameterless markup providers, collection replacement followed by additions, runtime collection overload dispatch, delegate/event values, scoped member/constructor conversions and intrinsic property elements. See the [source audit and remaining work](upstream-validation.md#implementation-audit-beyond-the-pinned-tests). |
+| Avalonia binding type scopes | Annotated data-type properties and directive precedence; compiled `DataContext` result inference; item templates and assigned bindings typed from generic collections; custom ancestor collection metadata. Differential regressions preserve property order and single source construction. Named-source and remaining binding transforms are still under source audit. |
 | Type binding | Generic base/interface/dependent constraints, constructor and required-member constraints, nested/array substitution, ref-like restrictions, source diagnostics instead of invalid generic emission. |
 | Code-behind resources | Eligible concrete/nongeneric `x:Class` factories, actual constructors, service forwarding, one-time/base-and-derived initialization, inherited-session ownership, constructor-failure cleanup, caller-service fallback, public exports, nested metadata names. |
 | Linker failure recovery | Backend-only failures suppress dependent output and recover without corrupting reusable caller caches. |
