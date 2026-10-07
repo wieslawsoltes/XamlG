@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 
 test('file move state binds actual paths and clears errors on destination changes', async ({ page }) => {
   await page.goto('./');

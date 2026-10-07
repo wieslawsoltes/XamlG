@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', error => console.log('BROWSER ERROR:', error.stack ?? error.message));

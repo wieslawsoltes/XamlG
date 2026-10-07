@@ -32,7 +32,7 @@ builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 
 var ownerToken = LocalToken("XAMLG_STUDIO_OWNER_TOKEN");
 var clientToken = LocalToken("XAMLG_STUDIO_TOKEN");
 if (EqualToken(ownerToken, clientToken)) throw new InvalidOperationException("Owner and MCP client tokens must be distinct.");
-var origins = (builder.Configuration["origins"] ?? $"http://127.0.0.1:{port},http://127.0.0.1:8765,http://localhost:8765")
+var origins = (builder.Configuration["origins"] ?? $"https://wieslawsoltes.github.io,http://127.0.0.1:{port},http://127.0.0.1:8765,http://localhost:8765")
     .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
 foreach (var origin in origins)
     if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.GetLeftPart(UriPartial.Authority) != origin || uri.Scheme is not ("http" or "https") || uri.UserInfo.Length != 0)
@@ -179,7 +179,7 @@ if (webRoot != null)
     app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = files });
     app.UseStaticFiles(new StaticFileOptions { FileProvider = files, ServeUnknownFileTypes = true, DefaultContentType = "application/octet-stream" });
 }
-Console.Error.WriteLine($"XamlG companion: http://127.0.0.1:{port}\nOwner token (browser only): {ownerToken}\nMCP client token: {clientToken}");
+Console.Error.WriteLine($"XamlG companion: http://127.0.0.1:{port}\nOpen https://wieslawsoltes.github.io/XamlG/ and pair ws://127.0.0.1:{port}/bridge in Agent access.\nOwner token (browser only): {ownerToken}\nMCP client token: {clientToken}");
 await app.RunAsync();
 
 static bool EqualToken(string supplied, string expected) =>

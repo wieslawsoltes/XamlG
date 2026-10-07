@@ -1,4 +1,4 @@
-import { test, expect as baseExpect } from '@playwright/test';
+import { test, expect as baseExpect } from './studio-fixture.mjs';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -6,7 +6,7 @@ import { once } from 'node:events';
 const expect = baseExpect.configure({ timeout: 15000 });
 
 for (const provider of ['openai', 'anthropic', 'gemini']) {
-test(`workbench runs ${provider} official SDK tools, reviews the source change and restores it`, async ({ page, request }) => {
+test(`workbench runs ${provider} official SDK tools, reviews the source change and restores it`, async ({ page, request, baseURL }) => {
   test.setTimeout(90000); page.setDefaultTimeout(15000);
   test.skip(!process.env.XAMLG_TEST_HOST_DLL, 'Build the companion and set XAMLG_TEST_HOST_DLL for the full agent transport test.');
   const requests = [], failures = [];
@@ -49,13 +49,14 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
   const reservation = createServer(); reservation.listen(0, '127.0.0.1'); await once(reservation, 'listening');
   const companionPort = reservation.address().port; await new Promise(resolve => reservation.close(resolve));
   const token = 'xamlg-agent-browser-test-token-0123456789';
-  const origin = new URL(process.env.PLAYGROUND_URL || 'http://127.0.0.1:8765/').origin;
+  const origin = new URL(baseURL).origin;
   const environment = { ...process.env, XAMLG_STUDIO_OWNER_TOKEN: token,
     XAMLG_STUDIO_TOKEN: 'xamlg-external-client-test-token-9876543210' };
   for (const name of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY']) delete environment[name];
   environment[`${provider.toUpperCase()}_API_KEY`] = 'test-only-not-a-real-key';
   environment[`${provider.toUpperCase()}_ENDPOINT`] = `http://127.0.0.1:${fixturePort}${provider === 'openai' ? '/v1' : ''}`;
-  const host = spawn(process.env.XAMLG_TEST_DOTNET || 'dotnet', [process.env.XAMLG_TEST_HOST_DLL, `--port=${companionPort}`, `--origins=${origin}`], {
+  const originArgs = origin === 'https://wieslawsoltes.github.io' ? [] : [`--origins=${origin}`];
+  const host = spawn(process.env.XAMLG_TEST_DOTNET || 'dotnet', [process.env.XAMLG_TEST_HOST_DLL, `--port=${companionPort}`, ...originArgs], {
     env: environment, stdio: ['ignore', 'pipe', 'pipe']
   });
   let hostLog = ''; host.stdout.on('data', part => { hostLog += part; }); host.stderr.on('data', part => { hostLog += part; });

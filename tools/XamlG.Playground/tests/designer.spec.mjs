@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 
 const source = `<Canvas xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="White">
   <Button x:Name="shape" Canvas.Left="20" Canvas.Top="20" Width="100" Height="50" Content="Drag me" />

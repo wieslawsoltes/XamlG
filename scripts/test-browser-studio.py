@@ -26,7 +26,8 @@ def main():
     with socket.socket() as reservation:
         reservation.bind(('127.0.0.1', 0))
         port = reservation.getsockname()[1]
-    origin_url = urlsplit(os.environ.get('PLAYGROUND_URL', 'http://127.0.0.1:8765/'))
+    pages_preview = os.environ.get('PLAYGROUND_PAGES_PREVIEW') == '1'
+    origin_url = urlsplit(os.environ.get('PLAYGROUND_URL', 'https://wieslawsoltes.github.io/XamlG/' if pages_preview else 'http://127.0.0.1:8765/'))
     origin = f'{origin_url.scheme}://{origin_url.netloc}'
     token, owner_token = secrets.token_hex(32), secrets.token_hex(32)
     environment = dict(os.environ, XAMLG_STUDIO_TOKEN=token, XAMLG_STUDIO_OWNER_TOKEN=owner_token,
@@ -36,7 +37,10 @@ def main():
     for name in ('OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY'):
         environment.pop(name, None)
     with tempfile.TemporaryFile(mode='w+') as log:
-        host = subprocess.Popen([dotnet, str(host_dll), f'--port={port}', f'--origins={origin}'], cwd=ROOT, env=environment, stdout=log, stderr=log)
+        # Exercise the companion's published-site defaults, including in the
+        # candidate preview. Custom deployments still require an explicit origin.
+        origin_args = [] if origin == 'https://wieslawsoltes.github.io' else [f'--origins={origin}']
+        host = subprocess.Popen([dotnet, str(host_dll), f'--port={port}', *origin_args], cwd=ROOT, env=environment, stdout=log, stderr=log)
         try:
             ready = False
             for _ in range(100):

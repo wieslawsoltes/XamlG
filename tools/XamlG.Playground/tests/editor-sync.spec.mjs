@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 
 test('Run captures an edit before its debounce timer fires', async ({ page }) => {
   await page.goto('./');

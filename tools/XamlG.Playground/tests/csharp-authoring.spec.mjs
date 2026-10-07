@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 
 const call = (page, name, args = {}) => page.evaluate(({ name, args }) => window.xamlgAutomation.call(name, args), { name, args });
 const source = (page, path = 'Code.cs') => page.evaluate(path => monaco.editor.getEditors().find(e => e.getModel()?.uri.path.endsWith('/' + path))?.getValue(), path);

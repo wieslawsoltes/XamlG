@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 import { Readable } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import { createInterface } from 'node:readline';

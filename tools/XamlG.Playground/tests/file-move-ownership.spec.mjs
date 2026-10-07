@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 import { captureEditorState } from './editor-state.mjs';
 
 const draft = page => page.evaluate(() => JSON.parse(localStorage.getItem('xamlg.draft')));

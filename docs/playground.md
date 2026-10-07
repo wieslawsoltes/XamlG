@@ -58,7 +58,36 @@ Both hosts bound loaded preview assemblies because collectible browser load cont
 
 ## Deployment and acceptance
 
-Pages deploys only from `main`, retains environment protections, validates browser behavior, records the exact source commit in `build.json` and reruns tests against the public URL after verifying that identity.
+Dockyard, the runtime/designer inspectors, C# tooling, MCP access and the coding-agent
+workbench extend this existing application at
+[XamlG Compiler Studio](https://wieslawsoltes.github.io/XamlG/). Pages deploys it only
+from `main`, retains environment protections and records the exact source commit in
+`build.json`. A branch or draft PR does not replace the public deployment.
+
+To connect the published app, start the companion from a checkout with
+`dotnet run --project tools/XamlG.Studio.Host -c Release`. Keep the Pages app open,
+choose **Agent access**, enable sharing, and pair `ws://127.0.0.1:4893/bridge` using
+the printed **Owner token**. The companion accepts `https://wieslawsoltes.github.io`
+by default; no local copy of the web app is needed. Provider keys belong in the
+companion environment. External MCP clients use its separate MCP token. The access
+dialog includes these setup instructions. If the browser requests local network
+permission, allow it for the Pages site to connect to the companion; see
+[Chrome's local network access documentation](https://developer.chrome.com/blog/local-network-access).
+
+Both PR acceptance and predeployment tests prepare the `/XamlG/` base path first.
+Their browser fixture serves the candidate static assets under the Pages HTTPS
+origin; actual companion HTTP/WebSocket traffic and origin checks remain active.
+Postdeployment tests verify the exact commit, then run the same suite directly
+against the public assets with temporary MCP and provider companions. The fixture
+grants browser local network permission for that origin in automation.
+
+To run the Pages candidate locally after a fresh publish:
+
+```sh
+python3 scripts/prepare-pages.py --commit "$(git rev-parse HEAD)"
+dotnet build tools/XamlG.Studio.Host -c Release
+PLAYGROUND_PAGES_PREVIEW=1 python3 scripts/test-browser-studio.py
+```
 
 Acceptance covers real controls/code-behind, inspections, immediate edits, undo/redo, mobile themes, canvas gestures, isolation/reset, resource projects, exports/drafts and dependency errors. These are behavioral tests, not exhaustive pixel or browser-engine certification.
 

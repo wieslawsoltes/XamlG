@@ -159,6 +159,14 @@
 {
     <section class="automation-dialog" role="dialog" aria-label="Agent access">
         <h2>MCP agent access</h2>
+        <p>Connect this workspace to the local companion to use MCP clients and coding agents.</p>
+        <details class="companion-setup">
+            <summary>Start the local companion</summary>
+            <p>From a XamlG checkout, run:</p>
+            <pre><code>dotnet run --project tools/XamlG.Studio.Host -c Release</code></pre>
+            <p>Keep this page open, then paste the printed Owner token below. The companion accepts the published GitHub Pages app by default. Allow local network access if your browser requests it when connecting.</p>
+            <p>Set provider keys in the companion environment before starting it. External MCP clients use the separate MCP client token at <code>http://127.0.0.1:4893/mcp</code>.</p>
+        </details>
         <label><input type="checkbox" checked="@_sharing" @onchange="SetAutomationSharing" /> Enable access to this live project</label>
         <label>Permission profile <select aria-label="Permission profile" @bind="_automationProfile">@foreach (var profile in Enum.GetValues<XamlG.Automation.PermissionProfile>()) { <option value="@profile">@profile</option> }</select></label>
         <p>Runtime operations execute application code. Source edits use the project’s normal revision checks and undo.</p>

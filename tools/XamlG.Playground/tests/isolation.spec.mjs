@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 
 test('isolated execution has a real Avalonia view but cannot access the editor DOM or storage', async ({ page }) => {
   await page.goto('./');

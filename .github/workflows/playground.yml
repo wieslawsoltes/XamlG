@@ -2,7 +2,7 @@ name: Browser playground
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'tools/XamlG.Playground/**', 'Directory.*', '.github/workflows/playground.yml']
+    paths: ['src/**', 'tools/XamlG.Playground/**', 'tools/XamlG.Studio.Host/**', 'Directory.*', 'scripts/prepare-pages.py', 'scripts/serve-playground.py', 'scripts/test-browser-studio.py', '.github/workflows/playground.yml']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -34,8 +34,12 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Publish production browser host
         run: dotnet publish tools/XamlG.Playground/XamlG.Playground.csproj -c Release -p:NuGetAudit=false -o artifacts/playground
+      - name: Prepare the existing GitHub Pages application
+        run: python scripts/prepare-pages.py --commit "${{ github.sha }}"
       - name: Browser acceptance tests
         working-directory: tools/XamlG.Playground
+        env:
+          PLAYGROUND_PAGES_PREVIEW: '1'
         run: |
           dotnet build ../XamlG.Studio.Host -c Release -warnaserror
           python ../../scripts/test-browser-studio.py

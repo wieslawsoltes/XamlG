@@ -50,12 +50,22 @@ SDKs; live paid-account validation, if unavailable, must be reported separately.
 
 The implementation branch is `codex/studio-mcp-agent`, based on `19cb780`.
 Main is merged at implementation checkpoints; the latest merged upstream commit
-is `a331efe` (including structured/collection literals, enum conversions,
-synthetic converter mappings and Avalonia class/setter contracts).
+is `4797c59` (including structured/collection literals, enum conversions,
+synthetic converter mappings, Avalonia class/setter contracts, literal names and
+string conversions).
 The original checkout contains unrelated local compiler edits and is left intact.
 The locally available pinned SDK is `/tmp/xamlg-dotnet-10.0.401/dotnet`.
 
 ## Run the current implementation
+
+The IDE is integrated into the existing `tools/XamlG.Playground` application and
+its main-only GitHub Pages deployment at `https://wieslawsoltes.github.io/XamlG/`.
+Start the companion with `dotnet run --project tools/XamlG.Studio.Host -c Release`
+and pair it from **Agent access** on that page after this branch reaches `main`.
+The Pages origin is accepted by default; hosting a local web app is optional.
+PR/predeployment acceptance uses the same Pages base path and HTTPS browser origin;
+public verification also starts real MCP/provider companions. See
+[the deployment setup](playground.md#deployment-and-acceptance).
 
 Use the SDK pinned by `global.json`, the `wasm-tools` workload, and Node 22 or later:
 
@@ -92,8 +102,10 @@ accounting. The official OpenAI SDK currently marks Responses APIs with
 
 External MCP clients use authenticated Streamable HTTP at `/mcp`, or launch the
 companion with `--stdio=true`. With stdio, the loopback browser bridge remains
-available and host logs go to stderr. Add an exact browser origin with
-`--origins=http://127.0.0.1:8765` when serving the IDE separately. HTTP Host and
+available and host logs go to stderr. The defaults accept the official Pages
+origin and local ports 4893 (or the configured companion port) and 8765. Set
+`--origins=https://your-studio.example` to replace these with exact custom browser
+origins. HTTP Host and
 Origin checks and the separate local tokens apply independently of cloud credentials.
 
 `XamlG.Automation` has no IDE dependency. Implement `IAutomationHost` or build an
@@ -128,6 +140,10 @@ permissions and limits. Every Full Access run requires a fresh acknowledgement.
 Request timeout, retry count and tool-result size are independently editable.
 
 ## Local evidence and remaining work
+
+Full validation is deferred until the remaining feature implementation is complete,
+as requested. The evidence below records earlier checkpoints; the latest Pages
+integration and literal-name merge have not yet undergone a full validation run.
 
 - The merged native solution passed 1,508 tests after merging main through
   `a331efe` (Avalonia class/setter contracts), including 1,017 real-Avalonia tests

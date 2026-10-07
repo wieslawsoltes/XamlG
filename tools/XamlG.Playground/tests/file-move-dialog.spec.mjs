@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 
 const mainSource = page => page.evaluate(() => monaco.editor.getModels()
   .find(model => model.getLanguageId() === 'xml' && model.getValue().includes('<StackPanel'))?.getValue());
