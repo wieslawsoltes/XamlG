@@ -119,7 +119,7 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
         if (!inferDataContext && input.DataType == null)
         {
             if (source is BoundReferenceExpression namedReference)
-                sourceType = new BindingSourceResolver(context, target).Named(namedReference.Name, namedReference.Span).Type;
+                sourceType = new BindingSourceResolver(context).Named(namedReference.Name, namedReference.Span).Type;
             else if (source?.Type is { SpecialType: not SpecialType.System_Object } explicitType)
                 sourceType = explicitType;
         }

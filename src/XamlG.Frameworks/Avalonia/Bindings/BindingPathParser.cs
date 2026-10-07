@@ -32,11 +32,18 @@ public sealed class BindingPathParser
         while (_position < _text.Length && _text[_position] == '!')
         { var start = _position++; _segments.Add(new(BindingPathKind.Not, string.Empty, Span(start))); }
         var needsSegment = false;
+        var acceptsNull = false;
         while (_position < _text.Length && !_failed)
         {
             _cancellation.ThrowIfCancellationRequested(); White();
             if (_position == _text.Length || nested && _text[_position] == ')') break;
             var start = _position;
+            if (_text[_position] == '?')
+            {
+                if (needsSegment || _segments.Count == 0 || _position + 1 >= _text.Length || _text[_position + 1] != '.')
+                { Error("A null-conditional accessor requires a preceding value and '?.'."); break; }
+                _position += 2; needsSegment = true; acceptsNull = true; continue;
+            }
             if (_text[_position] == '.')
             {
                 _position++;
@@ -47,7 +54,7 @@ public sealed class BindingPathParser
             if (_text[_position] == '^')
             {
                 _position++;
-                if (needsSegment || _segments.Count == 0) { Error("A stream operator requires a preceding value."); break; }
+                if (needsSegment) { Error("A stream operator cannot follow a member separator."); break; }
                 _segments.Add(new(BindingPathKind.Stream, string.Empty, Span(start))); continue;
             }
             if (_text[_position] == '[')
@@ -101,9 +108,14 @@ public sealed class BindingPathParser
                 if (name.Length == 0) { Error("Unexpected character in binding path."); break; }
                 _segments.Add(new(BindingPathKind.Property, name, Span(start)));
             }
+            if (acceptsNull && _segments.Count != 0)
+            {
+                _segments[_segments.Count - 1] = _segments[_segments.Count - 1] with { AcceptsNull = true };
+                acceptsNull = false;
+            }
             needsSegment = false;
             White();
-            if (_position < _text.Length && _text[_position] is not '.' and not '[' and not '^' && !(nested && _text[_position] == ')'))
+            if (_position < _text.Length && _text[_position] is not '.' and not '[' and not '^' and not '?' && !(nested && _text[_position] == ')'))
             { Error("Binding path segments must be separated by '.'."); break; }
         }
         if (needsSegment) Error("A binding path cannot end in '.'.");

@@ -35,4 +35,16 @@ internal static class BindingTargetTypeResolver
         }
         return null;
     }
+
+    public static INamedTypeSymbol? TemplateTarget(BindingContext context, bool includeDetached = false)
+    {
+        foreach (var ancestor in context.Ancestors)
+        {
+            if (includeDetached && ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.DetachedTemplateTarget, out var detached)) return detached;
+            if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.TemplateTarget, out var type)) return type;
+            if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector) && selector.HasTemplateScope)
+                return selector.TemplateOwnerType;
+        }
+        return null;
+    }
 }

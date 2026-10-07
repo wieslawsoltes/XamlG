@@ -30,5 +30,6 @@ internal static class AvaloniaTemplatePriority
         !member.IsImplicitContent && member.TargetDescriptor is BoundStaticExpression { Member: IFieldSymbol { Type: INamedTypeSymbol property } } &&
         (property.HasMetadataName(AvaloniaRegisteredSetterMetadata.StyledProperty) || property.HasMetadataName(AvaloniaRegisteredSetterMetadata.AttachedProperty)) &&
         context.Ancestors.Any(ancestor => AvaloniaStyleScope.IsTemplate(ancestor.Type) ||
+            ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.DetachedTemplateTarget, out _) ||
             ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector) && selector.HasTemplateScope);
 }

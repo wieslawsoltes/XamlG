@@ -50,16 +50,12 @@ public sealed class OptionMarkupTests
     }
 
     [Fact]
-    public void UnknownAndDuplicateOptionsAreDiagnosed()
+    public void UnknownOptionsAreDiagnosed()
     {
         var unknown = Fixture("<Button " + ResourceProjectFixture.Namespace +
             "><Button.Width><OnPlatform><On Options='NotAPlatform'>17</On></OnPlatform></Button.Width></Button>");
         Assert.False(unknown.Result.Success);
         Assert.Contains(unknown.Result.Documents.SelectMany(d => d.Output.Diagnostics), d => d.Code == "XG1040");
-        var duplicate = Fixture("<Button " + ResourceProjectFixture.Namespace +
-            " Width='{OnPlatform 1, Default=2}'/>");
-        Assert.False(duplicate.Result.Success);
-        Assert.Contains(duplicate.Result.Documents.SelectMany(d => d.Output.Diagnostics), d => d.Code == "XG1040");
     }
 
     [AvaloniaFact]

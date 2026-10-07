@@ -24,6 +24,10 @@ internal sealed class ValueEmitter
                 return "(" + string.Join(" | ", enumeration.Fields.Select(f => f.ContainingType.CSharpName() + "." + CSharpNames.Identifier(f.Name))) + ")";
             case BoundCastExpression cast: return "((" + cast.TargetType.CSharpName() + ")(" + Emit(cast.Value, frame) + "))";
             case BoundTypeExpression type: return "typeof(" + type.ReferencedType.CSharpName() + ")";
+            case BoundMethodHandleExpression handle:
+                return "typeof(" + handle.Method.ContainingType.CSharpName() + ").GetMethod(" + CSharpNames.Literal(handle.Method.Name) +
+                    ", global::System.Reflection.BindingFlags.Public | global::System.Reflection.BindingFlags.NonPublic | global::System.Reflection.BindingFlags.Instance | global::System.Reflection.BindingFlags.Static | global::System.Reflection.BindingFlags.DeclaredOnly, null, new global::System.Type[] { " +
+                    string.Join(", ", handle.Method.Parameters.Select(parameter => "typeof(" + parameter.Type.CSharpName() + ")")) + " }, null)!.MethodHandle";
             case BoundStaticExpression field: return field.Member.ContainingType.CSharpName() + "." + CSharpNames.Identifier(field.Member.Name);
             case BoundParameterExpression or BoundLambdaExpression or BoundPropertyAccessExpression or BoundFieldAccessExpression or BoundAssignmentExpression or BoundMethodGroupExpression:
                 return new FunctionalExpressionEmitter(_context, this).Emit(value, frame);
@@ -42,7 +46,10 @@ internal sealed class ValueEmitter
             case BoundCollectionExpression collection:
                 var collectionLocal = _context.Temporary("collection");
                 _context.Writer.Line("var " + collectionLocal + " = new " + collection.Constructor.ContainingType.CSharpName() + "();");
-                _context.Writer.Line("((" + collection.Capacity.ContainingType.CSharpName() + ")" + collectionLocal + ")." + CSharpNames.Identifier(collection.Capacity.Name) + " = " + collection.Values.Length + ";");
+                if (collection.Capacity.SetMethod!.IsInitOnly)
+                    _context.Writer.Line(_context.InitSetter(collection.Capacity.SetMethod) + "(" + collectionLocal + ", " + collection.Values.Length + ");");
+                else
+                    _context.Writer.Line("((" + collection.Capacity.ContainingType.CSharpName() + ")" + collectionLocal + ")." + CSharpNames.Identifier(collection.Capacity.Name) + " = " + collection.Values.Length + ";");
                 foreach (var item in collection.Values)
                 {
                     var itemValue = Emit(item, frame);

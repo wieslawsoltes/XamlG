@@ -13,7 +13,7 @@ internal sealed class RelativeBindingSourceBinder(BindingContext context, Object
 
     public BoundBindingSource? Element(string name, TextSpan span)
     {
-        var resolved = new BindingSourceResolver(context, target).Named(name, span);
+        var resolved = new BindingSourceResolver(context).Named(name, span);
         var builder = _expressions.New(AvaloniaBindingMetadata.PathBuilder, span);
         if (resolved.Type == null || builder == null) return null;
         builder = _expressions.Call(builder, "ElementName", span,
@@ -62,8 +62,12 @@ internal sealed class RelativeBindingSourceBinder(BindingContext context, Object
                 builder = _expressions.Call(builder, "Self", span);
                 break;
             case "TemplatedParent":
-                sourceType = AvaloniaStyleObjectRule.FindTarget(context, target) ??
-                             context.Types.Find(AvaloniaBindingMetadata.TemplatedControl);
+                sourceType = BindingTargetTypeResolver.TemplateTarget(context);
+                if (sourceType == null)
+                {
+                    context.Report("XG3211", "TemplatedParent requires a control template scope.", span);
+                    return null;
+                }
                 builder = _expressions.Call(builder, "TemplatedParent", span);
                 break;
             case "FindAncestor":
