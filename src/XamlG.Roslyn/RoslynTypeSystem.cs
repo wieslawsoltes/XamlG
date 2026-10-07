@@ -32,6 +32,15 @@ public sealed class RoslynTypeSystem
     public INamedTypeSymbol? Find(string metadataName) => Compilation.GetTypeByMetadataName(metadataName);
     public INamedTypeSymbol Special(SpecialType type) => Compilation.GetSpecialType(type);
     public bool IsAccessible(ISymbol symbol, INamedTypeSymbol? within = null) => Compilation.IsSymbolAccessibleWithin(symbol, (ISymbol?)within ?? Compilation.Assembly);
+    /// <summary>Resolves provider alternatives independently of the assignment target, preferring
+    /// parameterless providers and then typed results within each parameter shape.</summary>
+    public IMethodSymbol? MarkupExtensionMethod(ITypeSymbol type) => type.Members().OfType<IMethodSymbol>()
+        .Where(method => (method.Name == Configuration.MarkupExtensionMethod || method.Name == Configuration.TypedMarkupExtensionMethod) &&
+            !method.IsStatic && !method.IsGenericMethod && !method.ReturnsVoid && !method.ReturnsByRef && !method.ReturnsByRefReadonly && IsAccessible(method) &&
+            (method.Parameters.Length == 0 || method.Parameters.Length == 1 && method.Parameters[0].RefKind == RefKind.None && method.Parameters[0].Type.HasMetadataName(ClrNames.IServiceProvider)))
+        .OrderBy(method => method.Parameters.Length)
+        .ThenBy(method => method.ReturnType.SpecialType == SpecialType.System_Object ? 1 : 0)
+        .FirstOrDefault();
     public TypeResolution Resolve(string xmlNamespace, string name, int arity = 0) => _types.GetOrAdd((xmlNamespace, name, arity), key => ResolveCore(key.Namespace, key.Name, key.Arity));
     private TypeResolution ResolveCore(string xmlNamespace, string name, int arity)
     {

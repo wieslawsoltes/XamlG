@@ -12,6 +12,19 @@ Five baseline cases are not counted as XamlG compatibility tests: four `ParserTe
 
 The suites do not cover every custom transformer used by every XAML framework. In particular, passing the portable XamlX tests does not establish full Avalonia styling, selector or compiled-binding compatibility.
 
+## Implementation audit beyond the pinned tests
+
+Compare behavior against the pinned source as well as its tests. Additional regression cases belong in the native compiler suite; they do not increase the count of unmodified upstream assertions.
+
+| Upstream behavior | XamlG implementation and evidence |
+| --- | --- |
+| `ProvideValue` and `ProvideTypedValue` alternatives | `RoslynTypeSystem.MarkupExtensionMethod` shares provider selection across binding and value-type probing. Parameterless providers take precedence; typed returns win within the same parameter shape. `MarkupExtensionSelectionTests` executes attribute, element, collection and constructor-argument forms. |
+| Collection replacement followed by additions | Audit found that `MemberBinder` permits replacement only when the property contains one node. The upstream assignment transformer permits a replacement followed by item additions. Requires implementation and runtime regression coverage. |
+| Delegate-valued properties | The upstream conversion helper resolves method names against the root. XamlG currently does this for events, but its portable text conversion does not bind delegate properties. Requires implementation and runtime regression coverage. |
+| Member-specific text conversions | Attribute values retain member metadata; property-element and constructor-argument paths need additional coverage for converter metadata and namespace-sensitive conversion. |
+
+This is an ongoing source audit. Remaining review includes intrinsic object/property-element forms, automatic collection overload dispatch, metadata inheritance and framework-specific transforms. Passing the current suites does not close those items.
+
 ## Run
 
 ```sh

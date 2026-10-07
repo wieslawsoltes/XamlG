@@ -142,7 +142,7 @@ public sealed class ValueBinder
         }
         var bound = _context.Objects.Bind(element, scope, type, false, nameScope);
         if (bound == null) return null;
-        var provided = _markup.Provide(bound, target, syntax.Span);
+        var provided = _markup.Provide(bound, syntax.Span);
         return Coerce(provided ?? new BoundObjectExpression(bound), target, syntax.Span);
     }
     public ITypeSymbol? PeekNodeType(XamlSyntaxNode syntax, NamespaceScope scope)
@@ -152,6 +152,11 @@ public sealed class ValueBinder
         var nested = scope.Push(element); var name = nested.Expand(element.Name);
         if (name.Namespace != null && XamlNames.IsLanguage(name.Namespace) && name.LocalName == "Null") return null;
         return _context.ResolveType(element.Name, nested, element.NameSpan, nested.Directive(element, "TypeArguments")?.Value, report: false);
+    }
+    public ITypeSymbol? PeekValueType(XamlSyntaxNode syntax, NamespaceScope scope)
+    {
+        var type = PeekNodeType(syntax, scope);
+        return type == null ? null : _context.Types.MarkupExtensionMethod(type)?.ReturnType ?? type;
     }
     public bool TryGetStringLiteral(XamlSyntaxNode syntax, NamespaceScope scope, out string value)
     {

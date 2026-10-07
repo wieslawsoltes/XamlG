@@ -21,6 +21,7 @@ public sealed record XamlTypeSystemConfiguration
     public ImmutableHashSet<string> IgnoredNamespaces { get; init; } = ImmutableHashSet<string>.Empty.WithComparer(StringComparer.Ordinal);
     public string MarkupExtensionSuffix { get; init; } = "Extension";
     public string MarkupExtensionMethod { get; init; } = "ProvideValue";
+    public string TypedMarkupExtensionMethod { get; init; } = "ProvideTypedValue";
     public string CollectionAddMethod { get; init; } = ClrNames.Add;
     public string AddChildMethod { get; init; } = "AddChild";
     public string ContentPropertyAttributeProperty { get; init; } = "Name";

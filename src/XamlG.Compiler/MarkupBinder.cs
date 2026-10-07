@@ -43,18 +43,12 @@ internal sealed class MarkupBinder
             ImmutableArray<XamlSyntaxNode>.Empty, true, syntax.Span);
         var obj = _context.Objects.Bind(element, scope, typeSymbol, false, _context.Ancestors.Count == 0 ? 0 : _context.Ancestors.Peek().NameScopeId, positional);
         if (obj == null) return null;
-        return Provide(obj, target, syntax.Span) ?? Missing($"'{typeSymbol}' does not have a supported ProvideValue method.", syntax.Span);
+        return Provide(obj, syntax.Span) ?? Missing($"'{typeSymbol}' does not have a supported markup-extension provider method.", syntax.Span);
     }
-    public BoundExpression? Provide(BoundObject obj, ITypeSymbol target, TextSpan span)
+    public BoundExpression? Provide(BoundObject obj, TextSpan span)
     {
-        var methods = obj.Type.Members(_context.Types.Configuration.MarkupExtensionMethod).OfType<IMethodSymbol>()
-            .Where(m => !m.IsStatic && !m.IsGenericMethod && _context.Types.IsAccessible(m) && !m.ReturnsVoid &&
-                (m.Parameters.Length == 0 || m.Parameters.Length == 1 && m.Parameters[0].Type.HasMetadataName(ClrNames.IServiceProvider)))
-            .OrderBy(m => m.ReturnType.SpecialType == SpecialType.System_Object ? 1 : 0)
-            .ThenBy(m => _context.Types.Compilation.ClassifyCommonConversion(m.ReturnType, target).IsImplicit ? 0 : 1)
-            .ThenBy(m => m.Parameters.Length).ToArray();
-        if (methods.Length == 0) return null;
-        return new BoundMarkupExpression(obj, methods[0], methods[0].ReturnType, span);
+        var method = _context.Types.MarkupExtensionMethod(obj.Type);
+        return method == null ? null : new BoundMarkupExpression(obj, method, method.ReturnType, span);
     }
     public BoundExpression? Static(string text, ITypeSymbol target, NamespaceScope scope, TextSpan span, string? typeArguments = null)
     {

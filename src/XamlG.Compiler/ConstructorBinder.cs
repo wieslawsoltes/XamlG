@@ -29,11 +29,12 @@ internal sealed class ConstructorBinder
                 }
                 else
                 {
-                    var type = _context.Values.PeekNodeType(argument, target.Scope);
+                    var type = _context.Values.PeekValueType(argument, target.Scope);
                     if (type == null && !parameter.AcceptsNull()) { valid = false; break; }
                     if (type != null && !_context.Types.Compilation.ClassifyCommonConversion(type, parameter).IsImplicit)
                     {
-                        if (!_context.Values.TryGetStringLiteral(argument, target.Scope, out var literal) ||
+                        if (type.SpecialType == SpecialType.System_Object && _context.Types.Compilation.ClassifyCommonConversion(type, parameter).Exists) score += 5;
+                        else if (!_context.Values.TryGetStringLiteral(argument, target.Scope, out var literal) ||
                             _context.Values.TryText(literal, parameter, target.Scope, argument.Span) == null) { valid = false; break; }
                         score += 2;
                     }

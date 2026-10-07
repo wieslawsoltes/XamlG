@@ -115,7 +115,7 @@ public sealed class MemberBinder
             }
             if (isCollection)
             {
-                var nodeType = _context.Values.PeekNodeType(node, scope);
+                var nodeType = _context.Values.PeekValueType(node, scope);
                 // A collection-valued property can itself be explicitly replaced by a compatible object.
                 if (member?.CanWrite == true && nodes.Length == 1 && nodeType != null && _context.Types.Compilation.ClassifyCommonConversion(nodeType, member.ValueType).IsImplicit)
                 {
@@ -155,12 +155,11 @@ public sealed class MemberBinder
             }
             else
             {
-                var nodeType = _context.Values.PeekNodeType(syntax, scope);
+                var nodeType = _context.Values.PeekValueType(syntax, scope);
                 if (nodeType == null && !parameter.AcceptsNull()) continue;
                 if (nodeType != null && !_context.Types.Compilation.ClassifyCommonConversion(nodeType, parameter).IsImplicit)
                 {
-                    // Markup extensions determine their value type through ProvideValue, not their object type.
-                    if (!nodeType.Members(_context.Types.Configuration.MarkupExtensionMethod).OfType<IMethodSymbol>().Any()) continue;
+                    if (nodeType.SpecialType != SpecialType.System_Object || !_context.Types.Compilation.ClassifyCommonConversion(nodeType, parameter).Exists) continue;
                     score += 5;
                 }
                 else if (!SymbolEqualityComparer.Default.Equals(nodeType, parameter)) score++;
