@@ -12,9 +12,15 @@ internal sealed class ConstructorBinder
         var factoryName = target.Scope.Directive(target.Syntax, "FactoryMethod")?.Value;
         IEnumerable<IMethodSymbol> candidates = factoryName == null ? target.Type.InstanceConstructors :
             target.Type.Members(factoryName).OfType<IMethodSymbol>().Where(m => m.IsStatic && _context.Types.Compilation.ClassifyCommonConversion(m.ReturnType, target.Type).IsImplicit);
+        var exact = candidates.Where(method => _context.Types.IsAccessible(method, _context.RootClass) && !method.IsGenericMethod && method.Parameters.Length == arguments.Length).ToArray();
+        var argumentTypes = arguments.Select(argument => _context.Values.PeekValueType(argument, scope, target.NameScopeId)).ToArray();
+        var preferred = exact.FirstOrDefault(method => method.Parameters.Select((parameter, index) => CanAssign(argumentTypes[index], parameter.Type)).All(value => value))
+            ?? exact.FirstOrDefault();
+        if (preferred != null) candidates = new[] { preferred };
         var ranked = new List<(IMethodSymbol Method, int Score)>();
         foreach (var method in candidates.Where(m => _context.Types.IsAccessible(m, _context.RootClass) && !m.IsGenericMethod))
         {
+            if (SymbolEqualityComparer.Default.Equals(method, preferred)) { ranked.Add((method, 0)); continue; }
             if (arguments.Length > method.Parameters.Length || method.Parameters.Skip(arguments.Length).Any(p => !p.IsOptional)) continue;
             var score = method.Parameters.Length - arguments.Length; var valid = true;
             for (var i = 0; i < arguments.Length; i++)
@@ -67,11 +73,20 @@ internal sealed class ConstructorBinder
         for (var i = 0; i < selected.Parameters.Length; i++)
         {
             var parameter = selected.Parameters[i];
+            if (i < arguments.Length && argumentTypes[i]?.SpecialType == SpecialType.System_Object && !CanAssign(argumentTypes[i], parameter.Type) &&
+                !_context.Values.CanConvertValueType(argumentTypes[i]!, parameter.Type, parameter))
+            { _context.Report("XG1023", $"An object-valued constructor argument cannot be downcast to '{parameter.Type}'.", arguments[i].Span); continue; }
             var value = i < arguments.Length ? _context.Values.BindNode(arguments[i], parameter.Type, scope, target.NameScopeId, member: parameter) :
                 new BoundConstantExpression(parameter.ExplicitDefaultValue, parameter.Type, target.Syntax.NameSpan);
             if (value != null) values.Add(value);
         }
         target.Arguments = values.ToImmutable();
         _context.Symbols.Add(new(target.Syntax.NameSpan, selected, factoryName == null ? "constructor" : "factory"));
+    }
+    private bool CanAssign(ITypeSymbol? source, ITypeSymbol target)
+    {
+        if (source == null) return target.AcceptsNull();
+        var conversion = _context.Types.Compilation.ClassifyConversion(source, target);
+        return conversion.IsImplicit && !conversion.IsUserDefined && (!conversion.IsNumeric || _context.Types.Configuration.AllowImplicitNumericConversions);
     }
 }

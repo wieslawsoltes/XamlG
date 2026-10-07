@@ -36,7 +36,8 @@ internal sealed class ObjectEmitter
         var variable = existing ?? (value.IsRoot ? _context.RootVariable : _context.Temporary("object"));
         if (existing == null)
         {
-            var arguments = value.Arguments.Select(a => _values.Emit(a, parentContext)).ToArray();
+            var arguments = value.Arguments.IsDefaultOrEmpty ? Array.Empty<string>() :
+                _values.EmitArguments(value.FactoryMethod ?? value.Constructor!, value.Arguments, parentContext);
             var creation = value.FactoryMethod != null
                 ? value.FactoryMethod.ContainingType.CSharpName() + "." + CSharpNames.Method(value.FactoryMethod) + "(" + string.Join(", ", arguments) + ")"
                 : "new " + value.Type.CSharpName() + "(" + string.Join(", ", arguments) + ")";

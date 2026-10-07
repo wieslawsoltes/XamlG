@@ -36,11 +36,16 @@ internal sealed class ValueEmitter
             case BoundArrayExpression array:
                 return "new " + array.ArrayType.ElementType.CSharpName() + "[] { " + string.Join(", ", array.Values.Select(v => Emit(v, frame))) + " }";
             case BoundNewExpression creation:
-                return "new " + creation.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", creation.Arguments.Select(a => Emit(a, frame))) + ")";
+                return "new " + creation.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", EmitArguments(creation.Constructor, creation.Arguments, frame)) + ")";
             case BoundCallExpression call:
                 var receiver = call.Method.IsStatic ? call.Method.ContainingType.CSharpName() : call.Receiver == null ? _context.RootVariable : "(" + Emit(call.Receiver, frame) + ")";
-                return receiver + "." + CSharpNames.Method(call.Method) + "(" + string.Join(", ", call.Arguments.Select((argument, index) =>
-                    "(" + call.Method.Parameters[index].Type.CSharpName() + ")(" + Emit(argument, frame) + ")")) + ")";
+                if (!call.Method.IsStatic && call.Receiver != null && !call.Arguments.IsEmpty)
+                {
+                    var local = _context.Temporary("receiver");
+                    _context.Writer.Line((call.Receiver.Type ?? call.Method.ContainingType).CSharpName() + " " + local + " = " + receiver + ";");
+                    receiver = local;
+                }
+                return receiver + "." + CSharpNames.Method(call.Method) + "(" + string.Join(", ", EmitArguments(call.Method, call.Arguments, frame)) + ")";
             case BoundParseExpression parse:
                 return parse.Method.ContainingType.CSharpName() + "." + CSharpNames.Method(parse.Method) + "(" + CSharpNames.Literal(parse.Text) +
                     (parse.Method.Parameters.Length == 2 ? ", (" + parse.Method.Parameters[1].Type.CSharpName() + ")" + CSharpNames.InvariantCulture : string.Empty) + ")";
@@ -57,6 +62,19 @@ internal sealed class ValueEmitter
             case BoundRawExpression raw: return ExpandTrusted(raw.CSharp, frame, frame + ".TargetObject!");
             default: _context.Error("The backend does not recognize expression '" + value.GetType().Name + "'.", value.Span); return "default!";
         }
+    }
+
+    public string[] EmitArguments(IMethodSymbol method, System.Collections.Immutable.ImmutableArray<BoundExpression> arguments, string frame)
+    {
+        var values = new string[arguments.Length];
+        for (var index = 0; index < arguments.Length; index++)
+        {
+            var value = Emit(arguments[index], frame);
+            var local = _context.Temporary("argument");
+            _context.Writer.Line(method.Parameters[index].Type.CSharpName() + " " + local + " = " + value + ";");
+            values[index] = local;
+        }
+        return values;
     }
 
     public string EmitInitialized(BoundExpression value, string frame,

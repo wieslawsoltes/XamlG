@@ -103,7 +103,7 @@ public sealed class ThemeLiteralCompatibilityTests
         var project = new ResourceProjectFixture(new[] { ("View.axaml", "<Button " + Ns + "><Button.Template>" +
             "<ControlTemplate><Border Padding='{TemplateBinding NotAProperty}'/></ControlTemplate></Button.Template></Button>") });
         Assert.False(project.Result.Success);
-        Assert.Contains(project.Result.Documents.Single().Output.Diagnostics, diagnostic => diagnostic.Code == "XG1006");
+        Assert.Contains(project.Result.Documents.Single().Output.Diagnostics, diagnostic => diagnostic.Code == "XG1008" && diagnostic.Message.Contains("NotAProperty"));
     }
 
     [Fact]

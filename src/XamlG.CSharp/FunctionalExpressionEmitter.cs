@@ -35,13 +35,18 @@ internal sealed class FunctionalExpressionEmitter(EmissionContext context, Value
                 if (!IsInline(lambda.Body))
                 { context.Error("Expression-bodied delegates cannot contain construction-graph, resource-factory or deferred operations.", lambda.Span); return "default!"; }
                 var parameters = string.Join(", ", lambda.Parameters.Select(p => p.ParameterType.CSharpName() + " " + Emit(p, frame)));
-                return "((" + lambda.DelegateType.CSharpName() + ")(" + (lambda.IsStatic ? "static " : string.Empty) + "(" + parameters + ") => " + values.Emit(lambda.Body, frame) + "))";
+                var variable = context.Temporary("lambda");
+                context.Writer.Open(lambda.DelegateType.CSharpName() + " " + variable + " = " + (lambda.IsStatic ? "static " : string.Empty) + "(" + parameters + ") =>");
+                var body = values.Emit(lambda.Body, frame);
+                context.Writer.Line((lambda.DelegateType.DelegateInvokeMethod!.ReturnsVoid ? string.Empty : "return ") + body + ";");
+                context.Writer.Close(";");
+                return variable;
             default: throw new InvalidOperationException("Unknown functional bound operation.");
         }
     }
 
-    // These nodes emit statements and own a construction lifetime. Hoisting them out of a
-    // lambda would change when they execute and can capture locals in a static delegate.
+    // Delegate bodies can contain temporary locals but cannot own a construction lifetime.
+    // Construction graphs and resource factories need a separate runtime-context boundary.
     private static bool IsInline(BoundExpression expression) => expression is not
         (BoundObjectExpression or BoundDeferredExpression or BoundMarkupExpression or BoundResourceExpression or BoundChoiceExpression) &&
         BoundTraversal.Children(expression, true).All(IsInline);

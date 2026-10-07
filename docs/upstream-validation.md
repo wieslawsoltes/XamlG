@@ -14,7 +14,7 @@ The suites do not cover every custom transformer used by every XAML framework. I
 
 ## Implementation audit beyond the pinned tests
 
-Compare behavior against the pinned source as well as its tests. Native compiler regressions cover implementation details. The two upstream harnesses also link 54 additional cases from `tests/XamlG.XamlX.ParityCases` to execute identical assertions through both compilers. These authored differential tests use the `ParityRegression` category and separate TRX files; they do not increase the count of unmodified upstream assertions.
+Compare behavior against the pinned source as well as its tests. Native compiler regressions cover implementation details. The two upstream harnesses also link 62 additional cases from `tests/XamlG.XamlX.ParityCases` to execute identical assertions through both compilers. These authored differential tests use the `ParityRegression` category and separate TRX files; they do not increase the count of unmodified upstream assertions.
 
 | Upstream behavior | XamlG implementation and evidence |
 | --- | --- |
@@ -24,6 +24,7 @@ Compare behavior against the pinned source as well as its tests. Native compiler
 | Static collection overloads and conversions | `MemberBinder` preserves declared/inherited adder order and gives explicit text conversions priority. `CollectionKeyBinder` converts keys before selecting a value overload. Emission casts arguments to the chosen parameter types so C# cannot select a different overload. Shared `CollectionOverloadTests` covers object/base overloads, primitive conversion precedence, invalid numeric text, key conflicts and converted collection replacement. |
 | Delegate-valued properties and root events | `RootMethodBinder` shares accessible method selection between events and delegate values. `RootMethodBindingTests` executes attributes, text/string elements, private partial-class methods, nested constructor arguments and deferred owner capture, and checks invalid method diagnostics. |
 | Event delegate expressions | `BoundEventAssignment.Value` carries markup/object-form handlers through emission and tooling traversal. `EventValueTests` verifies event target services, single evaluation, named fields and session cleanup for CLR and attached events. |
+| Constructor overloads and argument evaluation | `ConstructorBinder` retains the first directly compatible signature, then the first signature of the same arity for conversion; object-valued arguments cannot silently downcast. `ValueEmitter.EmitArguments` completes arguments in order using their resolved parameter types. Shared `ConstructorDispatchTests` covers overload order, conversion failures, nested markup types and provider/construction ordering. |
 | Runtime string conversions | `ValueBinder.TryConvert` binds nonliteral strings through the selected `Parse` method or a typed converter expression. Shared `StringValueConversionTests` verifies static/provider values, member converters, constructor arguments, conversion precedence, collection replacement, read-only attribute conversions and exact culture-overload selection. Bound graph traversal retains converter inputs for tooling and emission. |
 | Member-specific text conversions | Property elements, attached getters and constructor arguments retain conversion metadata. String elements and `x:Arguments` preserve their namespace scopes. Static `Parse` takes precedence over type-level converters, while member converters override it. `TextConversionContextTests` executes these paths. |
 | Intrinsic value-type probing | `ValueTypeProbe` shares intrinsic normalization and static-member resolution with binding. Shared `IntrinsicValueTests` covers typed static values, collection replacement and constructor selection. Native `IntrinsicTypeProbeTests` covers arrays, known and forward references, and diagnostics. `x:Array`, `x:Reference` and property-element namespace declarations extend beyond the pinned upstream parser/intrinsics and are tested natively. |
@@ -31,7 +32,6 @@ Compare behavior against the pinned source as well as its tests. Native compiler
 
 This is an ongoing source audit. Passing the current suites does not close the remaining work:
 
-- Audit constructor and nested method argument evaluation order and exact overload preservation. Collection adders and culture-aware Parse calls have shared executable checks.
 - Audit inherited metadata and converted root forms against the actual upstream transform/emitter combination before classifying differences as missing features or backend constraints.
 - Complete the framework-transform comparison beyond the portable corpus, including Avalonia animation, binding, selector and resource behavior. Existing framework tests and theme gates remain relevant but do not certify untested combinations.
 
@@ -47,3 +47,7 @@ dotnet test tests/XamlG.XamlX.Compatibility.Tests -c Release --no-build --filter
 ```
 
 The CI workflow retrieves the revision from the same props file and runs the two suites in separate jobs. TRX results distinguish the baseline from the replacement compiler.
+
+## Theme checkpoint
+
+At compiler commit `b2b2055`, the existing theme gate passed against Avalonia `8eeda4f6f546165b3f72e63c9f42247abb306905`: 82 Simple documents (81 physical plus one declared project link), 86 Fluent documents, original code-behind, and 34 control/theme realizations per theme. This validates that commit, not subsequent compiler changes or the full framework transform surface.
