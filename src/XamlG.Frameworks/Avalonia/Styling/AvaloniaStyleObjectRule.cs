@@ -15,11 +15,11 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
         var declaredType = declared == null ? null : AvaloniaBindingScopeRule.ResolveDataType(context, declared.Value, target.Scope, declared.ValueSpan);
         if (AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Style))
         {
-            var source = TextMember(target.Syntax, AvaloniaStyleMetadata.SelectorMember);
+            var source = AvaloniaSelectorSource.Read(context, target);
             if (source is { } selector && !string.IsNullOrWhiteSpace(selector.Text))
             {
                 var syntax = AvaloniaSelectorParser.Parse(selector.Text, selector.Span, context.Diagnostics.Add, context.Cancellation);
-                var bound = syntax == null ? null : new AvaloniaSelectorBinder(context, target.Scope, inherited, FindNestingSelector(context, target)).Bind(syntax);
+                var bound = syntax == null ? null : new AvaloniaSelectorBinder(context, selector.Scope, inherited, FindNestingSelector(context, target)).Bind(syntax);
                 if (bound != null)
                 {
                     target.Annotations.Set(AvaloniaStyleAnnotations.Selector, bound);
@@ -31,7 +31,7 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
                 var owner = FindStyleOwner(context, target);
                 if (owner != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, owner);
                 if (source != null && context.Types.Find(AvaloniaStyleMetadata.Selector) is { } selectorType)
-                    target.Annotations.Set(AvaloniaStyleAnnotations.Selector, new BoundSelector(new BoundConstantExpression(null, selectorType, source.Value.Span), owner));
+                    target.Annotations.Set(AvaloniaStyleAnnotations.Selector, new BoundSelector(new BoundConstantExpression(null, selectorType, source.Span), owner));
             }
         }
         else if (AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.ControlTheme) || AvaloniaStyleScope.IsTemplate(target.Type))

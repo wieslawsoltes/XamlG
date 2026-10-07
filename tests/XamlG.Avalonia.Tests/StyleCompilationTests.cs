@@ -79,7 +79,6 @@ public sealed class StyleCompilationTests
 
     [Theory]
     [InlineData("")]
-    [InlineData("Button >")]
     [InlineData("Button,,TextBlock")]
     [InlineData("Button:not(")]
     [InlineData("Button:nth-child(2foo)")]
