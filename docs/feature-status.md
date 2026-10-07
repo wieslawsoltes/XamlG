@@ -17,6 +17,7 @@ This is a capability map, not a declaration of universal XAML/Avalonia parity. A
 | LSP | Negotiated versioned/legacy edits; full/delta/range semantic tokens; single-flight snapshot analysis; cancellation/freshness checks. |
 | Resource file refactoring | Simultaneous file/folder move planning, resolved incoming/outgoing include rewrites, candidate-project validation, source/identity collision checks, original-URI versioned or legacy edits. The client owns physical moves. |
 | Pull diagnostics | Document/workspace full and unchanged reports; loaded closed files and bounded related resources; removed-file clears; actual wire-value equality; bounded per-URI LRU retention; coalesced negotiated refresh and legacy push fallback. |
+| Diagnostic streaming | Request-token opt-in for document and workspace pulls, primary-before-related ordering, bounded awaited batches, unchanged IDs/removal clears and per-frame snapshot freshness; no duplicated terminal values. |
 | Browser integration | Monaco scoped rename/format/actions, multi-file previews, atomic XAML/C#/resource project undo/redo, stale-plan rejection, resource move preview/apply/cancel with typed dialog state. |
 | Unsaved C# | C# open buffers participate in the XAML semantic snapshot; original parse options are preserved, refactor edits carry current C# versions, and closing restores loaded source without writes. |
 
@@ -28,6 +29,8 @@ The cache validates required input fields and computes retention cost before mut
 
 Cancelling a shared-analysis consumer does not cancel its siblings. Publication rechecks the project and complete open-buffer snapshot under the serialized output gate. A dependency edit can supersede a queued caller report even if that caller's client version did not change. Once admitted, a frame completes or its connection fails; cancellation does not permit a partial frame to be followed by another message.
 
+Streaming retains the existing coherent semantic analysis and bounded related-document traversal; it does not make binding incremental or stream individual diagnostics from one document. See [partial-result protocol and limits](diagnostic-streaming.md).
+
 ## Deliberate runtime and compatibility boundaries
 
 Legacy XamlX-only compiled resource assemblies are not translated automatically. Resource includes require XamlG export metadata. Eager dictionary merge is not IL-level flattening and can allocate transient dictionaries. Generic/abstract code-behind roots, handwritten initialization, explicit root construction directives and unsupported/required-member constructor shapes retain caller-controlled Populate support rather than an automatic factory.
@@ -38,7 +41,7 @@ Structural hot reload builds replacement graphs with eligible state transfer; ar
 
 ## Authoring work still outside the implemented surface
 
-Arbitrary C# symbol rename, source-generating refactors, decompiled metadata navigation, semantic-token binding incrementality and partial-result diagnostic streaming are not supplied. Name rename does not infer references embedded in runtime string lookups, selector strings or unknown framework conventions. File moves rewrite recognized static compiled-resource include sites, not arbitrary project declarations or runtime resource strings. Linked physical paths need explicit logical mapping; unsupported CDATA/multi-fragment rewrites are rejected.
+Arbitrary C# symbol rename, source-generating refactors, decompiled metadata navigation and semantic-token binding incrementality are not supplied. Name rename does not infer references embedded in runtime string lookups, selector strings or unknown framework conventions. File moves rewrite recognized static compiled-resource include sites, not arbitrary project declarations or runtime resource strings. Linked physical paths need explicit logical mapping; unsupported CDATA/multi-fragment rewrites are rejected.
 
 Compiler Studio's source transactions are atomic and do not execute preview code. Arbitrary C# refactoring and every Visual Studio/Monaco provider surface are not implied. The LSP consumes unsaved C# as XAML compilation input; it does not replace a full C# language server.
 
@@ -46,6 +49,6 @@ Compiler Studio's source transactions are atomic and do not execute preview code
 
 PR #5 integrated semantic authoring, browser commands, bounded multi-language transactions and C# overlays. PR #6 adds resource-file refactoring and pull diagnostics, including typed file-move dialog state and final cache/protocol/package regression coverage. See [the PR6 validation contract](pull-diagnostic-validation.md).
 
-The current completion was reconstructed directly against the latest published PR6 tree because the retained local archive could not be read in this execution session. This is not a byte-for-byte import of the historical offline completion tree. Fresh online build, process, installed-package and browser results are required for the actual final head.
+PR #7 adds shipping loader/MSBuild integration. The next continuation implements diagnostic partial results, including real stdio and installed-package coverage. Each change must be validated at its own final head; earlier PR evidence is not a substitute for running the new regression cases.
 
 Run evidence belongs to its exact commit. No NuGet publication or version tag is implied by a source merge. Historical downloadable reports describe their original offline delivery, not the current repository's publication state.
