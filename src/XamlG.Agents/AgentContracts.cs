@@ -16,6 +16,8 @@ public sealed record AgentUsage(long InputTokens, long OutputTokens, bool Estima
 }
 public sealed record AgentEvent(long Sequence, DateTimeOffset Time, string TaskId, string Kind, string Text, string? ToolCallId = null);
 public sealed record AgentQuestion(string Question, IReadOnlyList<string>? Options = null);
+public sealed record AgentQueuedMessage(string Id, string Text);
+public sealed record AgentQueueSnapshot(long Revision, IReadOnlyList<AgentQueuedMessage> Messages);
 public sealed record AgentWorkspaceSnapshot(long Revision, IReadOnlyDictionary<string, string> Documents);
 public sealed record AgentFileChange(string Path, string? Before, string? After);
 public sealed record AgentChangeReview(long Revision, IReadOnlyList<AgentFileChange> Files);
@@ -102,13 +104,15 @@ public sealed class AgentTask
     public string Draft { get; set; } = "";
     public IReadOnlyList<AgentPlanStep> Plan { get; internal set; } = [];
     public IReadOnlyList<AgentEvent> Events { get { lock (Sync) return PublicEvents.ToArray(); } }
-    public IReadOnlyList<string> QueuedMessages { get { lock (Sync) return FollowUps.ToArray(); } }
+    public IReadOnlyList<string> QueuedMessages { get { lock (Sync) return FollowUps.Select(message => message.Text).ToArray(); } }
+    public AgentQueueSnapshot Queue { get { lock (Sync) return new(QueueRevision, FollowUps.ToArray()); } }
     public AgentChangeReview? Changes { get; internal set; }
     internal object Sync { get; } = new();
     internal List<AgentMessage> Messages { get; } = [];
     internal List<string> UserRequests { get; } = [];
     internal List<AgentEvent> PublicEvents { get; } = [];
-    internal Queue<string> FollowUps { get; } = new();
+    internal List<AgentQueuedMessage> FollowUps { get; } = [];
+    internal long QueueRevision;
     internal AgentWorkspaceSnapshot? BeforeRun;
     internal AgentReply? PendingReply;
     internal int NextTool;

@@ -9,19 +9,77 @@ public sealed partial class AgentHarness
     public void QueueMessage(string id, string message)
     {
         var task = GetTask(id);
-        if (string.IsNullOrWhiteSpace(message) || message.Length > 262144) throw new ArgumentException("A bounded, nonempty follow-up is required.");
+        ValidateQueuedText(message);
         lock (task.Sync)
         {
             if (task.Status is AgentTaskStatus.Failed or AgentTaskStatus.Cancelled) throw new InvalidOperationException("Start a new task after cancellation or failure.");
-            if (task.Status is AgentTaskStatus.Ready or AgentTaskStatus.Completed) throw new InvalidOperationException("Send a new message to an idle task instead of queuing it.");
-            if (task.FollowUps.Count >= 8) throw new InvalidOperationException("At most eight follow-ups can be queued.");
-            task.FollowUps.Enqueue(message);
+            if (task.FollowUps.Count >= 16 || task.FollowUps.Sum(item => item.Text.Length) + message.Length > 200000)
+                throw new InvalidOperationException("The queue is limited to 16 messages and 200,000 total characters.");
+            task.FollowUps.Add(new(Guid.NewGuid().ToString("N"), message)); task.QueueRevision++;
         }
-        Publish(task, "queued", message);
+        Publish(task, "queue_changed", "A follow-up was queued locally. Sending requires a new run.");
     }
 
-    public void ClearQueuedMessages(string id)
-    { var task = GetTask(id); lock (task.Sync) task.FollowUps.Clear(); }
+    public AgentQueuedMessage GetQueuedMessage(string id, string messageId, long expectedRevision)
+    {
+        var task = GetTask(id);
+        lock (task.Sync) return task.FollowUps[QueuedIndex(task, messageId, expectedRevision)];
+    }
+
+    public void EditQueuedMessage(string id, string messageId, string text, long expectedRevision)
+    {
+        ValidateQueuedText(text); var task = GetTask(id);
+        lock (task.Sync)
+        {
+            var index = QueuedIndex(task, messageId, expectedRevision);
+            if (task.FollowUps.Sum(item => item.Text.Length) - task.FollowUps[index].Text.Length + text.Length > 200000)
+                throw new InvalidOperationException("The queue exceeds 200,000 total characters.");
+            task.FollowUps[index] = task.FollowUps[index] with { Text = text }; task.QueueRevision++;
+        }
+        Publish(task, "queue_changed", "A queued follow-up was edited locally.");
+    }
+
+    public void MoveQueuedMessage(string id, string messageId, int index, long expectedRevision)
+    {
+        var task = GetTask(id);
+        lock (task.Sync)
+        {
+            var previous = QueuedIndex(task, messageId, expectedRevision);
+            if (index < 0 || index >= task.FollowUps.Count) throw new ArgumentOutOfRangeException(nameof(index));
+            var message = task.FollowUps[previous]; task.FollowUps.RemoveAt(previous); task.FollowUps.Insert(index, message); task.QueueRevision++;
+        }
+        Publish(task, "queue_changed", "A queued follow-up was reordered locally.");
+    }
+
+    public void RemoveQueuedMessage(string id, string messageId, long expectedRevision)
+    {
+        var task = GetTask(id);
+        lock (task.Sync) { task.FollowUps.RemoveAt(QueuedIndex(task, messageId, expectedRevision)); task.QueueRevision++; }
+        Publish(task, "queue_changed", "A queued follow-up was removed.");
+    }
+
+    public void ClearQueuedMessages(string id, long? expectedRevision = null)
+    {
+        var task = GetTask(id);
+        lock (task.Sync)
+        {
+            if (expectedRevision != null && expectedRevision != task.QueueRevision) throw new AutomationException("revision_conflict", "The queue changed. Review it again.");
+            task.FollowUps.Clear(); task.QueueRevision++;
+        }
+        Publish(task, "queue_changed", "Queued follow-ups were cleared.");
+    }
+
+    private static int QueuedIndex(AgentTask task, string messageId, long expectedRevision)
+    {
+        if (expectedRevision != task.QueueRevision) throw new AutomationException("revision_conflict", "The queue changed. Review it again.");
+        var index = task.FollowUps.FindIndex(message => message.Id == messageId);
+        return index >= 0 ? index : throw new ArgumentException("Unknown queued message.", nameof(messageId));
+    }
+
+    private static void ValidateQueuedText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || text.Length > 100000) throw new ArgumentException("A nonempty queued message of at most 100,000 characters is required.");
+    }
 
     public void Compact(string id, int maximumBytes = 262144)
     {

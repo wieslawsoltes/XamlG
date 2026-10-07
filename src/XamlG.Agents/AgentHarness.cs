@@ -41,29 +41,53 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
     public AgentTask GetTask(string id) => _tasks.TryGetValue(id, out var task) ? task : throw new KeyNotFoundException("Unknown task.");
     public void Stop() => _activeLease?.Revoke();
 
-    public async Task RunAsync(string id, string? message, AgentRunOptions options,
+    public Task RunAsync(string id, string? message, AgentRunOptions options,
         Func<AutomationReview, CancellationToken, Task<AgentApproval>>? review = null,
         Func<AgentQuestion, CancellationToken, Task<string>>? askUser = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) => RunCoreAsync(id, message, null, options, review, askUser, cancellationToken);
+
+    /// <summary>Accepts exactly the reviewed queue revision into a new run. A failed
+    /// preflight leaves the queue and native history intact; accepted messages are not replayed.</summary>
+    public Task RunQueuedAsync(string id, string messageId, long expectedRevision, AgentRunOptions options,
+        Func<AutomationReview, CancellationToken, Task<AgentApproval>>? review = null,
+        Func<AgentQuestion, CancellationToken, Task<string>>? askUser = null,
+        CancellationToken cancellationToken = default) => RunCoreAsync(id, null, new(messageId, expectedRevision), options, review, askUser, cancellationToken);
+
+    private async Task RunCoreAsync(string id, string? message, QueuedRun? queuedRun, AgentRunOptions options,
+        Func<AutomationReview, CancellationToken, Task<AgentApproval>>? review,
+        Func<AgentQuestion, CancellationToken, Task<string>>? askUser, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this); options.Limits.Validate();
         var task = GetTask(id);
         if (!await _runGate.WaitAsync(0, cancellationToken)) throw new InvalidOperationException("An agent is already running in this IDE.");
+        var started = false;
         try
         {
             EnsureIdle(task);
             if (task.Status is AgentTaskStatus.Failed or AgentTaskStatus.Cancelled) throw new InvalidOperationException("Start a new task after denial, cancellation or an invalid response.");
-            if (message != null)
-            {
-                if (task.PendingReply != null || task.Status == AgentTaskStatus.Paused) throw new InvalidOperationException("Resume the pending turn before adding a follow-up.");
-                if (string.IsNullOrWhiteSpace(message) || message.Length > 262144) throw new ArgumentException("A bounded, nonempty task message is required.");
-                task.Goal ??= message; task.LatestRequest = message;
-                task.UserRequests.Add(message);
-                task.Messages.Add(new(AgentMessageKind.User, message)); Publish(task, "user", message);
-            }
-            else if (task.Status != AgentTaskStatus.Paused) throw new InvalidOperationException("Only a paused task can be resumed without a new message.");
             using var lease = new AutomationLease(options.Policy, options.LeaseDuration, cancellationToken);
+            lease.Token.ThrowIfCancellationRequested();
+            lock (task.Sync)
+            {
+                var queuedIndex = -1;
+                if (queuedRun != null)
+                {
+                    queuedIndex = QueuedIndex(task, queuedRun.Id, queuedRun.Revision);
+                    message = task.FollowUps[queuedIndex].Text;
+                }
+                if (message != null)
+                {
+                    if (task.PendingReply != null || task.Status == AgentTaskStatus.Paused) throw new InvalidOperationException("Resume the pending turn before adding a follow-up.");
+                    if (string.IsNullOrWhiteSpace(message) || message.Length > 262144) throw new ArgumentException("A bounded, nonempty task message is required.");
+                    task.Goal ??= message; task.LatestRequest = message;
+                    task.UserRequests.Add(message); task.Messages.Add(new(AgentMessageKind.User, message));
+                    if (queuedIndex >= 0) { task.FollowUps.RemoveAt(queuedIndex); task.QueueRevision++; }
+                }
+                else if (task.Status != AgentTaskStatus.Paused) throw new InvalidOperationException("Only a paused task can be resumed without a new message.");
+            }
+            started = true;
             _activeLease = lease; task.Status = AgentTaskStatus.Running; task.StatusReason = null;
+            if (message != null) Publish(task, "user", message);
             if (workspace != null && task.BeforeRun == null)
                 task.BeforeRun = await CaptureWorkspaceAsync(lease.Token);
             var local = LocalTools(task, askUser, lease.Token);
@@ -131,14 +155,6 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                     Publish(task, "assistant", reply.Text);
                     if (reply.ToolCalls.Count == 0)
                     {
-                        string? followUp;
-                        lock (task.Sync) followUp = task.FollowUps.TryDequeue(out var queued) ? queued : null;
-                        if (followUp != null)
-                        {
-                            task.LatestRequest = followUp; task.Messages.Add(new(AgentMessageKind.User, followUp));
-                            task.UserRequests.Add(followUp);
-                            Publish(task, "user", followUp); continue;
-                        }
                         task.Status = AgentTaskStatus.Completed; Publish(task, "completed", "Task response completed."); return;
                     }
                     task.PendingReply = reply; task.NextTool = 0;
@@ -186,12 +202,14 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 task.PendingReply = null; task.NextTool = 0;
             }
         }
-        catch (OperationCanceledException) { task.Status = AgentTaskStatus.Cancelled; task.StatusReason = "Stopped, revoked or lease expired."; Publish(task, "cancelled", task.StatusReason); }
-        catch (Exception error)
+        catch (OperationCanceledException) when (started) { task.Status = AgentTaskStatus.Cancelled; task.StatusReason = "Stopped, revoked or lease expired."; Publish(task, "cancelled", task.StatusReason); }
+        catch (Exception error) when (started)
         { task.Status = AgentTaskStatus.Failed; task.StatusReason = error.Message; Publish(task, "failed", error.Message); throw; }
+        catch (Exception error)
+        { task.StatusReason = error.Message; Publish(task, "run_rejected", error.Message); throw; }
         finally
         {
-            if (workspace != null && task.BeforeRun != null)
+            if (started && workspace != null && task.BeforeRun != null)
             {
                 try
                 {
@@ -263,4 +281,5 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
     }
     public void Dispose() { if (_disposed) return; _disposed = true; Stop(); }
     public sealed record PlanArguments(long ExpectedRevision, AgentPlanStep[] Steps);
+    private sealed record QueuedRun(string Id, long Revision);
 }

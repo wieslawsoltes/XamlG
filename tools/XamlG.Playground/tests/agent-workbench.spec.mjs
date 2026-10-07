@@ -1,13 +1,18 @@
-import { test, expect } from '@playwright/test';
+import { test, expect as baseExpect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+
+const expect = baseExpect.configure({ timeout: 15000 });
 
 for (const provider of ['openai', 'anthropic', 'gemini']) {
 test(`workbench runs ${provider} official SDK tools, reviews the source change and restores it`, async ({ page, request }) => {
   test.setTimeout(90000); page.setDefaultTimeout(15000);
   test.skip(!process.env.XAMLG_TEST_HOST_DLL, 'Build the companion and set XAMLG_TEST_HOST_DLL for the full agent transport test.');
   const requests = [], failures = [];
+  let releaseFirst;
+  const firstResponse = new Promise(resolve => { releaseFirst = resolve; });
+  const moveResponse = Promise.withResolvers(), moveArrived = Promise.withResolvers();
   const xaml = '<TextBlock xmlns="https://github.com/avaloniaui" Text="Agent changed this" />';
   const fixture = createServer(async (incoming, response) => {
     try {
@@ -20,6 +25,7 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
       }
       const input = JSON.parse(body); requests.push(input);
       const round = requests.length;
+      if (round === 1) await firstResponse;
       const call = (name, args) => ({ type: 'function_call', id: `fc_${round}`, call_id: `call_${round}`, name, arguments: JSON.stringify(args), status: 'completed' });
       const result = id => provider === 'openai' ? JSON.parse(input.input.find(item => item.type === 'function_call_output' && item.call_id === id).output) :
         provider === 'anthropic' ? JSON.parse(input.messages.flatMap(message => Array.isArray(message.content) ? message.content : []).find(item => item.type === 'tool_result' && item.tool_use_id === id).content) :
@@ -80,10 +86,78 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await workbench.getByLabel('Task permission profile').selectOption('autoEdit');
     await workbench.getByLabel('Message', { exact: true }).fill('Change the TextBlock, compile and report.');
     await workbench.getByRole('button', { name: 'Run', exact: true }).click();
+    const review = page.getByRole('dialog', { name: 'Review agent run' });
+    await expect(review).toContainText('Change the TextBlock, compile and report.');
+    expect(requests).toHaveLength(0);
+    await review.getByRole('button', { name: 'Confirm run', exact: true }).click();
+    await expect.poll(() => requests.length).toBe(1);
+    await workbench.getByLabel('Message', { exact: true }).fill('First queued follow-up');
+    await workbench.getByRole('button', { name: 'Queue follow-up', exact: true }).click();
+    await expect(workbench.getByLabel('Message', { exact: true })).toHaveValue('');
+    await workbench.getByLabel('Message', { exact: true }).fill('Keep this message queued');
+    await workbench.getByRole('button', { name: 'Queue follow-up', exact: true }).click();
+    await expect(workbench.locator('.agent-queue summary')).toContainText('2 queued follow-ups');
+    await page.route('**/agent/queue_move', async route => {
+      const response = await route.fetch(); moveArrived.resolve();
+      await moveResponse.promise; await route.fulfill({ response });
+    });
+    await workbench.getByRole('button', { name: 'Move down', exact: true }).click();
+    await moveArrived.promise;
+    await workbench.getByLabel('Edit queued message', { exact: true }).fill('Saved queued follow-up');
+    await expect(workbench.getByRole('button', { name: 'Save queued edit', exact: true })).toBeDisabled();
+    moveResponse.resolve();
+    await workbench.getByRole('button', { name: 'Save queued edit', exact: true }).click();
+    await expect(workbench.getByLabel('Queued message', { exact: true }).locator('option').last()).toHaveText('Saved queued follow-up');
+    await expect(workbench.getByRole('button', { name: 'Send selected message', exact: true })).toBeDisabled();
+    releaseFirst();
     await expect(workbench.getByRole('status')).toContainText('completed', { timeout: 30000 });
     expect(failures).toEqual([]); expect(requests).toHaveLength(4);
     if (provider === 'openai') expect(requests.every(item => item.store === false)).toBe(true);
     expect((await page.evaluate(() => window.xamlgAutomation.call('xamlg_document_read', { path: 'View.axaml' }))).text).toBe(xaml);
+    await expect(workbench.locator('.agent-queue summary')).toContainText('2 queued follow-ups');
+    await workbench.getByLabel('Message', { exact: true }).fill('Unsent independent composer draft');
+    await workbench.getByLabel('Task permission profile').selectOption('fullAccess');
+    const taskId = await workbench.getByLabel('Task', { exact: true }).inputValue();
+    const queuedId = await workbench.getByLabel('Queued message', { exact: true }).inputValue();
+    await workbench.getByRole('button', { name: 'Send selected message', exact: true }).click();
+    await expect(review).toContainText('Saved queued follow-up');
+    await expect(review.getByRole('button', { name: 'Confirm run', exact: true })).toBeDisabled();
+    await expect(page.evaluate(async ({ taskId, queuedId }) => {
+      const studio = await import('./studio.js');
+      const state = await studio.agentRequest('state', {});
+      const task = state.tasks.find(item => item.id === taskId);
+      return studio.agentRequest('run', { id: taskId, message: null, options: { policy: { profile: 'fullAccess' } },
+        confirmed: true, fullAccessAcknowledged: false, queuedMessageId: queuedId, expectedQueueRevision: task.queue.revision });
+    }, { taskId, queuedId })).rejects.toThrow('Full Access acknowledgement');
+    await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect(requests).toHaveLength(4);
+    await workbench.getByRole('button', { name: 'Send selected message', exact: true }).click();
+    await page.evaluate(async ({ taskId, queuedId }) => {
+      const studio = await import('./studio.js');
+      const state = await studio.agentRequest('state', {});
+      const task = state.tasks.find(item => item.id === taskId);
+      await studio.agentRequest('queue_edit', { id: taskId, messageId: queuedId, text: 'Reviewed after concurrent queue edit', expectedRevision: task.queue.revision });
+    }, { taskId, queuedId });
+    await review.getByRole('checkbox').check();
+    await review.getByRole('button', { name: 'Confirm run', exact: true }).click();
+    await expect(review.getByRole('alert')).toContainText('queue changed');
+    expect(requests).toHaveLength(4);
+    await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await workbench.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(workbench.getByLabel('Queued message', { exact: true }).locator('option').last()).toHaveText('Reviewed after concurrent queue edit');
+    await workbench.getByRole('button', { name: 'Send selected message', exact: true }).click();
+    await expect(review).toContainText('Reviewed after concurrent queue edit');
+    await expect(review.getByRole('checkbox')).not.toBeChecked();
+    await review.getByRole('checkbox').check();
+    await review.getByRole('button', { name: 'Confirm run', exact: true }).click();
+    await expect.poll(() => requests.length).toBe(5);
+    await expect(workbench.getByRole('status')).toContainText('completed');
+    await expect(workbench.getByLabel('Message', { exact: true })).toHaveValue('Unsent independent composer draft');
+    await expect(workbench.locator('.agent-queue summary')).toContainText('1 queued follow-ups');
+    const continuation = JSON.stringify(requests[4]);
+    expect(continuation).toContain('Reviewed after concurrent queue edit');
+    expect(continuation).not.toContain('Keep this message queued');
+    expect(continuation).not.toContain('Unsent independent composer draft');
     await workbench.getByText('Review 1 changed source files', { exact: true }).click();
     await workbench.getByLabel(/View.axaml \(/).check();
     await workbench.getByRole('button', { name: 'Show before and after' }).click();
@@ -105,6 +179,8 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await page.getByTestId('agent-access').click();
     await page.getByRole('button', { name: 'Revoke & disconnect' }).click();
   } finally {
+    releaseFirst();
+    moveResponse.resolve();
     if (test.info().status !== test.info().expectedStatus) await test.info().attach('companion.log', { body: hostLog, contentType: 'text/plain' });
     host.kill('SIGTERM');
     await Promise.race([once(host, 'exit'), new Promise(resolve => setTimeout(resolve, 5000))]);

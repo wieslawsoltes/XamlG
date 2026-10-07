@@ -30,7 +30,7 @@ public sealed class AgentWorkbench : IDisposable
                     providers = _providers.Keys.Order(StringComparer.Ordinal), tasks = _harness.Tasks.Select(task => new
                     {
                         task.Id, task.Name, task.ProviderId, task.Model, task.Status, task.StatusReason, task.Draft,
-                        task.TotalTokens, task.ReportedTokens, task.EstimatedTokens, task.CheckpointCount, task.Plan, task.PlanRevision, task.QueuedMessages,
+                        task.TotalTokens, task.ReportedTokens, task.EstimatedTokens, task.CheckpointCount, task.Plan, task.PlanRevision, task.Queue,
                         changes = task.Changes == null ? null : new { task.Changes.Revision, files = task.Changes.Files.Select(file => new { file.Path, beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
                         events = task.Events.TakeLast(80).Select(item => item with { Text = item.Text.Length > 8192 ? item.Text[..8192] + "\n[see transcript export]" : item.Text })
                     }),
@@ -49,15 +49,37 @@ public sealed class AgentWorkbench : IDisposable
                 _harness.GetTask(draft.Id).Draft = draft.Text; break;
             case "delete": _harness.DeleteTask(Read<IdArgs>(arguments).Id); break;
             case "queue":
-                var queue = Read<TextArgs>(arguments); _harness.QueueMessage(queue.Id, queue.Text); break;
-            case "clear_queue": _harness.ClearQueuedMessages(Read<IdArgs>(arguments).Id); break;
+                var queue = Read<TextArgs>(arguments); _harness.QueueMessage(queue.Id, queue.Text);
+                var queuedTask = _harness.GetTask(queue.Id); if (queuedTask.Draft == queue.Text) queuedTask.Draft = "";
+                return AutomationJson.Element(queuedTask.Queue);
+            case "queue_edit":
+                var edit = Read<QueueEditArgs>(arguments); _harness.EditQueuedMessage(edit.Id, edit.MessageId, edit.Text, edit.ExpectedRevision);
+                return AutomationJson.Element(_harness.GetTask(edit.Id).Queue);
+            case "queue_move":
+                var move = Read<QueueMoveArgs>(arguments); _harness.MoveQueuedMessage(move.Id, move.MessageId, move.Index, move.ExpectedRevision);
+                return AutomationJson.Element(_harness.GetTask(move.Id).Queue);
+            case "queue_remove":
+                var remove = Read<QueueMessageArgs>(arguments); _harness.RemoveQueuedMessage(remove.Id, remove.MessageId, remove.ExpectedRevision);
+                return AutomationJson.Element(_harness.GetTask(remove.Id).Queue);
+            case "clear_queue":
+                var clear = Read<QueueArgs>(arguments); _harness.ClearQueuedMessages(clear.Id, clear.ExpectedRevision);
+                return AutomationJson.Element(_harness.GetTask(clear.Id).Queue);
             case "compact": _harness.Compact(Read<IdArgs>(arguments).Id); break;
             case "stop": Stop(); break;
             case "run":
                 var run = Read<RunArgs>(arguments);
                 run.Options.Limits.Validate(); var task = _harness.GetTask(run.Id);
+                if (!run.Confirmed) throw new InvalidOperationException("Review and confirm this run first.");
+                if (run.Options.Policy.Profile == PermissionProfile.FullAccess && !run.FullAccessAcknowledged)
+                    throw new InvalidOperationException("A fresh Full Access acknowledgement is required for this run.");
                 if (task.Status is AgentTaskStatus.Cancelled or AgentTaskStatus.Failed) throw new InvalidOperationException("Create a new task after cancellation or failure.");
-                if ((run.Message == null) != (task.Status == AgentTaskStatus.Paused)) throw new InvalidOperationException("Resume a paused task without adding a new message.");
+                if (run.QueuedMessageId != null)
+                {
+                    if (run.Message != null || run.ExpectedQueueRevision == null || task.Status is not (AgentTaskStatus.Ready or AgentTaskStatus.Completed))
+                        throw new InvalidOperationException("Send a queued message only to a new or completed task, with the reviewed queue revision.");
+                    _harness.GetQueuedMessage(run.Id, run.QueuedMessageId, run.ExpectedQueueRevision.Value);
+                }
+                else if ((run.Message == null) != (task.Status == AgentTaskStatus.Paused)) throw new InvalidOperationException("Resume a paused task without adding a new message.");
                 if (run.Message != null && (string.IsNullOrWhiteSpace(run.Message) || run.Message.Length > 262144)) throw new ArgumentException("A bounded message is required.");
                 lock (_gate)
                 {
@@ -91,9 +113,13 @@ public sealed class AgentWorkbench : IDisposable
         await Task.Yield();
         try
         {
-            await _harness.RunAsync(args.Id, args.Message, args.Options,
-                async (review, token) => (await AskAsync("approval", AutomationJson.Element(review), token)).Deserialize<AgentApproval>(AutomationJson.Options),
-                async (question, token) => (await AskAsync("question", AutomationJson.Element(question), token)).GetString()!, cancellationToken);
+            async Task<AgentApproval> Review(AutomationReview review, CancellationToken token) =>
+                (await AskAsync("approval", AutomationJson.Element(review), token)).Deserialize<AgentApproval>(AutomationJson.Options);
+            async Task<string> Question(AgentQuestion question, CancellationToken token) =>
+                (await AskAsync("question", AutomationJson.Element(question), token)).GetString()!;
+            if (args.QueuedMessageId != null)
+                await _harness.RunQueuedAsync(args.Id, args.QueuedMessageId, args.ExpectedQueueRevision!.Value, args.Options, Review, Question, cancellationToken);
+            else await _harness.RunAsync(args.Id, args.Message, args.Options, Review, Question, cancellationToken);
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         { /* The harness retains the failure in task status and its public thread. */ }
@@ -118,7 +144,12 @@ public sealed class AgentWorkbench : IDisposable
     public sealed record TextArgs(string Id, string Text);
     public sealed record ProviderArgs(string Provider);
     public sealed record CreateArgs(string Name, string Provider, string Model);
-    public sealed record RunArgs(string Id, string? Message, AgentRunOptions Options);
+    public sealed record RunArgs(string Id, string? Message, AgentRunOptions Options, bool Confirmed = false,
+        bool FullAccessAcknowledged = false, string? QueuedMessageId = null, long? ExpectedQueueRevision = null);
+    public sealed record QueueArgs(string Id, long ExpectedRevision);
+    public sealed record QueueMessageArgs(string Id, string MessageId, long ExpectedRevision);
+    public sealed record QueueEditArgs(string Id, string MessageId, string Text, long ExpectedRevision);
+    public sealed record QueueMoveArgs(string Id, string MessageId, int Index, long ExpectedRevision);
     public sealed record ResponseArgs(string Id, JsonElement Value);
     public sealed record RestoreArgs(string Id, string[] Paths, long ExpectedRevision);
 }

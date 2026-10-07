@@ -47,6 +47,9 @@
                 <label>Output tokens per request <input type="number" min="1" max="1000000" @bind="_outputTokens" /></label>
                 <label>Task token budget <input type="number" min="1" max="100000000" @bind="_taskTokens" /></label>
                 <label>Context bytes <input type="number" min="1024" max="16000000" @bind="_contextBytes" /></label>
+                <label>Tool result bytes <input type="number" min="1024" max="8388608" @bind="_toolResultBytes" /></label>
+                <label>Automatic retries <input type="number" min="0" max="10" @bind="_retries" /></label>
+                <label>Request timeout minutes <input type="number" min="1" max="30" @bind="_timeoutMinutes" /></label>
                 <label>Lease minutes <input type="number" min="1" max="60" @bind="_leaseMinutes" /></label>
                 <label><input type="checkbox" @bind="_autoCompact" /> Compact context automatically at complete tool boundaries</label>
             </details>
@@ -84,16 +87,29 @@
             }
             <label>Message <textarea value="@_draft" @oninput="DraftChangedAsync" rows="4" maxlength="262144" placeholder="Describe the change or investigation" /></label>
             <div class="agent-run-actions">
-                <button class="primary" @onclick="RunAsync" disabled="@(IsRunning(selected) || selected.Status is "paused" or "cancelled" or "failed" || string.IsNullOrWhiteSpace(_draft))">Run</button>
-                <button @onclick="ResumeAsync" disabled="@(selected.Status != "paused")">Resume</button>
-                <button @onclick='() => CommandAsync("queue", new { id = selected.Id, text = _draft })' disabled="@(string.IsNullOrWhiteSpace(_draft) || (!IsRunning(selected) && selected.Status != "paused"))">Queue follow-up</button>
+                <button class="primary" @onclick="RunAsync" disabled="@(AnyRunning || selected.Status is "paused" or "cancelled" or "failed" || string.IsNullOrWhiteSpace(_draft))">Run</button>
+                <button @onclick="ResumeAsync" disabled="@(AnyRunning || selected.Status != "paused")">Resume</button>
+                <button @onclick="QueueDraftAsync" disabled="@(_queueBusy || string.IsNullOrWhiteSpace(_draft) || selected.Status is "cancelled" or "failed")">Queue follow-up</button>
                 <button @onclick='() => CommandAsync("stop", new { })' disabled="@(!_state.Tasks.Any(IsRunning))">Stop &amp; revoke</button>
                 <button @onclick='() => CommandAsync("compact", new { id = selected.Id })' disabled="@IsRunning(selected)">Compact context</button>
             </div>
-            @if (selected.QueuedMessages.Length > 0)
+            @if (selected.Queue.Messages.Length > 0)
             {
-                <details><summary>@selected.QueuedMessages.Length queued follow-ups</summary>@foreach (var message in selected.QueuedMessages) { <pre>@message</pre> }
-                    <button @onclick='() => CommandAsync("clear_queue", new { id = selected.Id })'>Clear queue</button></details>
+                <details class="agent-queue" open>
+                    <summary>@selected.Queue.Messages.Length queued follow-ups</summary>
+                    <p>Each message waits here until you select it and confirm a new run.</p>
+                    <label>Queued message <select aria-label="Queued message" @key="selected.Queue.Revision" value="@QueueEdit.Id" disabled="@_queueBusy" @onchange='args => SelectQueue(args.Value?.ToString() ?? "")'>
+                        @foreach (var message in selected.Queue.Messages) { <option @key="message.Id" value="@message.Id">@(message.Text.Length > 120 ? message.Text[..120] + "…" : message.Text)</option> }
+                    </select></label>
+                    <label>Edit queued message <textarea @bind="QueueEdit.Text" @bind:event="oninput" maxlength="100000" rows="4" /></label>
+                    <button @onclick="SaveQueueAsync" disabled="@(_queueBusy || string.IsNullOrWhiteSpace(QueueEdit.Text))">Save queued edit</button>
+                    <button @onclick="() => SelectQueue(QueueEdit.Id)" disabled="@_queueBusy">Reload queued message</button>
+                    <button @onclick="() => MoveQueueAsync(-1)" disabled="@(_queueBusy || QueueIndex <= 0)">Move up</button>
+                    <button @onclick="() => MoveQueueAsync(1)" disabled="@(_queueBusy || QueueIndex < 0 || QueueIndex >= selected.Queue.Messages.Length - 1)">Move down</button>
+                    <button @onclick="RemoveQueueAsync" disabled="@_queueBusy">Remove queued message</button>
+                    <button @onclick="ReviewQueuedRun" disabled="@(_queueBusy || AnyRunning || selected.Status is not ("ready" or "completed") || QueueIndex < 0)">Send selected message</button>
+                    <button @onclick="ClearQueueAsync" disabled="@_queueBusy">Clear queue</button>
+                </details>
             }
             @if (selected.Changes is { Files.Length: > 0 } changes)
             {
@@ -114,4 +130,26 @@
         }
     }
     @if (_error != null) { <p class="runtime-error" role="alert">@_error</p> }
+    @if (_runReview is { } review)
+    {
+        <div class="authoring-backdrop" @onkeydown='args => { if (args.Key == "Escape") CancelRunReview(); }' @onkeydown:stopPropagation="true">
+            <section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Review agent run">
+                <header><h2>Review agent run</h2></header>
+                <p><strong>@review.Name</strong> · @review.Provider · @review.Model</p>
+                <p>This run uses the current live project. Permission profile: <strong>@review.Profile</strong>.</p>
+                <p>@review.Limits</p>
+                <details><summary>Scope and exact tool rules</summary><pre>@review.Options.GetProperty("policy").GetRawText()</pre></details>
+                <pre class="agent-run-preview">@(review.Preview ?? "Resume the pending turn with its completed tool results.")</pre>
+                @if (review.Profile == "fullAccess")
+                {
+                    <label><input type="checkbox" @bind="_fullAccessAcknowledged" /> Allow Full Access for this run, including runtime execution permitted by the live project</label>
+                }
+                <footer>
+                    <button @onclick="CancelRunReview" disabled="@_reviewBusy" @ref="_runReviewCancel">Cancel</button>
+                    <button class="primary" @onclick="ConfirmRunAsync" disabled="@(_reviewBusy || (review.Profile == "fullAccess" && !_fullAccessAcknowledged))">Confirm run</button>
+                </footer>
+                @if (_error != null) { <p class="runtime-error" role="alert">@_error</p> }
+            </section>
+        </div>
+    }
 </section>

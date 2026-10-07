@@ -116,13 +116,24 @@ cancelling releases its observers. Request collections are weakly held and do no
 retain completed HTTP requests. An embedding application's explicit subscription
 handler takes precedence. Resource-content subscriptions are not advertised yet.
 
+Queued follow-ups stay local until an explicit `RunQueuedAsync` accepts their ID
+and reviewed queue revision. The queue supports editing, reordering and removal,
+including during generation, with limits of 16 messages, 100,000 characters per
+message and 200,000 total characters. Queue text is excluded from provider context
+and transcript exports until accepted. Invalid run arguments and stale queue reviews
+leave the message queued; a paused turn must be resumed before dispatching another
+message. The workbench preserves its separate composer draft and offers these queue
+controls alongside a run review showing the captured task, provider, model, request,
+permissions and limits. Every Full Access run requires a fresh acknowledgement.
+Request timeout, retry count and tool-result size are independently editable.
+
 ## Local evidence and remaining work
 
 - The merged native solution passed 1,508 tests after merging main through
   `a331efe` (Avalonia class/setter contracts), including 1,017 real-Avalonia tests
   and the runtime inspector's fifteen tests for live manipulation and source
   provenance for objects and deferred resource keys.
-- 41 automation/MCP/agent tests passed, including actual official MCP, OpenAI,
+- 44 automation/MCP/agent tests passed, including actual official MCP, OpenAI,
   Anthropic and Gemini
   SDK transports, permission enforcement, native tool continuation, no replay on
   resume, queued messages, compaction and conflict-checked source restoration.
@@ -138,8 +149,9 @@ handler takes precedence. Resource-content subscriptions are not advertised yet.
   built, installed and ran through a separate consumer with an initially empty
   package cache. Temporary caches and the 30 MiB candidate package set were
   removed after validation; the small inventory and logs are retained locally.
-- All 44 browser scenarios passed locally after the C# authoring expansion and
-  the synthetic converter main merge. The runtime
+- All 45 browser scenarios passed locally after the C# authoring expansion,
+  modern MCP subscriptions, reviewed queue dispatch and the setter-contract main
+  merge through `a331efe`. The runtime
   browser scenario constructs a C# DataContext, invokes its method,
   installs and updates a real binding, inspects style value frames, and creates,
   reparents and removes controls without changing source. Coverage includes actual rendering, authoring, designer gestures,
@@ -148,6 +160,11 @@ handler takes precedence. Resource-content subscriptions are not advertised yet.
   SDKs and the real companion/browser. Each discovers models, edits XAML, compiles, reviews and selectively
   restores source, compacts context and exports the public thread. No paid
   provider account was used. CI starts and removes its own companion processes.
+  All three workbench cases also pass with explicit queued dispatch, editing during
+  generation, deliberately delayed reorder responses, cancelled/stale run reviews,
+  server rejection of missing Full Access acknowledgement and preserved unsent drafts.
+  The native queue tests check atomic bounds, revision conflicts, failed argument
+  validation and paused turns that cannot be replaced by a queued prompt.
 - All eight automation/workbench browser scenarios also passed after separating
   owner and MCP credentials. HTTP checks reject client access to the workbench,
   owner credentials at the MCP endpoint, missing leases and expired browser leases.
@@ -177,7 +194,7 @@ Template-owned visuals require template/source edits; tree operations reject
 unsupported ownership. Diagnostic frame metadata uses the loaded Avalonia runtime.
 
 Full reference parity remains in progress: account-mode support and additional
-provider recovery/limit controls; MCP resource updates, tasks and artifact handling;
+provider recovery/limit controls and task/workspace identity binding; MCP resource updates, tasks and artifact handling;
 typed runtime input and additional designer/runtime UI; the remaining Roslyn
 authoring surface for the multi-file C# workspace; and the corresponding UI and protocol
 acceptance coverage. This ledger does not claim those capabilities from a build
