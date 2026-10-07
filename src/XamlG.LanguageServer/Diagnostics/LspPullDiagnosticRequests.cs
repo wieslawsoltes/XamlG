@@ -13,11 +13,11 @@ internal sealed class LspPullDiagnosticRequests(LspDiagnosticCache cache, bool r
     private const int MaximumPreviousResults = 16384;
     private static readonly StringComparer Paths = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
 
-    public object Handle(string method, JsonElement parameters, LspWorkspaceAnalysis workspace,
-        LspDocumentSetSnapshot buffers, CancellationToken token)
+    public async ValueTask<object?> HandleAsync(string method, JsonElement parameters, LspWorkspaceAnalysis workspace,
+        LspDocumentSetSnapshot buffers, Func<object, CancellationToken, ValueTask> publish, CancellationToken token)
     {
-        if (parameters.ValueKind != JsonValueKind.Object)
-            throw new LspRequestException(-32602, "Diagnostic parameters must be an object.");
+        var progressToken = LspDiagnosticProgress.ReadToken(parameters);
+        var progress = progressToken is { } value ? new LspDiagnosticProgress(value, publish) : null;
         if (parameters.TryGetProperty("identifier", out _) && ReadString(parameters, "identifier", 256) != LspDiagnosticMethods.Identifier)
             throw new LspRequestException(-32602, "Unknown diagnostic provider identifier.");
         var byUri = workspace.Documents.ToDictionary(a => UriFor(a, buffers), StringComparer.Ordinal);
@@ -29,15 +29,19 @@ internal sealed class LspPullDiagnosticRequests(LspDiagnosticCache cache, bool r
             if (selected == null) throw new LspRequestException(-32602, "The diagnostic document is not part of the loaded XAML workspace.");
             var previous = parameters.TryGetProperty("previousResultId", out _) ? ReadString(parameters, "previousResultId", 256, allowEmpty: true) : null;
             var report = cache.Report(uri, LspDiagnosticProjection.Create(selected, token), previous, token);
+            if (progress != null)
+            {
+                // LSP requires the primary report first, then relatedDocuments-only literals.
+                // All result values travel over progress; the terminal response is null.
+                await progress.WriteAsync(report, token).ConfigureAwait(false);
+                if (relatedDocuments)
+                    await progress.WriteRelatedAsync(RelatedReports(selected, workspace.Documents, buffers, token), token).ConfigureAwait(false);
+                return null;
+            }
             if (relatedDocuments)
             {
-                var related = ImmutableDictionary.CreateBuilder<string, LspDocumentDiagnosticReport>(StringComparer.Ordinal);
-                foreach (var other in Related(selected, workspace.Documents, token))
-                {
-                    var otherUri = UriFor(other, buffers);
-                    related.Add(otherUri, cache.Report(otherUri, LspDiagnosticProjection.Create(other, token), cancellationToken: token));
-                }
-                if (related.Count != 0) report = report with { RelatedDocuments = related.ToImmutable() };
+                var related = RelatedReports(selected, workspace.Documents, buffers, token).ToImmutableDictionary(StringComparer.Ordinal);
+                if (related.Count != 0) report = report with { RelatedDocuments = related };
             }
             return report;
         }
@@ -54,23 +58,43 @@ internal sealed class LspPullDiagnosticRequests(LspDiagnosticCache cache, bool r
                 if (!previousResults.TryAdd(uri, ReadString(item, "value", 256, allowEmpty: true))) throw new LspRequestException(-32602, "Duplicate previous diagnostic document URI.");
             }
         }
-        var reports = new List<LspWorkspaceDocumentDiagnosticReport>();
+        // Validate the complete previous-result list before projection/cache mutation or progress.
+        var reports = WorkspaceReports(byUri, previousResults, buffers, token);
+        if (progress != null)
+        {
+            await progress.WriteWorkspaceAsync(reports, token).ConfigureAwait(false);
+            return new { items = Array.Empty<LspWorkspaceDocumentDiagnosticReport>() };
+        }
+        return new { items = reports.ToArray() };
+    }
+    private IEnumerable<LspWorkspaceDocumentDiagnosticReport> WorkspaceReports(Dictionary<string, XamlAnalysis> byUri,
+        Dictionary<string, string> previousResults, LspDocumentSetSnapshot buffers, CancellationToken token)
+    {
         foreach (var document in byUri.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
             token.ThrowIfCancellationRequested();
             previousResults.Remove(document.Key, out var previous);
             var result = cache.Report(document.Key, LspDiagnosticProjection.Create(document.Value, token), previous, token);
             var version = buffers.Documents.FirstOrDefault(d => Paths.Equals(d.Syntax.Path, document.Value.Syntax.Path))?.Version;
-            reports.Add(new(document.Key, version, result.Kind, result.ResultId) { Items = result.Items });
+            yield return new(document.Key, version, result.Kind, result.ResultId) { Items = result.Items };
         }
         // This is a clear operation, not an attempt to read/analyze client-provided paths.
         foreach (var removed in previousResults.OrderBy(p => p.Key, StringComparer.Ordinal))
         {
             token.ThrowIfCancellationRequested();
             var report = cache.Report(removed.Key, ImmutableArray<LspDiagnosticItem>.Empty, removed.Value, token);
-            reports.Add(new(removed.Key, null, report.Kind, report.ResultId) { Items = report.Items });
+            yield return new(removed.Key, null, report.Kind, report.ResultId) { Items = report.Items };
         }
-        return new { items = reports.ToArray() };
+    }
+    private IEnumerable<KeyValuePair<string, LspDocumentDiagnosticReport>> RelatedReports(XamlAnalysis selected,
+        ImmutableArray<XamlAnalysis> workspace, LspDocumentSetSnapshot buffers, CancellationToken token)
+    {
+        foreach (var other in Related(selected, workspace, token))
+        {
+            token.ThrowIfCancellationRequested();
+            var uri = UriFor(other, buffers);
+            yield return new(uri, cache.Report(uri, LspDiagnosticProjection.Create(other, token), cancellationToken: token));
+        }
     }
     private static IEnumerable<XamlAnalysis> Related(XamlAnalysis selected, ImmutableArray<XamlAnalysis> workspace, CancellationToken token)
     {
