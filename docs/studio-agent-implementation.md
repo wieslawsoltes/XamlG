@@ -50,8 +50,8 @@ SDKs; live paid-account validation, if unavailable, must be reported separately.
 
 The implementation branch is `codex/studio-mcp-agent`, based on `19cb780`.
 Main is merged at implementation checkpoints; the latest merged upstream commit
-is `041147c` (including structured/collection literals, enum conversions and
-Avalonia synthetic converter mappings).
+is `a331efe` (including structured/collection literals, enum conversions,
+synthetic converter mappings and Avalonia class/setter contracts).
 The original checkout contains unrelated local compiler edits and is left intact.
 The locally available pinned SDK is `/tmp/xamlg-dotnet-10.0.401/dotnet`.
 
@@ -118,8 +118,8 @@ handler takes precedence. Resource-content subscriptions are not advertised yet.
 
 ## Local evidence and remaining work
 
-- The merged native solution passed 1,387 tests after merging main through
-  `041147c` (Avalonia synthetic converter mappings), including 912 real-Avalonia tests
+- The merged native solution passed 1,508 tests after merging main through
+  `a331efe` (Avalonia class/setter contracts), including 1,017 real-Avalonia tests
   and the runtime inspector's fifteen tests for live manipulation and source
   provenance for objects and deferred resource keys.
 - 41 automation/MCP/agent tests passed, including actual official MCP, OpenAI,
