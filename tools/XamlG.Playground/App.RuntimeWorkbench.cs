@@ -11,16 +11,18 @@ public partial class App
     // invocation nor an automation transport method, and cannot be selected by MCP.
     private async Task<JsonElement> ExecuteRuntimeUiAsync(string name, JsonElement arguments, CancellationToken cancellationToken)
     {
-        var tool = _automation.Tools.SingleOrDefault(tool => tool.Name == name && tool.Scope == AutomationScope.Runtime)
-            ?? throw new ArgumentException("Select a runtime operation.");
+        var tool = _automation.Tools.SingleOrDefault(tool => tool.Name == name && tool.Scope is AutomationScope.Runtime or AutomationScope.Designer)
+            ?? throw new ArgumentException("Select a runtime or designer operation.");
         await _automationGate.WaitAsync(cancellationToken);
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         try
         {
             if (!_ready || _busy || _disposed) throw new InvalidOperationException("Wait for the current IDE operation.");
-            if (tool.Name == "xamlg_runtime_run") await CaptureEditorsAsync();
+            if (tool.Name == "xamlg_runtime_run" || tool.Scope == AutomationScope.Designer) await CaptureEditorsAsync();
+            if (!_ready || _busy || _disposed) throw new InvalidOperationException("The IDE operation was superseded while capturing editors.");
             _automationActivity.Add("call", name, "Studio owner", "started", 0);
             var result = await _automation.CallLocalAsync(name, arguments, new("Studio owner", cancellationToken, "studio-owner"));
+            if (tool.Scope == AutomationScope.Designer && tool.Effect == AutomationEffect.Edit) await SaveDraftAsync();
             _automationActivity.Add("call", name, "Studio owner", "completed", System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             return result;
         }

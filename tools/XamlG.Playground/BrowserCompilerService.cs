@@ -51,7 +51,8 @@ public sealed class BrowserCompilerService(HttpClient http)
     public BrowserCompilation Analyze(string xaml, string code, string framework = "Avalonia", CancellationToken cancellationToken = default) =>
         Analyze(XamlSyntaxTree.Parse(xaml, "View.axaml", cancellationToken), code, framework, cancellationToken);
 
-    public BrowserCompilation Analyze(XamlSyntaxTree syntax, string code, string framework = "Avalonia", CancellationToken cancellationToken = default)
+    public BrowserCompilation Analyze(XamlSyntaxTree syntax, string code, string framework = "Avalonia", CancellationToken cancellationToken = default,
+        IReadOnlyCollection<XamlSyntaxTree>? resourceDocuments = null)
     {
         ArgumentNullException.ThrowIfNull(syntax);
         if (!IsReady) throw new InvalidOperationException("Compiler metadata has not finished loading.");
@@ -67,7 +68,7 @@ public sealed class BrowserCompilerService(HttpClient http)
                 optimizationLevel: OptimizationLevel.Release, nullableContextOptions: NullableContextOptions.Enable));
         var profile = KnownFrameworkProfiles.Select(compilation, framework, createSourceInfo: true);
         var resourceRevision = Resources.Revision;
-        var inputs = Resources.Snapshot.Values.Select(s => new XamlProjectDocument(s, s.Path))
+        var inputs = (resourceDocuments ?? Resources.Snapshot.Values.ToArray()).Select(s => new XamlProjectDocument(s, s.Path))
             .Prepend(new XamlProjectDocument(syntax, "View.axaml")).ToArray();
         var authoring = new XamlCompilationSession(compilation, profile, projectDocuments: inputs);
         var project = authoring.CompileProject(inputs.Select(d => d.Syntax), cancellationToken);

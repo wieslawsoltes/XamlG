@@ -20,7 +20,7 @@ The studio includes XAML/C# editors, compiler/generated-C# diagnostics, source m
 
 Compile and Run capture current buffers instead of relying on delayed notifications. Unrelated renders do not overwrite pending edits. Minimal UTF-16-safe changes permit eligible local subtree reparsing with unchanged-node reuse. Parser-work counters are not an end-to-end complexity claim: text construction, indexing, project linking and binding have separate costs.
 
-Design mode provides real drag/eight-handle resize, snapping, aspect locking, keyboard nudging and cancellation. Property/structure commands are source transactions; see [design and reload](hot-reload.md).
+Design mode provides group selection, real drag/eight-handle resize, snapping, aspect locking, keyboard nudging and cancellation. **Inspectors → Designer** adds source geometry previews, alignment, equal sizing and distribution. Property/structure commands and multi-document geometry edits use workspace transactions; see [design and reload](hot-reload.md).
 
 ## Code-behind factory identity
 

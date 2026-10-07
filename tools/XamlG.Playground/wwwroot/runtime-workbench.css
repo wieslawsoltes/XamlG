@@ -19,4 +19,9 @@
 .runtime-workbench details { border:1px solid var(--border); border-radius:4px; padding:8px; margin:8px 0; }
 .runtime-peer-values { display:grid; grid-template-columns:minmax(100px,30%) minmax(0,1fr); gap:4px 10px; }
 .runtime-peer-values dd { margin:0; }
+.designer-workbench fieldset { border:1px solid var(--border); border-radius:4px; padding:10px; margin:12px 0; min-width:0; }
+.designer-workbench .runtime-property-list label { display:grid; grid-template-columns:18px minmax(0,1fr) auto; gap:8px; }
+.designer-workbench input[type=checkbox] { width:16px; height:16px; margin:0; accent-color:var(--accent); }
+.designer-workbench .runtime-property-list label button { display:block; width:auto; white-space:nowrap; }
+.designer-workbench .runtime-property-list small { display:block; }
 @media(max-width:700px) { .runtime-columns { grid-template-columns:1fr; } .runtime-node-list { max-height:180px; } }

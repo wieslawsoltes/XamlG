@@ -219,6 +219,7 @@ public partial class App
                     hasConstant = symbol?.HasConstant ?? false, constant = symbol?.Constant, locations = symbol?.Locations };
             });
         AddCSharpAutomation();
+        AddDesignerAutomation();
         AddAutomation<DesignerEditArguments>("designer_edit", "Edit XAML properties or structure without executing the preview. Uses revision-checked source transactions and undo.", AutomationScope.Designer, AutomationEffect.Edit,
             (args, context) =>
             {
@@ -271,7 +272,7 @@ public partial class App
             async (args, context) =>
             {
                 CheckSourceRevision(args.ExpectedRevision); var result = AnalyzeAutomation(context.CancellationToken);
-                _visualTree = await Preview.ShowAsync(Compiler.Run(result)); _previewShown = true;
+                _visualTree = await ShowTrustedCompilationAsync(result); _previewShown = true; _isolationVisible = false;
                 return RuntimeInspector().Capture();
             });
         _automation.Add<NoArguments, object>("xamlg_layout_get", "Read the real Dockyard workspace layout.", AutomationScope.Layout, AutomationEffect.Read,

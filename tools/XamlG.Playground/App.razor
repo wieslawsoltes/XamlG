@@ -114,18 +114,20 @@
                 @if (_inspectorTab == "Bound tree") { <div class="tree-scroll">@if (_result != null && XamlInspector.Bound(_result.Analysis.Document) is { } bound) { <InspectionTree Items="@(new[] { bound })" Selected="SelectSyntaxAsync" /> }</div> }
                 @if (_inspectorTab == "Visual tree") { <div class="tree-scroll">@if (_visualTree != null) { <VisualTree Node="_visualTree" Selected="SelectVisual" /> } else { <p class="empty">Run a preview to inspect realized framework visuals.</p> }</div> }
                 @if (_inspectorTab == "Runtime") { <RuntimeWorkbench Execute="ExecuteRuntimeUiAsync" Tools="_automation.Tools" PreviewRevision="@(Preview.Root == null ? -1 : Preview.Revision)" SourceRevision="SourceRevision" SourceRequested="NavigateRuntimeSourceAsync" /> }
+                @if (_inspectorTab == "Designer") { <DesignerWorkbench Execute="ExecuteRuntimeUiAsync" DesignerRevision="Preview.DesignRevision" PreviewRevision="@(Preview.Root == null ? -1 : Preview.Revision)" SourceRevision="SourceRevision" SourceRequested="NavigateRuntimeSourceAsync" /> }
                 @if (_inspectorTab == "Properties")
                 {
                     <div class="properties">
                         <h3>@(_selectedElement?.Name ?? "Select a syntax node")</h3>
                         @if (_selectedElement != null)
                         {
+                            <p><code>@SelectedDesignerSyntax.Path</code></p>
                             @foreach (var item in _selectedElement.Attributes.Where(a => !a.IsNamespace)) { <div class="property-readout"><code>@item.Name</code><span>@item.Value</span></div> }
                             <label>Property <input @bind="_propertyName" placeholder="Text" /></label>
                             <label>Value <input @bind="_propertyValue" placeholder="New value" /></label>
                             <button class="primary" @onclick="ApplyDesignerPropertyAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_propertyName))">Apply to XAML</button>
                             <StructureEditor Destinations="ReparentDestinations" @bind-Destination="_reparentDestination" @bind-Markup="_newElementMarkup"
-                                Disabled="_busy" IsRoot="@ReferenceEquals(_selectedElement, _document.Current.Root)"
+                                Disabled="_busy" IsRoot="@ReferenceEquals(_selectedElement, SelectedDesignerSyntax.Root)"
                                 Reparent="ReparentSelectedAsync" Insert="InsertSelectedAsync" Remove="RemoveSelectedAsync" />
                         }
                         @if (_selectedVisual != null) { <h3>Realized visual</h3><code>@_selectedVisual.TypeName</code><p>@($"Bounds: {_selectedVisual.X:0.##}, {_selectedVisual.Y:0.##} · {_selectedVisual.Width:0.##} × {_selectedVisual.Height:0.##}")</p><p>Visible: @_selectedVisual.IsVisible</p> }

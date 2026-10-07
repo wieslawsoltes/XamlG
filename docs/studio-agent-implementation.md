@@ -296,8 +296,7 @@ browser UI compile; their native/browser acceptance tests remain deferred until
 feature implementation is complete.
 
 Full reference parity remains in progress: account-mode support and remaining
-provider protocol/recovery details;
-additional source-backed designer controls; the remaining Roslyn
+provider protocol/recovery details; the remaining Roslyn
 authoring surface for the multi-file C# workspace; and the corresponding UI and protocol
 acceptance coverage. This ledger does not claim those capabilities from a build
 or from the existence of a tool name.
@@ -322,6 +321,28 @@ member paging and release controls. Targeted runtime-library and browser compila
 passed without warnings or errors. Behavioral coverage remains deferred: verify
 GC retention/release, absolute expiry, origin removal, explicit interfaces and typed
 peer/text-range arguments during the final native/browser validation pass.
+
+The designer now has path-aware and group selection, independent state revisions,
+grid/mode/cancel controls, source hit testing, target bounds/size constraints, and
+separate geometry/arrangement plan and apply tools. The reusable geometry planner
+supports alignment, matching dimensions, distribution and group transforms. The
+Avalonia surface performs group movement/resizing/nudging through an overlay and
+publishes one batch of source edits. The workspace planner checks exact source
+snapshots, rejects duplicate shared-instance edits and groups changes by document.
+Main and resource XAML use one compiler-validated project transaction and undo step.
+Owner gestures retain automatic reload; MCP plan/apply and the Designer pane's
+reviewed plans use a separate explicit `runtime_run` operation. Reload records the
+project revision and rejects compilations superseded by source edits.
+
+The existing Inspectors pane hosts the Designer workbench, including multi-selection,
+source navigation, preview-root geometry, arrangement anchors, plan review, apply
+and reload. The owner callback includes Designer scope without changing the remote
+permission gate. `xamlg://designer` notifies selection, configuration, source and
+runtime changes. Targeted library/browser builds pass; behavioral validation remains
+pending for group gestures, resource-template provenance, one-step undo, source and
+runtime conflicts, min/max constraints, layout-policy behavior, cancellation and
+the owner/remote permission boundary. The default policy emits Canvas offsets or
+margins and explicit dimensions; it is not a general layout constraint solver.
 
 Temporary reference clones and superseded publishes are removed when no longer
 needed. Package consumer caches are scoped to temporary directories. Large failed

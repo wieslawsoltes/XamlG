@@ -58,7 +58,7 @@ public partial class App
         if (code.Count != currentCode.Count || code.Any(p => !currentCode.TryGetValue(p.Key, out var value) || value.Text != p.Value))
             Compiler.CodeFiles.ReplaceAll(code);
         _projectCodeEditor?.SynchronizeDocuments();
-        _selectedElement = null; _selectedVisual = null; _result = null;
+        _selectedElement = null; _selectedDesignerSyntax = null; _selectedVisual = null; _result = null;
     }
     private async Task NavigateWorkspaceAsync(bool undo)
     {

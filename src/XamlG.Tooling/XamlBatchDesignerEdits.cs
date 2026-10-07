@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using XamlG.Runtime.Design;
 using XamlG.Syntax;
+using XamlG.Tooling.Refactoring;
 
 namespace XamlG.Tooling;
 
@@ -28,5 +29,35 @@ public static class XamlBatchDesignerEdits
         var element = tree.Root?.DescendantsAndSelf().FirstOrDefault(e => e.Span.Start == edit.Source.Start && e.Span.Length == edit.Source.Length)
             ?? throw new InvalidOperationException("The visual source node no longer exists.");
         return SetProperties(tree, element, edit.Properties);
+    }
+
+    /// <summary>Plans one source-preserving transaction per document for a group gesture
+    /// or arrangement. Every visual must still name its exact original syntax snapshot.</summary>
+    public static ImmutableArray<XamlDocumentEdits> FromVisualEdits(IReadOnlyDictionary<string, XamlSyntaxTree> documents,
+        IReadOnlyList<XamlVisualEdit> edits)
+    {
+        if (edits.Count is < 1 or > 256) throw new ArgumentException("Supply one to 256 visual edits.", nameof(edits));
+        var result = ImmutableArray.CreateBuilder<XamlDocumentEdits>();
+        foreach (var group in edits.GroupBy(edit => edit.Source.Path, StringComparer.Ordinal))
+        {
+            if (!documents.TryGetValue(group.Key, out var tree)) throw new InvalidOperationException("The visual source document no longer exists: " + group.Key);
+            var nodes = new HashSet<(int Start, int Length)>();
+            var changes = ImmutableArray.CreateBuilder<XamlTextChange>();
+            foreach (var edit in group)
+            {
+                if (!nodes.Add((edit.Source.Start, edit.Source.Length))) throw new InvalidOperationException("Several selected instances refer to the same XAML element. Edit that source element directly.");
+                if (edit.Properties.Count > 256) throw new ArgumentException("Too many properties in a visual edit.");
+                changes.AddRange(FromVisualEdit(tree, edit).Changes);
+            }
+            var ordered = changes.OrderBy(change => change.Span.Start).ToImmutableArray();
+            var previousEnd = -1; var previousStart = -1;
+            foreach (var change in ordered)
+            {
+                if (change.Span.Start < previousEnd || change.Span.Start == previousStart) throw new InvalidOperationException("The selected visuals produce conflicting source edits.");
+                previousStart = change.Span.Start; previousEnd = change.Span.End;
+            }
+            if (!ordered.IsEmpty) result.Add(new(tree.Path, tree.Text, tree.Version, ordered));
+        }
+        return result.ToImmutable();
     }
 }

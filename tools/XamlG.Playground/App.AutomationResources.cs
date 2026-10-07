@@ -48,7 +48,7 @@ public partial class App
     private void NotifySourceResources()
     {
         if (_automation == null) return;
-        foreach (var uri in new[] { "xamlg://project", "xamlg://diagnostics", "xamlg://generated" }) _automation.NotifyResourceChanged(uri);
+        foreach (var uri in new[] { "xamlg://project", "xamlg://diagnostics", "xamlg://generated", "xamlg://designer" }) _automation.NotifyResourceChanged(uri);
         var paths = WorkspaceTexts().Keys.ToHashSet(StringComparer.Ordinal);
         foreach (var path in paths.Union(_resourceSourcePaths)) _automation.NotifyResourceChanged("xamlg://source/" + Uri.EscapeDataString(path));
         _resourceSourcePaths = paths;
@@ -66,6 +66,7 @@ public partial class App
     private void NotifyRuntimeResource(RuntimeChange change)
     {
         _automation.NotifyResourceChanged("xamlg://runtime");
+        _automation.NotifyResourceChanged("xamlg://designer");
         if (change.Kind == "accessibility") _automation.NotifyResourceChanged("xamlg://runtime/accessibility");
         _automation.NotifyResourceChanged("xamlg://runtime/" + Uri.EscapeDataString(change.ObjectId) + "/properties");
     }

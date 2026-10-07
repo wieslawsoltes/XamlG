@@ -11,7 +11,7 @@ namespace XamlG.Playground;
 
 public partial class App
 {
-    private static readonly string[] InspectorTabs = { "C# output", "C# files", "Resources", "Syntax", "Bound tree", "Visual tree", "Properties", "Runtime", "Pipeline" };
+    private static readonly string[] InspectorTabs = { "C# output", "C# files", "Resources", "Syntax", "Bound tree", "Visual tree", "Properties", "Designer", "Runtime", "Pipeline" };
     private XamlDocumentSession _document = new(PlaygroundExamples.All[0].Xaml, "View.axaml");
     private string _code = PlaygroundExamples.All[0].Code;
     private BrowserCompilation? _result;
@@ -107,7 +107,7 @@ public partial class App
         _busy = true;
         try
         {
-            _visualTree = await Preview.ShowAsync(Compiler.Run(_result));
+            _visualTree = await ShowTrustedCompilationAsync(_result);
             _automation.NotifyResourceChanged("xamlg://runtime");
             _previewShown = true; _status = "Preview running · actual Avalonia visual tree available";
         }
@@ -131,6 +131,7 @@ public partial class App
     {
         if (_result == null || !ReferenceEquals(_result.Analysis.Syntax, _document.Current))
         { _status = "Source changed · compile before selecting an inspection node"; return; }
+        _selectedDesignerSyntax = _document.Current;
         _selectedElement = _document.Current.FindElement(node.Span.Start); _editorTab = "xaml";
         if (_xamlEditor != null) await _xamlEditor.RevealAsync(node.Span);
         if (_selectedElement != null)
@@ -141,18 +142,6 @@ public partial class App
     }
     private void SelectVisual(AvaloniaVisualNode node) { _selectedVisual = node; _inspectorTab = "Properties"; }
     private void RefreshVisuals() { try { _visualTree = Preview.Inspect(); } catch (Exception error) { Report(error); } }
-    private async Task ApplyPropertyAsync()
-    {
-        if (_selectedElement == null || _busy) return;
-        try
-        {
-            var position = _selectedElement.Span.Start;
-            _document.Apply(XamlDesignerEdits.SetProperty(_document.Current, _selectedElement, _propertyName, _propertyValue), requireWellFormed: true);
-            _selectedElement = _document.Current.FindElement(position);
-            await SaveDraftAsync(); await CompileSnapshotAsync();
-        }
-        catch (Exception error) { Report(error); }
-    }
     private Task UndoAsync() => NavigateWorkspaceAsync(true);
     private Task RedoAsync() => NavigateWorkspaceAsync(false);
     private async Task ToggleThemeAsync()
