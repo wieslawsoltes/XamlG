@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
@@ -11,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(*args, env=None):
-    subprocess.run(args, cwd=ROOT, env=env, check=True)
+    command = (sys.executable, *args[1:]) if args[0] == 'python' else args
+    subprocess.run(command, cwd=ROOT, env=env, check=True)
 
 
 def main():

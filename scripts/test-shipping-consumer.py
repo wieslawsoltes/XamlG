@@ -38,6 +38,7 @@ def main():
         project.write_text(f'''<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup>
 <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks><EnableWindowsTargeting>true</EnableWindowsTargeting>
 <OutputType>Exe</OutputType><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><LangVersion>preview</LangVersion>
+<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 <Configuration>Release</Configuration><EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
 <CompilerGeneratedFilesOutputPath>obj/$(TargetFramework)/generated</CompilerGeneratedFilesOutputPath>
 </PropertyGroup><ItemGroup>
