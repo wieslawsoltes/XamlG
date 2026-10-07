@@ -41,6 +41,7 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
 
     public string SessionId { get; } = Guid.NewGuid().ToString("N");
     public long Revision { get; private set; }
+    public event Action<RuntimeChange>? RuntimeChanged;
     public int MaximumNodes { get; }
     public int MaximumDepth { get; }
 
@@ -392,8 +393,12 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
         Changed(Id(args.Sender), "property", Key(args.Property), DescribeValue(args.NewValue));
     private void Changed(string id, string kind, string name, RuntimeValue? value)
     {
-        _changes.Enqueue(new(++_sequence, ++Revision, id, kind, name, value));
+        var change = new RuntimeChange(++_sequence, ++Revision, id, kind, name, value);
+        _changes.Enqueue(change);
         while (_changes.Count > 1024) _changes.Dequeue();
+        if (RuntimeChanged is { } observers)
+            foreach (Action<RuntimeChange> observer in observers.GetInvocationList())
+                try { observer(change); } catch (Exception error) when (error is not OutOfMemoryException) { }
     }
     private void VerifyAccess()
     {
@@ -407,7 +412,7 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
         foreach (var subscription in _ownedBindings.Values) subscription.Dispose();
         _ownedBindings.Clear();
         foreach (var obj in _objects.Values) obj.PropertyChanged -= OnPropertyChanged;
-        _objects.Clear(); _changes.Clear(); _disposed = true;
+        _objects.Clear(); _changes.Clear(); RuntimeChanged = null; _disposed = true;
     }
     private sealed record ObjectIdentity(string Id);
 }

@@ -21,7 +21,15 @@ public static class AutomationMcpExtensions
         builder.Services.AddOptions<McpServerOptions>().Configure<IServiceProvider>((options, services) =>
         {
             services.GetRequiredKeyedService<AutomationMcpCatalogBinding>(key).Attach(options);
-            options.Handlers.SubscriptionsListenHandler ??= services.GetRequiredService<AutomationMcpSubscriptions>().ListenAsync;
+            var subscriptions = services.GetRequiredService<AutomationMcpSubscriptions>(); subscriptions.Register(host);
+            options.Handlers.SubscriptionsListenHandler ??= subscriptions.ListenAsync;
+            if (host is IAutomationResourceEvents)
+            {
+                options.Handlers.SubscribeToResourcesHandler ??= subscriptions.SubscribeAsync;
+                options.Handlers.UnsubscribeFromResourcesHandler ??= subscriptions.UnsubscribeAsync;
+            }
+            if (host is IAutomationCompletions) options.Handlers.CompleteHandler ??= subscriptions.CompleteAsync;
+            AutomationMcpPagination.Attach(options);
         });
         return builder;
     }

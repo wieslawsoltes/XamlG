@@ -179,6 +179,21 @@ let agentConnection = null;
 let agentOwner = null;
 let agentOwnerId = null;
 let agentStream = null;
+let resourceNotificationTimer = null;
+const changedAutomationResources = new Set();
+export function notifyAutomationResource(uri) {
+    const socket = automationSocket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (changedAutomationResources.size < 1024) changedAutomationResources.add(uri);
+    if (resourceNotificationTimer) return;
+    resourceNotificationTimer = setTimeout(() => {
+        resourceNotificationTimer = null;
+        const uris = [...changedAutomationResources]; changedAutomationResources.clear();
+        if (automationSocket !== socket || socket.readyState !== WebSocket.OPEN) return;
+        for (let offset = 0; offset < uris.length; offset += 128)
+            socket.send(JSON.stringify({ kind: 'resources_changed', uris: uris.slice(offset, offset + 128) }));
+    }, 100);
+}
 export function installAutomation(owner) {
     automationOwner = owner;
     window.xamlgAutomation = Object.freeze({
@@ -237,6 +252,7 @@ export async function connectAutomation(address, token) {
     });
 }
 export function disconnectAutomation() {
+    clearTimeout(resourceNotificationTimer); resourceNotificationTimer = null; changedAutomationResources.clear();
     agentConnection = null; agentStream?.abort(); agentStream = null;
     if (automationSocket) { automationSocket.close(); automationSocket = null; }
     agentOwner?.invokeMethodAsync('AgentDisconnected').catch(() => {});

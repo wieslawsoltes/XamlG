@@ -29,8 +29,12 @@ public partial class App
         sources.Add("View.axaml", _document.Current.Text); sources.Add("Code.cs", _code);
         return sources;
     }
-    private void RecordWorkspace(string description = "Edit project source") =>
-        _workspaceEdits.ReplaceAll(_workspaceEdits.Current.Revision, WorkspaceTexts(), description);
+    private void RecordWorkspace(string description = "Edit project source")
+    {
+        var previous = _workspaceEdits.Current.Revision;
+        _workspaceEdits.ReplaceAll(previous, WorkspaceTexts(), description);
+        if (_workspaceEdits.Current.Revision != _resourceSourceRevision) NotifySourceResources();
+    }
     private void ResetWorkspaceHistory()
     {
         _workspaceEdits.ReplaceAll(_workspaceEdits.Current.Revision, WorkspaceTexts(), "Load project", false);

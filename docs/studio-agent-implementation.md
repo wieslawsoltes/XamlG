@@ -126,7 +126,14 @@ There are at most 64 active catalog subscriptions per embedding service provider
 each stream coalesces pending changes with constant-size buffering. Disconnecting or
 cancelling releases its observers. Request collections are weakly held and do not
 retain completed HTTP requests. An embedding application's explicit subscription
-handler takes precedence. Resource-content subscriptions are not advertised yet.
+handler takes precedence. Hosts implementing `IAutomationResourceEvents` now expose
+resource-content subscriptions through both legacy sessions and modern request streams.
+Each client may subscribe to at most 128 exact URIs; pending changes coalesce without
+retaining source payloads. The browser bridge forwards source and Avalonia runtime
+changes as URI-only notifications. Source/generated documents and runtime properties
+have URI templates with percent-encoded path/handle arguments and bounded completion.
+Default catalog lists return 100 entries per page; cursors reject a changed catalog.
+Explicit embedding list handlers retain ownership of their own pagination.
 
 Queued follow-ups stay local until an explicit `RunQueuedAsync` accepts their ID
 and reviewed queue revision. The queue supports editing, reordering and removal,
@@ -167,6 +174,8 @@ remains a local deterministic checkpoint for embedding compatibility.
 Targeted companion and browser compilation succeeded during this implementation;
 the full behavioral suites and package consumers are deliberately pending. Earlier
 browser fixtures need updating for the new compaction and restore confirmations.
+MCP templates, completion, resource notifications and catalog pagination also compile
+with the browser and MCP packages; their expanded behavioral coverage is pending.
 
 - The merged native solution passed 1,508 tests after merging main through
   `a331efe` (Avalonia class/setter contracts), including 1,017 real-Avalonia tests
@@ -233,7 +242,7 @@ Template-owned visuals require template/source edits; tree operations reject
 unsupported ownership. Diagnostic frame metadata uses the loaded Avalonia runtime.
 
 Full reference parity remains in progress: account-mode support and remaining
-provider protocol/recovery details; MCP resource updates, tasks and artifact handling;
+provider protocol/recovery details; MCP tasks and artifact handling;
 typed runtime input and additional designer/runtime UI; the remaining Roslyn
 authoring surface for the multi-file C# workspace; and the corresponding UI and protocol
 acceptance coverage. This ledger does not claim those capabilities from a build

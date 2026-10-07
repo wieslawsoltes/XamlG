@@ -10,7 +10,7 @@ namespace XamlG.Mcp;
 /// Pairs one authenticated browser with an automation host. Authentication and origin checks
 /// belong to the embedding HTTP host; no request is dispatched before it accepts the catalog.
 /// </summary>
-public sealed class BrowserAutomationBridge : IAutomationHost, IAutomationCatalogEvents
+public sealed class BrowserAutomationBridge : IAutomationHost, IAutomationCatalogEvents, IAutomationResourceEvents, IAutomationCompletions
 {
     private readonly SemaphoreSlim _sendGate = new(1);
     private readonly object _gate = new();
@@ -21,6 +21,7 @@ public sealed class BrowserAutomationBridge : IAutomationHost, IAutomationCatalo
     public IReadOnlyList<AutomationResource> Resources { get { lock (_gate) return _session?.Catalog.Resources ?? []; } }
     public IReadOnlyList<AutomationPrompt> Prompts { get { lock (_gate) return _session?.Catalog.Prompts ?? []; } }
     public event Action? CatalogChanged;
+    public event Action<string>? ResourceChanged;
 
     /// <summary>Checks the private lease delivered only to the paired browser. Owner HTTP
     /// requests must also authenticate separately; the lease alone is not a credential.</summary>
@@ -65,6 +66,21 @@ public sealed class BrowserAutomationBridge : IAutomationHost, IAutomationCatalo
                 var message = await ReceiveAsync(socket, cancellationToken);
                 if (message == null) break;
                 var item = message.Value;
+                if (item.TryGetProperty("kind", out var kind) && kind.GetString() == "resources_changed")
+                {
+                    if (!item.TryGetProperty("uris", out var uris) || uris.ValueKind != JsonValueKind.Array || uris.GetArrayLength() > 256)
+                        throw new AutomationException("invalid_message", "Resource notifications exceed their bounds.");
+                    foreach (var uri in uris.EnumerateArray())
+                    {
+                        var address = uri.GetString();
+                        if (address == null || address.Length > 4096 || !session.Catalog.Resources.Any(resource => AutomationUriTemplate.IsMatch(resource, address)))
+                            throw new AutomationException("invalid_message", "Unknown resource notification.");
+                        if (ResourceChanged is { } observers)
+                            foreach (Action<string> observer in observers.GetInvocationList())
+                                try { observer(address); } catch (Exception observerError) when (observerError is not OutOfMemoryException) { }
+                    }
+                    continue;
+                }
                 if (!item.TryGetProperty("id", out var idValue) || !idValue.TryGetInt64(out var id))
                     throw new AutomationException("invalid_message", "A response ID is required.");
                 TaskCompletionSource<JsonElement>? completion;
@@ -108,8 +124,18 @@ public sealed class BrowserAutomationBridge : IAutomationHost, IAutomationCatalo
     {
         Session session;
         lock (_gate) session = _session ?? throw Disconnected();
-        if (!session.Catalog.Resources.Any(r => r.Uri == uri)) throw new AutomationException("unknown_resource", "Unknown resource or no paired IDE.");
+        if (!session.Catalog.Resources.Any(r => AutomationUriTemplate.IsMatch(r, uri))) throw new AutomationException("unknown_resource", "Unknown resource or no paired IDE.");
         return (await RequestAsync(session, "resource", uri, AutomationJson.Element(new { }), context)).GetString()!;
+    }
+
+    public async ValueTask<AutomationCompletion> CompleteAsync(string resourceTemplate, string argument, string value, AutomationCallContext context)
+    {
+        Session session;
+        lock (_gate) session = _session ?? throw Disconnected();
+        if (!session.Catalog.Resources.Any(resource => resource.IsTemplate && resource.Uri == resourceTemplate))
+            throw new AutomationException("unknown_resource", "Unknown resource template.");
+        return (await RequestAsync(session, "complete", resourceTemplate, AutomationJson.Element(new { argument, value }), context))
+            .Deserialize<AutomationCompletion>(AutomationJson.Options)!;
     }
 
     private async Task<JsonElement> RequestAsync(Session session, string method, string name, JsonElement arguments, AutomationCallContext context)

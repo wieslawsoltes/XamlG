@@ -292,6 +292,7 @@ public partial class App
         Resource("xamlg://capabilities", "Capabilities", "xamlg_capabilities");
         Resource("xamlg://diagnostics", "Diagnostics", "xamlg_compiler_compile");
         Resource("xamlg://generated", "Generated C# files", "xamlg_generated_list");
+        AddAutomationResources();
         _automation.AddPrompt(new("repair", "Inspect and repair current compilation errors", "Read xamlg_project_get and xamlg_compiler_compile, inspect relevant current source, make revision-checked edits, and compile again. Report the actual diagnostic evidence."));
         _automation.AddPrompt(new("inspect-runtime", "Inspect the actual Avalonia preview", "Read xamlg_runtime_tree, inspect properties of relevant live handles, and correlate source provenance with XAML. Runtime revisions and source revisions are independent. Do not execute or mutate without permission."));
     }
@@ -320,6 +321,7 @@ public partial class App
         if (_result != null && ReferenceEquals(_result.Analysis.Syntax, _document.Current) && _result.CodeText == _code &&
             _result.ResourceRevision == Compiler.Resources.Revision && _result.CodeRevision == Compiler.CodeFiles.Revision) return _result;
         _result = Compiler.Analyze(_document.Current, _code, cancellationToken: token);
+        NotifyCompilerResources();
         return _result;
     }
     private XamlAnalysis XamlAnalysisFor(string path, CancellationToken token)
@@ -334,7 +336,7 @@ public partial class App
     {
         var root = Preview.Root ?? throw new InvalidOperationException("Run a preview before inspecting live objects.");
         if (!ReferenceEquals(root, _inspectedRoot))
-        { _runtimeInspector?.Dispose(); _runtimeInspector = new(root); _inspectedRoot = root; }
+        { _runtimeInspector?.Dispose(); _runtimeInspector = new(root); _runtimeInspector.RuntimeChanged += NotifyRuntimeResource; _inspectedRoot = root; }
         return _runtimeInspector!;
     }
     [JSInvokable]
@@ -357,6 +359,7 @@ public partial class App
             {
                 "call" => await _automation.CallAsync(name, arguments, context),
                 "resource" => AutomationJson.Element(await _automation.ReadResourceAsync(name, context)),
+                "complete" => AutomationJson.Element(await _automation.CompleteAsync(name, arguments.GetProperty("argument").GetString()!, arguments.GetProperty("value").GetString()!, context)),
                 _ => throw new AutomationException("unknown_method", "Unknown automation method.")
             };
             await SaveDraftAsync(); StateHasChanged(); return result;

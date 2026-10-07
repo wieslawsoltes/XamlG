@@ -10,7 +10,7 @@ public enum PermissionProfile { Ask, ReadOnly, Plan, AutoEdit, FullAccess, Custo
 
 public sealed record AutomationTool(string Name, string Description, JsonElement InputSchema,
     AutomationScope Scope, AutomationEffect Effect, bool Destructive = false);
-public sealed record AutomationResource(string Uri, string Name, string Description, string MimeType = "application/json");
+public sealed record AutomationResource(string Uri, string Name, string Description, string MimeType = "application/json", bool IsTemplate = false);
 public sealed record AutomationPrompt(string Name, string Description, string Text);
 public sealed record AutomationCallContext(string Caller, CancellationToken CancellationToken = default);
 public sealed record AutomationReview(AutomationTool Tool, JsonElement Arguments, string Caller);
@@ -35,6 +35,17 @@ public sealed class AutomationException(string code, string message) : Exception
 public interface IAutomationCatalogEvents
 {
     event Action? CatalogChanged;
+}
+
+public interface IAutomationResourceEvents
+{
+    event Action<string>? ResourceChanged;
+}
+
+public sealed record AutomationCompletion(IReadOnlyList<string> Values, int Total, bool HasMore);
+public interface IAutomationCompletions
+{
+    ValueTask<AutomationCompletion> CompleteAsync(string resourceTemplate, string argument, string value, AutomationCallContext context);
 }
 
 public static class AutomationJson

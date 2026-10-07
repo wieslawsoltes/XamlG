@@ -83,6 +83,7 @@ public partial class App
             _result = null; _status = "Compiling XAML project and C#…";
             StateHasChanged(); await Task.Yield();
             _result = Compiler.Analyze(_document.Current, _code);
+            NotifyCompilerResources();
             _status = _result.Success ? $"Compilation succeeded · {_result.Project?.Documents.Length ?? 1} documents · {_result.ElapsedMilliseconds:0.0} ms" : "Compilation has errors";
             if (_xamlEditor != null) await _xamlEditor.SetDiagnosticsAsync(_result.Diagnostics.Where(d => d.Path == "View.axaml"));
             if (_codeEditor != null) await _codeEditor.SetDiagnosticsAsync(_result.Diagnostics.Where(d => d.Path == "Code.cs"));
@@ -107,6 +108,7 @@ public partial class App
         try
         {
             _visualTree = await Preview.ShowAsync(Compiler.Run(_result));
+            _automation.NotifyResourceChanged("xamlg://runtime");
             _previewShown = true; _status = "Preview running · actual Avalonia visual tree available";
         }
         catch (Exception error) { Report(error); }

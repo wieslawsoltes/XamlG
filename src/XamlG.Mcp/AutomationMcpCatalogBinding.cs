@@ -112,12 +112,12 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
         public override IReadOnlyList<object> Metadata => [];
         public override ResourceTemplate ProtocolResourceTemplate { get; } = new()
         { UriTemplate = definition.Uri, Name = definition.Name, Description = definition.Description, MimeType = definition.MimeType };
-        public override bool IsMatch(string uri) => uri == Definition.Uri;
+        public override bool IsMatch(string uri) => AutomationUriTemplate.IsMatch(Definition, uri);
         public override async ValueTask<ReadResourceResult> ReadAsync(RequestContext<ReadResourceRequestParams> request, CancellationToken cancellationToken = default)
         {
-            var resource = host.Resources.SingleOrDefault(r => r.Uri == request.Params.Uri) ?? throw new McpException("Unknown resource.");
-            var text = await host.ReadResourceAsync(resource.Uri, new("mcp", cancellationToken));
-            return new() { Contents = [new TextResourceContents { Uri = resource.Uri, MimeType = resource.MimeType, Text = text }] };
+            var resource = host.Resources.FirstOrDefault(r => AutomationUriTemplate.IsMatch(r, request.Params.Uri)) ?? throw new McpException("Unknown resource.");
+            var text = await host.ReadResourceAsync(request.Params.Uri, new("mcp", cancellationToken));
+            return new() { Contents = [new TextResourceContents { Uri = request.Params.Uri, MimeType = resource.MimeType, Text = text }] };
         }
     }
     private sealed class AutomationPromptPrimitive(IAutomationHost host, AutomationPrompt definition) : McpServerPrompt
