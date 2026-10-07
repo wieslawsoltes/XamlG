@@ -9,5 +9,7 @@ public sealed record BoundDocument(XamlSyntaxTree Syntax, BoundObject? Root, str
     public BoundRuntimeConfiguration Runtime { get; init; } = BoundRuntimeConfiguration.Empty;
     /// <summary>False when code generation must use an external factory rather than add class members.</summary>
     public bool CanAugmentClass { get; init; } = true;
-    public bool Success => Root != null && !Diagnostics.Any(d => d.Severity == XamlSeverity.Error);
+    /// <summary>The framework excluded this document from precompilation; its syntax diagnostics remain available.</summary>
+    public bool IsSkipped { get; init; }
+    public bool Success => (Root != null || IsSkipped) && !Diagnostics.Any(d => d.Severity == XamlSeverity.Error);
 }

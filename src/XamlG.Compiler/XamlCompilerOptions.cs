@@ -4,6 +4,8 @@ namespace XamlG.Compiler;
 
 public sealed record XamlCompilerOptions
 {
+    /// <summary>Applies build-only document directives. Enabled automatically by the project compiler.</summary>
+    public bool IsPrecompilation { get; init; }
     public bool GenerateBuildMethod { get; init; } = true;
     public bool GenerateInitializeComponent { get; init; } = true;
     public bool GenerateNamedFields { get; init; } = true;

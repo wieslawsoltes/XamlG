@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Operations;
 using XamlG.Frameworks.Avalonia;
 
 namespace XamlG.Generator;
@@ -29,6 +30,8 @@ public sealed class AvaloniaLoaderMigrationAnalyzer : DiagnosticAnalyzer
             if (!options.Enabled) return;
             var loader = start.Compilation.GetTypeByMetadataName(AvaloniaMetadata.Loader);
             if (loader == null) return;
+            var optOuts = GeneratorCompilationOptOuts.Read((CSharpCompilation)start.Compilation, start.Options, options, start.CancellationToken);
+            if (optOuts.AllDocuments) return;
             start.RegisterSyntaxNodeAction(nodeContext =>
             {
                 var invocation = (InvocationExpressionSyntax)nodeContext.Node;
@@ -39,6 +42,13 @@ public sealed class AvaloniaLoaderMigrationAnalyzer : DiagnosticAnalyzer
                 // execute: matching a namespace or merely finding generated attributes
                 // would incorrectly accept uncovered or malformed interception attempts.
                 if (nodeContext.SemanticModel.GetInterceptorMethod(invocation, nodeContext.CancellationToken) != null) return;
+
+                if (method.ReturnsVoid && nodeContext.SemanticModel.GetOperation(invocation, nodeContext.CancellationToken) is IInvocationOperation operation &&
+                    operation.Arguments.FirstOrDefault(argument => argument.Parameter?.Ordinal == method.Parameters.Length - 1)?.Value is { } value)
+                {
+                    while (value is IConversionOperation conversion) value = conversion.Operand;
+                    if (value.Type != null && optOuts.Classes.Contains(value.Type)) return;
+                }
 
                 nodeContext.ReportDiagnostic(Diagnostic.Create(LoaderCall, invocation.GetLocation(), method.ToDisplayString()));
             }, SyntaxKind.InvocationExpression);

@@ -33,6 +33,7 @@ public sealed class XamlProjectCompiler
         profile ??= XamlFrameworkProfile.Portable; options ??= new();
         options = options with
         {
+            IsPrecompilation = true,
             GeneratedNamespace = options.GeneratedNamespace + ".Assembly_" + CSharpNames.StableId(compilation.Assembly.Identity.Name),
             SourceLoader = options.AdaptLoaderCalls ? options.SourceLoader ?? profile.SourceLoader : null
         };
@@ -65,7 +66,8 @@ public sealed class XamlProjectCompiler
         var bound = new BoundDocument[inputs.Length];
         var entries = new CachedProjectDocument[inputs.Length];
         var addresses = new string?[inputs.Length];
-        var duplicates = new HashSet<string>(inputs.GroupBy(d => d.LogicalPath, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key), StringComparer.Ordinal);
+        var duplicates = new HashSet<string>(inputs.Where(d => profile.Directives.ShouldCompile(d.Syntax, options))
+            .GroupBy(d => d.LogicalPath, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key), StringComparer.Ordinal);
         var boundCount = 0; var reusedBindings = 0;
         for (var i = 0; i < inputs.Length; i++)
         {
@@ -84,12 +86,15 @@ public sealed class XamlProjectCompiler
                 entries[i] = new(input, document); bound[i] = document; boundCount++;
                 if (!duplicates.Contains(input.LogicalPath)) _documents[input.LogicalPath] = entries[i];
             }
-            if (addressError != null) bound[i] = AddError(bound[i], "XG3300", addressError);
-            if (duplicates.Contains(input.LogicalPath)) bound[i] = AddError(bound[i], "XG3300", "Duplicate logical XAML path: " + input.LogicalPath);
+            if (!bound[i].IsSkipped)
+            {
+                if (addressError != null) bound[i] = AddError(bound[i], "XG3300", addressError);
+                if (duplicates.Contains(input.LogicalPath)) bound[i] = AddError(bound[i], "XG3300", "Duplicate logical XAML path: " + input.LogicalPath);
+            }
         }
-        foreach (var group in addresses.Select((uri, index) => (Uri: uri, Index: index)).Where(p => p.Uri != null).GroupBy(p => p.Uri, StringComparer.Ordinal).Where(g => g.Count() > 1))
+        foreach (var group in addresses.Select((uri, index) => (Uri: uri, Index: index)).Where(p => p.Uri != null && !bound[p.Index].IsSkipped).GroupBy(p => p.Uri, StringComparer.Ordinal).Where(g => g.Count() > 1))
             foreach (var item in group) bound[item.Index] = AddError(bound[item.Index], "XG3300", "Duplicate resource URI: " + item.Uri);
-        foreach (var group in bound.Select((d, i) => (Document: d, Index: i)).Where(p => p.Document.ClassName != null).GroupBy(p => p.Document.ClassName, StringComparer.Ordinal).Where(g => g.Count() > 1))
+        foreach (var group in bound.Select((d, i) => (Document: d, Index: i)).Where(p => !p.Document.IsSkipped && p.Document.ClassName != null).GroupBy(p => p.Document.ClassName, StringComparer.Ordinal).Where(g => g.Count() > 1))
             foreach (var item in group) bound[item.Index] = AddError(item.Document, "XG2002", "More than one XAML document declares x:Class '" + group.Key + "'.");
         XamlResourceGraph.Validate(bound, cancellationToken);
         var emissions = new XamlEmissionResult[inputs.Length]; var emittedCount = 0; var reusedOutputs = 0;

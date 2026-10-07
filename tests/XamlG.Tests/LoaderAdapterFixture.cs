@@ -25,14 +25,15 @@ internal sealed class LoaderAdapterFixture
           }
         }
         """;
-    public LoaderAdapterFixture(string code, params (string Path, string Text)[] documents)
+    public LoaderAdapterFixture(string code, params (string Path, string Text)[] documents) : this(code, null, documents) { }
+    public LoaderAdapterFixture(string code, XamlFrameworkProfile? profile, params (string Path, string Text)[] documents)
     {
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
             .Append(typeof(XamlRuntimeContext).Assembly.Location).Distinct().Select(p => MetadataReference.CreateFromFile(p));
         Compilation = CSharpCompilation.Create("LoaderTests_" + Guid.NewGuid().ToString("N"), new[]
         { CSharpSyntaxTree.ParseText(code + "\n" + Abi, new CSharpParseOptions(LanguageVersion.Preview), "Code.cs") },
             references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-        Profile = XamlFrameworkProfile.Portable with { SourceLoader = new("Model.Loader", "Load") };
+        Profile = (profile ?? XamlFrameworkProfile.Portable) with { SourceLoader = new("Model.Loader", "Load") };
         Project = new XamlProjectCompiler().Compile(documents.Select(d => new XamlProjectDocument(XamlSyntaxTree.Parse(d.Text, d.Path), d.Path)), Compilation, Profile);
     }
     public CSharpCompilation Compilation { get; }

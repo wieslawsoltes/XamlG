@@ -9,7 +9,7 @@ internal static class XamlResourceExports
 {
     public static XamlEmissionResult Add(BoundDocument document, XamlEmissionResult output)
     {
-        if (!output.Success || document.Options.ResourceUri == null || output.BuildMethodName == null || !IsPublic(document.Root!.Type)) return output;
+        if (!output.Success || output.IsSkipped || document.ClassModifier != "public" || document.Options.ResourceUri == null || output.BuildMethodName == null || !IsPublic(document.Root!.Type)) return output;
         var prefix = "[assembly: global::XamlG.Runtime.XamlCompiledResourceAttribute(" + CSharpNames.Literal(document.Options.ResourceUri) +
             ", typeof(global::" + output.FactoryTypeName + "), " + CSharpNames.Literal(output.BuildMethodName) + ")]\n";
         return output with

@@ -22,6 +22,11 @@ public sealed class XamlLoaderAdapterCompiler
         if (configuration == null) return XamlSourceIntegrationResult.Empty;
         var loader = compilation.GetTypeByMetadataName(configuration.TypeMetadataName);
         if (loader == null) return XamlSourceIntegrationResult.Empty;
+        if (!project.Documents.IsEmpty && project.Documents.All(document => document.Document.IsSkipped) && !project.Resources.Resources.Any())
+            return XamlSourceIntegrationResult.Empty;
+        bool IsSkipped(ITypeSymbol? type) => type != null &&
+            !project.Documents.Any(document => !document.Document.IsSkipped && SymbolEqualityComparer.Default.Equals(document.Document.ClassSymbol, type)) &&
+            project.Documents.Any(document => document.Document.IsSkipped && SymbolEqualityComparer.Default.Equals(document.Document.ClassSymbol, type));
         var calls = new List<LoaderCall>();
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
         foreach (var tree in compilation.SyntaxTrees.OrderBy(t => t.FilePath, StringComparer.Ordinal))
@@ -39,6 +44,16 @@ public sealed class XamlLoaderAdapterCompiler
                 var method = operation.TargetMethod;
                 if (!TryKind(method, out var kind, out var hasServices))
                 { diagnostics.Add(LoaderDiagnostics.Error(invocation.GetLocation(), "The configured loader overload is not supported by the typed loader contract.")); continue; }
+                XamlProjectDocumentResult? target = null;
+                if (kind == LoaderCallKind.Object)
+                {
+                    IOperation value = operation.Arguments.Single(a => a.Parameter?.Ordinal == method.Parameters.Length - 1).Value;
+                    while (value is IConversionOperation conversion) value = conversion.Operand;
+                    target = project.Documents.FirstOrDefault(d => !d.Document.IsSkipped && SymbolEqualityComparer.Default.Equals(d.Document.ClassSymbol, value.Type));
+                    if (IsSkipped(value.Type)) continue;
+                    if (target != null && (!target.Output.Success || !target.Document.Options.GenerateInitializeComponent || !CanReference(compilation, target.Document.ClassSymbol!)))
+                    { diagnostics.Add(LoaderDiagnostics.Error(invocation.GetLocation(), "This source component cannot expose a compiled initializer. Resolve its XAML diagnostics, enable initialization, and use an accessible nongeneric component or its explicit Populate API.")); continue; }
+                }
                 if (IsExpressionTree(invocation, model, cancellationToken))
                 { diagnostics.Add(LoaderDiagnostics.Error(invocation.GetLocation(), "Loader calls in expression trees require an explicit generated factory; call-site interception cannot preserve the expression tree contract.")); continue; }
                 if (tree.Options is CSharpParseOptions options && options.LanguageVersion < LanguageVersion.CSharp11)
@@ -48,15 +63,6 @@ public sealed class XamlLoaderAdapterCompiler
 #pragma warning restore RSEXPERIMENTAL002
                 if (location == null)
                 { diagnostics.Add(LoaderDiagnostics.Error(invocation.GetLocation(), "Roslyn cannot provide a stable interception location for this loader call.")); continue; }
-                XamlProjectDocumentResult? target = null;
-                if (kind == LoaderCallKind.Object)
-                {
-                    IOperation value = operation.Arguments.Single(a => a.Parameter?.Ordinal == method.Parameters.Length - 1).Value;
-                    while (value is IConversionOperation conversion) value = conversion.Operand;
-                    target = project.Documents.FirstOrDefault(d => SymbolEqualityComparer.Default.Equals(d.Document.ClassSymbol, value.Type));
-                    if (target != null && (!target.Output.Success || !target.Document.Options.GenerateInitializeComponent || !CanReference(compilation, target.Document.ClassSymbol!)))
-                    { diagnostics.Add(LoaderDiagnostics.Error(invocation.GetLocation(), "This source component cannot expose a compiled initializer. Resolve its XAML diagnostics, enable initialization, and use an accessible nongeneric component or its explicit Populate API.")); continue; }
-                }
 #pragma warning disable RSEXPERIMENTAL002
                 calls.Add(new(invocation, method, location.GetInterceptsLocationAttributeSyntax(), kind, hasServices, target));
 #pragma warning restore RSEXPERIMENTAL002
@@ -71,7 +77,11 @@ public sealed class XamlLoaderAdapterCompiler
                 if (identifier.Ancestors().OfType<InvocationExpressionSyntax>().Any(i => i.Expression is IdentifierNameSyntax n && n.Identifier.ValueText == "nameof")) continue;
                 var symbol = model.GetSymbolInfo(expression, cancellationToken).Symbol as IMethodSymbol;
                 if (symbol != null && SymbolEqualityComparer.Default.Equals(symbol.ContainingType, loader))
+                {
+                    if (model.GetTypeInfo(expression, cancellationToken).ConvertedType is INamedTypeSymbol { DelegateInvokeMethod: { } invoke } &&
+                        IsSkipped(invoke.Parameters.LastOrDefault()?.Type)) continue;
                     diagnostics.Add(LoaderDiagnostics.Error(expression.GetLocation(), "Loader method groups/function pointers cannot be intercepted. Use a lambda containing a loader invocation or an explicit compiled factory."));
+                }
             }
         }
         var source = calls.Count == 0 ? string.Empty : new LoaderSourceEmitter(compilation, project, configuration).Emit(calls, cancellationToken);

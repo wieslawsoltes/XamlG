@@ -28,12 +28,7 @@ public sealed class ObjectBinder
             if (!SyntaxFacts.IsValidIdentifier(nameAttribute.Value)) _context.Report("XG1012", $"Invalid XAML name '{nameAttribute.Value}'.", nameAttribute.ValueSpan);
             else { builder.Name = nameAttribute.Value; _context.RegisterName(nameScope, builder.Name, type, nameAttribute.ValueSpan); }
         }
-        var modifier = scope.Directive(syntax, "FieldModifier");
-        if (modifier != null)
-        {
-            if (modifier.Value is "public" or "internal" or "private" or "protected" or "protected internal" or "private protected") builder.FieldModifier = modifier.Value;
-            else _context.Report("XG1018", "Invalid x:FieldModifier.", modifier.ValueSpan);
-        }
+        builder.FieldModifier = _context.Profile.Directives.BindFieldModifier(_context, scope.Directive(syntax, "FieldModifier"));
         _context.Ancestors.Push(builder);
         try
         {

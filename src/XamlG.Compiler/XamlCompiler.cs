@@ -16,15 +16,22 @@ public sealed class XamlCompiler
     }
     public BoundDocument Bind(XamlSyntaxTree syntax, RoslynTypeSystem types, XamlFrameworkProfile profile, XamlCompilerOptions? options = null, CancellationToken cancellationToken = default)
     {
-        options ??= new(); var context = new BindingContext(syntax, types, profile, options, cancellationToken);
+        options ??= new();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!profile.Directives.ShouldCompile(syntax, options))
+        {
+            var skippedClass = syntax.Root is { } skippedRoot ? NamespaceScope.Empty.Push(skippedRoot).Directive(skippedRoot, "Class")?.Value : null;
+            return new(syntax, null, skippedClass, skippedClass == null ? null : types.Find(skippedClass), "public",
+                syntax.Diagnostics.AddRange(profile.Directives.GetSkippedDiagnostics(syntax, cancellationToken)),
+                ImmutableArray<BoundSymbolInfo>.Empty, profile, options with { ResourceUri = null })
+                { IsSkipped = true, CanAugmentClass = false };
+        }
+        var context = new BindingContext(syntax, types, profile, options, cancellationToken);
         var root = syntax.Root; BoundObject? bound = null; string? className = null; var modifier = "public";
         var canAugment = false;
         if (root != null)
         {
             var scope = NamespaceScope.Empty.Push(root); var directive = scope.Directive(root, "Class"); className = directive?.Value;
-            var classModifier = scope.Directive(root, "ClassModifier");
-            if (classModifier != null)
-            { if (classModifier.Value is "public" or "internal") modifier = classModifier.Value; else context.Report("XG1018", "x:ClassModifier must be public or internal.", classModifier.ValueSpan); }
             if (className != null)
             {
                 context.RootClass = types.Find(className);
@@ -40,6 +47,7 @@ public sealed class XamlCompiler
                             { context.Report("XG1030", "An external component factory requires a nongeneric reference-type component and containing types.", directive!.ValueSpan); break; }
                 }
             }
+            modifier = profile.Directives.BindClassModifier(context, scope.Directive(root, "ClassModifier"));
             var declared = context.ResolveType(root.Name, scope, root.NameSpan, scope.Directive(root, "TypeArguments")?.Value);
             if (declared != null)
             {

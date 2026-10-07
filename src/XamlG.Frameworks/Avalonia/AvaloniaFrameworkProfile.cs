@@ -19,10 +19,12 @@ public static class AvaloniaFrameworkProfile
         var options = new AvaloniaOptionMarkupRule();
         var bindingValues = new AvaloniaBindingMarkupRule();
         var names = new References.AvaloniaNameScopeRule();
+        var directives = new AvaloniaDirectivePolicy();
         return XamlFrameworkProfile.Portable with
         {
             Name = "Avalonia",
             NameDirectiveProperty = "Name",
+            Directives = directives,
             SourceLoader = new(AvaloniaLoaderMetadata.Loader, AvaloniaLoaderMetadata.Load)
             { ResourceScheme = AvaloniaResourceMetadata.Scheme, LegacyIndexMetadataName = AvaloniaLoaderMetadata.CompiledIndex },
             NameReferenceRules = XamlFrameworkProfile.Portable.NameReferenceRules.Add(new References.AvaloniaNameReferenceRule()),
@@ -59,7 +61,7 @@ public static class AvaloniaFrameworkProfile
                     new XamlServiceMapping(AvaloniaMetadata.ParentProvider, XamlServiceKind.ParentStack),
                     new XamlServiceMapping(AvaloniaMetadata.NamespaceProvider, XamlServiceKind.XmlNamespaces, AvaloniaMetadata.NamespaceItem))
             },
-            BindingRules = ImmutableArray.Create<IXamlBindingRule>(bindings, new AvaloniaStyleDirectiveRule(), classes, deferredResources),
+            BindingRules = ImmutableArray.Create<IXamlBindingRule>(directives, bindings, new AvaloniaStyleDirectiveRule(), classes, deferredResources),
             TextConversionRules = ImmutableArray.Create<IXamlTextConversionRule>(new AvaloniaPropertyReferenceTextRule(),
                 new AvaloniaFontFamilyTextRule(), new AvaloniaConstructorLiteralRule(), new AvaloniaNumericLiteralRule(), new AvaloniaStaticLiteralRule(),
                 new AvaloniaTextConversionRule(), new AvaloniaListLiteralRule()),
