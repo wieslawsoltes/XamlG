@@ -73,6 +73,6 @@ The CI workflow retrieves the revision from the same props file and runs the two
 
 ## Theme checkpoint
 
-At compiler commit `57238d2`, the theme gate passed against Avalonia `8eeda4f6f546165b3f72e63c9f42247abb306905`: 82 Simple documents (81 physical plus one declared project link), 86 Fluent documents, original code-behind, and 34 control/theme realizations per theme. Both themes were compiled from a clean detached compiler worktree; retained source hashes and source copies match the pinned checkout. Local evidence and compiler/upstream provenance are under `artifacts/tests/57238d2/`.
+At compiler commit `ed63c8a`, the theme gate passed against Avalonia `8eeda4f6f546165b3f72e63c9f42247abb306905`: 82 Simple documents (81 physical plus one declared project link), 86 Fluent documents, original code-behind, and 34 control/theme realizations per theme. Both themes were compiled from a clean detached compiler worktree; retained source hashes and source copies match the pinned checkout. Local evidence and compiler/upstream provenance are under `artifacts/tests/ed63c8a/`.
 
-The same compiler checkpoint passed 760 native tests, 217 upstream compatibility tests and all 85 shared parity cases through XamlG, with no skipped tests and warning-free solution/compatibility builds. This validates that commit, not subsequent compiler changes or the full framework transform surface.
+The same compiler checkpoint passed 816 native tests, 217 upstream compatibility tests and all 85 shared parity cases through XamlG, with no skipped tests and warning-free solution/compatibility builds. This validates that commit, not subsequent compiler changes or the full framework transform surface.
