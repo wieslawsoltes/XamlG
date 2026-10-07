@@ -41,7 +41,7 @@ public sealed class ObjectBinder
             var argumentsElement = syntax.Children.OfType<XamlElementSyntax>().FirstOrDefault(e =>
             { var n = scope.Push(e).Expand(e.Name); return n.Namespace != null && XamlNames.IsLanguage(n.Namespace) && n.LocalName == "Arguments"; });
             var args = positional.IsDefault ? argumentsElement?.Children.Where(n => n is XamlElementSyntax || n is XamlTextSyntax t && !string.IsNullOrWhiteSpace(t.Value)).ToImmutableArray() ?? ImmutableArray<XamlSyntaxNode>.Empty : positional;
-            _constructors.Bind(builder, args);
+            _constructors.Bind(builder, args, positional.IsDefault && argumentsElement != null ? scope.Push(argumentsElement) : scope);
             foreach (var attribute in syntax.Attributes)
             {
                 if (attribute.IsNamespace) continue;

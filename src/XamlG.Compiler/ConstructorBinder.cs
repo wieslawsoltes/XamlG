@@ -7,7 +7,7 @@ internal sealed class ConstructorBinder
 {
     private readonly BindingContext _context;
     public ConstructorBinder(BindingContext context) => _context = context;
-    public void Bind(ObjectBindingBuilder target, ImmutableArray<XamlSyntaxNode> arguments)
+    public void Bind(ObjectBindingBuilder target, ImmutableArray<XamlSyntaxNode> arguments, NamespaceScope scope)
     {
         var factoryName = target.Scope.Directive(target.Syntax, "FactoryMethod")?.Value;
         IEnumerable<IMethodSymbol> candidates = factoryName == null ? target.Type.InstanceConstructors :
@@ -23,19 +23,20 @@ internal sealed class ConstructorBinder
                 if (argument is XamlTextSyntax text)
                 {
                     if (text.Value.StartsWith("{", StringComparison.Ordinal)) { score += 10; continue; }
-                    if (_context.Values.TryText(text.Value, parameter, target.Scope, text.Span) == null) { valid = false; break; }
+                    if (_context.Values.TryText(text.Value, parameter, scope, text.Span, method.Parameters[i]) == null) { valid = false; break; }
                     if (parameter.SpecialType == SpecialType.System_Object) score += 3;
                     else if (parameter.SpecialType != SpecialType.System_String) score++;
                 }
                 else
                 {
-                    var type = _context.Values.PeekValueType(argument, target.Scope);
+                    var type = _context.Values.PeekValueType(argument, scope);
                     if (type == null && !parameter.AcceptsNull()) { valid = false; break; }
                     if (type != null && !_context.Types.Compilation.ClassifyCommonConversion(type, parameter).IsImplicit)
                     {
                         if (type.SpecialType == SpecialType.System_Object && _context.Types.Compilation.ClassifyCommonConversion(type, parameter).Exists) score += 5;
-                        else if (!_context.Values.TryGetStringLiteral(argument, target.Scope, out var literal) ||
-                            _context.Values.TryText(literal, parameter, target.Scope, argument.Span) == null) { valid = false; break; }
+                        else if (!_context.Values.TryGetStringLiteral(argument, scope, out var literal) ||
+                            _context.Values.TryText(literal, parameter, argument is XamlElementSyntax element ? scope.Push(element) : scope,
+                                argument.Span, method.Parameters[i]) == null) { valid = false; break; }
                         score += 2;
                     }
                     if (!SymbolEqualityComparer.Default.Equals(type, parameter)) score++;
@@ -65,7 +66,7 @@ internal sealed class ConstructorBinder
         for (var i = 0; i < selected.Parameters.Length; i++)
         {
             var parameter = selected.Parameters[i];
-            var value = i < arguments.Length ? _context.Values.BindNode(arguments[i], parameter.Type, target.Scope, target.NameScopeId) :
+            var value = i < arguments.Length ? _context.Values.BindNode(arguments[i], parameter.Type, scope, target.NameScopeId, member: parameter) :
                 new BoundConstantExpression(parameter.ExplicitDefaultValue, parameter.Type, target.Syntax.NameSpan);
             if (value != null) values.Add(value);
         }

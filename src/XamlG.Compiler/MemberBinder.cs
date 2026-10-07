@@ -81,7 +81,7 @@ public sealed class MemberBinder
             { BindCollectionItem(target, member, new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan), scope); return; }
             _context.Report("XG1010", $"Property '{member.Name}' is read-only.", attribute.NameSpan); return;
         }
-        var value = _context.Values.BindText(attribute.Value, member.ValueType, scope, attribute.ValueSpan, member.Symbol);
+        var value = _context.Values.BindText(attribute.Value, member.ValueType, scope, attribute.ValueSpan, member.ConversionSource);
         if (value != null) AddSet(target, member, value, attribute.Span);
     }
     public void BindNodes(ObjectBindingBuilder target, BoundMember? member, IEnumerable<XamlSyntaxNode> children, NamespaceScope scope, TextSpan span)
@@ -130,7 +130,7 @@ public sealed class MemberBinder
             }
             if (member == null) { _context.Report("XG1011", $"'{target.Type}' has no content property or collection Add method.", node.Span); continue; }
             if (!member.CanWrite) { _context.Report("XG1010", $"Property '{member.Name}' is read-only.", span); continue; }
-            var expression = _context.Values.BindNode(node, member.ValueType, scope, target.NameScopeId, normalizeText: false);
+            var expression = _context.Values.BindNode(node, member.ValueType, scope, target.NameScopeId, normalizeText: false, member: member.ConversionSource);
             if (expression != null) AddSet(target, member, expression, node.Span);
         }
     }

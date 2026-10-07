@@ -66,14 +66,14 @@ public sealed class ValueBinder
                 return new BoundMethodGroupExpression(method, null, delegateType, span);
             }
         }
-        var converter = FindConverter(member) ?? FindConverter(target);
-        if (converter != null) return new BoundConverterExpression(text, converter, target, span);
         var parse = target.Members(ClrNames.Parse).OfType<IMethodSymbol>()
             .Where(m => m.IsStatic && !m.IsGenericMethod && _context.Types.IsAccessible(m) && m.Parameters.Length is 1 or 2 &&
                 m.Parameters[0].Type.SpecialType == SpecialType.System_String && (m.Parameters.Length == 1 || m.Parameters[1].Type.HasMetadataName(ClrNames.IFormatProvider) || m.Parameters[1].Type.HasMetadataName(ClrNames.CultureInfo)) &&
                 _context.Types.Compilation.ClassifyCommonConversion(m.ReturnType, target).IsImplicit)
             .OrderByDescending(m => m.Parameters.Length).FirstOrDefault();
         if (parse != null) return new BoundParseExpression(text, parse, target, span);
+        var converter = FindConverter(target);
+        if (converter != null) return new BoundConverterExpression(text, converter, target, span);
         if (target.HasMetadataName(ClrNames.Uri) && target is INamedTypeSymbol uri)
         {
             var constructor = uri.InstanceConstructors.FirstOrDefault(c => c.Parameters.Length == 2 && c.Parameters[0].Type.SpecialType == SpecialType.System_String && c.Parameters[1].Type.TypeKind == TypeKind.Enum);
@@ -104,15 +104,15 @@ public sealed class ValueBinder
         }
         return _context.ResolveType(name, scope, span, typeArguments, report);
     }
-    public BoundExpression? BindNode(XamlSyntaxNode syntax, ITypeSymbol target, NamespaceScope scope, int nameScope = 0, bool normalizeText = true)
+    public BoundExpression? BindNode(XamlSyntaxNode syntax, ITypeSymbol target, NamespaceScope scope, int nameScope = 0, bool normalizeText = true, ISymbol? member = null)
     {
         _context.Cancellation.ThrowIfCancellationRequested();
-        if (syntax is XamlTextSyntax text) return BindText(normalizeText ? XmlWhitespace.Normalize(text.Value, scope.PreserveSpace) : text.Value, target, scope, syntax.Span);
+        if (syntax is XamlTextSyntax text) return BindText(normalizeText ? XmlWhitespace.Normalize(text.Value, scope.PreserveSpace) : text.Value, target, scope, syntax.Span, member);
         if (syntax is not XamlElementSyntax element) return null;
+        var nested = scope.Push(element); var name = nested.Expand(element.Name);
         foreach (var rule in _context.Profile.ObjectExpressionRules)
             if (rule.TryBind(_context, element, target, scope, nameScope, out var replacement))
-                return replacement == null ? null : Coerce(replacement, target, element.Span);
-        var nested = scope.Push(element); var name = nested.Expand(element.Name);
+                return replacement == null ? null : Coerce(replacement, target, element.Span, nested, member);
         if (name.Namespace != null && XamlNames.IsLanguage(name.Namespace))
         {
             if (name.LocalName == "Null") return Coerce(new BoundConstantExpression(null, null, syntax.Span), target, syntax.Span);
@@ -135,7 +135,7 @@ public sealed class ValueBinder
             if (name.LocalName is "Type" or "Static" or "Reference" or "True" or "False")
             {
                 var args = element.Attributes.Where(a => !a.IsNamespace).Select(a => new MarkupArgumentSyntax(a.Name, a.Value, a.Span)).ToImmutableArray();
-                var value = _markup.Bind(new(element.Name, args, element.Span), target, nested); return value == null ? null : Coerce(value, target, syntax.Span);
+                var value = _markup.Bind(new(element.Name, args, element.Span), target, nested); return value == null ? null : Coerce(value, target, syntax.Span, nested, member);
             }
         }
         var type = _context.ResolveType(element.Name, nested, element.NameSpan, nested.Directive(element, "TypeArguments")?.Value);
@@ -146,13 +146,13 @@ public sealed class ValueBinder
             if (type.SpecialType != SpecialType.None || type.TypeKind == TypeKind.Enum || type.IsValueType || type.HasMetadataName(ClrNames.Uri))
             {
                 var value = TryText(type.SpecialType == SpecialType.System_String ? content : XmlWhitespace.Normalize(content, nested.PreserveSpace), type, nested, element.Span);
-                if (value != null) return Coerce(value, target, syntax.Span);
+                if (value != null) return Coerce(value, target, syntax.Span, nested, member);
             }
         }
         var bound = _context.Objects.Bind(element, scope, type, false, nameScope);
         if (bound == null) return null;
         var provided = _markup.Provide(bound, syntax.Span);
-        return Coerce(provided ?? new BoundObjectExpression(bound), target, syntax.Span);
+        return Coerce(provided ?? new BoundObjectExpression(bound), target, syntax.Span, nested, member);
     }
     public ITypeSymbol? PeekNodeType(XamlSyntaxNode syntax, NamespaceScope scope)
     {
@@ -174,7 +174,7 @@ public sealed class ValueBinder
         { value = string.Concat(element.Children.OfType<XamlTextSyntax>().Select(t => t.Value)); return true; }
         value = string.Empty; return false;
     }
-    public BoundExpression? Coerce(BoundExpression value, ITypeSymbol target, TextSpan span)
+    public BoundExpression? Coerce(BoundExpression value, ITypeSymbol target, TextSpan span, NamespaceScope? scope = null, ISymbol? member = null)
     {
         if (value.Type == null)
         {
@@ -184,7 +184,7 @@ public sealed class ValueBinder
         var conversion = _context.Types.Compilation.ClassifyConversion(value.Type, target);
         if (conversion.IsImplicit && (!conversion.IsNumeric || _context.Types.Configuration.AllowImplicitNumericConversions)) return value;
         if (conversion.Exists && value.Type.SpecialType == SpecialType.System_Object) return new BoundCastExpression(value, target, span);
-        if (value is BoundConstantExpression { Value: string text } && TryText(text, target, NamespaceScope.Empty, span) is { } converted) return converted;
+        if (value is BoundConstantExpression { Value: string text } && TryText(text, target, scope ?? NamespaceScope.Empty, span, member) is { } converted) return converted;
         _context.Report("XG1023", $"Value of type '{value.Type}' cannot be assigned to '{target}'.", span); return null;
     }
 }
