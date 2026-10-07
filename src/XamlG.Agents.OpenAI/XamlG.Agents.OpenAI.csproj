@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Official OpenAI C# Responses SDK adapter for the reusable XamlG coding-agent harness.</Description>
+    <NoWarn>$(NoWarn);OPENAI001</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../XamlG.Agents/XamlG.Agents.csproj" />
+    <PackageReference Include="OpenAI" />
+  </ItemGroup>
+</Project>

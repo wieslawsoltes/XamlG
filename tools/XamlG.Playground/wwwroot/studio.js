@@ -153,3 +153,125 @@ export function requestAuthoring(id, command) {
   const request = getAuthoringRequest(id, command);
   if (item && request) return item.dotnet.invokeMethodAsync('Authoring', request);
 }
+
+export function waitForElement(id) {
+    if (document.getElementById(id)) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+        const observer = new MutationObserver(() => {
+            if (document.getElementById(id)) { clearTimeout(timer); observer.disconnect(); resolve(); }
+        });
+        const timer = setTimeout(() => { observer.disconnect(); reject(new Error(`Pane ${id} did not mount.`)); }, 30000);
+        observer.observe(document.body, { childList: true, subtree: true });
+    });
+}
+export function saveDockyardLayout(layout) {
+    try { localStorage.setItem('xamlg.dockyard.layout.v2', layout); } catch { }
+}
+export function loadDockyardLayout() {
+    try { return localStorage.getItem('xamlg.dockyard.layout.v2'); } catch { return null; }
+}
+
+let automationOwner = null;
+let automationSocket = null;
+let agentConnection = null;
+let agentOwner = null;
+let agentOwnerId = null;
+let agentStream = null;
+export function installAutomation(owner) {
+    automationOwner = owner;
+    window.xamlgAutomation = Object.freeze({
+        catalog: () => owner.invokeMethodAsync('AutomationCatalog'),
+        call: (name, args = {}) => owner.invokeMethodAsync('AutomationInvoke', crypto.randomUUID(), 'call', name, args),
+        resource: uri => owner.invokeMethodAsync('AutomationInvoke', crypto.randomUUID(), 'resource', uri, {})
+    });
+}
+export async function connectAutomation(address, token) {
+    const url = new URL(address);
+    if (!['ws:', 'wss:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
+        throw new Error('Use a WebSocket URL without credentials, query or fragment.');
+    if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))
+        throw new Error('The companion must run on loopback.');
+    if (token.length < 32) throw new Error('Enter the companion’s local token.');
+    if (!automationOwner) throw new Error('The IDE is not ready.');
+    disconnectAutomation();
+    const catalog = await automationOwner.invokeMethodAsync('AutomationCatalog');
+    const agentAccess = { base: url.origin.replace(/^ws/, 'http'), token };
+    await new Promise((resolve, reject) => {
+        const socket = new WebSocket(url); automationSocket = socket;
+        let paired = false;
+        const timeout = setTimeout(() => { socket.close(); reject(new Error('Companion pairing timed out.')); }, 10000);
+        socket.onopen = () => { socket.send(JSON.stringify({ kind: 'hello', token, catalog })); token = ''; };
+        socket.onerror = () => { clearTimeout(timeout); reject(new Error('Unable to connect to the companion.')); };
+        socket.onclose = () => {
+            clearTimeout(timeout);
+            if (automationSocket === socket) { agentConnection = null; agentStream?.abort(); agentOwner?.invokeMethodAsync('AgentDisconnected').catch(() => {}); }
+            if (!paired) reject(new Error('The companion rejected pairing.'));
+        };
+        socket.onmessage = async event => {
+            if (typeof event.data !== 'string' || event.data.length > 8 * 1024 * 1024) { socket.close(); return; }
+            let request;
+            try { request = JSON.parse(event.data); } catch { socket.close(); return; }
+            if (request.kind === 'ready') {
+                paired = true; clearTimeout(timeout); agentConnection = agentAccess;
+                startAgentStream(); agentOwner?.invokeMethodAsync('AgentRefresh').catch(() => {}); resolve(); return;
+            }
+            if (!paired) return;
+            if (request.kind === 'cancel') { await automationOwner.invokeMethodAsync('AutomationCancel', String(request.id)); return; }
+            if (request.kind !== 'request') return;
+            try {
+                const result = await automationOwner.invokeMethodAsync('AutomationInvoke', String(request.id), request.method, request.name, request.arguments ?? {});
+                if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ id: request.id, result }));
+            } catch (error) {
+                if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ id: request.id, error: { code: 'ide_error', message: String(error.message || error) } }));
+            }
+        };
+    });
+}
+export function disconnectAutomation() {
+    agentConnection = null; agentStream?.abort(); agentStream = null;
+    if (automationSocket) { automationSocket.close(); automationSocket = null; }
+    agentOwner?.invokeMethodAsync('AgentDisconnected').catch(() => {});
+}
+
+export function installAgentWorkbench(owner, id) { agentOwner = owner; agentOwnerId = id; }
+export function uninstallAgentWorkbench(id) { if (agentOwnerId === id) { agentOwner = null; agentOwnerId = null; } }
+export function agentConnected() { return !!agentConnection; }
+export async function agentRequest(action, argumentsValue = {}) {
+    if (!agentConnection) throw new Error('Connect the local companion in Agent access first.');
+    const connection = agentConnection;
+    const response = await fetch(`${connection.base}/agent/${encodeURIComponent(action)}`, {
+        method: 'POST', headers: { Authorization: `Bearer ${connection.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(argumentsValue), cache: 'no-store', signal: agentStream?.signal
+    });
+    const body = await response.text();
+    if (body.length > 16 * 1024 * 1024) throw new Error('Agent response is too large. Export a smaller thread.');
+    const result = JSON.parse(body);
+    if (!response.ok) throw new Error(result.error || `Companion returned ${response.status}.`);
+    return result;
+}
+async function startAgentStream() {
+    agentStream?.abort(); agentStream = new AbortController();
+    const controller = agentStream, connection = agentConnection;
+    if (!connection) return;
+    try {
+        const response = await fetch(`${connection.base}/agent/events`, {
+            headers: { Authorization: `Bearer ${connection.token}` }, cache: 'no-store', signal: controller.signal
+        });
+        if (!response.ok) throw new Error(`Agent event stream returned ${response.status}.`);
+        const reader = response.body.getReader(), decoder = new TextDecoder();
+        let buffer = '';
+        while (!controller.signal.aborted) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            if (buffer.length > 8 * 1024 * 1024) throw new Error('Agent event exceeded the stream limit.');
+            let end;
+            while ((end = buffer.indexOf('\n\n')) >= 0) {
+                const frame = buffer.slice(0, end); buffer = buffer.slice(end + 2);
+                if (frame.startsWith('data: ') && agentOwner) await agentOwner.invokeMethodAsync('AgentStream', JSON.parse(frame.slice(6)));
+            }
+        }
+    } catch (error) {
+        if (!controller.signal.aborted) agentOwner?.invokeMethodAsync('AgentStreamError', 'The live stream ended. Task state remains available through refresh.').catch(() => {});
+    }
+}

@@ -1,0 +1,16 @@
+.dockyard-workspace { min-height: 0; min-width: 0; overflow: hidden; }
+.dockyard-workspace dockyard-razor-template { height: 100%; min-width: 0; min-height: 0; }
+.dock-source { height: 100%; grid-template-rows: 37px minmax(0, 1fr); }
+.dock-preview { height: 100%; display: grid; grid-template-rows: 37px minmax(0, 1fr); min-width: 0; min-height: 0; background: var(--panel); }
+.dock-inspector { height: 100%; display: grid; grid-template-rows: 37px minmax(0, 1fr); min-width: 0; min-height: 0; background: var(--panel); }
+.dockyard-workspace .explorer { height: 100%; overflow: auto; display: flex; }
+.dockyard-workspace .diagnostics { height: 100%; }
+.dockyard-workspace .ad-content { min-width: 0; min-height: 0; }
+.automation-dialog { position:fixed; right:24px; top:110px; width:min(520px,calc(100vw - 48px)); max-height:75vh; overflow:auto; z-index:1000; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:8px; box-shadow:0 16px 64px #0008; padding:24px; }
+.automation-dialog h2 { margin-bottom:18px; }
+.automation-dialog label { display:flex; align-items:center; gap:10px; margin:12px 0; }
+.automation-dialog label input:not([type=checkbox]) { flex:1; min-width:0; }
+.automation-dialog p { font-size:12px; line-height:1.6; }
+.automation-dialog pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:40vh; overflow:auto; }
+.automation-review { z-index:1100; }
+@media(max-width:620px) { .studio { height:100dvh; grid-template-rows:48px 47px minmax(0,1fr) 27px; } .dock-source {height:100%;} }

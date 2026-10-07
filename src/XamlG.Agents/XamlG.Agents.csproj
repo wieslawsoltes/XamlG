@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Reusable provider-independent coding agent orchestration over typed IDE automation.</Description>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../XamlG.Automation/XamlG.Automation.csproj" /></ItemGroup>
+</Project>

@@ -1,0 +1,137 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
+using XamlG.Agents;
+using XamlG.Automation;
+
+namespace XamlG.Studio.Host;
+
+/// <summary>Host-owned task and approval state. Cloud credentials never enter browser messages.</summary>
+public sealed class AgentWorkbench : IDisposable
+{
+    private readonly IReadOnlyDictionary<string, IAgentProvider> _providers;
+    private readonly AgentHarness _harness;
+    private readonly ConcurrentDictionary<string, Pending> _pending = new(StringComparer.Ordinal);
+    private readonly CancellationTokenSource _lifetime = new();
+    private readonly object _gate = new();
+    private Task? _run;
+    private CancellationTokenSource? _runCancellation;
+    private string? _runningId;
+    public AgentWorkbench(IAutomationHost host, IEnumerable<IAgentProvider> providers, IAgentWorkspace? workspace = null)
+    { _providers = providers.ToDictionary(p => p.Id, StringComparer.Ordinal); _harness = new(host, workspace); }
+    public AgentHarness Harness => _harness;
+
+    public async Task<JsonElement> ExecuteAsync(string action, JsonElement arguments, CancellationToken cancellationToken)
+    {
+        switch (action)
+        {
+            case "state":
+                return AutomationJson.Element(new
+                {
+                    providers = _providers.Keys.Order(StringComparer.Ordinal), tasks = _harness.Tasks.Select(task => new
+                    {
+                        task.Id, task.Name, task.ProviderId, task.Model, task.Status, task.StatusReason, task.Draft,
+                        task.TotalTokens, task.ReportedTokens, task.EstimatedTokens, task.CheckpointCount, task.Plan, task.PlanRevision, task.QueuedMessages,
+                        changes = task.Changes == null ? null : new { task.Changes.Revision, files = task.Changes.Files.Select(file => new { file.Path, beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
+                        events = task.Events.TakeLast(80).Select(item => item with { Text = item.Text.Length > 8192 ? item.Text[..8192] + "\n[see transcript export]" : item.Text })
+                    }),
+                    pending = _pending.Values.Select(p => new { p.Id, p.TaskId, p.Kind, p.Content })
+                });
+            case "models":
+                return AutomationJson.Element(await Provider(Read<ProviderArgs>(arguments).Provider).ListModelsAsync(cancellationToken));
+            case "create":
+                var create = Read<CreateArgs>(arguments);
+                return AutomationJson.Element(_harness.CreateTask(create.Name, Provider(create.Provider), create.Model));
+            case "rename":
+                var rename = Read<TextArgs>(arguments); _harness.RenameTask(rename.Id, rename.Text); break;
+            case "draft":
+                var draft = Read<TextArgs>(arguments);
+                if (draft.Text.Length > 262144) throw new ArgumentException("Draft is too large.");
+                _harness.GetTask(draft.Id).Draft = draft.Text; break;
+            case "delete": _harness.DeleteTask(Read<IdArgs>(arguments).Id); break;
+            case "queue":
+                var queue = Read<TextArgs>(arguments); _harness.QueueMessage(queue.Id, queue.Text); break;
+            case "clear_queue": _harness.ClearQueuedMessages(Read<IdArgs>(arguments).Id); break;
+            case "compact": _harness.Compact(Read<IdArgs>(arguments).Id); break;
+            case "stop": Stop(); break;
+            case "run":
+                var run = Read<RunArgs>(arguments);
+                run.Options.Limits.Validate(); var task = _harness.GetTask(run.Id);
+                if (task.Status is AgentTaskStatus.Cancelled or AgentTaskStatus.Failed) throw new InvalidOperationException("Create a new task after cancellation or failure.");
+                if ((run.Message == null) != (task.Status == AgentTaskStatus.Paused)) throw new InvalidOperationException("Resume a paused task without adding a new message.");
+                if (run.Message != null && (string.IsNullOrWhiteSpace(run.Message) || run.Message.Length > 262144)) throw new ArgumentException("A bounded message is required.");
+                lock (_gate)
+                {
+                    if (_run is { IsCompleted: false }) throw new InvalidOperationException("An agent is already running.");
+                    _runCancellation?.Dispose(); _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+                    _runningId = run.Id;
+                    _run = RunAsync(run);
+                }
+                break;
+            case "respond":
+                var response = Read<ResponseArgs>(arguments);
+                if (!_pending.TryGetValue(response.Id, out var pending)) throw new InvalidOperationException("This question or approval is no longer pending.");
+                if (pending.Kind == "approval") _ = response.Value.Deserialize<AgentApproval>(AutomationJson.Options);
+                else if (response.Value.ValueKind != JsonValueKind.String || response.Value.GetString()!.Length > 16384) throw new ArgumentException("A bounded text answer is required.");
+                if (!pending.Completion.TrySetResult(response.Value.Clone())) throw new InvalidOperationException("Already answered.");
+                break;
+            case "export": return AutomationJson.Element(_harness.ExportTranscript(Read<IdArgs>(arguments).Id));
+            case "changes": return AutomationJson.Element(_harness.GetTask(Read<IdArgs>(arguments).Id).Changes);
+            case "restore":
+                var restore = Read<RestoreArgs>(arguments);
+                return AutomationJson.Element(await _harness.RestoreChangesAsync(restore.Id, restore.Paths, restore.ExpectedRevision, cancellationToken));
+            default: throw new ArgumentException("Unknown agent action.");
+        }
+        return AutomationJson.Element(new { accepted = true });
+    }
+
+    private async Task RunAsync(RunArgs args)
+    {
+        // Begin after the caller has recorded ownership, and never tie a run to one HTTP poll.
+        await Task.Yield();
+        try
+        {
+            await _harness.RunAsync(args.Id, args.Message, args.Options,
+                async (review, token) => (await AskAsync("approval", AutomationJson.Element(review), token)).Deserialize<AgentApproval>(AutomationJson.Options),
+                async (question, token) => (await AskAsync("question", AutomationJson.Element(question), token)).GetString()!, _runCancellation!.Token);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        { /* The harness retains the failure in task status and its public thread. */ }
+        finally { lock (_gate) _runningId = null; }
+    }
+
+    private async Task<JsonElement> AskAsync(string kind, JsonElement content, CancellationToken token)
+    {
+        var item = new Pending(Guid.NewGuid().ToString("N"), _runningId!, kind, content);
+        _pending.TryAdd(item.Id, item);
+        try { return await item.Completion.Task.WaitAsync(token); }
+        finally { _pending.TryRemove(item.Id, out _); }
+    }
+
+    private IAgentProvider Provider(string id) => _providers.TryGetValue(id, out var provider) ? provider : throw new ArgumentException("Provider is not configured in the companion.");
+    private static T Read<T>(JsonElement arguments) => arguments.Deserialize<T>(AutomationJson.Options) ?? throw new ArgumentException("Arguments are required.");
+    public void Stop() { lock (_gate) _runCancellation?.Cancel(); _harness.Stop(); }
+    public void Dispose() { _lifetime.Cancel(); _harness.Dispose(); _runCancellation?.Dispose(); _lifetime.Dispose(); }
+    private sealed record Pending(string Id, string TaskId, string Kind, JsonElement Content)
+    { public TaskCompletionSource<JsonElement> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously); }
+    public sealed record IdArgs(string Id);
+    public sealed record TextArgs(string Id, string Text);
+    public sealed record ProviderArgs(string Provider);
+    public sealed record CreateArgs(string Name, string Provider, string Model);
+    public sealed record RunArgs(string Id, string? Message, AgentRunOptions Options);
+    public sealed record ResponseArgs(string Id, JsonElement Value);
+    public sealed record RestoreArgs(string Id, string[] Paths, long ExpectedRevision);
+}
+
+public sealed class BrowserAgentWorkspace(IAutomationHost host) : IAgentWorkspace
+{
+    public async Task<AgentWorkspaceSnapshot> CaptureAsync(CancellationToken cancellationToken)
+    {
+        var value = await host.CallAsync("xamlg_project_export", AutomationJson.Element(new { }), new("Agent checkpoint", cancellationToken));
+        return new(value.GetProperty("revision").GetInt64(), value.GetProperty("documents").Deserialize<Dictionary<string, string>>(AutomationJson.Options)!);
+    }
+    public async Task<AgentWorkspaceSnapshot> RestoreAsync(long expectedRevision, IReadOnlyList<AgentFileChange> files, CancellationToken cancellationToken)
+    {
+        var value = await host.CallAsync("xamlg_project_restore", AutomationJson.Element(new { expectedRevision, files }), new("Agent change review", cancellationToken));
+        return new(value.GetProperty("revision").GetInt64(), value.GetProperty("documents").Deserialize<Dictionary<string, string>>(AutomationJson.Options)!);
+    }
+}

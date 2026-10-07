@@ -29,14 +29,16 @@ jobs:
       - name: Prepare pinned editor and test assets
         working-directory: tools/XamlG.Playground
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run prepare-assets
           npx playwright install --with-deps chromium
       - name: Publish production browser host
         run: dotnet publish tools/XamlG.Playground/XamlG.Playground.csproj -c Release -p:NuGetAudit=false -o artifacts/playground
       - name: Browser acceptance tests
         working-directory: tools/XamlG.Playground
-        run: npm test
+        run: |
+          dotnet build ../XamlG.Studio.Host -c Release -warnaserror
+          python ../../scripts/test-browser-studio.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

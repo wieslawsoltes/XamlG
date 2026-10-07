@@ -1,0 +1,117 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JavaScript
+
+<section class="agent-workbench" aria-label="Coding agent workbench">
+    <header class="agent-heading"><h2>CODING AGENT</h2><button @onclick="RefreshAsync" disabled="@_refreshing">Refresh</button></header>
+    @if (!_connected)
+    {
+        <p class="empty">Enable Agent access and connect the local companion to run coding agents. Provider keys stay in the companion environment.</p>
+    }
+    else
+    {
+        <details class="agent-create" open="@(_state.Tasks.Length == 0)">
+            <summary>New task</summary>
+            @if (_state.Providers.Length == 0) { <p>Configure a provider key in the companion environment, then restart it.</p> }
+            <label>Provider <select aria-label="Provider" @bind="_provider">@foreach (var provider in _state.Providers) { <option>@provider</option> }</select></label>
+            <label>Model <input @bind="_model" list="agent-models" placeholder="Model ID" /></label>
+            <datalist id="agent-models">@foreach (var model in _models) { <option value="@model" /> }</datalist>
+            <button @onclick="DiscoverModelsAsync" disabled="@(string.IsNullOrEmpty(_provider))">Discover models</button>
+            <label>Task name <input @bind="_name" maxlength="200" /></label>
+            <button @onclick="CreateAsync" disabled="@(string.IsNullOrWhiteSpace(_model) || string.IsNullOrWhiteSpace(_provider) || _state.Tasks.Length >= 8)">Create task</button>
+        </details>
+        @if (_state.Tasks.Length > 0)
+        {
+            <label>Task <select aria-label="Task" value="@_selectedId" @onchange="SelectTaskAsync">@foreach (var task in _state.Tasks) { <option value="@task.Id">@task.Name · @task.Status</option> }</select></label>
+        }
+        @if (Selected is { } selected)
+        {
+            <div class="agent-task-actions">
+                <input aria-label="Rename task" @bind="_taskName" maxlength="200" />
+                <button @onclick='() => CommandAsync("rename", new { id = selected.Id, text = _taskName })' disabled="@IsRunning(selected)">Rename</button>
+                <button @onclick='() => CommandAsync("delete", new { id = selected.Id })' disabled="@IsRunning(selected)">Delete</button>
+                <button @onclick="ExportAsync">Export thread</button>
+            </div>
+            <p role="status">@selected.Status · @selected.TotalTokens.ToString("N0") tokens · @selected.CheckpointCount checkpoints @selected.StatusReason</p>
+            <details class="agent-options">
+                <summary>Run permissions and limits</summary>
+                <p>The live project's access policy also applies to every operation.</p>
+                <label>Task permission profile <select aria-label="Task permission profile" @bind="_profile">@foreach (var profile in Profiles) { <option>@profile</option> }</select></label>
+                <label><input type="checkbox" @bind="_neverAsk" /> Deny operations that require a review</label>
+                @foreach (var scope in Scopes)
+                {
+                    <label>@scope <select value="@_scopes.GetValueOrDefault(scope, "default")" @onchange="args => ChangeScope(scope, args)"><option>default</option><option>allow</option><option>ask</option><option>deny</option></select></label>
+                }
+                <label>Exact tool rules (JSON object) <textarea @bind="_toolRules" rows="2" spellcheck="false" placeholder='{"xamlg_runtime_run":"deny"}' /></label>
+                <label>Requests per run <input type="number" min="1" max="10000" @bind="_requests" /></label>
+                <label>Tool calls per run <input type="number" min="1" max="10000" @bind="_tools" /></label>
+                <label>Output tokens per request <input type="number" min="1" max="1000000" @bind="_outputTokens" /></label>
+                <label>Task token budget <input type="number" min="1" max="100000000" @bind="_taskTokens" /></label>
+                <label>Context bytes <input type="number" min="1024" max="16000000" @bind="_contextBytes" /></label>
+                <label>Lease minutes <input type="number" min="1" max="60" @bind="_leaseMinutes" /></label>
+                <label><input type="checkbox" @bind="_autoCompact" /> Compact context automatically at complete tool boundaries</label>
+            </details>
+            @if (selected.Plan.Length > 0)
+            {
+                <ol class="agent-plan">@foreach (var step in selected.Plan) { <li><strong>@step.Status</strong> @step.Text</li> }</ol>
+            }
+            <div class="agent-thread" aria-label="Agent thread" aria-live="polite">
+                @foreach (var item in selected.Events.Where(e => e.Kind is not "text_delta"))
+                {
+                    <article @key="item.Sequence" class="agent-message agent-@item.Kind"><small>@item.Kind</small><pre>@item.Text</pre></article>
+                }
+                @if (_liveText.Length != 0) { <article class="agent-message"><small>assistant · streaming</small><pre>@_liveText</pre></article> }
+            </div>
+            @foreach (var pending in _state.Pending.Where(p => p.TaskId == selected.Id))
+            {
+                <section class="agent-pending" @key="pending.Id" aria-label="Agent request">
+                    @if (pending.Kind == "approval")
+                    {
+                        <h3>Review operation</h3><pre>@pending.Content.GetRawText()</pre>
+                        <button @onclick='() => RespondAsync(pending.Id, "deny")'>Deny</button>
+                        <button @onclick='() => RespondAsync(pending.Id, "allowOnce")'>Allow once</button>
+                        <button @onclick='() => RespondAsync(pending.Id, "allowToolForRun")'>Allow this tool for this run</button>
+                    }
+                    else
+                    {
+                        <h3>@pending.Content.GetProperty("question").GetString()</h3>
+                        @if (pending.Content.TryGetProperty("options", out var options) && options.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        {
+                            @foreach (var option in options.EnumerateArray()) { <button @onclick="() => RespondAsync(pending.Id, option.GetString()!)">@option.GetString()</button> }
+                        }
+                        <label>Answer <input @bind="_answer" maxlength="16384" /></label><button @onclick="() => RespondAsync(pending.Id, _answer)">Send answer</button>
+                    }
+                </section>
+            }
+            <label>Message <textarea value="@_draft" @oninput="DraftChangedAsync" rows="4" maxlength="262144" placeholder="Describe the change or investigation" /></label>
+            <div class="agent-run-actions">
+                <button class="primary" @onclick="RunAsync" disabled="@(IsRunning(selected) || selected.Status is "paused" or "cancelled" or "failed" || string.IsNullOrWhiteSpace(_draft))">Run</button>
+                <button @onclick="ResumeAsync" disabled="@(selected.Status != "paused")">Resume</button>
+                <button @onclick='() => CommandAsync("queue", new { id = selected.Id, text = _draft })' disabled="@(string.IsNullOrWhiteSpace(_draft) || (!IsRunning(selected) && selected.Status != "paused"))">Queue follow-up</button>
+                <button @onclick='() => CommandAsync("stop", new { })' disabled="@(!_state.Tasks.Any(IsRunning))">Stop &amp; revoke</button>
+                <button @onclick='() => CommandAsync("compact", new { id = selected.Id })' disabled="@IsRunning(selected)">Compact context</button>
+            </div>
+            @if (selected.QueuedMessages.Length > 0)
+            {
+                <details><summary>@selected.QueuedMessages.Length queued follow-ups</summary>@foreach (var message in selected.QueuedMessages) { <pre>@message</pre> }
+                    <button @onclick='() => CommandAsync("clear_queue", new { id = selected.Id })'>Clear queue</button></details>
+            }
+            @if (selected.Changes is { Files.Length: > 0 } changes)
+            {
+                <details class="agent-changes">
+                    <summary>Review @changes.Files.Length changed source files</summary>
+                    @foreach (var file in changes.Files)
+                    {
+                        <label><input type="checkbox" checked="@_restorePaths.Contains(file.Path)" @onchange="args => SelectRestore(file.Path, args)" /> @file.Path (@file.BeforeLength → @file.AfterLength characters)</label>
+                    }
+                    <button @onclick="PreviewChangesAsync">Show before and after</button>
+                    <button @onclick="RestoreAsync" disabled="@(IsRunning(selected) || _restorePaths.Count == 0)">Restore selected files</button>
+                    @foreach (var file in _changePreview)
+                    {
+                        <details><summary>@file.Path</summary><h4>Before</h4><pre>@file.Before</pre><h4>After</h4><pre>@file.After</pre></details>
+                    }
+                </details>
+            }
+        }
+    }
+    @if (_error != null) { <p class="runtime-error" role="alert">@_error</p> }
+</section>

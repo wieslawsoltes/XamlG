@@ -125,12 +125,14 @@ jobs:
       - run: dotnet workload install wasm-tools --skip-manifest-update
       - working-directory: tools/XamlG.Playground
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run prepare-assets
           npx playwright install --with-deps chromium
       - run: dotnet publish tools/XamlG.Playground -c Release -p:NuGetAudit=false -o artifacts/playground
       - working-directory: tools/XamlG.Playground
-        run: npm test
+        run: |
+          dotnet build ../XamlG.Studio.Host -c Release -warnaserror
+          python ../../scripts/test-browser-studio.py
   github-release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [packages, upstream, themes, browser]

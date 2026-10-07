@@ -13,6 +13,7 @@ public partial class App
 
     protected override void OnInitialized()
     {
+        InitializeAutomation();
         Preview.SourceSelected = source => InvokeAsync(() => SelectVisualSourceAsync(source));
         Preview.EditRequested = edit => InvokeAsync(() => CommitVisualEditAsync(edit));
         Preview.Error = error => { Report(error); _ = InvokeAsync(StateHasChanged); };

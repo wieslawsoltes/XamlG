@@ -48,7 +48,7 @@ XamlX is test-only, not a production dependency. Neither suite certifies every f
 
 `host-integration.yml` runs `test-lsp-host.py`, `test-lsp-features.py`, `test-lsp-csharp.py`, `test-lsp-diagnostic-contract.py`, `test-lsp-watch.py`, `test-lsp-resources.py`, `test-lsp-pull.py`, and `test-lsp-file-moves.py` against the actual executable. Tests include framed transport, versioned/legacy edits, no implicit writes, references, automatic refresh, diagnostic caching, publication freshness and shutdown.
 
-`eng/release-manifest.json` defines fourteen shipping packages, including the single-reference `XamlG.Avalonia` integration package. Release validation inspects analyzer/runtime dependencies, installs CLI/LSP into a clean tool environment and executes portable and Avalonia application consumers.
+`eng/release-manifest.json` defines nineteen shipping packages, including the single-reference `XamlG.Avalonia` integration package and reusable automation, MCP and agent packages. Release validation inspects analyzer/runtime dependencies, installs CLI/LSP/Studio into clean tool environments and executes portable, Avalonia and standalone agent consumers.
 
 `scripts/test-shipping-consumer.py` additionally checks handwritten/URI loader adaptation, repeated initialization, real binary and managed manifest-resource contents, two target frameworks, unchanged-build output timestamps, source edits, resource renames, CLI adapter/source/assembly output, protection of externally edited generated files, and clean/rebuild. Building a resource-bearing assembly without loading its assets is insufficient.
 

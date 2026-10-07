@@ -47,8 +47,11 @@ public partial class App
                 _status = $"Loading compiler metadata · {current} / {total}";
                 _ = InvokeAsync(StateHasChanged);
             });
+            await _module.InvokeVoidAsync("waitForElement", "avalonia-preview");
             await Preview.InitializeAsync("avalonia-preview", new Uri(Navigation.BaseUri));
             _ready = true;
+            _automationReference = DotNetObjectReference.Create(this);
+            await _module.InvokeVoidAsync("installAutomation", _automationReference);
             _status = "Ready · compile or run the project";
             await CompileSnapshotAsync();
         }
@@ -215,6 +218,9 @@ public partial class App
     }
     public async ValueTask DisposeAsync()
     {
+        RevokeAutomation(); _runtimeInspector?.Dispose();
+        if (_module != null) await _module.InvokeVoidAsync("disconnectAutomation");
+        _automationReference?.Dispose();
         _disposed = true; Preview.Dispose();
         if (_module != null) await _module.DisposeAsync();
     }

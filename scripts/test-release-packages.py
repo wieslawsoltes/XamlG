@@ -64,6 +64,7 @@ def main():
         run(cli, 'compile', '--project', project, '--framework', 'Portable', '--output', str(work / 'project'),
             '--emit-assembly', str(work / 'project/WorkspaceSmoke.dll'), env=environment)
         run('python', 'scripts/test-shipping-consumer.py', '--config', str(config), '--version', args.version, '--cli', cli, env=environment)
+        run('python', 'scripts/test-studio-packages.py', '--packages', str(packages), '--version', args.version)
         print('PASS: installed CLI/LSP, protocol suites, portable/Avalonia consumers, single-reference shipping and evaluated resource emission.')
 
 

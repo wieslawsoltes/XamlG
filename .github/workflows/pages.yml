@@ -32,13 +32,15 @@ jobs:
       - name: Prepare editor and browser testing assets
         working-directory: tools/XamlG.Playground
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run prepare-assets
           npx playwright install --with-deps chromium
       - run: dotnet publish tools/XamlG.Playground/XamlG.Playground.csproj -c Release -p:NuGetAudit=false -o artifacts/playground
       - name: Execute browser acceptance tests before deployment
         working-directory: tools/XamlG.Playground
-        run: npm test
+        run: |
+          dotnet build ../XamlG.Studio.Host -c Release -warnaserror
+          python ../../scripts/test-browser-studio.py
       - name: Prepare repository-relative routes and build identity
         env:
           SOURCE_SHA: ${{ github.sha }}
@@ -98,7 +100,7 @@ jobs:
       - name: Test the public deployment
         working-directory: tools/XamlG.Playground
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps chromium
           npm test
       - uses: actions/upload-artifact@v4

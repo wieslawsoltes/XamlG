@@ -1,3 +1,5 @@
+@using Dockyard.Blazor
+@using System.Text.Json
 @implements IAsyncDisposable
 @inject BrowserCompilerService Compiler
 @inject AvaloniaPreviewHost Preview
@@ -7,6 +9,7 @@
 <link rel="stylesheet" href="designer.css" />
 <link rel="stylesheet" href="resources.css" />
 <link rel="stylesheet" href="authoring.css" />
+<link rel="stylesheet" href="agent-workbench.css" />
 <div class="studio" inert="@(_renameVisible || _actionsVisible || _fileMoveVisible)" data-ready="@(_ready ? "true" : "false")">
     <header class="titlebar">
         <div class="brand"><span class="brand-mark">X</span><strong>XamlG</strong><span class="brand-divider"></span><span>Compiler Studio</span><span class="badge">PREVIEW</span></div>
@@ -24,8 +27,11 @@
         <button @onclick="RedoAsync" disabled="@(!_workspaceEdits.CanRedo || _busy)" title="Redo source edit">↷ Redo</button>
         <button @onclick="RestoreDraftAsync" disabled="@(!_ready || _busy)">Restore draft</button>
         <button @onclick="ExportAsync" disabled="@(!_ready || _busy)">Export</button>
+        <button @onclick="ResetDockyardAsync" disabled="@(!_dockReady)">Reset layout</button>
+        <button @onclick='() => ShowPaneAsync("agent")' disabled="@(!_dockReady)" data-testid="agent-workbench">Coding agent</button>
+        <button @onclick="() => _automationVisible = !_automationVisible" data-testid="agent-access">@(_sharing ? "● Agent access" : "Agent access")</button>
     </div>
-    <main class="workspace">
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("explorer")" Context="pane">
         <aside class="explorer">
             <h2>EXPLORER</h2>
             <div class="project-label">⌄ &nbsp; PLAYGROUND</div>
@@ -35,7 +41,9 @@
             <div class="explorer-note"><span class="eyebrow">ONE COMPILER</span><p>Syntax → Roslyn symbols → typed operations → C#.</p><p>@PlaygroundExamples.All[_exampleIndex].Description</p></div>
             <div class="trust-note">Run preview and Design execute trusted code in this tab. Run isolated uses a separate opaque-origin frame. Compilation never sends source to a server.</div>
         </aside>
-        <section class="source-pane">
+    </BrowserTemplate>
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("source")" Context="pane">
+<section class="source-pane dock-source">
             <div class="tabbar" role="tablist">
                 <button class="@(_editorTab == "xaml" ? "active" : "")" @onclick='() => _editorTab = "xaml"' role="tab" aria-selected="@(_editorTab == "xaml")">◇ &nbsp; View.axaml</button>
                 <button class="@(_editorTab == "code" ? "active" : "")" @onclick='() => _editorTab = "code"' role="tab" aria-selected="@(_editorTab == "code")"># &nbsp; Code.cs</button>
@@ -49,6 +57,10 @@
                 <div class="editor-page @(_editorTab == "xaml" ? "visible" : "")"><CodeEditor @ref="_xamlEditor" Text="@_document.Current.Text" TextChanged="XamlChangedAsync" Language="xml" DocumentPath="View.axaml" AuthoringRequested="AuthoringCommandAsync" RunRequested="RunCurrentModeAsync" /></div>
                 <div class="editor-page @(_editorTab == "code" ? "visible" : "")"><CodeEditor @ref="_codeEditor" Text="@_code" TextChanged="CodeChangedAsync" Language="csharp" DocumentPath="Code.cs" AuthoringRequested="AuthoringCommandAsync" RunRequested="RunCurrentModeAsync" /></div>
             </div>
+
+        </section>
+    </BrowserTemplate>
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("problems")" Context="pane">
             <section class="diagnostics" aria-label="Compiler diagnostics">
                 <div class="panel-heading"><h2>PROBLEMS <span class="count">@(_result?.Diagnostics.Length ?? 0)</span></h2><small>@(_result == null ? "Compile to inspect" : $"{_result.ElapsedMilliseconds:0.0} ms · semantic analysis + C# diagnostics")</small></div>
                 @if (_error != null) { <div class="runtime-error" role="alert">@_error</div> }
@@ -61,8 +73,9 @@
                     }
                 }
             </section>
-        </section>
-        <section class="inspection-pane">
+    </BrowserTemplate>
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("preview")" Context="pane">
+        <section class="dock-preview">
             <div class="preview-heading">
                 <h2>@(_isolationVisible ? "ISOLATED PREVIEW" : "LIVE PREVIEW") <span class="badge subtle">AVALONIA</span></h2>
                 <DesignerCommands Enabled="_designMode" Disabled="@(_busy || _isolationVisible || Preview.Root == null)" Toggle="ToggleDesignMode" />
@@ -73,7 +86,10 @@
                 <div class="isolated-container @(_isolationVisible ? "visible" : "")"><IsolatedPreview @ref="_isolatedPreview" /></div>
                 @if (!_previewShown && !_isolationVisible) { <div class="preview-placeholder"><span>◇</span><strong>From source to pixels.</strong><p>Run the compiled document to see its actual Avalonia controls.</p></div> }
             </div>
-            <div class="tabbar inspector-tabs" role="tablist">
+        </section>
+    </BrowserTemplate>
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("inspector")" Context="pane">
+<section class="dock-inspector">            <div class="tabbar inspector-tabs" role="tablist">
                 @foreach (var tab in InspectorTabs)
                 {
                     <button class="@(_inspectorTab == tab ? "active" : "")" @onclick="() => _inspectorTab = tab" role="tab" aria-selected="@(_inspectorTab == tab)">@tab</button>
@@ -121,10 +137,40 @@
                     </div>
                 }
             </div>
-        </section>
+</section>
+    </BrowserTemplate>
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("agent")" Context="pane"><AgentWorkbench /></BrowserTemplate>
+    <main class="dockyard-workspace" aria-label="Docking workspace">
+        <DockingManager @ref="_dock" Theme="@_theme" Ready="InitializeDockyardAsync" Changed="DockyardChangedAsync" Style="height:100%;width:100%" />
     </main>
     <footer class="statusbar"><span><i class="@(_error == null ? "success-dot" : "error-dot")"></i>@_status</span><span>@Compiler.ReferenceCount references <span class="status-divider">│</span> UTF-16 <span class="status-divider">│</span> Roslyn · .NET 10</span></footer>
 </div>
+
+@if (_automationVisible)
+{
+    <section class="automation-dialog" role="dialog" aria-label="Agent access">
+        <h2>MCP agent access</h2>
+        <label><input type="checkbox" checked="@_sharing" @onchange="SetAutomationSharing" /> Enable access to this live project</label>
+        <label>Permission profile <select aria-label="Permission profile" @bind="_automationProfile">@foreach (var profile in Enum.GetValues<XamlG.Automation.PermissionProfile>()) { <option value="@profile">@profile</option> }</select></label>
+        <p>Runtime operations execute application code. Source edits use the project’s normal revision checks and undo.</p>
+        <label>Companion WebSocket <input @bind="_companionUrl" /></label>
+        <label>Local access token <input type="password" autocomplete="off" @bind="_companionToken" /></label>
+        <div><button @onclick="ConnectAutomationAsync" disabled="@(!_sharing)">Connect companion</button><button @onclick="DisconnectAutomationAsync">Revoke &amp; disconnect</button></div>
+        <p role="status">@_connectionStatus · @_automation.Tools.Count tools</p>
+        <details><summary>Tool catalog</summary>@foreach (var tool in _automation.Tools) { <p><code>@tool.Name</code> — @tool.Description</p> }</details>
+        <button @onclick="() => _automationVisible = false">Close</button>
+    </section>
+}
+@if (_automationReview != null)
+{
+    <section class="automation-dialog automation-review" role="dialog" aria-label="Review agent operation" aria-modal="true">
+        <h2>Review @_automationReview.Tool.Name</h2>
+        <p>@_automationReview.Tool.Description</p>
+        <pre>@_automationReview.Arguments.GetRawText()</pre>
+        <button @onclick="() => ApproveAutomation(false)" autofocus>Deny</button>
+        <button @onclick="() => ApproveAutomation(true)">Allow once</button>
+    </section>
+}
 
 <AuthoringDialog RenameVisible="_renameVisible" ActionsVisible="_actionsVisible" Busy="_busy"
     OriginalName="@_renameOriginal" NewName="@_renameName" NewNameChanged="RenameNameChanged"

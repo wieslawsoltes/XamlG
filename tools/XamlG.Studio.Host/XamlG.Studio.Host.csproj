@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackAsTool>true</PackAsTool>
+    <IsPackable>true</IsPackable>
+    <ToolCommandName>xamlg-studio</ToolCommandName>
+    <Description>Loopback MCP and coding-agent companion for the XamlG Dockyard IDE.</Description>
+    <NoWarn>$(NoWarn);OPENAI001</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/XamlG.Mcp/XamlG.Mcp.csproj" />
+    <ProjectReference Include="../../src/XamlG.Agents.OpenAI/XamlG.Agents.OpenAI.csproj" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+  </ItemGroup>
+</Project>
