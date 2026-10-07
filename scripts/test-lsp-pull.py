@@ -19,6 +19,49 @@ def reply(client, request, error=False):
     client.process.stdin.flush()
 
 
+def stream(client, method, parameters, token):
+    """Collect in wire order, including progress received before the terminal reply."""
+    client.sequence += 1
+    request_id = client.sequence
+    client.send(method, {**parameters, 'partialResultToken': token}, request_id=request_id)
+    values = []
+    while True:
+        message = client.receive(lambda m: m.get('id') == request_id or m.get('method') == '$/progress')
+        if message.get('id') == request_id:
+            assert 'error' not in message, message
+            return values, message['result']
+        actual = message['params']['token']
+        assert type(actual) is type(token) and actual == token, 'Progress must preserve the request token and its JSON type.'
+        assert 'id' not in message
+        values.append(message['params']['value'])
+
+
+def related_stream(client, uri, expected, token, previous=None):
+    parameters = {'textDocument': {'uri': uri}, 'identifier': 'xamlg'}
+    if previous is not None:
+        parameters['previousResultId'] = previous
+    values, terminal = stream(client, 'textDocument/diagnostic', parameters, token)
+    assert terminal is None and values
+    primary = dict(values[0])
+    assert primary == {key: value for key, value in expected.items() if key != 'relatedDocuments'}
+    related = {}
+    for value in values[1:]:
+        assert set(value) == {'relatedDocuments'} and 1 <= len(value['relatedDocuments']) <= 32
+        assert not related.keys() & value['relatedDocuments'].keys(), 'A related URI must not be duplicated.'
+        related.update(value['relatedDocuments'])
+    assert related == expected.get('relatedDocuments', {})
+
+
+def workspace_stream(client, expected, token, previous=()):
+    values, terminal = stream(client, 'workspace/diagnostic', {'previousResultIds': list(previous)}, token)
+    assert terminal == {'items': []}
+    assert all(set(value) == {'items'} and 1 <= len(value['items']) <= 32 for value in values)
+    reports = [item for value in values for item in value['items']]
+    assert len({item['uri'] for item in reports}) == len(reports)
+    assert reports == expected
+    return reports
+
+
 def main():
     host = Path(sys.argv[1]).resolve()
     project = Path('tests/ResourceWorkspaceSmoke/ResourceWorkspaceSmoke.csproj').resolve()
@@ -69,6 +112,12 @@ def main():
             failed = pull(caller, initial_ids[caller])
             assert failed['kind'] == 'full' and any(d['code'] == 'XG3305' for d in failed['items'])
             assert failed['relatedDocuments'][resource]['items'], 'Include failures must carry related resource diagnostics.'
+            # The primary report comes before related maps and is not repeated in the response.
+            for progress_token in ('resource/Zażółć 😀', 0, ''):
+                related_stream(client, caller, pull(caller), progress_token)
+            stable = pull(caller, failed['resultId'])
+            related_stream(client, caller, stable, 'unchanged-document', failed['resultId'])
+            assert client.request('textDocument/diagnostic', {'textDocument': {'uri': caller}, 'workDoneToken': 'not-a-partial-token'}) == pull(caller)
             reported = workspace(previous(initial))
             indexed = {r['uri']: r for r in reported}
             assert indexed[caller]['version'] == 1 and indexed[resource]['version'] == 4
@@ -97,6 +146,58 @@ def main():
             clears = {r['uri']: r for r in workspace(previous(all_open))}
             assert clears[scratch]['kind'] == 'full' and clears[scratch]['items'] == [] and clears[scratch]['version'] is None
 
+            # More than two batches through the actual process and installed-package host.
+            scratch_uris = [f'untitled:Streaming-{index:03d}.axaml' for index in range(70)]
+            for index, scratch_uri in enumerate(scratch_uris):
+                client.send('textDocument/didOpen', {'textDocument': {'uri': scratch_uri, 'languageId': 'xaml',
+                            'version': index + 10, 'text': '<Broken'}})
+            many = workspace()
+            assert len(many) == 72
+            workspace_stream(client, many, 0)
+            ids = previous(many)
+            unchanged_many = workspace(ids)
+            assert all(report['kind'] == 'unchanged' and 'items' not in report for report in unchanged_many)
+            workspace_stream(client, unchanged_many, 'unchanged-workspace', ids)
+
+            # Interleaving two requests must not mix their tokens, report values or terminal replies.
+            pending = {}
+            for progress_token in ('concurrent-string', 23):
+                client.sequence += 1
+                pending[client.sequence] = {'token': progress_token, 'items': []}
+                client.send('workspace/diagnostic', {'previousResultIds': [], 'partialResultToken': progress_token}, request_id=client.sequence)
+            while pending:
+                message = client.receive(lambda m: m.get('id') in pending or m.get('method') == '$/progress')
+                if message.get('id') in pending:
+                    state = pending.pop(message['id'])
+                    assert message.get('result') == {'items': []}, message
+                    assert state['items'] == many
+                else:
+                    token = message['params']['token']
+                    matches = [state for state in pending.values() if type(state['token']) is type(token) and state['token'] == token]
+                    assert len(matches) == 1, 'Unexpected, cross-request or post-completion progress token.'
+                    matches[0]['items'].extend(message['params']['value']['items'])
+
+            # Invalid tokens and even a late bad previous URI fail before emitting anything.
+            invalid = [({'partialResultToken': value, 'previousResultIds': []})
+                       for value in (None, True, {}, [], 1.5, 2147483648, 'x' * 1025)]
+            invalid.append({'partialResultToken': 'late-invalid', 'previousResultIds':
+                            ids + [{'uri': 'https://invalid.example/document', 'value': ''}]})
+            for parameters in invalid:
+                client.sequence += 1
+                client.send('workspace/diagnostic', parameters, request_id=client.sequence)
+                rejected = client.receive(lambda m: m.get('id') == client.sequence or m.get('method') == '$/progress')
+                assert rejected.get('error', {}).get('code') == -32602, rejected
+            workspace_stream(client, unchanged_many, '', ids)
+
+            for scratch_uri in scratch_uris:
+                client.send('textDocument/didClose', {'textDocument': {'uri': scratch_uri}})
+            removed = workspace(ids)
+            assert len(removed) == 72
+            assert all(report['items'] == [] and report['version'] is None
+                       for report in removed if report['uri'] in scratch_uris)
+            workspace_stream(client, removed, 'removal-clears', ids)
+            assert not any(m.get('method') == '$/progress' for m in client.pending), 'Unrequested progress or duplicated terminal data.'
+
             # Reply to an outstanding refresh and verify the protocol still serves ordinary requests.
             refresh = client.receive(lambda m: m.get('method') == 'workspace/diagnostic/refresh')
             reply(client, refresh, error=True)
@@ -106,7 +207,7 @@ def main():
             client.request('shutdown')
             client.send('exit'); client.process.stdin.close()
             assert client.process.wait(timeout=15) == 0
-            print('PASS: pull capability, closed/workspace reports, stable/foreign IDs, related dependencies, unchanged versions, removal clears, refresh replies and graceful shutdown.')
+            print('PASS: pull capability, closed/workspace reports, stable/foreign IDs, related dependencies, unchanged versions, removal clears, refresh replies, streamed document/related reports, multi-batch and concurrent workspace streams, invalid-token recovery and graceful shutdown.')
         except Exception:
             stderr.seek(0)
             print(stderr.read().decode('utf8', errors='replace'), file=sys.stderr)

@@ -18,14 +18,21 @@ public sealed partial class XamlLanguageServer
                 report: error => _ = _log.WriteLineAsync("diagnostic refresh: " + error.Message));
         return new { capabilities = LspServerCapabilities.Create(_clientFeatures), serverInfo = new { name = "XamlG", version = "0.1.0-alpha.1" } };
     }
-    private object? HandleWorkspaceRequest(string method, JsonElement parameters, LspWorkspaceAnalysis workspace,
-        LspDocumentSetSnapshot buffers, CancellationToken token) => method switch
+    private async ValueTask<object?> HandleWorkspaceRequestAsync(string method, JsonElement parameters, LspWorkspaceAnalysis workspace,
+        LspDocumentSetSnapshot buffers, Func<bool> isCurrent, CancellationToken token)
     {
-        LspDiagnosticMethods.Document or LspDiagnosticMethods.Workspace => new LspPullDiagnosticRequests(_diagnosticReports, _clientFeatures.RelatedDiagnostics)
-            .Handle(method, parameters, workspace, buffers, token),
-        LspFileRenameRequests.Method => new LspFileRenameRequests(workspace.Compiler, _versionedEdits).Handle(parameters, buffers, workspace.Documents, token),
-        _ => new LspRequestHandler(workspace.Compiler, _documents, _semanticTokens, _versionedEdits).Handle(method, parameters, token, buffers, workspace.Documents)
-    };
+        if (LspDiagnosticMethods.IsPull(method))
+            return await new LspPullDiagnosticRequests(_diagnosticReports, _clientFeatures.RelatedDiagnostics)
+                .HandleAsync(method, parameters, workspace, buffers, async (message, cancellation) =>
+                {
+                    if (!await _connection.TryWriteAsync(message, isCurrent, cancellation).ConfigureAwait(false))
+                        throw new LspRequestException(-32802, "The diagnostic snapshot was superseded; pull again.")
+                        { ErrorData = new { retriggerRequest = true } };
+                }, token).ConfigureAwait(false);
+        return method == LspFileRenameRequests.Method
+            ? new LspFileRenameRequests(workspace.Compiler, _versionedEdits).Handle(parameters, buffers, workspace.Documents, token)
+            : new LspRequestHandler(workspace.Compiler, _documents, _semanticTokens, _versionedEdits).Handle(method, parameters, token, buffers, workspace.Documents);
+    }
     private bool AcceptClientResponse(JsonElement message)
     {
         if (!message.TryGetProperty("id", out var id) || id.ValueKind is not (JsonValueKind.String or JsonValueKind.Number) ||

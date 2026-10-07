@@ -38,7 +38,7 @@ Implemented: initialize/shutdown; sequential UTF-16 open/change/close synchroniz
 
 A bounded single-flight cache shares one semantic computation for a compiler/open-buffer-set snapshot between diagnostics and requests. Cancelling one waiter does not cancel other consumers. Snapshot invalidation retires shared work. Distinct document stores with the same numeric revision cannot alias cached work.
 
-Rename follows compiler namescope identities. It updates statically recognized `x:Reference`, Avalonia `ElementName` and `#name` binding paths; root code-behind names include Roslyn-resolved field uses, explicit field declarations and `nameof`. It rejects namescope/member collisions and C# local/parameter capture. It is not arbitrary C# symbol rename and does not rewrite selector strings, runtime string lookups or unknown extension conventions. C# source edits use the evaluated project snapshot; unsaved C# synchronization is not supplied by the XAML document store.
+Rename follows compiler namescope identities. It updates statically recognized `x:Reference`, Avalonia `ElementName` and `#name` binding paths; root code-behind names include Roslyn-resolved field uses, explicit field declarations and `nameof`. It rejects namescope/member collisions and C# local/parameter capture. It is not arbitrary C# symbol rename and does not rewrite selector strings, runtime string lookups or unknown extension conventions. C# source edits use the evaluated compilation plus coherent unsaved C# overlays; open documents retain their actual client URI/version and original UTF-16 offsets.
 
 `workspace.workspaceEdit.documentChanges` is negotiated: supporting clients receive versioned XAML edits and nullable-version loaded C# edits; legacy clients receive `changes`. The server never writes files on behalf of an edit request. The client must validate/apply the returned edits atomically.
 
@@ -46,9 +46,17 @@ Formatting operates on source spans rather than XML serialization. It preserves 
 
 Token histories retain at most two results per document within a document/integer budget. Deltas use common prefix/suffix edits aligned to complete five-integer tokens; unchanged results have no edits, and unknown/evicted/cross-document IDs return a full result. Range results use absolute document positions. Multiline source occurrences are split by line.
 
-Decompiled metadata navigation, arbitrary C# symbol rename, file-rename edits, project-wide generated-code refactoring and pull-diagnostic result IDs are not advertised. See [authoring APIs](authoring.md) and [feature status](feature-status.md).
+Decompiled metadata navigation, arbitrary C# symbol rename and project-wide generated-code refactoring are not advertised. Resource file/folder moves and document/workspace pull diagnostics are supported, including cached result IDs and optional partial-result streaming. See [authoring APIs](authoring.md) and [feature status](feature-status.md).
 
 Publication rechecks project and buffer-set freshness under the output gate. Cancellation can discard queued work but cannot truncate an admitted Content-Length frame. Partial writes, flush failures and deadlines permanently close the transport. See [publication invariants](lsp-publication.md).
+
+## Pull diagnostics and partial results
+
+Clients opt into pull mode with `textDocument.diagnostic`. Related-document reports require `relatedDocumentSupport`; diagnostic refresh requests require `workspace.diagnostics.refreshSupport`. Without pull negotiation the existing push behavior remains.
+
+Both `textDocument/diagnostic` and `workspace/diagnostic` accept a request-scoped `partialResultToken`. A streamed document sends its primary full/unchanged report first, followed by related-document batches, and ends with a `null` response result. A streamed workspace sends ordered `items` batches and ends with `{ "items": [] }`. Requests without the token retain the ordinary complete response. `workDoneToken` does not enable partial results.
+
+Batches contain at most 32 document reports and target 256 KiB of serialized JSON. One larger document remains indivisible and is still subject to the transport payload limit. Every frame checks project/open-buffer freshness under the existing publication gate; backpressure and cancellation apply between batches. Full/unchanged cache identity, document versions and removed-file clears are shared with non-streaming pulls. See [the complete wire contract](diagnostic-streaming.md) and [pull validation](pull-diagnostic-validation.md).
 
 ## Validation
 

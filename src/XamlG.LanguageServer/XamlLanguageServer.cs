@@ -122,6 +122,7 @@ public sealed partial class XamlLanguageServer : IAsyncDisposable
         var acquired = false;
         LspCompilationSnapshot? project = null;
         LspDocumentSetSnapshot? buffers = null;
+        bool IsCurrent() => project == null || !_shutdown && !_stopping && ReferenceEquals(project, Volatile.Read(ref _project)) && buffers != null && _documents.IsCurrent(buffers);
         try
         {
             await _parallelism.WaitAsync(source.Token); acquired = true;
@@ -143,9 +144,8 @@ public sealed partial class XamlLanguageServer : IAsyncDisposable
                 project = Volatile.Read(ref _project); buffers = _documents.Capture();
                 _requestProjects[key] = project; _requestDocumentSets[key] = buffers.Revision;
                 var workspace = await _analysisCache.GetWorkspaceAsync(project.Compiler, buffers, source.Token);
-                result = HandleWorkspaceRequest(method, parameters, workspace, buffers, source.Token);
+                result = await HandleWorkspaceRequestAsync(method, parameters, workspace, buffers, IsCurrent, source.Token);
             }
-            bool IsCurrent() => project == null || !_shutdown && ReferenceEquals(project, Volatile.Read(ref _project)) && buffers != null && _documents.IsCurrent(buffers);
             if (!await _connection.TryWriteAsync(new { jsonrpc = "2.0", id, result }, IsCurrent, source.Token))
                 await StaleResultAsync(id, method);
         }
@@ -160,7 +160,7 @@ public sealed partial class XamlLanguageServer : IAsyncDisposable
             }
         }
         catch (LspTransportException error) { await _log.WriteLineAsync("transport: " + error.Message); }
-        catch (LspRequestException error) { await ErrorAsync(id, error.Code, error.Message); }
+        catch (LspRequestException error) { await ErrorAsync(id, error.Code, error.Message, error.ErrorData); }
         catch (Exception error)
         {
             await _log.WriteLineAsync(error.ToString());

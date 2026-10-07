@@ -10,6 +10,16 @@ The LRU is bounded by document count and estimated character retention. Oversize
 
 These contracts are covered by `DiagnosticCacheTests` and `DiagnosticCacheBoundaryTests`, including Unicode, report ordering/removal, malformed input, capacity pressure and cancellation. `DiagnosticPublicationTests` queues actual diagnostic frames behind a gated stream to test dependency supersession and cancellation of one queued consumer without losing another report. `ProjectAnalysisCacheTests` covers independently cancellable waiters sharing one semantic computation.
 
+## Partial-result streaming
+
+`DiagnosticProgressTests` covers token types/lifetime/limits, exact escaped UTF-8 envelope sizing, 32-document batch boundaries, oversized indivisible reports, related URI maps, backpressure and cancellation before further enumeration. `PullDiagnosticStreamingTests` compares full and streamed report values/IDs, validates the complete request before cache mutation, covers removed reports and verifies recovery after cancellation.
+
+`DiagnosticStreamingServerTests` drives the real server through framed in-memory streams. It pauses an admitted progress payload, then cancels the client request, edits a different open buffer, or replaces the compiler snapshot. The frame finishes, subsequent batches do not publish, the terminal error distinguishes cancellation from retriable supersession, and an ordinary pull succeeds afterward on the same connection. An independent Content-Length reader verifies every emitted frame. Scheduling uses explicit barriers, not sleep-based timing assertions.
+
+The real `test-lsp-pull.py` suite additionally exercises primary-before-related document progress, empty/string/numeric tokens, unchanged document replies, a 72-document workspace, concurrent token-isolated requests, late invalid previous-result parameters, invalid-token recovery and streamed removal clears. The existing installed-tool gate runs this same script; a library-only test is not a substitute.
+
+See [the streaming contract](diagnostic-streaming.md), including the complete-analysis, related-document and individual-payload limits.
+
 ## Real-process and installed-tool suites
 
 ```sh
