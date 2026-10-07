@@ -2,11 +2,37 @@ using System.Collections;
 using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
+using XamlG.Runtime;
+using FrameworkSourceInfo = Avalonia.Markup.Xaml.Diagnostics.XamlSourceInfo;
 
 namespace XamlG.AvaloniaRuntime.Inspection;
 
 public sealed partial class AvaloniaRuntimeInspector
 {
+    /// <summary>Reads framework and generated-object provenance. Keyed resource metadata
+    /// is available before a deferred resource is instantiated.</summary>
+    public RuntimeSourceInspection Source(string objectId, IReadOnlyList<string>? path = null, RuntimeArgument? resourceKey = null)
+    {
+        var target = FollowPath(Resolve(objectId), path);
+        FrameworkSourceInfo? frameworkSource; XamlSourceInfo? source = null;
+        if (resourceKey != null)
+        {
+            var dictionary = target as IResourceDictionary ?? (target as StyledElement)?.Resources
+                ?? throw new ArgumentException("The object path must select a resource dictionary or styled element.");
+            var key = ConvertArgument(resourceKey, typeof(object)) ?? throw new ArgumentException("A resource key cannot be null.");
+            frameworkSource = FrameworkSourceInfo.GetXamlSourceInfo(dictionary, key);
+        }
+        else
+        {
+            frameworkSource = target == null ? null : FrameworkSourceInfo.GetXamlSourceInfo(target);
+            if (target != null)
+                foreach (var owner in _objects.Values)
+                    if (XamlRuntimeSession.TryGet(owner, out var session) && session!.FindNode(target)?.Source is { } found)
+                    { source = found; break; }
+        }
+        return new(Revision, frameworkSource == null ? null : new(frameworkSource.SourceUri?.OriginalString, frameworkSource.LineNumber, frameworkSource.LinePosition), source, resourceKey != null);
+    }
+
     /// <summary>Read one level of a live object path, including DataContext, collections and public application members.</summary>
     public RuntimeObjectInspection InspectObject(string objectId, IReadOnlyList<string>? path = null, int offset = 0, int count = 100, bool includeNonPublic = false)
     {

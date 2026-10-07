@@ -49,6 +49,8 @@ Provider protocol tests must use deterministic transports through the official
 SDKs; live paid-account validation, if unavailable, must be reported separately.
 
 The implementation branch is `codex/studio-mcp-agent`, based on `19cb780`.
+Main is merged at implementation checkpoints; the latest merged upstream commit
+is `d8ecfbe` (deferred resources, selectors, runtime source metadata and literals).
 The original checkout contains unrelated local compiler edits and is left intact.
 The locally available pinned SDK is `/tmp/xamlg-dotnet-10.0.401/dotnet`.
 
@@ -98,7 +100,9 @@ consumer example that uses only NuGet references outside this repository.
 
 ## Local evidence and remaining work
 
-- 468 real-Avalonia tests passed, including fourteen runtime inspector tests.
+- The merged native solution passed 1,165 tests, including 704 real-Avalonia tests.
+  The runtime inspector's fifteen focused tests also pass after adding source
+  provenance for objects and deferred resource keys.
 - 34 automation/MCP/agent tests passed, including actual official MCP, OpenAI,
   Anthropic and Gemini
   SDK transports, permission enforcement, native tool continuation, no replay on
@@ -119,6 +123,9 @@ consumer example that uses only NuGet references outside this repository.
 Runtime tools now include bounded object-path inspection and mutation, loaded type
 discovery, public method invocation with Task/ValueTask results, live control tree
 changes, event watches, binding expressions and style/value-frame diagnostics.
+The browser compiler emits Avalonia's source metadata; `xamlg_runtime_source`
+exposes exact object and resource-key locations alongside generated-object source
+identities. Keyed location reads do not instantiate deferred resources.
 Template-owned visuals require template/source edits; tree operations reject
 unsupported ownership. Diagnostic frame metadata uses the loaded Avalonia runtime.
 

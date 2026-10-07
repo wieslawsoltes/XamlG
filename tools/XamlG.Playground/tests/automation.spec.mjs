@@ -30,6 +30,9 @@ test('shared automation edits, compiles, inspects Roslyn and manipulates real Av
   const greeting = runtime.nodes.find(n => n.name === 'greeting');
   expect(greeting).toBeTruthy();
   expect(greeting.source).toBeTruthy();
+  const provenance = await call(page, 'xamlg_runtime_source', { objectId: greeting.id });
+  expect(provenance.frameworkSource.sourceUri).toBe('file://View.axaml');
+  expect(provenance.frameworkSource.lineNumber).toBe(1);
   expect(greeting.logicalParent).toBe(runtime.rootId);
   const properties = await call(page, 'xamlg_runtime_properties', { objectId: greeting.id });
   const text = properties.properties.find(p => p.name === 'Text');

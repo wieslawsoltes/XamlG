@@ -33,3 +33,5 @@ public sealed record RuntimeFrameValue(string Property, RuntimeValue Value);
 public sealed record RuntimeValueFrame(int Index, string Type, string Priority, bool Active, string SourceType, string? Description, IReadOnlyList<RuntimeFrameValue> Values);
 public sealed record RuntimeBinding(string Property, string Type, string? Description, string? ErrorType, bool? IsRunning, string? Priority, RuntimeValue Value);
 public sealed record RuntimeStyle(int Index, string Type, string? Selector, IReadOnlyList<RuntimeFrameValue> Setters);
+public sealed record RuntimeSourceLocation(string? SourceUri, int LineNumber, int LinePosition);
+public sealed record RuntimeSourceInspection(long Revision, RuntimeSourceLocation? FrameworkSource, XamlSourceInfo? Source, bool ResourceKey);

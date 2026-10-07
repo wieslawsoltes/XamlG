@@ -153,6 +153,19 @@ public sealed class RuntimeInspectorTests
     private static JsonElement Json<T>(T value) => JsonSerializer.SerializeToElement(value);
 
     [AvaloniaFact]
+    public void Source_inspection_reads_emitted_object_and_deferred_resource_key_locations()
+    {
+        const string xaml = "<TextBlock xmlns='https://github.com/avaloniaui' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>\n<TextBlock.Resources>\n<SolidColorBrush x:Key='brush' Color='Red'/>\n</TextBlock.Resources>\n</TextBlock>";
+        var root = Assert.IsType<TextBlock>(AvaloniaCompilation.Build(xaml, true, "View.axaml"));
+        using var inspector = new AvaloniaRuntimeInspector(root); var state = inspector.Capture();
+        var source = inspector.Source(state.RootId);
+        Assert.Equal(new RuntimeSourceLocation("file://View.axaml", 1, 2), source.FrameworkSource);
+        var resource = inspector.Source(state.RootId, ["Resources"], new(Json("brush")));
+        Assert.Equal(new RuntimeSourceLocation("file://View.axaml", 3, 2), resource.FrameworkSource);
+        Assert.True(resource.ResourceKey); Assert.Null(resource.Source);
+    }
+
+    [AvaloniaFact]
     public void Runtime_creation_reordering_reparenting_and_removal_preserve_identity_and_source_independence()
     {
         var left = new StackPanel { Name = "left" }; var right = new Border { Name = "right" };

@@ -7,6 +7,8 @@ public partial class App
 {
     private void AddRuntimeObjectAutomation()
     {
+        AddAutomation<RuntimeSourceArguments>("runtime_source", "Read exact Avalonia source metadata and generated-object provenance for a live object path. Optional resourceKey reads keyed metadata without constructing a deferred resource.", AutomationScope.Runtime, AutomationEffect.Read,
+            (args, _) => RuntimeInspector().Source(args.ObjectId, args.Path, args.ResourceKey));
         AddAutomation<RuntimeTypesArguments>("runtime_types", "Discover loaded runtime types, assemblies and public construction support with bounded pagination.", AutomationScope.Runtime, AutomationEffect.Read,
             (args, _) => new { types = RuntimeInspector().Types(args.Query, args.Offset, args.Count) });
         AddAutomation<RuntimeInspectArguments>("runtime_object_inspect", "Inspect a live object path (including DataContext), collection entries, fields, properties and exact method signatures. Reads one bounded level; getters execute application code.", AutomationScope.Runtime, AutomationEffect.Read,
@@ -50,6 +52,7 @@ public partial class App
     }
 
     public sealed record RuntimeTypesArguments(string Query = "", int Offset = 0, int Count = 100);
+    public sealed record RuntimeSourceArguments(string ObjectId, string[]? Path = null, RuntimeArgument? ResourceKey = null);
     public sealed record RuntimeInspectArguments(string ObjectId, string[]? Path = null, int Offset = 0, int Count = 100, bool IncludeNonPublic = false);
     public sealed record RuntimePathArguments(string ObjectId, string[] Path);
     public sealed record RuntimeMemberArguments(string ObjectId, string[] Path, RuntimeArgument Argument, long ExpectedRevision);

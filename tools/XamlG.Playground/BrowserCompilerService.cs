@@ -61,7 +61,7 @@ public sealed class BrowserCompilerService(HttpClient http)
             new[] { CSharpSyntaxTree.ParseText(code, parseOptions, "Code.cs", cancellationToken: cancellationToken) },
             _references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true,
                 optimizationLevel: OptimizationLevel.Release, nullableContextOptions: NullableContextOptions.Enable));
-        var profile = KnownFrameworkProfiles.Select(compilation, framework);
+        var profile = KnownFrameworkProfiles.Select(compilation, framework, createSourceInfo: true);
         var resourceRevision = Resources.Revision;
         var inputs = Resources.Snapshot.Values.Select(s => new XamlProjectDocument(s, s.Path))
             .Prepend(new XamlProjectDocument(syntax, "View.axaml")).ToArray();
