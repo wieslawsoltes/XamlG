@@ -10,7 +10,7 @@ namespace XamlG.Mcp;
 /// Pairs one authenticated browser with an automation host. Authentication and origin checks
 /// belong to the embedding HTTP host; no request is dispatched before it accepts the catalog.
 /// </summary>
-public sealed class BrowserAutomationBridge : IAutomationHost
+public sealed class BrowserAutomationBridge : IAutomationHost, IAutomationCatalogEvents
 {
     private readonly SemaphoreSlim _sendGate = new(1);
     private readonly object _gate = new();

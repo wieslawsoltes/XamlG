@@ -103,18 +103,36 @@ Optional `IAgentWorkspace` support supplies bounded before/after checkpoints and
 selective source restoration. `scripts/test-studio-packages.py` is an executable
 consumer example that uses only NuGet references outside this repository.
 
+Implement optional `IAutomationCatalogEvents` when a host's tools, resources or
+prompts can change. `AutomationCatalog` and `BrowserAutomationBridge` implement it.
+The MCP adapter maintains SDK primitive collections, preserving other registered
+tools and supporting multiple automation hosts with distinct names. Legacy clients
+receive session catalog notifications; protocol `2026-07-28` clients opt in through
+`subscriptions/listen`, including stateless HTTP. Each stream receives one initial
+acknowledgement and only its requested catalog changes, tagged with the request ID.
+There are at most 64 active catalog subscriptions per embedding service provider;
+each stream coalesces pending changes with constant-size buffering. Disconnecting or
+cancelling releases its observers. Request collections are weakly held and do not
+retain completed HTTP requests. An embedding application's explicit subscription
+handler takes precedence. Resource-content subscriptions are not advertised yet.
+
 ## Local evidence and remaining work
 
 - The merged native solution passed 1,387 tests after merging main through
   `041147c` (Avalonia synthetic converter mappings), including 912 real-Avalonia tests
   and the runtime inspector's fifteen tests for live manipulation and source
   provenance for objects and deferred resource keys.
-- 37 automation/MCP/agent tests passed, including actual official MCP, OpenAI,
+- 41 automation/MCP/agent tests passed, including actual official MCP, OpenAI,
   Anthropic and Gemini
   SDK transports, permission enforcement, native tool continuation, no replay on
   resume, queued messages, compaction and conflict-checked source restoration.
   WebSocket tests cover concurrent admission limits, cancellation, expired owner
   leases and pending calls rejected when their browser disconnects.
+  Catalog tests cover legacy and modern stdio, modern HTTP with separate clients
+  and subscription filters, multiple automation hosts, separately registered SDK
+  tools, cancellation and collection lifetimes. All six automation browser tests
+  pass with the updated companion, including catalog publication/removal when the
+  real browser pairs and revokes access over a modern HTTP subscription.
 - All 21 shipping packages built and passed the release-consumer suite at
   `cf9b8b9`, with consumer fixture updates at `fa15505`. The seven new packages
   built, installed and ran through a separate consumer with an initially empty
@@ -159,7 +177,7 @@ Template-owned visuals require template/source edits; tree operations reject
 unsupported ownership. Diagnostic frame metadata uses the loaded Avalonia runtime.
 
 Full reference parity remains in progress: account-mode support and additional
-provider recovery/limit controls; MCP subscriptions/notifications and session routing;
+provider recovery/limit controls; MCP resource updates, tasks and artifact handling;
 typed runtime input and additional designer/runtime UI; the remaining Roslyn
 authoring surface for the multi-file C# workspace; and the corresponding UI and protocol
 acceptance coverage. This ledger does not claim those capabilities from a build

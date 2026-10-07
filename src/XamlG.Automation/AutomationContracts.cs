@@ -30,6 +30,13 @@ public sealed class AutomationException(string code, string message) : Exception
     public string Code { get; } = code;
 }
 
+/// <summary>Optional dynamic discovery. Raise after publishing the complete catalog change;
+/// this event contains no project source or credentials.</summary>
+public interface IAutomationCatalogEvents
+{
+    event Action? CatalogChanged;
+}
+
 public static class AutomationJson
 {
     public static JsonSerializerOptions Options { get; } = CreateOptions();

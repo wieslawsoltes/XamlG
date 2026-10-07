@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { Readable } from 'node:stream';
+import { finished } from 'node:stream/promises';
+import { createInterface } from 'node:readline';
 
 const call = (page, name, args = {}) => page.evaluate(({ name, args }) => window.xamlgAutomation.call(name, args), { name, args });
 
@@ -103,6 +106,68 @@ test('HTTP MCP reaches the paired browser project through the companion', async 
   await expect.poll(async () => (await request.post(base + '/agent/state', {
     headers: { Authorization: `Bearer ${ownerToken}`, 'X-Xamlg-Owner-Session': ownerSession }, data: {}
   })).status()).toBe(409);
+});
+
+test('modern HTTP MCP observes browser pairing and revocation on its subscription stream', async ({ page }) => {
+  test.skip(!process.env.XAMLG_TEST_MCP_URL, 'Run with the local companion for transport coverage.');
+  await enable(page);
+  await page.getByTestId('agent-access').click();
+  const base = process.env.XAMLG_TEST_MCP_URL;
+  const abort = new AbortController();
+  const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(60000)]);
+  let sequence = 0, lines, stream, streamClosed;
+  async function modern(method, params = {}, id = ++sequence) {
+    const response = await fetch(base + '/mcp', { method: 'POST', signal,
+      headers: { Authorization: `Bearer ${process.env.XAMLG_TEST_MCP_TOKEN}`, Accept: 'application/json, text/event-stream',
+        'Content-Type': 'application/json', 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': method },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method, params: { ...params, _meta: {
+        'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+        'io.modelcontextprotocol/clientInfo': { name: 'XamlG subscription test', version: '1' },
+        'io.modelcontextprotocol/clientCapabilities': {}
+      } } }) });
+    expect(response.ok).toBe(true);
+    expect(response.headers.get('Mcp-Session-Id')).toBeNull();
+    return response;
+  }
+  async function rpc(method) {
+    const text = await (await modern(method)).text();
+    const message = JSON.parse(text.startsWith('{') ? text : text.split('\n').find(line => line.startsWith('data:')).slice(5));
+    expect(message.error).toBeUndefined(); return message.result;
+  }
+  try {
+    const discovery = await rpc('server/discover');
+    expect(discovery.capabilities.tools.listChanged).toBe(true);
+    expect((await rpc('tools/list')).tools).toEqual([]);
+    const response = await modern('subscriptions/listen', { notifications: { toolsListChanged: true } }, 'browser-catalog');
+    expect(response.headers.get('Content-Type')).toContain('text/event-stream');
+    stream = Readable.fromWeb(response.body);
+    // Observe stream shutdown even after readline removes its own error observer.
+    streamClosed = finished(stream).catch(() => {});
+    lines = createInterface({ input: stream });
+    const iterator = lines[Symbol.asyncIterator]();
+    async function next() {
+      for (;;) {
+        const { value, done } = await iterator.next();
+        expect(done).toBe(false);
+        if (!value.startsWith('data:')) continue;
+        const message = JSON.parse(value.slice(5));
+        expect(message.params._meta['io.modelcontextprotocol/subscriptionId']).toBe('browser-catalog');
+        return message;
+      }
+    }
+    const ack = await next();
+    expect(ack.method).toBe('notifications/subscriptions/acknowledged');
+    expect(ack.params.notifications).toEqual({ toolsListChanged: true });
+    await page.getByLabel('Companion WebSocket').fill(base.replace('http:', 'ws:') + '/bridge');
+    await page.getByLabel('Owner token').fill(process.env.XAMLG_TEST_OWNER_TOKEN);
+    await page.getByRole('button', { name: 'Connect companion' }).click();
+    await expect(page.getByRole('dialog', { name: 'Agent access' }).getByRole('status')).toContainText('Connected');
+    expect((await next()).method).toBe('notifications/tools/list_changed');
+    expect((await rpc('tools/list')).tools.some(tool => tool.name === 'xamlg_runtime_properties')).toBe(true);
+    await page.getByRole('button', { name: 'Revoke & disconnect' }).click();
+    expect((await next()).method).toBe('notifications/tools/list_changed');
+    expect((await rpc('tools/list')).tools).toEqual([]);
+  } finally { lines?.close(); stream?.destroy(); abort.abort(); await streamClosed; }
 });
 
 test('floating, docking and layout restoration retain the source buffers and Avalonia preview', async ({ page }) => {
