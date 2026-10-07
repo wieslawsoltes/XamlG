@@ -22,5 +22,6 @@ public sealed record XamlFrameworkProfile
     public ImmutableArray<IXamlPropertyBindingRule> PropertyBindingRules { get; init; } = ImmutableArray<IXamlPropertyBindingRule>.Empty;
     public ImmutableArray<IXamlMarkupBindingRule> MarkupBindingRules { get; init; } = ImmutableArray<IXamlMarkupBindingRule>.Empty;
     public ImmutableArray<IXamlTextConversionRule> TextConversionRules { get; init; } = ImmutableArray<IXamlTextConversionRule>.Empty;
+    public ImmutableArray<IXamlTypeConverterProvider> TypeConverterProviders { get; init; } = ImmutableArray<IXamlTypeConverterProvider>.Empty;
     public ImmutableArray<IXamlDocumentPass> Passes { get; init; } = ImmutableArray<IXamlDocumentPass>.Empty;
 }

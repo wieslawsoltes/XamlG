@@ -15,11 +15,12 @@ internal static class AvaloniaCompilation
 
     public static object Build(string xaml) => Build(xaml, false);
 
-    public static object Build(string xaml, bool createSourceInfo, string documentPath = "Test.axaml", object? rootInstance = null)
+    public static object Build(string xaml, bool createSourceInfo, string documentPath = "Test.axaml", object? rootInstance = null, string? baseUri = null)
     {
         var compilation = CSharpCompilation.Create("XamlG.AvaloniaTest." + Guid.NewGuid().ToString("N"), references: References,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
-        var bound = new XamlCompiler().Bind(XamlSyntaxTree.Parse(xaml, documentPath), compilation, AvaloniaFrameworkProfile.Create(createSourceInfo: createSourceInfo));
+        var bound = new XamlCompiler().Bind(XamlSyntaxTree.Parse(xaml, documentPath), compilation, AvaloniaFrameworkProfile.Create(createSourceInfo: createSourceInfo),
+            new XamlCompilerOptions { BaseUri = baseUri });
         Assert.True(bound.Success, string.Join("\n", bound.Diagnostics));
         var emitted = new CSharpEmitter().Emit(bound);
         Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
