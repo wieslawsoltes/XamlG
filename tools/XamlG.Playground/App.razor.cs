@@ -11,7 +11,7 @@ namespace XamlG.Playground;
 
 public partial class App
 {
-    private static readonly string[] InspectorTabs = { "C# output", "Resources", "Syntax", "Bound tree", "Visual tree", "Properties", "Pipeline" };
+    private static readonly string[] InspectorTabs = { "C# output", "C# files", "Resources", "Syntax", "Bound tree", "Visual tree", "Properties", "Pipeline" };
     private XamlDocumentSession _document = new(PlaygroundExamples.All[0].Xaml, "View.axaml");
     private string _code = PlaygroundExamples.All[0].Code;
     private BrowserCompilation? _result;
@@ -94,6 +94,7 @@ public partial class App
         if (_xamlEditor != null) UpdateXaml(await _xamlEditor.GetTextAsync());
         if (_codeEditor != null) _code = await _codeEditor.GetTextAsync();
         if (_resourceEditor != null) await _resourceEditor.CaptureAsync();
+        if (_projectCodeEditor != null) await _projectCodeEditor.CaptureAsync();
         await SaveDraftAsync();
     }
     private async Task RunAsync()
@@ -116,6 +117,7 @@ public partial class App
         _exampleIndex = index;
         var example = PlaygroundExamples.All[index];
         Compiler.Resources.ReplaceAll(new Dictionary<string, string>());
+        Compiler.CodeFiles.ReplaceAll(new Dictionary<string, string>());
         _document = new(example.Xaml, "View.axaml"); _code = example.Code;
         _selectedElement = null; _error = null; _result = null;
         ResetWorkspaceHistory();
@@ -158,7 +160,7 @@ public partial class App
     private async Task SaveDraftAsync()
     {
         RecordWorkspace();
-        if (_module != null) await _module.InvokeVoidAsync("saveDraft", _document.Current.Text, _code, ResourceTexts());
+        if (_module != null) await _module.InvokeVoidAsync("saveDraft", _document.Current.Text, _code, ResourceTexts(), CodeTexts());
     }
     private async Task RestoreDraftAsync()
     {
@@ -170,9 +172,17 @@ public partial class App
             var resources = draft.TryGetProperty("resources", out var source) && source.ValueKind == JsonValueKind.Object
                 ? source.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? string.Empty, StringComparer.Ordinal)
                 : new Dictionary<string, string>();
-            Compiler.Resources.ReplaceAll(resources);
-            _document = new(draft.GetProperty("xaml").GetString() ?? string.Empty, "View.axaml");
-            _code = draft.GetProperty("code").GetString() ?? string.Empty; _selectedElement = null;
+            var documents = new Dictionary<string, string>(resources, StringComparer.Ordinal);
+            if (draft.TryGetProperty("codeFiles", out var codeFiles) && codeFiles.ValueKind == JsonValueKind.Object)
+                foreach (var item in codeFiles.EnumerateObject())
+                {
+                    if (!IsCSharpPath(item.Name)) throw new ArgumentException("Only C# documents belong in codeFiles.");
+                    documents.Add(item.Name, item.Value.GetString() ?? string.Empty);
+                }
+            documents.Add("View.axaml", draft.GetProperty("xaml").GetString() ?? string.Empty);
+            documents.Add("Code.cs", draft.GetProperty("code").GetString() ?? string.Empty);
+            ValidateWorkspace(documents);
+            RestoreWorkspace(_workspaceEdits.ReplaceAll(SourceRevision, documents, "Restore draft", recordHistory: false));
             ResetWorkspaceHistory();
             await CompileSnapshotAsync();
             _status = "Draft restored without executing it · review the code before Run";
@@ -184,10 +194,10 @@ public partial class App
         if (_module == null || _busy) return;
         await CaptureEditorsAsync();
         var current = _result?.Success == true && ReferenceEquals(_result.Analysis.Syntax, _document.Current) &&
-            _result.ResourceRevision == Compiler.Resources.Revision && _result.Compilation.SyntaxTrees.First().ToString() == _code;
+            _result.ResourceRevision == Compiler.Resources.Revision && _result.CodeRevision == Compiler.CodeFiles.Revision && _result.CodeText == _code;
         var content = JsonSerializer.Serialize(new
         {
-            format = "xamlg-project", version = 2, xaml = _document.Current.Text, code = _code, resources = ResourceTexts(),
+            format = "xamlg-project", version = 3, xaml = _document.Current.Text, code = _code, resources = ResourceTexts(), codeFiles = CodeTexts(),
             generated = current ? _result!.Analysis.Output.Source : null,
             generatedFiles = current ? _result!.Project?.Documents.ToDictionary(d => d.Output.HintName, d => d.Output.Source, StringComparer.Ordinal) : null
         }, new JsonSerializerOptions { WriteIndented = true });
@@ -195,6 +205,11 @@ public partial class App
     }
     private async Task RevealDiagnosticAsync(PlaygroundDiagnostic diagnostic)
     {
+        if (Compiler.CodeFiles.Snapshot.ContainsKey(diagnostic.Path))
+        {
+            if (_projectCodeEditor != null) { await _projectCodeEditor.CaptureAsync(); _projectCodeEditor.SelectDocument(diagnostic.Path); }
+            _inspectorTab = "C# files"; return;
+        }
         if (Compiler.Resources.Snapshot.ContainsKey(diagnostic.Path))
         {
             if (_resourceEditor != null) { await _resourceEditor.CaptureAsync(); _resourceEditor.SelectDocument(diagnostic.Path); }

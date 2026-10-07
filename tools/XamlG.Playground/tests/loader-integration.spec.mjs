@@ -63,6 +63,7 @@ test('unsupported loader method groups are diagnosed against original C# source'
     'public static readonly Action<object> Unadapted = AvaloniaXamlLoader.Load;\n    public View() {');
   await setProject(page, markup, unsupported);
   await expect(page.locator('.statusbar')).toContainText('Compilation has errors');
+  await page.getByRole('tab', { name: 'Problems', exact: true }).click();
   await expect(page.locator('.diagnostics')).toContainText('XG3400');
   await expect(page.locator('.diagnostics')).toContainText('Code.cs');
   await expect(page.locator('.runtime-error')).toHaveCount(0);

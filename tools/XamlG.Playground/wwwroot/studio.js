@@ -118,15 +118,15 @@ export function setTheme(theme) {
   self.monaco?.editor.setTheme(theme === 'light' ? 'vs' : 'vs-dark');
 }
 export function loadTheme() { return localStorage.getItem('xamlg.theme') ?? 'dark'; }
-export function saveDraft(xaml, code, resources = {}) {
-  localStorage.setItem('xamlg.draft', JSON.stringify({ version: 2, xaml, code, resources }));
+export function saveDraft(xaml, code, resources = {}, codeFiles = {}) {
+  localStorage.setItem('xamlg.draft', JSON.stringify({ version: 3, xaml, code, resources, codeFiles }));
 }
 export function loadDraft() {
   try {
     const source = localStorage.getItem('xamlg.draft');
     if (!source || source.length > 12 * 1024 * 1024) return null;
     const value = JSON.parse(source);
-    return (value?.version === 1 || value?.version === 2) && typeof value.xaml === 'string' && typeof value.code === 'string' ? value : null;
+    return [1, 2, 3].includes(value?.version) && typeof value.xaml === 'string' && typeof value.code === 'string' ? value : null;
   } catch { return null; }
 }
 export function download(name, content, type = 'text/plain') {

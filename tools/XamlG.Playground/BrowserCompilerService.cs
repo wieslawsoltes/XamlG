@@ -19,6 +19,7 @@ public sealed class BrowserCompilerService(HttpClient http)
     private int _assemblySequence;
     private int _loadedAssemblies;
     public XamlProjectDocumentStore Resources { get; } = new(new[] { "View.axaml" });
+    public CSharpProjectDocumentStore CodeFiles { get; } = new(new[] { "Code.cs" });
     public bool IsReady => !_references.IsEmpty;
     public int ReferenceCount => _references.Length;
 
@@ -57,8 +58,11 @@ public sealed class BrowserCompilerService(HttpClient http)
         var clock = Stopwatch.StartNew();
         var name = "XamlG.Playground.Generated_" + Interlocked.Increment(ref _assemblySequence);
         var parseOptions = new CSharpParseOptions(LanguageVersion.Preview);
-        var compilation = CSharpCompilation.Create(name,
-            new[] { CSharpSyntaxTree.ParseText(code, parseOptions, "Code.cs", cancellationToken: cancellationToken) },
+        var codeRevision = CodeFiles.Revision;
+        var codeTrees = CodeFiles.Snapshot.Values.OrderBy(d => d.Path, StringComparer.Ordinal)
+            .Select(d => CSharpSyntaxTree.ParseText(d.Text, parseOptions, d.Path, cancellationToken: cancellationToken))
+            .Prepend(CSharpSyntaxTree.ParseText(code, parseOptions, "Code.cs", cancellationToken: cancellationToken)).ToArray();
+        var compilation = CSharpCompilation.Create(name, codeTrees,
             _references, new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true,
                 optimizationLevel: OptimizationLevel.Release, nullableContextOptions: NullableContextOptions.Enable));
         var profile = KnownFrameworkProfiles.Select(compilation, framework, createSourceInfo: true);
@@ -91,7 +95,8 @@ public sealed class BrowserCompilerService(HttpClient http)
         }
         clock.Stop();
         return new(analysis, compilation, diagnostics.ToImmutable(), clock.Elapsed.TotalMilliseconds)
-        { Project = project, ResourceRevision = resourceRevision, AuthoringCompiler = authoring };
+        { Project = project, ResourceRevision = resourceRevision, CodeRevision = codeRevision, CodeText = code,
+            SourcePaths = codeTrees.Select(t => t.FilePath).ToImmutableHashSet(StringComparer.Ordinal), AuthoringCompiler = authoring };
     }
 
     public object Run(BrowserCompilation result)

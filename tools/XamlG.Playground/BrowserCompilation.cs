@@ -11,5 +11,8 @@ public sealed record BrowserCompilation(XamlAnalysis Analysis, CSharpCompilation
     public XamlCompilationSession? AuthoringCompiler { get; init; }
     public XamlProjectCompilation? Project { get; init; }
     public long ResourceRevision { get; init; }
+    public long CodeRevision { get; init; }
+    public string CodeText { get; init; } = "";
+    public ImmutableHashSet<string> SourcePaths { get; init; } = ImmutableHashSet<string>.Empty.WithComparer(StringComparer.Ordinal);
     public bool Success => Analysis.Output.Success && (Project?.Success ?? true) && !Diagnostics.Any(d => d.Severity == "Error");
 }

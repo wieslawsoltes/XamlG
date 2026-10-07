@@ -25,6 +25,7 @@ public partial class App
     private Dictionary<string, string> WorkspaceTexts()
     {
         var sources = ResourceTexts();
+        foreach (var item in CodeTexts()) sources.Add(item.Key, item.Value);
         sources.Add("View.axaml", _document.Current.Text); sources.Add("Code.cs", _code);
         return sources;
     }
@@ -40,6 +41,7 @@ public partial class App
         // Keep the main syntax revision monotonic so an old realized visual cannot target a new buffer.
         UpdateXaml(snapshot.Documents["View.axaml"]); _code = snapshot.Documents["Code.cs"];
         var resources = snapshot.Documents.Where(p => p.Key != "View.axaml" && p.Key != "Code.cs")
+            .Where(p => !IsCSharpPath(p.Key))
             .ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         var current = Compiler.Resources.Snapshot;
         if (resources.Count != current.Count || resources.Any(p => !current.TryGetValue(p.Key, out var value) || value.Text != p.Value))
@@ -47,6 +49,11 @@ public partial class App
         // Reconcile identity and editor ownership before SaveDraft/compilation can yield.
         // Otherwise an old resource editor could be read into a renamed/restored document.
         _resourceEditor?.SynchronizeDocuments(preferredResourcePath);
+        var code = snapshot.Documents.Where(p => p.Key != "Code.cs" && IsCSharpPath(p.Key)).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+        var currentCode = Compiler.CodeFiles.Snapshot;
+        if (code.Count != currentCode.Count || code.Any(p => !currentCode.TryGetValue(p.Key, out var value) || value.Text != p.Value))
+            Compiler.CodeFiles.ReplaceAll(code);
+        _projectCodeEditor?.SynchronizeDocuments();
         _selectedElement = null; _selectedVisual = null; _result = null;
     }
     private async Task NavigateWorkspaceAsync(bool undo)
@@ -71,7 +78,7 @@ public partial class App
             var snapshot = _workspaceEdits.Current;
             if (!snapshot.Documents.TryGetValue(request.Path, out var text) || text != request.Text)
                 throw new InvalidOperationException("The command's source buffer changed; invoke it again on the current text.");
-            if (request.Path == "Code.cs") throw new InvalidOperationException("Invoke XAML authoring commands from a XAML declaration or reference. Code-behind edits are included automatically.");
+            if (IsCSharpPath(request.Path)) throw new InvalidOperationException("Invoke XAML authoring commands from a XAML declaration or reference. Code-behind edits are included automatically.");
             if (request.Start < 0 || request.Length < 0 || request.Start > text.Length || request.Length > text.Length - request.Start)
                 throw new InvalidOperationException("The editor selection is outside its source snapshot.");
             _result = Compiler.Analyze(_document.Current, _code);
@@ -131,7 +138,7 @@ public partial class App
         if (_busy) return;
         // Flush all editors again: a rename preview is not permission to overwrite subsequent typing.
         await CaptureEditorsAsync();
-        var snapshot = _workspaceEdits.Apply(_authoringRevision, edits, description);
+        var snapshot = _workspaceEdits.Apply(_authoringRevision, edits, description, candidate => ValidateWorkspace(candidate.Documents));
         RestoreWorkspace(snapshot); CloseAuthoring();
         await SaveDraftAsync(); await CompileSnapshotAsync();
         _status = description + " · " + edits.Count(e => e.Changes.Length != 0) + " documents · one project undo step";

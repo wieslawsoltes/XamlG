@@ -32,7 +32,15 @@ Authoring formatting, rename, code actions and token deltas are exposed through 
 
 The Resources tab manages reusable classless dictionaries/styles in the same project as `View.axaml`. It has a path selector, add/remove controls, source/generated/syntax views and a complete three-document example. Source remains local to the browser. Adding/removing files changes the compilation's resource catalog; unresolved dependencies appear as source diagnostics, not runtime loader failures.
 
-Run emits the view, dictionaries and styles into one assembly. `ResourceInclude`, `StyleInclude` and `MergeResourceInclude` call compiled factories. Changing a resource before its debounce timer fires is captured by the next Compile/Run. Export format version 2 includes resource text and all current generated files; outdated output is omitted. Draft restoration accepts earlier single-document drafts and new project drafts without executing either.
+Run emits the view, dictionaries, styles and all C# source files into one assembly. `ResourceInclude`, `StyleInclude` and `MergeResourceInclude` call compiled factories. Changing a source before its debounce timer fires is captured by the next Compile/Run. Export format version 3 includes resource text, additional C# files and current generated files; outdated output is omitted. Draft restoration accepts versions 1, 2 and 3 without executing source.
+
+The **C# files** inspector adds, edits, moves and removes auxiliary `.cs` files.
+Models, custom controls and partial code-behind classes share the same Roslyn
+compilation as `Code.cs`. Project undo/redo, XAML name refactoring, diagnostics,
+MCP document operations and runtime execution include these files. The reusable
+`CSharpProjectDocumentStore` bounds source retention and rejects edits from
+retired or replaced documents. Generated-file discovery excludes every user C#
+document, including files moved between folders.
 
 Resource document count/character limits, normalized relative paths, reserved root paths and revision checks bound the editor store. Replacing a project retires callbacks from previous same-path resource editors. See [resource semantics and export metadata](resources.md).
 

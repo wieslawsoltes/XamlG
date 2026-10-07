@@ -91,14 +91,15 @@ public partial class App
                     }).ToImmutableArray();
                     return new XamlDocumentEdits(group.Key, text, null, changes);
                 }).ToArray();
-                RestoreWorkspace(_workspaceEdits.Apply(args.ExpectedRevision, edits, context.Caller + ": edit source"));
+                RestoreWorkspace(_workspaceEdits.Apply(args.ExpectedRevision, edits, context.Caller + ": edit source", candidate => ValidateWorkspace(candidate.Documents)));
                 return new { revision = SourceRevision };
             });
-        AddAutomation<DocumentWrite>("document_write", "Create or replace an XAML project document, or replace Code.cs. Requires the current project revision.", AutomationScope.Source, AutomationEffect.Edit,
+        AddAutomation<DocumentWrite>("document_write", "Create or replace a C# or XAML project source document. Requires the current project revision.", AutomationScope.Source, AutomationEffect.Edit,
             (args, context) =>
             {
                 CheckSourceRevision(args.ExpectedRevision); ValidateDocumentPath(args.Path);
                 var texts = WorkspaceTexts(); texts[args.Path] = args.Text;
+                ValidateWorkspace(texts);
                 RestoreWorkspace(_workspaceEdits.ReplaceAll(args.ExpectedRevision, texts, context.Caller + ": write " + args.Path));
                 return new { revision = SourceRevision };
             });
@@ -116,7 +117,7 @@ public partial class App
         AddAutomation<RevisionArguments>("project_redo", "Redo the last normal project source transaction.", AutomationScope.Project, AutomationEffect.Edit,
             (args, _) => { CheckSourceRevision(args.ExpectedRevision); RestoreWorkspace(_workspaceEdits.Redo(args.ExpectedRevision)); return new { revision = SourceRevision }; });
         AddAutomation<NoArguments>("project_export", "Export the current editable project as inert JSON, without a download dialog or execution.", AutomationScope.Project, AutomationEffect.Read,
-            (_, _) => new { revision = SourceRevision, format = "xamlg-project", version = 2, xaml = _document.Current.Text, code = _code, resources = ResourceTexts(), documents = WorkspaceTexts() });
+            (_, _) => new { revision = SourceRevision, format = "xamlg-project", version = 3, xaml = _document.Current.Text, code = _code, resources = ResourceTexts(), codeFiles = CodeTexts(), documents = WorkspaceTexts() });
         AddAutomation<RestoreSourceArguments>("project_restore", "Selectively restore reviewed source changes in one undo transaction. Checks the current revision and every expected file before applying.", AutomationScope.Source, AutomationEffect.Edit,
             (args, context) =>
             {
@@ -135,6 +136,7 @@ public partial class App
                     }
                     else texts[file.Path] = file.Before;
                 }
+                ValidateWorkspace(texts);
                 RestoreWorkspace(_workspaceEdits.ReplaceAll(args.ExpectedRevision, texts, context.Caller + ": restore reviewed source"));
                 return new { revision = SourceRevision, documents = WorkspaceTexts() };
             });
@@ -147,7 +149,11 @@ public partial class App
                 return new { revision = SourceRevision, references = result.Compilation.References.Select(r => r.Display), outputKind = result.Compilation.Options.OutputKind.ToString(), result.Compilation.Options.AllowUnsafe, languageVersion = ((CSharpParseOptions)result.Compilation.SyntaxTrees.First().Options).LanguageVersion.ToString() };
             });
         AddAutomation<NoArguments>("generated_list", "List all generated C# files, including project loader adapters and resource factories.", AutomationScope.Compiler, AutomationEffect.Read,
-            (_, context) => new { revision = SourceRevision, files = AnalyzeAutomation(context.CancellationToken).Compilation.SyntaxTrees.Where(t => t.FilePath != "Code.cs").Select(t => new { path = t.FilePath, length = t.Length }) });
+            (_, context) =>
+            {
+                var result = AnalyzeAutomation(context.CancellationToken);
+                return new { revision = SourceRevision, files = result.Compilation.SyntaxTrees.Where(t => !result.SourcePaths.Contains(t.FilePath)).Select(t => new { path = t.FilePath, length = t.Length }) };
+            });
         AddAutomation<DocumentRead>("generated_read", "Read a bounded range of an exact generated C# file.", AutomationScope.Compiler, AutomationEffect.Read,
             (args, context) =>
             {
@@ -169,7 +175,7 @@ public partial class App
             {
                 CheckSourceRevision(args.ExpectedRevision); var analysis = XamlAnalysisFor(args.Path, context.CancellationToken);
                 var edits = XamlFormatter.Format(analysis.Syntax, new() { TabSize = 2 }, analysis: analysis);
-                RestoreWorkspace(_workspaceEdits.Apply(args.ExpectedRevision, [new(args.Path, analysis.Syntax.Text, analysis.Syntax.Version, edits)], context.Caller + ": format"));
+                RestoreWorkspace(_workspaceEdits.Apply(args.ExpectedRevision, [new(args.Path, analysis.Syntax.Text, analysis.Syntax.Version, edits)], context.Caller + ": format", candidate => ValidateWorkspace(candidate.Documents)));
                 return new { revision = SourceRevision };
             });
         AddAutomation<RenameArguments>("xaml_rename", "Semantically rename an XAML name and its XAML/C# references atomically.", AutomationScope.Source, AutomationEffect.Edit,
@@ -178,7 +184,7 @@ public partial class App
                 CheckSourceRevision(args.ExpectedRevision); var analysis = XamlAnalysisFor(args.Path, context.CancellationToken);
                 var plan = new XamlRenameService(_result!.AuthoringCompiler!).Rename(analysis, args.Offset, args.Name,
                     _result.Project!.Documents.Select(d => new XamlAnalysis(d.Input.Syntax, d.Document, d.Output)));
-                RestoreWorkspace(_workspaceEdits.Apply(args.ExpectedRevision, plan.Documents, context.Caller + ": rename"));
+                RestoreWorkspace(_workspaceEdits.Apply(args.ExpectedRevision, plan.Documents, context.Caller + ": rename", candidate => ValidateWorkspace(candidate.Documents)));
                 return new { revision = SourceRevision, plan.OldName, plan.NewName };
             });
         AddAutomation<CSharpSyntaxArguments>("csharp_syntax", "Inspect Roslyn syntax nodes/tokens for source or generated C#, with bounded depth and count.", AutomationScope.Compiler, AutomationEffect.Read,
@@ -231,7 +237,7 @@ public partial class App
                     _ => throw new ArgumentException("Unknown designer operation.")
                 };
                 if (tree.WithChanges(transaction.Changes, tree.Version).HasErrors) throw new ArgumentException("The edit would produce malformed XAML.");
-                RestoreWorkspace(_workspaceEdits.Apply(args.ExpectedRevision, [new(args.Path, text, null, transaction.Changes)], context.Caller + ": " + transaction.Description));
+                RestoreWorkspace(_workspaceEdits.Apply(args.ExpectedRevision, [new(args.Path, text, null, transaction.Changes)], context.Caller + ": " + transaction.Description, candidate => ValidateWorkspace(candidate.Documents)));
                 return new { revision = SourceRevision };
             });
         AddAutomation<RuntimeTreeArguments>("runtime_tree", "Inspect all actual Avalonia visual/logical nodes with stable handles, parent/child relations, bounds, classes, data context and source provenance.", AutomationScope.Runtime, AutomationEffect.Read,
@@ -313,9 +319,8 @@ public partial class App
     private static void ValidateDocumentPath(string path)
     {
         if (path is "View.axaml" or "Code.cs") return;
-        if (path.Length > 512 || path.StartsWith('/') || path.Contains('\\') || path.Split('/').Any(p => p is "" or "." or "..") ||
-            !(path.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".xaml", StringComparison.OrdinalIgnoreCase)))
-            throw new ArgumentException("Use a relative XAML document path.");
+        var normalized = IsCSharpPath(path) ? CSharpProjectDocumentStore.NormalizePath(path) : XamlProjectDocumentStore.NormalizePath(path);
+        if (path != normalized) throw new ArgumentException("Use a normalized project-relative C# or XAML path.");
     }
     private BrowserCompilation AnalyzeAutomation(CancellationToken token)
     {

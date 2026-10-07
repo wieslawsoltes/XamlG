@@ -78,7 +78,7 @@ public partial class App
             {
                 // Enforce the browser resource-store budget before publishing project history.
                 // The temporary store performs source validation only; it never executes code.
-                var resources = candidate.Documents.Where(p => p.Key != "View.axaml" && p.Key != "Code.cs")
+                var resources = candidate.Documents.Where(p => p.Key != "View.axaml" && !IsCSharpPath(p.Key))
                     .ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
                 new XamlProjectDocumentStore(new[] { "View.axaml" }).ReplaceAll(resources);
             });

@@ -130,6 +130,13 @@ consumer example that uses only NuGet references outside this repository.
 - All eight automation/workbench browser scenarios also passed after separating
   owner and MCP credentials. HTTP checks reject client access to the workbench,
   owner credentials at the MCP endpoint, missing leases and expired browser leases.
+- Multi-file C# source now participates in compilation, syntax/symbol inspection,
+  XAML rename, runtime event handlers, project undo, export and draft restoration.
+  The reusable source store rejects stale editor writes and validates replacements
+  atomically. Its two new tests passed with all 96 Tooling tests. The expanded
+  browser suite passed 38 of 40 cases initially; after correcting an Undo readiness
+  wait and opening the docked Problems tab, all four cases in the affected C# and
+  loader suites passed. Both failures were in test synchronization or navigation.
 
 Runtime tools now include bounded object-path inspection and mutation, loaded type
 discovery, public method invocation with Task/ValueTask results, live control tree
@@ -142,8 +149,8 @@ unsupported ownership. Diagnostic frame metadata uses the loaded Avalonia runtim
 
 Full reference parity remains in progress: account-mode support and additional
 provider recovery/limit controls; MCP subscriptions/notifications and session routing;
-typed runtime input and additional designer/runtime UI; a full multi-file C#
-workspace and Roslyn authoring surface; and the corresponding UI and protocol
+typed runtime input and additional designer/runtime UI; the remaining Roslyn
+authoring surface for the multi-file C# workspace; and the corresponding UI and protocol
 acceptance coverage. This ledger does not claim those capabilities from a build
 or from the existence of a tool name.
 

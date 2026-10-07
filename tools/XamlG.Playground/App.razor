@@ -38,6 +38,7 @@
             <button class="file @(_editorTab == "xaml" ? "selected" : "")" @onclick='() => _editorTab = "xaml"'><span class="file-icon">◇</span> View.axaml <small>XAML</small></button>
             <button class="file @(_editorTab == "code" ? "selected" : "")" @onclick='() => _editorTab = "code"'><span class="file-icon">#</span> Code.cs <small>C#</small></button>
             <button class="file" @onclick='() => _inspectorTab = "Resources"'><span class="file-icon">▤</span> Resources <small>@Compiler.Resources.Snapshot.Count</small></button>
+            <button class="file" @onclick='() => _inspectorTab = "C# files"'><span class="file-icon">#</span> C# files <small>@Compiler.CodeFiles.Snapshot.Count</small></button>
             <div class="explorer-note"><span class="eyebrow">ONE COMPILER</span><p>Syntax → Roslyn symbols → typed operations → C#.</p><p>@PlaygroundExamples.All[_exampleIndex].Description</p></div>
             <div class="trust-note">Run preview and Design execute trusted code in this tab. Run isolated uses a separate opaque-origin frame. Compilation never sends source to a server.</div>
         </aside>
@@ -97,6 +98,9 @@
             </div>
             <div class="inspector-body">
                 <div class="inspector-page @(_inspectorTab == "C# output" ? "visible" : "")"><CodeEditor Text="@(_result?.Analysis.Output.Source ?? "// Generated C# appears here after compilation.\n")" Language="csharp" ReadOnly="true" /></div>
+                <div class="resource-container" style="display:@(_inspectorTab == "C# files" ? "block" : "none")">
+                    <ProjectCode @ref="_projectCodeEditor" Documents="Compiler.CodeFiles" Busy="_busy" Changed="ProjectCodeChangedAsync" RunRequested="RunCurrentModeAsync" AuthoringRequested="AuthoringCommandAsync" />
+                </div>
                 <div class="resource-container" style="display:@(_inspectorTab == "Resources" ? "block" : "none")">
                     <ProjectResources @ref="_resourceEditor" Documents="Compiler.Resources" Result="_result" Busy="@(_busy || _fileMoveWorking)" Changed="ResourceChangedAsync" LoadExample="LoadResourceExampleAsync" RunRequested="RunCurrentModeAsync" AuthoringRequested="AuthoringCommandAsync" RenameRequested="OpenFileMoveAsync" />
                 </div>
