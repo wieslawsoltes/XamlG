@@ -24,7 +24,14 @@ internal sealed class AssignmentEmitter
                 var valueFrame = ForTarget(set.Member, target, frame);
                 void Assign(string value)
                 {
+                    if (set.RegisterName)
+                    {
+                        var name = _context.Temporary("name");
+                        writer.Line("string " + name + " = ((string)(" + value + "))!;");
+                        value = name;
+                    }
                     Set(set.Member, owner.Type, target, value);
+                    if (set.RegisterName) _objects.RegisterName(frame, value, target);
                     if (set.Member.Getter != null && set.Member.Setter != null && !set.Member.Setter.IsInitOnly)
                         writer.Line(frame + ".Session.RegisterProperty<" + set.Member.ValueType.CSharpName() + ">(" + CSharpNames.Literal(owner.Key) + ", " + CSharpNames.Literal(set.Member.Name) + ", () => " + Get(set.Member, owner.Type, target) + ", __value => { " + SetExpression(set.Member, owner.Type, target, "__value") + "; });");
                 }

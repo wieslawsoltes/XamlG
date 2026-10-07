@@ -15,6 +15,11 @@ public static class AvaloniaCompiledResourceOperations
         foreach (var item in source) target[item.Key] = item.Value;
     }
     public static void SetResource(ResourceDictionary target, object key, object? value) => target[key] = value;
+    public static void SetNotSharedDeferredResource(ResourceDictionary target, object key, IDeferredContent value)
+    {
+        target.Remove(key);
+        target.AddNotSharedDeferred(key, value);
+    }
     public static void MergeTheme(ResourceDictionary target, ThemeVariant key, IThemeVariantProvider value)
     {
         ArgumentNullException.ThrowIfNull(target); ArgumentNullException.ThrowIfNull(key); ArgumentNullException.ThrowIfNull(value);

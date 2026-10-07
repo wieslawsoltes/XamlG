@@ -17,7 +17,11 @@ internal static class AvaloniaLiteralName
             var member = context.Members.Resolve(target.Type, property.Name, property.Scope, property.NameSpan, report: false);
             if (member?.Symbol is not IPropertySymbol symbol || !symbol.ContainingType.AllInterfaces.Any(type => type.HasMetadataName(AvaloniaMetadata.Named))) continue;
             var nodes = property.Values.Where(node => node is XamlElementSyntax || node is XamlTextSyntax text && !string.IsNullOrWhiteSpace(text.Value)).ToArray();
-            if (nodes.Length != 1 || nodes[0] is not XamlTextSyntax value) continue;
+            if (nodes.Length != 1) continue;
+            if (nodes[0] is XamlElementSyntax element && !element.Children.OfType<XamlElementSyntax>().Any() &&
+                context.Values.TryGetStringLiteral(element, property.Scope, out var literal))
+                return (literal, element.Span);
+            if (nodes[0] is not XamlTextSyntax value) continue;
             var name = value.Value;
             if (name.StartsWith("{}", StringComparison.Ordinal)) name = name.Substring(2);
             else if (name.StartsWith("{", StringComparison.Ordinal)) continue;

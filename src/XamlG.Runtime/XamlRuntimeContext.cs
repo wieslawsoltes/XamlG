@@ -154,11 +154,18 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
     }
 
     public void RegisterName(string name, object value) => _names.Register(name, value);
-    public T ResolveName<T>(string name) => (T)_names.Resolve(name);
+    public T ResolveName<T>(string name)
+    {
+        if (_names.TryResolve(name, out var value)) return (T)value;
+        if (GetExternalService(typeof(XamlRuntimeContext)) is XamlRuntimeContext outer && !ReferenceEquals(_names, outer._names))
+            return outer.ResolveName<T>(name);
+        return (T)_names.Resolve(name);
+    }
     public void Defer(Action assignment) => _names.Defer(assignment);
-    public void Complete(object root)
+    public void Complete(object? root)
     {
         _names.Complete();
-        Session.Attach(root);
+        if (root != null) Session.Attach(root);
+        else Session.Dispose();
     }
 }

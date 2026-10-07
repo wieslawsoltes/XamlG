@@ -18,6 +18,7 @@ internal sealed class ObjectEmitter
         _values = new(context, this); _assignments = new(context, this, _values); _source = new(context);
     }
     public void EmitContext(string variable, string outer, string root) => _runtime.Create(variable, outer, root);
+    public void RegisterName(string frame, string nameExpression, string value) => _runtime.RegisterName(frame, nameExpression, value);
     public void Complete(string frame, string root) => _runtime.Complete(frame, root);
     public void EmitNamespaceMaps() => _namespaces.Emit();
     public void EmitDeferredContext(string variable, string parent, string incoming, bool functionPointer)
@@ -48,7 +49,8 @@ internal sealed class ObjectEmitter
         _source.Emit(value, frame);
         if (value.Name != null)
         {
-            _runtime.RegisterName(frame, value.Name, variable);
+            if (!value.Assignments.OfType<BoundSetAssignment>().Any(assignment => assignment.RegisterName))
+                _runtime.RegisterName(frame, CSharpNames.Literal(value.Name), variable);
             if (_context.Document.ClassSymbol != null && _context.Document.CanAugmentClass && _context.Document.Options.GenerateNamedFields && value.NameScopeId == _context.Document.Root!.NameScopeId)
                 writer.Line(_context.RootVariable + "." + CSharpNames.Identifier(value.Name) + " = " + variable + ";");
         }

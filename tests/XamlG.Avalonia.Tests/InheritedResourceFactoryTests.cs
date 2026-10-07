@@ -61,7 +61,7 @@ public sealed class InheritedResourceFactoryTests
     [AvaloniaFact]
     public void DerivedConstructorFailureRetiresItsAlreadyInitializedBaseGraph()
     {
-        var project = Project("throw new InvalidOperationException(\"derived failed\");");
+        var project = Project("_ = this[\"base\"]; throw new InvalidOperationException(\"derived failed\");");
         var assembly = ResourceProjectFixture.Load(project.Emit());
         var output = project.Result.Documents.Single(d => d.Input.LogicalPath == "Theme.axaml").Output;
         var failure = Assert.Throws<TargetInvocationException>(() => assembly.GetType(output.FactoryMetadataName)!.GetMethod(output.BuildMethodName!)!.Invoke(null, new object?[] { new Services() }));

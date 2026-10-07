@@ -9,6 +9,7 @@ internal sealed class XamlNameScope
         _names.Add(name, value);
     }
     public object Resolve(string name) => _names.TryGetValue(name, out var value) ? value : throw new InvalidOperationException($"XAML name '{name}' was not registered.");
+    public bool TryResolve(string name, out object value) => _names.TryGetValue(name, out value!);
     public void Defer(Action assignment) => _fixups.Add(assignment);
     public void Complete()
     {
