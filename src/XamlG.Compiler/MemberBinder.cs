@@ -94,6 +94,8 @@ public sealed class MemberBinder
             { BindCollectionItem(target, member, new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan), scope, attribute: true); return; }
             _context.Report("XG1010", $"Property '{member.Name}' is read-only.", attribute.NameSpan); return;
         }
+        if (member.Getter != null && _context.Types.AddMethods(member.ValueType).Any() &&
+            new CollectionReplacementBinder(_context).TryBind(target, member, new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan), scope, attribute: true)) return;
         var value = _context.Values.BindText(attribute.Value, member.ValueType, scope, attribute.ValueSpan, member.ConversionSource);
         if (value != null) AddSet(target, member, value, attribute.Span);
     }
@@ -102,7 +104,7 @@ public sealed class MemberBinder
         using var propertyScope = member == null ? null : _context.EnterPropertyScope(target, member);
         var contentType = member?.ValueType ?? target.Type;
         var contentIsCollection = (member == null || member.Getter != null) && _context.Types.AddMethods(contentType).Any();
-        var nodes = new ContentWhitespaceNormalizer(_context).Normalize(children, contentType, contentIsCollection, scope);
+        var nodes = new ContentWhitespaceNormalizer(_context).Normalize(children, contentType, contentIsCollection, scope, directCollection: member == null);
         if (member?.Kind is BoundMemberKind.Event or BoundMemberKind.AttachedEvent)
         {
             if (nodes.Length != 1) _context.Report("XG1017", "An event assignment requires exactly one handler value.", span);
@@ -160,7 +162,7 @@ public sealed class MemberBinder
         if (value.Type != null && !_context.Types.Compilation.ClassifyCommonConversion(value.Type, member.ValueType).IsImplicit)
         { _context.Report("XG1023", $"Value of type '{value.Type}' cannot be assigned to '{member.ValueType}'.", span); return; }
         var key = member.Symbol.ToDisplayString();
-        if (!target.AssignedScalars.Add(key)) { _context.Report("XG1014", $"Property '{member.Name}' is assigned more than once.", span); return; }
+        if (!target.AssignedScalars.Add(key) && !member.AllowRepeatedAssignments) { _context.Report("XG1014", $"Property '{member.Name}' is assigned more than once.", span); return; }
         target.Assignments.Add(new BoundSetAssignment(member, value, span));
     }
     private void BindCollectionItem(ObjectBindingBuilder target, BoundMember? member, XamlSyntaxNode syntax, NamespaceScope scope, bool normalized = false, bool attribute = false)

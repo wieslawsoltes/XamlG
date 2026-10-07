@@ -53,11 +53,10 @@ internal sealed class AvaloniaNamedSourceCatalog
         _context.Cancellation.ThrowIfCancellationRequested();
         _entries.Add(entry.Syntax, entry);
         var target = entry.Builder(0);
-        var name = entry.Scope.Directive(entry.Syntax, "Name")?.Value ?? AvaloniaLiteralName.Read(_context, target)?.Value;
-        if (name != null)
+        foreach (var name in AvaloniaLiteralName.Read(_context, target))
         {
             if (!_names.TryGetValue(entry.ScopeRoot, out var names)) _names.Add(entry.ScopeRoot, names = new(StringComparer.Ordinal));
-            if (!names.ContainsKey(name)) names.Add(name, entry);
+            if (!names.ContainsKey(name.Value)) names.Add(name.Value, entry);
         }
         foreach (var property in BindingPropertyValue.Read(_context, target))
         {
