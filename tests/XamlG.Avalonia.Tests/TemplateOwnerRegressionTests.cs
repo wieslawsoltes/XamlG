@@ -10,11 +10,12 @@ namespace XamlG.Avalonia.Tests;
 public sealed class TemplateOwnerRegressionTests
 {
     [AvaloniaFact]
-    public void ThemeSetterWithoutConcreteTemplateUsesThemeOwner()
+    public void ThemeSetterWithoutTemplateScopeRejectsTemplateBinding()
     {
-        var theme = Build("<Setter Property='CornerRadius' Value='{TemplateBinding CornerRadius}'/>");
-        var binding = Assert.IsType<TemplateBinding>(Assert.IsType<Setter>(Assert.Single(theme.Setters)).Value);
-        Assert.Same(TemplatedControl.CornerRadiusProperty, binding.Property);
+        const string children = "<Setter Property='CornerRadius' Value='{TemplateBinding CornerRadius}'/>";
+        var baseline = AvaloniaUpstreamCompilation.Compile("<ControlTheme " + ResourceProjectFixture.Namespace + " TargetType='ButtonSpinner'>" + children + "</ControlTheme>");
+        Assert.NotNull(baseline.Error);
+        Assert.False(Fixture(children).Result.Success);
     }
 
     [AvaloniaFact]
