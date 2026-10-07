@@ -40,6 +40,8 @@ internal sealed class AssignmentEmitter
             }
             case BoundAddAssignment add:
             {
+                if (add.PostCall != null && !add.Alternatives.IsDefaultOrEmpty)
+                { _context.Error("A collection post-call requires a statically selected adder.", add.Span); break; }
                 var receiver = target; var valueFrame = frame;
                 if (add.Collection != null)
                 {
@@ -57,12 +59,19 @@ internal sealed class AssignmentEmitter
                 var last = add.Arguments[add.Arguments.Length - 1];
                 void Add(string value)
                 {
+                    if (add.PostCall != null)
+                    {
+                        var local = _context.Temporary("item");
+                        writer.Line(add.AddMethod.Parameters[add.Arguments.Length - 1].Type.CSharpName() + " " + local + " = " + value + ";");
+                        value = local;
+                    }
                     var inputs = string.Join(", ", arguments.Concat(new[] { value }).Select((input, index) =>
                         add.Alternatives.IsDefaultOrEmpty ? "(" + add.AddMethod.Parameters[index].Type.CSharpName() + ")(" + input + ")" : input));
                     if (add.Alternatives.IsDefaultOrEmpty)
                         writer.Line("((" + add.AddMethod.ContainingType.CSharpName() + ")" + receiver + ")." + CSharpNames.Method(add.AddMethod) + "(" + inputs + ");");
                     else
                         writer.Line(_context.DynamicAdds.Register(owner.Type, add.Collection, add.Alternatives) + "(" + target + ", " + inputs + ");");
+                    new PostCallEmitter(_context, _values).Emit(add.PostCall, receiver, arguments.Concat(new[] { value }).ToArray(), valueFrame, add.Span);
                 }
                 if (last is BoundObjectExpression child)
                     _objects.Emit(child.Object, valueFrame, null, Add,

@@ -35,11 +35,11 @@ public static class BoundDocumentTraversal
             var values = assignment switch
             {
                 BoundSetAssignment set => new[] { set.Value },
-                BoundAddAssignment add => add.Arguments.AsEnumerable(),
+                BoundAddAssignment add => add.Arguments.Concat(add.PostCall?.Arguments ?? []),
                 BoundEventAssignment { Value: { } handler } => new[] { handler },
                 BoundAdaptedSetAssignment adapted => new[] { adapted.Value },
                 BoundDynamicSetAssignment dynamicSet => new[] { dynamicSet.Value },
-                BoundCallAssignment call => call.TargetDescriptor == null ? call.Arguments.AsEnumerable() : call.Arguments.Prepend(call.TargetDescriptor),
+                BoundCallAssignment call => (call.TargetDescriptor == null ? call.Arguments.AsEnumerable() : call.Arguments.Prepend(call.TargetDescriptor)).Concat(call.PostCall?.Arguments ?? []),
                 _ => Enumerable.Empty<BoundExpression>()
             };
             foreach (var expression in values) yield return expression;

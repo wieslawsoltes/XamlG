@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Markup.Xaml.Diagnostics;
 using Avalonia.Styling;
 
 namespace XamlG.AvaloniaRuntime;
@@ -12,13 +13,28 @@ public static class AvaloniaCompiledResourceOperations
         if (ReferenceEquals(target, source)) throw new InvalidOperationException("A dictionary cannot merge itself.");
         foreach (var dictionary in source.MergedDictionaries) target.MergedDictionaries.Add(dictionary);
         foreach (var item in source.ThemeDictionaries) MergeTheme(target, item.Key, item.Value);
-        foreach (var item in source) target[item.Key] = item.Value;
+        foreach (var item in source)
+        {
+            target[item.Key] = item.Value;
+            var info = XamlSourceInfo.GetXamlSourceInfo(source, item.Key);
+            if (info != null || XamlSourceInfo.GetXamlSourceInfo(target, item.Key) != null)
+                XamlSourceInfo.SetXamlSourceInfo(target, item.Key, info);
+        }
     }
-    public static void SetResource(ResourceDictionary target, object key, object? value) => target[key] = value;
+    public static void SetResource(ResourceDictionary target, object key, object? value)
+    {
+        target[key] = value;
+        ClearSourceInfo(target, key);
+    }
     public static void SetNotSharedDeferredResource(ResourceDictionary target, object key, IDeferredContent value)
     {
         target.Remove(key);
         target.AddNotSharedDeferred(key, value);
+        ClearSourceInfo(target, key);
+    }
+    private static void ClearSourceInfo(ResourceDictionary target, object key)
+    {
+        if (XamlSourceInfo.GetXamlSourceInfo(target, key) != null) XamlSourceInfo.SetXamlSourceInfo(target, key, null);
     }
     public static void MergeTheme(ResourceDictionary target, ThemeVariant key, IThemeVariantProvider value)
     {

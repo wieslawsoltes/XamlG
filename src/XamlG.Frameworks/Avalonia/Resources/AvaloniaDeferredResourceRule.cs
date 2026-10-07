@@ -51,7 +51,18 @@ public sealed class AvaloniaDeferredResourceRule : IXamlObjectBindingRule, IXaml
             if (!resource && !merged) continue;
             var arguments = add?.Arguments ?? call!.Arguments;
             var value = arguments[1];
-            if (value.Type?.IsValueType == true || value.Type?.SpecialType == SpecialType.System_String || AvaloniaResourceNames.Contains(value)) continue;
+            if (value.Type?.IsValueType == true || value.Type?.SpecialType == SpecialType.System_String || AvaloniaResourceNames.Contains(value))
+            {
+                if (add != null)
+                {
+                    var eager = context.Types.Find(AvaloniaResourceMetadata.DictionaryContract)?.Members("Add").OfType<IMethodSymbol>()
+                        .FirstOrDefault(method => !method.IsStatic && method.Parameters.Length == 2 &&
+                            method.Parameters.All(parameter => parameter.Type.SpecialType == SpecialType.System_Object));
+                    if (eager == null) context.Report("XG3308", "Eager resources require the public resource-dictionary adder.", value.Span);
+                    else target.Assignments[index] = add with { AddMethod = eager, Alternatives = ImmutableArray<IMethodSymbol>.Empty };
+                }
+                continue;
+            }
 
             var notShared = false;
             if (value is BoundObjectExpression obj && Shared(context).TryGetValue(obj.Object.Syntax, out var shared))

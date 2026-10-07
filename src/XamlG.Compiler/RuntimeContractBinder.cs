@@ -70,8 +70,26 @@ internal static class RuntimeContractBinder
             RuntimeNamespaceResolver.Collect(context), context.Types.Compilation.AssemblyName ?? string.Empty)
         {
             RootServiceProviderFactory = Resolve(context, context.Profile.Runtime.RootServiceProviderFactory, 1),
-            NameScope = BindNameScope(context)
+            NameScope = BindNameScope(context),
+            SourceInfo = BindSourceInfo(context)
         };
+    }
+
+    private static BoundSourceInfo? BindSourceInfo(BindingContext context)
+    {
+        if (context.Profile.Runtime.SourceInfo is not { } configuration) return null;
+        var type = context.Types.Find(configuration.TypeMetadataName);
+        var constructor = type is { IsAbstract: false } && context.Types.IsAccessible(type) ? type.InstanceConstructors.FirstOrDefault(method =>
+            context.Types.IsAccessible(method) && method.Parameters.All(parameter => parameter.RefKind == RefKind.None) && method.Parameters.Length == 3 &&
+            method.Parameters[0].Type.SpecialType == SpecialType.System_Int32 && method.Parameters[1].Type.SpecialType == SpecialType.System_Int32 &&
+            method.Parameters[2].Type.SpecialType == SpecialType.System_String) : null;
+        var setter = type?.GetMembers(configuration.SetterMethod).OfType<IMethodSymbol>().FirstOrDefault(method =>
+            method.IsStatic && !method.IsGenericMethod && method.ReturnsVoid && context.Types.IsAccessible(method) &&
+            method.Parameters.All(parameter => parameter.RefKind == RefKind.None) && method.Parameters.Length == 2 &&
+            method.Parameters[0].Type.SpecialType == SpecialType.System_Object && SymbolEqualityComparer.Default.Equals(method.Parameters[1].Type, type));
+        if (constructor != null && setter != null) return new(constructor, setter);
+        Error(context, "Source information requires an accessible (int, int, string) constructor and static (object, metadata) setter.");
+        return null;
     }
 
     private static IPropertySymbol? FindWritableString(INamedTypeSymbol type, string name, BindingContext context)

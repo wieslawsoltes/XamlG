@@ -11,6 +11,7 @@ internal static class ClassFactoryEmitter
         writer.Open("using (var __construction = global::XamlG.Runtime.XamlConstructionScope.Begin(typeof(" + typeName + "), __services))");
         writer.Open("try");
         writer.Line("var __root = new " + typeName + "(" + (constructor.Parameters.Length == 0 ? string.Empty : "__services") + ");");
+        new SourceInfoEmitter(context).EmitConstructed(context.Document.Root!, "__root");
         writer.Line(initialize + "(__root, __services);");
         writer.Line("__construction.Commit(__root);");
         writer.Line("return __root;");

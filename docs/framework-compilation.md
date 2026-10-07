@@ -56,6 +56,10 @@ The Avalonia profile exposes name-reference policies to reusable tooling: `Eleme
 
 ## Build integration
 
+`AvaloniaFrameworkProfile.Create(createSourceInfo: true)` enables Avalonia's public `XamlSourceInfo` metadata on constructed object elements and markup extensions. Locations use one-based XML line/column positions and the physical syntax document path. Metadata is attached after construction and before initialization; populating an existing root preserves its metadata. Resource keys receive locations immediately, including entries whose values are deferred. Compiled resource merges preserve imported locations and record local overrides. This metadata is separate from XamlG's session-owned editing metadata and remains available after session disposal.
+
+The generator and workspace hosts read `XamlGCreateSourceInfo`, then `AvaloniaXamlCreateSourceInfo`, and otherwise enable metadata for `Configuration=Debug`. Direct profile creation defaults to disabled. `XamlWorkspaceOptions.CreateSourceInfo` overrides project configuration. These contracts cover object construction and keyed resource locations; source metadata on framework-specific literal conversions remains under audit.
+
 Use the `XamlG.Generator` package with `XamlG.Runtime`, plus `XamlG.AvaloniaRuntime` for Avalonia binding/runtime integration. The transitive build targets supply XAML AdditionalFiles, expose generator configuration, and disable competing Avalonia XAML/name-generation paths when XamlG is enabled. Existing handwritten `AvaloniaXamlLoader.Load` initialization must be migrated to the generated initializer; a source generator cannot rewrite an existing method body.
 
 `tests/AvaloniaPackagingSmoke` is a real package-consuming project, not a direct-library compilation test. It validates the adapter through MSBuild and the generator after NuGet packing.

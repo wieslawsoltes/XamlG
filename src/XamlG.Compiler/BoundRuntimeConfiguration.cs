@@ -15,4 +15,5 @@ public sealed record BoundRuntimeConfiguration(
         ImmutableArray<BoundServiceContract>.Empty, null, null, ImmutableArray<XmlNamespaceMapping>.Empty, string.Empty);
     public IMethodSymbol? RootServiceProviderFactory { get; init; }
     public BoundNameScopeIntegration? NameScope { get; init; }
+    public BoundSourceInfo? SourceInfo { get; init; }
 }

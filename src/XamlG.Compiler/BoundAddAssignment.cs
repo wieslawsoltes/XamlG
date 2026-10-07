@@ -4,6 +4,8 @@ using XamlG.Syntax;
 namespace XamlG.Compiler;
 public sealed record BoundAddAssignment(BoundMember? Collection, IMethodSymbol AddMethod, ImmutableArray<BoundExpression> Arguments, TextSpan SourceSpan) : BoundAssignment(SourceSpan)
 {
+    /// <summary>Runs after the selected static adder, reusing its collection receiver and arguments.</summary>
+    public BoundPostCall? PostCall { get; init; }
     public ImmutableArray<BoundArgumentInitialization> ValueInitializers { get; init; } = ImmutableArray<BoundArgumentInitialization>.Empty;
     /// <summary>Ordered runtime alternatives for an object-valued last argument. Empty for a statically selected call.</summary>
     public ImmutableArray<IMethodSymbol> Alternatives { get; init; } = ImmutableArray<IMethodSymbol>.Empty;

@@ -13,7 +13,7 @@ internal sealed class GeneratorEnvironment
         Compilation = compilation; Options = options;
         try
         {
-            Profile = KnownFrameworkProfiles.Select(compilation, options.Framework, options.CompileBindingsByDefault);
+            Profile = KnownFrameworkProfiles.Select(compilation, options.Framework, options.CompileBindingsByDefault, options.CreateSourceInfo);
             Types = new(compilation, Profile.TypeSystem);
         }
         catch (ArgumentException error)
