@@ -138,15 +138,24 @@ public sealed class ValueBinder
     private INamedTypeSymbol? FindConverter(ISymbol? symbol)
     {
         if (symbol == null) return null;
+        if (symbol is ITypeSymbol targetType)
+            foreach (var provider in _context.Profile.TypeConverterProviders)
+                if (provider.GetConverter(_context, targetType) is { } converter && IsConverter(converter)) return converter;
         foreach (var attribute in symbol.GetAttributes())
         {
             if (attribute.AttributeClass == null || !_context.Types.Configuration.TypeConverterAttributes.Contains(attribute.AttributeClass.MetadataName())) continue;
             var value = attribute.ConstructorArguments.FirstOrDefault().Value;
             var type = value as INamedTypeSymbol ?? (value is string name ? _context.Types.Find(name.Split(',')[0].Trim()) : null);
-            if (type == null || !_context.Types.IsAccessible(type) || !type.InstanceConstructors.Any(c => c.Parameters.Length == 0 && _context.Types.IsAccessible(c))) continue;
-            for (var current = type; current != null; current = current.BaseType) if (current.HasMetadataName(ClrNames.TypeConverter)) return type;
+            if (type != null && IsConverter(type)) return type;
         }
         return null;
+    }
+    private bool IsConverter(INamedTypeSymbol type)
+    {
+        if (!_context.Types.IsAccessible(type) || !type.InstanceConstructors.Any(c => c.Parameters.Length == 0 && _context.Types.IsAccessible(c))) return false;
+        for (var current = type; current != null; current = current.BaseType)
+            if (current.HasMetadataName(ClrNames.TypeConverter)) return true;
+        return false;
     }
     public ITypeSymbol? ResolveTypeLiteral(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, NamespaceScope? typeArgumentScope = null)
     {

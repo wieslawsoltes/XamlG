@@ -54,7 +54,17 @@ public sealed class AvaloniaListLiteralRule : IXamlTextConversionRule
         foreach (var item in items)
         {
             var value = context.Values.TryText(item, element, scope, span);
-            if (value == null) return false;
+            if (value == null)
+            {
+                var scalar = element is INamedTypeSymbol nullable && nullable.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+                    ? nullable.TypeArguments[0] : element;
+                // Pinned primitive parsing throws during binding; it must not enable a collection-converter fallback.
+                if (scalar.SpecialType is SpecialType.System_Boolean or SpecialType.System_Char or SpecialType.System_Byte or SpecialType.System_SByte or
+                    SpecialType.System_Int16 or SpecialType.System_UInt16 or SpecialType.System_Int32 or SpecialType.System_UInt32 or
+                    SpecialType.System_Int64 or SpecialType.System_UInt64 or SpecialType.System_Single or SpecialType.System_Double)
+                    return Invalid(context, $"Cannot convert list item '{item}' to '{element}'.", span);
+                return false;
+            }
             if (value.Type == null || !context.Types.Compilation.ClassifyCommonConversion(value.Type, element).IsImplicit)
                 return Invalid(context, $"List item '{value.Type}' cannot be assigned to '{element}'.", span);
             values.Add(Suppress(value));
