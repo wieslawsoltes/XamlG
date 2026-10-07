@@ -8,10 +8,12 @@ namespace XamlG.Frameworks.Avalonia.Bindings;
 /// <summary>Bindings in a setter execute on the styled control, not on the Setter object.</summary>
 internal static class BindingTargetTypeResolver
 {
-    public static INamedTypeSymbol Resolve(BindingContext context, ObjectBindingBuilder target) =>
-        AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Setter)
-            ? AvaloniaStyleObjectRule.FindTarget(context, target) ?? target.Type
-            : target.Type;
+    public static INamedTypeSymbol Resolve(BindingContext context, ObjectBindingBuilder target)
+    {
+        if (!AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Setter)) return target.Type;
+        return target.Annotations.TryGet(AvaloniaStyleAnnotations.SetterTarget, out var setterTarget)
+            ? setterTarget : AvaloniaStyleObjectRule.FindTarget(context, target) ?? target.Type;
+    }
 
     public static INamedTypeSymbol? FindTemplateOwner(BindingContext context, ObjectBindingBuilder template)
     {
@@ -19,6 +21,7 @@ internal static class BindingTargetTypeResolver
         foreach (var ancestor in context.Ancestors)
         {
             if (ReferenceEquals(ancestor, template)) continue;
+            if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.SetterTarget, out var setterTarget)) return setterTarget;
             // A nearer setter/style declaration is authoritative. Do not search through
             // its scope to an unrelated control containing the style's resources.
             if (ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.TargetType, out var declared))

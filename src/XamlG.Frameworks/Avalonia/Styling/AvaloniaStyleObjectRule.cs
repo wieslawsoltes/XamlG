@@ -24,12 +24,17 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
                 {
                     target.Annotations.Set(AvaloniaStyleAnnotations.Selector, bound);
                     if (bound.TargetType != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, bound.TargetType);
+                    target.Annotations.Set(AvaloniaStyleAnnotations.SetterScope, new(bound.TargetType, HasComplexActivator(target)));
                 }
             }
             else
             {
                 var owner = FindStyleOwner(context, target);
-                if (owner != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, owner);
+                if (owner != null)
+                {
+                    target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, owner);
+                    target.Annotations.Set(AvaloniaStyleAnnotations.SetterScope, new(owner, source != null));
+                }
                 if (source != null && context.Types.Find(AvaloniaStyleMetadata.Selector) is { } selectorType)
                     target.Annotations.Set(AvaloniaStyleAnnotations.Selector, new BoundSelector(new BoundConstantExpression(null, selectorType, source.Span), owner));
             }
@@ -47,18 +52,22 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
                 if (theme) context.Report("XG3116", "ControlTheme requires an explicit TargetType.", target.Syntax.NameSpan);
                 else type = inherited ?? context.Types.Find(AvaloniaMetadata.Control);
             }
-            if (type != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, type);
+            if (type != null)
+            {
+                target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, type);
+                if (theme) target.Annotations.Set(AvaloniaStyleAnnotations.SetterScope, new(type, false));
+            }
         }
         else if (AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Setter))
         {
-            var source = TextMember(target.Syntax, AvaloniaStyleMetadata.PropertyMember);
-            if (source is { } property && AvaloniaRegisteredPropertyResolver.Resolve(context, declaredType ?? inherited, property.Text, target.Scope, property.Span) is { } resolved)
-            {
-                target.Annotations.Set(AvaloniaStyleAnnotations.SetterProperty, resolved);
-            }
+            BindSetter(context, target, declaredType);
         }
         // The directive wraps the inferred style metadata and is nearest to its setters.
-        if (declaredType != null) target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, declaredType);
+        if (declaredType != null)
+        {
+            target.Annotations.Set(AvaloniaStyleAnnotations.TargetType, declaredType);
+            target.Annotations.Set(AvaloniaStyleAnnotations.SetterScope, new(declaredType, HasComplexActivator(target)));
+        }
     }
 
     public void Complete(BindingContext context, ObjectBindingBuilder target)
@@ -106,5 +115,43 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
         var property = element.Children.OfType<XamlElementSyntax>().FirstOrDefault(e => e.LocalName.EndsWith("." + name, StringComparison.Ordinal));
         if (property == null || property.Children.OfType<XamlElementSyntax>().Any()) return null;
         return (string.Concat(property.Children.OfType<XamlTextSyntax>().Select(t => t.Value)).Trim(), property.Span);
+    }
+
+    private static void BindSetter(BindingContext context, ObjectBindingBuilder target, INamedTypeSymbol? declaredType)
+    {
+        var scope = declaredType == null ? context.Ancestors.Where(ancestor => !ReferenceEquals(ancestor, target))
+            .Select(ancestor => ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.SetterScope, out var value) ? value : null).FirstOrDefault(value => value != null)
+            : new AvaloniaSetterScope(declaredType, HasComplexActivator(target));
+        if (scope?.TargetType == null)
+        { context.Report("XG3102", "Setter requires a style target type or x:SetterTargetType.", target.Syntax.NameSpan); return; }
+        target.Annotations.Set(AvaloniaStyleAnnotations.SetterTarget, scope.TargetType);
+        const string name = AvaloniaStyleMetadata.PropertyMember;
+        var attribute = target.Syntax.Attributes.FirstOrDefault(a => a.Name == name || a.LocalName.EndsWith("." + name, StringComparison.Ordinal));
+        var property = target.Syntax.Children.OfType<XamlElementSyntax>().FirstOrDefault(e => e.LocalName.EndsWith("." + name, StringComparison.Ordinal));
+        var text = attribute?.Value;
+        var span = attribute?.ValueSpan ?? property?.Span ?? target.Syntax.NameSpan;
+        var propertyScope = property == null ? target.Scope : target.Scope.Push(property);
+        if (attribute != null)
+        {
+            if (text!.StartsWith("{}", StringComparison.Ordinal)) text = text.Substring(2);
+            else if (text.StartsWith("{", StringComparison.Ordinal)) text = null;
+        }
+        else if (property != null)
+            text = property.Children.OfType<XamlTextSyntax>().FirstOrDefault()?.Value;
+        if (text == null)
+        { context.Report("XG3102", "Setter.Property requires a literal property name.", span); return; }
+        var resolved = AvaloniaRegisteredPropertyResolver.Resolve(context, scope.TargetType, text, propertyScope, span);
+        if (resolved == null) return;
+        if (resolved is RegisteredClassProperty && scope.HasComplexActivator)
+        { context.Report("XG3118", "A class setter requires a style without a complex activator.", span); return; }
+        target.Annotations.Set(AvaloniaStyleAnnotations.SetterProperty, resolved);
+    }
+
+    private static bool HasComplexActivator(ObjectBindingBuilder target)
+    {
+        if (target.Annotations.TryGet(AvaloniaStyleAnnotations.Selector, out var selector))
+            return selector.Expression is not BoundCallExpression { Method.Name: "OfType" or "Is" };
+        return target.Syntax.Attributes.Any(attribute => attribute.Name == "Selector" || attribute.LocalName.EndsWith(".Selector", StringComparison.Ordinal)) ||
+            target.Syntax.Children.OfType<XamlElementSyntax>().Any(element => element.LocalName.EndsWith(".Selector", StringComparison.Ordinal));
     }
 }
