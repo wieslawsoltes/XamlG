@@ -4,7 +4,7 @@ using XamlG.Syntax;
 
 namespace XamlG.Frameworks.Avalonia.Styling;
 
-internal sealed record RegisteredProperty(IFieldSymbol Field, ITypeSymbol ValueType)
+internal sealed record RegisteredProperty(IFieldSymbol Field, ITypeSymbol PropertyValueType) : AvaloniaPropertyReference(PropertyValueType)
 {
-    public BoundExpression Reference(TextSpan span) => new BoundStaticExpression(Field, Field.Type, span);
+    public override BoundExpression Reference(TextSpan span) => new BoundStaticExpression(Field, Field.Type, span);
 }

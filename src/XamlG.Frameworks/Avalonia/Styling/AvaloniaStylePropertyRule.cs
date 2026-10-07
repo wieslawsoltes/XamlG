@@ -42,7 +42,7 @@ public sealed class AvaloniaStylePropertyRule : IXamlPropertyBindingRule
         var node = values[0];
         BoundExpression? value;
         if (node is XamlTextSyntax text && (!text.Value.StartsWith("{", StringComparison.Ordinal) || text.Value.StartsWith("{}", StringComparison.Ordinal)))
-            value = context.Values.BindText(text.Value, registered.ValueType, scope, text.Span, registered.Field);
+            value = context.Values.BindText(text.Value, registered.ValueType, scope, text.Span);
         else
         {
             if (node is XamlElementSyntax bindingElement && new AvaloniaCompiledBindingRule().TryBindElement(context, bindingElement, registered.ValueType, scope, out var compiled)) value = compiled;

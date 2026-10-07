@@ -56,8 +56,10 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
                     builder = _expressions.GenericCall(builder, "TypeCast", type, segment.Span);
                     break;
                 case BindingPathKind.AttachedProperty:
-                    var registered = AvaloniaRegisteredPropertyResolver.Resolve(context, type, segment.Name, scope, segment.Span);
-                    if (registered == null) return null;
+                    var reference = AvaloniaRegisteredPropertyResolver.Resolve(context, type, segment.Name, scope, segment.Span);
+                    if (reference == null) return null;
+                    if (reference is not RegisteredProperty registered)
+                    { context.Report("XG3205", "An attached-property path requires a registered property field.", segment.Span); return null; }
                     var attached = _accessors.Registered(registered, segment.Span);
                     if (attached == null) return null;
                     builder = _expressions.Call(builder, "Property", segment.Span, attached.PropertyInfo, attached.Factory);

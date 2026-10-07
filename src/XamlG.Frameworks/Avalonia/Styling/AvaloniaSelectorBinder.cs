@@ -121,9 +121,10 @@ internal sealed class AvaloniaSelectorBinder(BindingContext context, NamespaceSc
         ITypeSymbol valueType;
         if (step.Name.StartsWith("(", StringComparison.Ordinal))
         {
-            property = AvaloniaRegisteredPropertyResolver.Resolve(context, target, step.Name, scope, step.Span);
-            if (property == null) return null;
-            if (property.Field.Type is not INamedTypeSymbol fieldType || !fieldType.OriginalDefinition.HasMetadataName(AvaloniaStyleMetadata.AttachedProperty))
+            var reference = AvaloniaRegisteredPropertyResolver.Resolve(context, target, step.Name.Replace('|', ':'), scope, step.Span);
+            if (reference == null) return null;
+            property = reference as RegisteredProperty;
+            if (property?.Field.Type is not INamedTypeSymbol fieldType || !fieldType.OriginalDefinition.HasMetadataName(AvaloniaStyleMetadata.AttachedProperty))
             { context.Report("XG3103", "An attached-property selector requires an AttachedProperty registration.", step.Span); return null; }
             valueType = property.ValueType;
         }
