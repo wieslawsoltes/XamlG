@@ -45,16 +45,13 @@ public sealed class AvaloniaResourceSourceInfoRule : IXamlObjectBindingRule
     {
         if (value is BoundDeferredExpression deferred) return Location(syntax, deferred.Content);
         if (value is BoundCastExpression cast) return Location(syntax, cast.Value);
+        if (value.SourceInfoSpan is { } location) return location;
         if (value is BoundValueConverterExpression converter) return Location(syntax, converter.Value);
         if (value is BoundObjectExpression obj) return obj.Object.Syntax.NameSpan;
         if (value is BoundMarkupExpression markup) return markup.Extension.Syntax.NameSpan;
+        if (value is BoundConstantExpression or BoundParseExpression or BoundConverterExpression or BoundNewExpression)
+            return BoundSourceInfo.ValueLocation(syntax, value.Span);
         var element = syntax.FindElement(value.Span.Start);
-        if (value is BoundConstantExpression or BoundParseExpression or BoundConverterExpression &&
-            element?.Children.OfType<XamlTextSyntax>().FirstOrDefault() is { } text)
-            // XML line information for CDATA starts after its <![CDATA[ delimiter.
-            return text.IsCData ? new(text.Span.Start + 9, 0) : text.Span;
-        if (value is BoundConstantExpression or BoundParseExpression or BoundConverterExpression &&
-            element?.Children.OfType<XamlElementSyntax>().FirstOrDefault() is { } child) return child.NameSpan;
         return element?.NameSpan ?? value.Span;
     }
 }

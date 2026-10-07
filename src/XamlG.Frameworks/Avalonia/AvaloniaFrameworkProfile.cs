@@ -59,7 +59,7 @@ public static class AvaloniaFrameworkProfile
             },
             BindingRules = ImmutableArray.Create<IXamlBindingRule>(bindings, new AvaloniaStyleDirectiveRule(), classes, deferredResources),
             TextConversionRules = ImmutableArray.Create<IXamlTextConversionRule>(new AvaloniaPropertyReferenceTextRule(),
-                new AvaloniaFontFamilyTextRule(), new XamlStaticMemberTextRule(new[] { AvaloniaLiteralMetadata.WindowTransparencyLevel }),
+                new AvaloniaFontFamilyTextRule(), new AvaloniaConstructorLiteralRule(), new XamlStaticMemberTextRule(new[] { AvaloniaLiteralMetadata.WindowTransparencyLevel }),
                 new XamlDelimitedListTextRule(new[] { AvaloniaRegisteredSetterMetadata.List, AvaloniaRegisteredSetterMetadata.ReadOnlyList }),
                 new AvaloniaTextConversionRule()),
             ObjectBindingRules = ImmutableArray.Create<IXamlObjectBindingRule>(new References.AvaloniaNameScopeRule(), new AvaloniaStyleObjectRule(), new AvaloniaTemplatePartsRule(), styleWarnings, bindings, classes, resources, deferredResources, new AvaloniaResourceSourceInfoRule()),

@@ -36,7 +36,12 @@ internal sealed class ValueEmitter
             case BoundArrayExpression array:
                 return "new " + array.ArrayType.ElementType.CSharpName() + "[] { " + string.Join(", ", array.Values.Select(v => Emit(v, frame))) + " }";
             case BoundNewExpression creation:
-                return "new " + creation.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", EmitArguments(creation.Constructor, creation.Arguments, frame)) + ")";
+                var constructed = "new " + creation.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", EmitArguments(creation.Constructor, creation.Arguments, frame)) + ")";
+                if (creation.SourceInfoSpan is not { } sourceSpan || creation.Constructor.ContainingType.IsValueType || _context.Document.Runtime.SourceInfo == null) return constructed;
+                var located = _context.Temporary("literal");
+                _context.Writer.Line("var " + located + " = " + constructed + ";");
+                new SourceInfoEmitter(_context).EmitConstructed(located, sourceSpan);
+                return located;
             case BoundCallExpression call:
                 var receiver = call.Method.IsStatic ? call.Method.ContainingType.CSharpName() : call.Receiver == null ? _context.RootVariable : "(" + Emit(call.Receiver, frame) + ")";
                 if (!call.Method.IsStatic && call.Receiver != null && !call.Arguments.IsEmpty)
@@ -50,11 +55,9 @@ internal sealed class ValueEmitter
                 return parse.Method.ContainingType.CSharpName() + "." + CSharpNames.Method(parse.Method) + "(" + CSharpNames.Literal(parse.Text) +
                     (parse.Method.Parameters.Length == 2 ? ", (" + parse.Method.Parameters[1].Type.CSharpName() + ")" + CSharpNames.InvariantCulture : string.Empty) + ")";
             case BoundConverterExpression converter:
-                return "((" + converter.ValueType.CSharpName() + ")new " + converter.Converter.CSharpName() + "().ConvertFrom(" + frame + ", " +
-                    CSharpNames.InvariantCulture + ", " + CSharpNames.Literal(converter.Text) + ")!)";
+                return Convert(converter, converter.Converter, converter.ValueType, frame, () => CSharpNames.Literal(converter.Text));
             case BoundValueConverterExpression converter:
-                return "((" + converter.ValueType.CSharpName() + ")new " + converter.Converter.CSharpName() + "().ConvertFrom(" + frame + ", " +
-                    CSharpNames.InvariantCulture + ", " + Emit(converter.Value, frame) + ")!)";
+                return Convert(converter, converter.Converter, converter.ValueType, frame, () => Emit(converter.Value, frame));
             case BoundMarkupExpression markup:
                 var extension = _objects.Emit(markup.Extension, frame, null, null);
                 return extension + "." + CSharpNames.Method(markup.Method) + "(" + (markup.Method.Parameters.Length == 0 ? string.Empty : frame) + ")";
@@ -62,6 +65,15 @@ internal sealed class ValueEmitter
             case BoundRawExpression raw: return ExpandTrusted(raw.CSharp, frame, frame + ".TargetObject!");
             default: _context.Error("The backend does not recognize expression '" + value.GetType().Name + "'.", value.Span); return "default!";
         }
+    }
+
+    private string Convert(BoundExpression expression, INamedTypeSymbol converter, ITypeSymbol resultType, string frame, Func<string> value)
+    {
+        var local = _context.Temporary("converter");
+        _context.Writer.Line("var " + local + " = new " + converter.CSharpName() + "();");
+        if (_context.Document.Runtime.SourceInfo != null)
+            new SourceInfoEmitter(_context).EmitConstructed(local, expression.SourceInfoSpan ?? BoundSourceInfo.ValueLocation(_context.Document.Syntax, expression.Span));
+        return "((" + resultType.CSharpName() + ")" + local + ".ConvertFrom(" + frame + ", " + CSharpNames.InvariantCulture + ", " + value() + ")!)";
     }
 
     public string[] EmitArguments(IMethodSymbol method, System.Collections.Immutable.ImmutableArray<BoundExpression> arguments, string frame)
