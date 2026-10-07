@@ -34,9 +34,10 @@ internal sealed class ConstructorBinder
                     if (type != null && !_context.Types.Compilation.ClassifyCommonConversion(type, parameter).IsImplicit)
                     {
                         if (type.SpecialType == SpecialType.System_Object && _context.Types.Compilation.ClassifyCommonConversion(type, parameter).Exists) score += 5;
-                        else if (!_context.Values.TryGetStringLiteral(argument, scope, out var literal) ||
-                            _context.Values.TryText(literal, parameter, argument is XamlElementSyntax element ? scope.Push(element) : scope,
-                                argument.Span, method.Parameters[i]) == null) { valid = false; break; }
+                        else if (_context.Values.TryGetStringLiteral(argument, scope, out var literal)
+                            ? _context.Values.TryText(literal, parameter, argument is XamlElementSyntax element ? scope.Push(element) : scope,
+                                argument.Span, method.Parameters[i]) == null
+                            : !_context.Values.CanConvertValueType(type, parameter, method.Parameters[i])) { valid = false; break; }
                         score += 2;
                     }
                     if (!SymbolEqualityComparer.Default.Equals(type, parameter)) score++;

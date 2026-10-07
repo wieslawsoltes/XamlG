@@ -10,7 +10,7 @@ namespace XamlG.Compiler;
 internal sealed class DynamicCollectionBinder(BindingContext context)
 {
     public bool TryBind(ObjectBindingBuilder target, BoundMember? member, XamlSyntaxNode syntax,
-        NamespaceScope scope, BoundExpression? keyValue, IMethodSymbol[] methods)
+        NamespaceScope scope, BoundExpression? keyValue, IMethodSymbol[] methods, bool attribute = false)
     {
         if (methods.Length == 0) return false;
         if (syntax is XamlTextSyntax text)
@@ -21,19 +21,24 @@ internal sealed class DynamicCollectionBinder(BindingContext context)
 
         var value = context.Values.BindNode(syntax, context.Types.Special(SpecialType.System_Object), scope, target.NameScopeId, normalizeText: false);
         if (value == null) return true;
-        var compatible = methods.Where(method => value is BoundConstantExpression { Value: null }
-            ? method.Parameters.Last().Type.AcceptsNull()
-            : value.Type?.SpecialType == SpecialType.System_Object
-                ? context.Types.Compilation.ClassifyCommonConversion(value.Type, method.Parameters.Last().Type).Exists
-                : CanAssign(value, method.Parameters.Last().Type));
         var candidates = ImmutableArray.CreateBuilder<IMethodSymbol>();
-        foreach (var method in compatible)
+        foreach (var method in methods)
         {
             var type = method.Parameters.Last().Type;
-            if (candidates.Any(previous => Subsumes(previous.Parameters.Last().Type, type))) continue;
-            candidates.Add(method);
+            var compatible = !attribute && (value is BoundConstantExpression { Value: null } ? type.AcceptsNull() :
+                value.Type?.SpecialType == SpecialType.System_Object ? context.Types.Compilation.ClassifyCommonConversion(value.Type, type).Exists : CanAssign(value, type));
+            if (compatible)
+            {
+                if (!candidates.Any(previous => Subsumes(previous.Parameters.Last().Type, type))) candidates.Add(method);
+            }
+            else if (context.Values.TryConvert(value, type, scope, syntax.Span) is { } converted)
+            {
+                target.Assignments.Add(new BoundAddAssignment(member, method,
+                    keyValue == null ? ImmutableArray.Create(converted) : ImmutableArray.Create(keyValue, converted), syntax.Span));
+                return true;
+            }
         }
-        if (candidates.Count == 0) { Error("No compatible collection overload accepts the provided value.", syntax.Span); return true; }
+        if (candidates.Count == 0) { context.Report(attribute ? "XG1010" : "XG1016", "No compatible collection overload accepts the provided value.", syntax.Span); return true; }
         var selected = candidates[0];
         var dynamic = value.Type?.SpecialType == SpecialType.System_Object && value is not BoundConstantExpression { Value: null } && candidates.Count > 1;
         if (!dynamic)
@@ -60,5 +65,4 @@ internal sealed class DynamicCollectionBinder(BindingContext context)
         var conversion = context.Types.Compilation.ClassifyConversion(RuntimeType(candidate), RuntimeType(previous));
         return conversion.IsImplicit && !conversion.IsNumeric && !conversion.IsUserDefined && (!candidate.AcceptsNull() || previous.AcceptsNull());
     }
-    private void Error(string message, TextSpan span) => context.Report("XG1016", message, span);
 }

@@ -26,19 +26,29 @@ internal sealed class CollectionReplacementBinder(BindingContext context)
             context.Members.AddSet(target, member, value, syntax.Span);
             return true;
         }
-        if (value is BoundConstantExpression { Value: string text })
+        if (value.Type?.SpecialType != SpecialType.System_Object)
         {
             var valueScope = syntax is XamlElementSyntax literal ? scope.Push(literal) : scope;
-            var converted = context.Values.TryText(text, member.ValueType, valueScope, syntax.Span, member.ConversionSource);
-            if (converted == null) return false;
-            context.Members.AddSet(target, member, converted, syntax.Span);
-            return true;
+            var converted = context.Values.TryConvert(value, member.ValueType, valueScope, syntax.Span, member.ConversionSource);
+            if (converted != null)
+            {
+                context.Members.AddSet(target, member, converted, syntax.Span);
+                return true;
+            }
+            if (value is BoundConstantExpression { Value: string }) return false;
         }
         var candidates = ImmutableArray.CreateBuilder<BoundValueSetter>();
         if (value.Type?.SpecialType == SpecialType.System_Object) candidates.Add(new BoundPropertyValueSetter(member));
         foreach (var method in context.Types.AddMethods(member.ValueType).Where(method => method.Parameters.Length == 1))
+        {
             if (value.Type?.SpecialType == SpecialType.System_Object || value.Type != null && context.Types.Compilation.ClassifyCommonConversion(value.Type, method.Parameters[0].Type).IsImplicit)
                 candidates.Add(new BoundCollectionValueSetter(member, method));
+            else if (context.Values.TryConvert(value, method.Parameters[0].Type, scope, syntax.Span) is { } converted)
+            {
+                target.Assignments.Add(new BoundAddAssignment(member, method, ImmutableArray.Create(converted), syntax.Span));
+                return true;
+            }
+        }
         if (value.Type?.SpecialType != SpecialType.System_Object && candidates.FirstOrDefault() is BoundCollectionValueSetter adder)
         {
             target.Assignments.Add(new BoundAddAssignment(member, adder.AddMethod, ImmutableArray.Create(value), syntax.Span));

@@ -78,9 +78,8 @@ public sealed class MemberBinder
             if (rule.TryBind(_context, target, member, ImmutableArray.Create<XamlSyntaxNode>(new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan)), scope, attribute.Span, true)) return;
         if (!member.CanWrite)
         {
-            if (member.Getter != null && _context.Types.AddMethods(member.ValueType).Any() &&
-                (!attribute.Value.StartsWith("{", StringComparison.Ordinal) || attribute.Value.StartsWith("{}", StringComparison.Ordinal)))
-            { BindCollectionItem(target, member, new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan), scope); return; }
+            if (member.Getter != null && _context.Types.AddMethods(member.ValueType).Any())
+            { BindCollectionItem(target, member, new XamlTextSyntax(attribute.Value, false, attribute.ValueSpan), scope, attribute: true); return; }
             _context.Report("XG1010", $"Property '{member.Name}' is read-only.", attribute.NameSpan); return;
         }
         var value = _context.Values.BindText(attribute.Value, member.ValueType, scope, attribute.ValueSpan, member.ConversionSource);
@@ -149,14 +148,14 @@ public sealed class MemberBinder
         if (!target.AssignedScalars.Add(key)) { _context.Report("XG1014", $"Property '{member.Name}' is assigned more than once.", span); return; }
         target.Assignments.Add(new BoundSetAssignment(member, value, span));
     }
-    private void BindCollectionItem(ObjectBindingBuilder target, BoundMember? member, XamlSyntaxNode syntax, NamespaceScope scope, bool normalized = false)
+    private void BindCollectionItem(ObjectBindingBuilder target, BoundMember? member, XamlSyntaxNode syntax, NamespaceScope scope, bool normalized = false, bool attribute = false)
     {
         var type = member?.ValueType ?? target.Type;
         var elementScope = syntax is XamlElementSyntax element ? scope.Push(element) : scope;
         var key = syntax is XamlElementSyntax keyed ? elementScope.Directive(keyed, "Key") : null;
         var methods = _context.Types.AddMethods(type).Where(m => m.Parameters.Length == (key == null ? 1 : 2)).ToArray();
         if (!new CollectionKeyBinder(_context).TryBind(key, elementScope, ref methods, out var boundKey)) return;
-        if (new DynamicCollectionBinder(_context).TryBind(target, member, syntax, scope, boundKey, methods)) return;
+        if (new DynamicCollectionBinder(_context).TryBind(target, member, syntax, scope, boundKey, methods, attribute)) return;
         var nodeType = _context.Values.PeekValueType(syntax, scope, target.NameScopeId);
         var isLiteral = _context.Values.TryGetStringLiteral(syntax, scope, out var literal);
         if (syntax is XamlTextSyntax && isLiteral)
@@ -166,16 +165,23 @@ public sealed class MemberBinder
         }
         IMethodSymbol? selected = null;
         BoundExpression? converted = null;
+        BoundExpression? provided = null;
+        if (!isLiteral && nodeType?.SpecialType == SpecialType.System_String)
+        {
+            provided = _context.Values.BindNode(syntax, _context.Types.Special(SpecialType.System_Object), scope, target.NameScopeId);
+            if (provided == null) return;
+        }
         foreach (var method in methods)
         {
             var parameter = method.Parameters[method.Parameters.Length - 1].Type;
             var conversion = nodeType == null ? default : _context.Types.Compilation.ClassifyConversion(nodeType, parameter);
-            if (nodeType == null ? parameter.AcceptsNull() : conversion.IsImplicit && (!conversion.IsNumeric || _context.Types.Configuration.AllowImplicitNumericConversions))
+            if (!attribute && (nodeType == null ? parameter.AcceptsNull() : conversion.IsImplicit && (!conversion.IsNumeric || _context.Types.Configuration.AllowImplicitNumericConversions)))
             {
                 selected ??= method;
                 continue;
             }
-            if (isLiteral && _context.Values.TryText(literal, parameter, elementScope, syntax.Span) is { } value)
+            var input = isLiteral ? new BoundConstantExpression(literal, _context.Types.Special(SpecialType.System_String), syntax.Span) : provided;
+            if (input != null && _context.Values.TryConvert(input, parameter, elementScope, syntax.Span) is { } value)
             {
                 selected = method;
                 converted = value;
@@ -186,12 +192,15 @@ public sealed class MemberBinder
         }
         if (selected == null)
         {
+            if (attribute) { _context.Report("XG1010", $"Property '{member!.Name}' is read-only and no collection adder converts the attribute value.", syntax.Span); return; }
             var hasDictionary = _context.Types.AddMethods(type).Any(m => m.Parameters.Length == 2);
             _context.Report("XG1016", key == null && hasDictionary ? "Dictionary entries require x:Key." : $"No compatible Add method on '{type}'.", syntax.Span); return;
         }
         var args = ImmutableArray.CreateBuilder<BoundExpression>();
         if (boundKey != null) args.Add(boundKey);
-        var boundValue = converted ?? _context.Values.BindNode(syntax, selected.Parameters[selected.Parameters.Length - 1].Type, scope, target.NameScopeId, normalizeText: !normalized);
+        var boundValue = converted ?? (provided == null
+            ? _context.Values.BindNode(syntax, selected.Parameters[selected.Parameters.Length - 1].Type, scope, target.NameScopeId, normalizeText: !normalized)
+            : _context.Values.Coerce(provided, selected.Parameters[selected.Parameters.Length - 1].Type, syntax.Span, elementScope));
         if (boundValue == null) return; args.Add(boundValue);
         target.Assignments.Add(new BoundAddAssignment(member, selected, args.ToImmutable(), syntax.Span));
     }

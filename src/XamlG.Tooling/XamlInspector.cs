@@ -69,6 +69,7 @@ public static class XamlInspector
             BoundStaticExpression s => s.Member.ToDisplayString(),
             BoundParseExpression p => p.Text,
             BoundConverterExpression c => c.Text,
+            BoundValueConverterExpression c => c.Converter.ToDisplayString(),
             BoundParameterExpression p => p.Name,
             BoundLambdaExpression l => (l.IsStatic ? "static " : string.Empty) + "(" + string.Join(", ", l.Parameters.Select(p => p.Name)) + ") =>",
             BoundPropertyAccessExpression p => p.Property.ToDisplayString(),
@@ -82,6 +83,7 @@ public static class XamlInspector
         {
             BoundChoiceExpression c => ImmutableArray.Create<BoundExpression>(new BoundObjectExpression(c.Extension)).AddRange(c.Branches.SelectMany(b => new[] { b.Option, b.Value })).AddRange(c.Default == null ? Enumerable.Empty<BoundExpression>() : new[] { c.Default }),
             BoundCastExpression c => ImmutableArray.Create(c.Value),
+            BoundValueConverterExpression c => ImmutableArray.Create(c.Value),
             BoundArrayExpression a => a.Values,
             BoundNewExpression n => n.Arguments,
             BoundCallExpression c => c.Receiver == null ? c.Arguments : c.Arguments.Insert(0, c.Receiver),

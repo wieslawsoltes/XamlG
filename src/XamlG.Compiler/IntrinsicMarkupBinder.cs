@@ -79,8 +79,8 @@ internal sealed class IntrinsicMarkupBinder(BindingContext context, bool report 
         if (kind is "Null" or "True" or "False")
         {
             if (arguments.Length != 0) return Invalid($"x:{kind} does not accept arguments.", span);
-            return context.Values.Coerce(kind == "Null" ? new BoundConstantExpression(null, null, span) :
-                new BoundConstantExpression(kind == "True", context.Types.Special(SpecialType.System_Boolean), span), target, span);
+            return kind == "Null" ? new BoundConstantExpression(null, null, span) :
+                new BoundConstantExpression(kind == "True", context.Types.Special(SpecialType.System_Boolean), span);
         }
         if (property == null) return Invalid($"Unsupported intrinsic markup extension 'x:{kind}'.", span);
         if (arguments.Length != 1 || arguments[0].Name != null && arguments[0].Name != property || string.IsNullOrWhiteSpace(arguments[0].Value))

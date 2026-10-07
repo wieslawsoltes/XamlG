@@ -44,7 +44,7 @@ internal sealed class MarkupBinder
         _context.Symbols.Add(new(span, member, "static"));
         var type = member is IFieldSymbol field ? field.Type : ((IPropertySymbol)member).Type;
         var value = new BoundStaticExpression(member, type, span);
-        return report ? _context.Values.Coerce(value, target, span) : value;
+        return value;
     }
     private BoundExpression? Missing(string message, TextSpan span) { _context.Report("XG1009", message, span); return null; }
 }

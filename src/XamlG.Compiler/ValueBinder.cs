@@ -19,7 +19,7 @@ public sealed class ValueBinder
         {
             var syntax = MarkupExtensionParser.Parse(text, span, _context.Diagnostics.Add);
             var value = syntax == null ? null : _markup.Bind(syntax, target, scope);
-            return value == null ? null : Coerce(value, target, span);
+            return value == null ? null : Coerce(value, target, span, scope, member);
         }
         var converted = TryText(text, target, scope, span, member);
         if (converted == null) _context.Report("XG1008", $"Cannot convert '{text}' to '{target.ToDisplayString()}'.", span);
@@ -66,11 +66,7 @@ public sealed class ValueBinder
                 return new BoundMethodGroupExpression(method, null, delegateType, span);
             }
         }
-        var parse = target.Members(ClrNames.Parse).OfType<IMethodSymbol>()
-            .Where(m => m.IsStatic && !m.IsGenericMethod && _context.Types.IsAccessible(m) && m.Parameters.Length is 1 or 2 &&
-                m.Parameters[0].Type.SpecialType == SpecialType.System_String && (m.Parameters.Length == 1 || m.Parameters[1].Type.HasMetadataName(ClrNames.IFormatProvider) || m.Parameters[1].Type.HasMetadataName(ClrNames.CultureInfo)) &&
-                _context.Types.Compilation.ClassifyCommonConversion(m.ReturnType, target).IsImplicit)
-            .OrderByDescending(m => m.Parameters.Length).FirstOrDefault();
+        var parse = FindParse(target);
         if (parse != null) return new BoundParseExpression(text, parse, target, span);
         var converter = FindConverter(target);
         if (converter != null) return new BoundConverterExpression(text, converter, target, span);
@@ -82,6 +78,48 @@ public sealed class ValueBinder
         }
         return null;
     }
+    public BoundExpression? TryConvert(BoundExpression value, ITypeSymbol target, NamespaceScope scope, TextSpan span, ISymbol? member = null)
+    {
+        var propertyConverter = FindConverter(member);
+        if (value is BoundConstantExpression { Value: string text })
+        {
+            if (propertyConverter == null && _context.Types.Compilation.ClassifyCommonConversion(value.Type!, target).IsImplicit) return null;
+            return TryText(text, target, scope, span, member);
+        }
+        if (propertyConverter != null) return new BoundValueConverterExpression(value, propertyConverter, target, span);
+        if (value.Type?.SpecialType != SpecialType.System_String) return null;
+        if (target is INamedTypeSymbol nullable && nullable.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+        {
+            var inner = TryConvert(value, nullable.TypeArguments[0], scope, span, member);
+            return inner == null ? null : new BoundCastExpression(inner, target, span);
+        }
+        var parse = FindParse(target);
+        if (parse != null)
+        {
+            var arguments = ImmutableArray.Create(value);
+            if (parse.Parameters.Length == 2)
+            {
+                var culture = _context.Types.Find(ClrNames.CultureInfo)!.GetMembers("InvariantCulture").OfType<IPropertySymbol>().Single();
+                arguments = arguments.Add(new BoundStaticExpression(culture, culture.Type, span));
+            }
+            return new BoundCallExpression(parse, null, arguments, span);
+        }
+        var converter = FindConverter(target);
+        return converter == null ? null : new BoundValueConverterExpression(value, converter, target, span);
+    }
+    public bool CanConvertValueType(ITypeSymbol source, ITypeSymbol target, ISymbol? member = null)
+    {
+        if (FindConverter(member) != null) return true;
+        if (source.SpecialType != SpecialType.System_String) return false;
+        if (target is INamedTypeSymbol nullable && nullable.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+            target = nullable.TypeArguments[0];
+        return FindParse(target) != null || FindConverter(target) != null;
+    }
+    private IMethodSymbol? FindParse(ITypeSymbol target) => target.Members(ClrNames.Parse).OfType<IMethodSymbol>()
+            .Where(m => m.IsStatic && !m.IsGenericMethod && _context.Types.IsAccessible(m) && m.Parameters.Length is 1 or 2 &&
+                m.Parameters[0].Type.SpecialType == SpecialType.System_String && (m.Parameters.Length == 1 || m.Parameters[1].Type.HasMetadataName(ClrNames.IFormatProvider) || m.Parameters[1].Type.HasMetadataName(ClrNames.CultureInfo)) &&
+                _context.Types.Compilation.ClassifyCommonConversion(m.ReturnType, target).IsImplicit)
+            .OrderByDescending(m => m.Parameters.Length).FirstOrDefault();
     private INamedTypeSymbol? FindConverter(ISymbol? symbol)
     {
         if (symbol == null) return null;
@@ -189,7 +227,7 @@ public sealed class ValueBinder
         var conversion = _context.Types.Compilation.ClassifyConversion(value.Type, target);
         if (conversion.IsImplicit && (!conversion.IsNumeric || _context.Types.Configuration.AllowImplicitNumericConversions)) return value;
         if (conversion.Exists && value.Type.SpecialType == SpecialType.System_Object) return new BoundCastExpression(value, target, span);
-        if (value is BoundConstantExpression { Value: string text } && TryText(text, target, scope ?? NamespaceScope.Empty, span, member) is { } converted) return converted;
+        if (TryConvert(value, target, scope ?? NamespaceScope.Empty, span, member) is { } converted) return converted;
         _context.Report("XG1023", $"Value of type '{value.Type}' cannot be assigned to '{target}'.", span); return null;
     }
 }

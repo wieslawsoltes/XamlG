@@ -39,13 +39,17 @@ internal sealed class ValueEmitter
                 return "new " + creation.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", creation.Arguments.Select(a => Emit(a, frame))) + ")";
             case BoundCallExpression call:
                 var receiver = call.Method.IsStatic ? call.Method.ContainingType.CSharpName() : call.Receiver == null ? _context.RootVariable : "(" + Emit(call.Receiver, frame) + ")";
-                return receiver + "." + CSharpNames.Method(call.Method) + "(" + string.Join(", ", call.Arguments.Select(a => Emit(a, frame))) + ")";
+                return receiver + "." + CSharpNames.Method(call.Method) + "(" + string.Join(", ", call.Arguments.Select((argument, index) =>
+                    "(" + call.Method.Parameters[index].Type.CSharpName() + ")(" + Emit(argument, frame) + ")")) + ")";
             case BoundParseExpression parse:
                 return parse.Method.ContainingType.CSharpName() + "." + CSharpNames.Method(parse.Method) + "(" + CSharpNames.Literal(parse.Text) +
-                    (parse.Method.Parameters.Length == 2 ? ", " + CSharpNames.InvariantCulture : string.Empty) + ")";
+                    (parse.Method.Parameters.Length == 2 ? ", (" + parse.Method.Parameters[1].Type.CSharpName() + ")" + CSharpNames.InvariantCulture : string.Empty) + ")";
             case BoundConverterExpression converter:
                 return "((" + converter.ValueType.CSharpName() + ")new " + converter.Converter.CSharpName() + "().ConvertFrom(" + frame + ", " +
                     CSharpNames.InvariantCulture + ", " + CSharpNames.Literal(converter.Text) + ")!)";
+            case BoundValueConverterExpression converter:
+                return "((" + converter.ValueType.CSharpName() + ")new " + converter.Converter.CSharpName() + "().ConvertFrom(" + frame + ", " +
+                    CSharpNames.InvariantCulture + ", " + Emit(converter.Value, frame) + ")!)";
             case BoundMarkupExpression markup:
                 var extension = _objects.Emit(markup.Extension, frame, null, null);
                 return extension + "." + CSharpNames.Method(markup.Method) + "(" + (markup.Method.Parameters.Length == 0 ? string.Empty : frame) + ")";
