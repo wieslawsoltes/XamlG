@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Diagnostics;
@@ -122,6 +123,35 @@ public sealed class TemplatePriorityTests
             var control = Assert.IsType<ItemsControl>(root is IControlTemplate template ? template.Build(new Button())!.Result : root);
             Assert.Equal("Name", Assert.IsType<ReflectionBinding>(control.DisplayMemberBinding).Path);
             Assert.Equal(inTemplate ? BindingPriority.Template : BindingPriority.LocalValue, control.GetDiagnostic(ItemsControl.DisplayMemberBindingProperty).Priority);
+        }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(false, "ReflectionBinding")]
+    [InlineData(true, "ReflectionBinding")]
+    [InlineData(false, "CompiledBinding")]
+    [InlineData(true, "CompiledBinding")]
+    public void AttachedBindingGetterAttributesRetainBindingObjects(bool inTemplate, string bindingKind)
+    {
+        var content = "<ComboBox x:DataType='x:String' TextSearch.TextBinding='{" + bindingKind + " Length}'/>";
+        var xaml = inTemplate
+            ? "<ControlTemplate " + Ns + " TargetType='Button'>" + content + "</ControlTemplate>"
+            : "<ComboBox " + Ns + " x:DataType='x:String' TextSearch.TextBinding='{" + bindingKind + " Length}'/>";
+        var baseline = AvaloniaUpstreamCompilation.Compile(xaml);
+        Assert.Null(baseline.Error);
+        var actual = new ResourceProjectFixture(new[] { ("Template.axaml", xaml) }).Build("Template.axaml");
+        foreach (var root in new[] { baseline.Root, actual })
+        {
+            var control = Assert.IsType<ComboBox>(root is IControlTemplate template ? template.Build(new Button())!.Result : root);
+            var binding = TextSearch.GetTextBinding(control);
+            Assert.NotNull(binding);
+            Assert.Equal(inTemplate ? BindingPriority.Template : BindingPriority.LocalValue,
+                control.GetDiagnostic(TextSearch.TextBindingProperty).Priority);
+            var target = new TextBlock { DataContext = "hello" };
+            using var subscription = target.Bind(TextBlock.TextProperty, binding);
+            Assert.Equal("5", target.Text);
+            target.DataContext = "new";
+            Assert.Equal("3", target.Text);
         }
     }
 

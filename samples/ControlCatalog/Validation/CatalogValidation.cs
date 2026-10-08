@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Avalonia.VisualTree;
@@ -77,5 +78,15 @@ public static class CatalogValidation
         if (control is HomePage && !control.GetVisualDescendants().OfType<ItemsControl>()
                 .Any(items => items.ItemsSource is IReadOnlyList<HomeSection> { Count: 11 }))
             throw new InvalidOperationException("Home must resolve the full shell's view model and bind all eleven sections.");
+        if (control is ComboBoxPage)
+        {
+            var editable = control.GetVisualDescendants().OfType<ComboBox>().Single(combo => combo.IsEditable);
+            var binding = TextSearch.GetTextBinding(editable) ??
+                throw new InvalidOperationException("TextSearch.TextBinding must retain its binding object.");
+            var text = new TextBlock { DataContext = new ViewModels.IdAndName { SearchText = "search value" } };
+            using var subscription = text.Bind(TextBlock.TextProperty, binding);
+            if (text.Text != "search value")
+                throw new InvalidOperationException("TextSearch must evaluate the binding against the item data context.");
+        }
     }
 }

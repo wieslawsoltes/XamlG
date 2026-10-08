@@ -16,7 +16,7 @@ public sealed class AvaloniaBindingRule : IXamlPropertyBindingRule
         if (providedType == null) return false;
         var bindingType = context.Types.Find(AvaloniaMetadata.BindingBase);
         var unsetType = context.Types.Find(AvaloniaRegisteredSetterMetadata.UnsetValueType);
-        var assignBinding = member.Symbol.HasAttribute(new[] { AvaloniaMetadata.AssignBinding });
+        var assignBinding = member.ConversionSource.HasAttribute(new[] { AvaloniaMetadata.AssignBinding });
         var isUnset = providedType.HasMetadataName(AvaloniaRegisteredSetterMetadata.UnsetValueType);
         var isBinding = !assignBinding && bindingType != null && context.Types.Compilation.ClassifyCommonConversion(providedType, bindingType).IsImplicit;
         if (!isUnset && !isBinding && providedType.SpecialType != SpecialType.System_Object) return false;
