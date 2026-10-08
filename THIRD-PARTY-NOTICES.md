@@ -32,4 +32,6 @@ The complete ControlCatalog, desktop/browser hosts, MiniMvvm, Avalonia.Themes.Si
 
 ## Package dependencies
 
+The color parsers and supporting utilities under `src/XamlG.Frameworks/Avalonia/Parsing` originate from Avalonia revision `a9429a328057befa287ffb5e981f58b86a86eda0`. Their [import manifest](src/XamlG.Frameworks/Avalonia/Parsing/upstream.json) records the original source hashes; the [MIT license](src/XamlG.Frameworks/Avalonia/Parsing/LICENSE.md) and source notices are retained. The pristine import is committed separately from compiler adaptations.
+
 Roslyn, Avalonia, Dockyard.Blazor, ModelContextProtocol, OpenAI, Microsoft.IdentityModel.JsonWebTokens, System.Security.Cryptography.ProtectedData, Anthropic, Google.GenAI, Monaco Editor, Playwright and other package dependencies retain their own licenses and notices. The browser asset build copies Monaco from its pinned npm package with its license files. Avalonia Browser and Dockyard assets are published from their NuGet packages without removing package attribution. The compiler's Avalonia adapter uses public metadata contracts; its production source is not a copy of XamlX's IL compiler.

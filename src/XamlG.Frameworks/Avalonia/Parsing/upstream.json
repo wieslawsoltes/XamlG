@@ -1,0 +1,36 @@
+{
+  "repository": "https://github.com/wieslawsoltes/Avalonia",
+  "commit": "a9429a328057befa287ffb5e981f58b86a86eda0",
+  "files": [
+    {
+      "source": "src/Avalonia.Base/Media/Color.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Color.cs",
+      "sha256": "768222f2311ae8e9e81c1915132d351d318f9ef549b2854fe91c642c5656a8c0"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/HslColor.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/HslColor.cs",
+      "sha256": "730a97f5570e639c5158915e762af4e0c92dc0f6034afaba37ee79b95cf6b29a"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/HsvColor.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/HsvColor.cs",
+      "sha256": "589e54a798529cc3b6a5b3054a9de9007d1f09c9e6c0dde49c312804e1d53c60"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/KnownColors.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/KnownColors.cs",
+      "sha256": "b47cc76e60bfe8ca5e61dea53619f158f02cc728c840176d656a546577f6ed5c"
+    },
+    {
+      "source": "src/Avalonia.Base/Utilities/SpanHelpers.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/SpanHelpers.cs",
+      "sha256": "4fdca9a407535044f53874b60e41c5115cb0a1669a4c7718c4a7d0a86dd25758"
+    },
+    {
+      "source": "src/Avalonia.Base/Utilities/MathUtilities.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/MathUtilities.cs",
+      "sha256": "63e171f3d8e7ee634b0e36e4fd66fa3a23c1ccebb08413ee73ece4107026d570"
+    }
+  ]
+}
