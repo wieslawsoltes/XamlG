@@ -53,9 +53,11 @@ public partial class App
         if (source.Path == _document.Current.Path)
         {
             _editorTab = "xaml"; if (!keepDesigner) _inspectorTab = "Properties";
-            if (_xamlEditor != null) await _xamlEditor.RevealAsync(_selectedElement.Span);
+            // Source selection can finish after the pointer gesture has started.
+            // Preserve preview keyboard focus so Escape and nudges reach the designer.
+            if (_xamlEditor != null) await _xamlEditor.RevealAsync(_selectedElement.Span, focus: false);
         }
-        else { if (!keepDesigner) _inspectorTab = "Resources"; _resourceEditor?.Reveal(source.Path, _selectedElement.Span); }
+        else { if (!keepDesigner) _inspectorTab = "Resources"; _resourceEditor?.Reveal(source.Path, _selectedElement.Span, focus: false); }
         if (request != _designerSelectionRequest || !ReferenceEquals(root, Preview.Root)) return;
         _status = "Selected " + _selectedElement.Name + " · " + source.Path + " · source revision " + source.Version;
         StateHasChanged();

@@ -97,15 +97,16 @@ export function setEditorText(id, value) {
   item.cleanup?.();
   if (item.source.text !== value) item.set(value);
 }
-export function reveal(id, start, length) {
+export function reveal(id, start, length, focus = true) {
   const item = editors.get(id);
   if (item?.editor) {
     const from = item.source.positionAt(start), to = item.source.positionAt(start + length);
     item.editor.setSelection(new self.monaco.Range(from.lineNumber, from.column, to.lineNumber, to.column));
-    item.editor.revealPositionInCenter(from); item.editor.focus();
+    item.editor.revealPositionInCenter(from); if (focus) item.editor.focus();
   } else if (item?.textarea) {
     const displayed = new SourceBuffer(item.textarea.value);
-    item.textarea.focus(); item.textarea.setSelectionRange(displayed.offsetAt(item.source.positionAt(start)), displayed.offsetAt(item.source.positionAt(start + length)));
+    if (focus) item.textarea.focus();
+    item.textarea.setSelectionRange(displayed.offsetAt(item.source.positionAt(start)), displayed.offsetAt(item.source.positionAt(start + length)));
   }
 }
 export function setMarkers(id, diagnostics) {

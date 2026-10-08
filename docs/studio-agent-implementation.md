@@ -50,10 +50,11 @@ SDKs; live paid-account validation, if unavailable, must be reported separately.
 
 The implementation branch is `codex/studio-mcp-agent`, based on `19cb780`.
 Main is merged at implementation checkpoints; the latest merged upstream commit
-is `4711ad5` (including literal/enum conversions, Avalonia class/setter contracts,
+is `8ebd279` (including literal/enum conversions, Avalonia class/setter contracts,
 precompilation/visibility directives, the remaining compiled-binding paths and
 transform contracts, deferred resource callbacks, implicit child collection contracts
-and adder precedence, compilation metadata caching and eager parent-stack services).
+and adder precedence, compilation metadata caching, eager parent-stack services,
+implicit provider/metadata/runtime-context contracts and explicit component roots).
 The original checkout contains unrelated local compiler edits and is left intact.
 The locally available pinned SDK is `/tmp/xamlg-dotnet-10.0.401/dotnet`.
 
@@ -206,8 +207,8 @@ survive pane reopening within this page; they are not saved in browser storage.
 
 The implementation-first pass has reached validation. On 2026-10-08 the complete
 native solution and integrated Playground build with warnings treated as errors.
-The native suite passes all 2,059 tests after merging `4711ad5`:
-277 core, 169 Tooling, 1,351 Avalonia, 154 automation/MCP/agent, 94 language-server
+The native suite passes all 2,067 tests after merging `8ebd279`:
+280 core, 169 Tooling, 1,356 Avalonia, 154 automation/MCP/agent, 94 language-server
 and 14 workspace tests. This includes 42 official-SDK provider transport cases.
 The expanded behavioral coverage and browser/package acceptance listed below are
 still required; passing the existing native suite does not complete those checks.
@@ -408,24 +409,35 @@ or failed exchange was rejected until its callback listener finished cleanup.
 Terminal sign-ins now retire the listener before admitting the next request.
 The MCP ownership test uses separate acknowledgement/status channels because SDK
 notification handlers run concurrently; raw SSE acceptance still verifies ordering.
-All 27 affected account/task cases pass locally. The complete browser rerun and
-cross-platform CI results remain pending.
+All 27 affected account/task cases pass locally, including five consecutive focused
+runs. Native/MSBuild CI passes on Linux, Windows and macOS, and package, host,
+upstream and theme jobs pass for implementation candidate `b5a61f0`.
 
-The 25 MSBuild input and five fingerprint cases, all 909 pinned upstream assertions
+The second complete Pages-origin run passed 72 cases and exposed a designer focus
+race: its asynchronous source highlight could focus Monaco during a pointer gesture,
+preventing Escape from reaching Avalonia. Visual selection now reveals source without
+taking focus, including deferred resource-editor reveals. Explicit source navigation
+retains normal focus. The browser regression waits for the asynchronous highlight
+and checks focus before pressing Escape; it reproduces the failure on the old publish.
+The corrected publish and complete browser rerun still require acceptance.
+
+The 25 MSBuild input and five fingerprint cases, all 975 pinned upstream assertions
 and parity cases, and CLI process checks pass. Unmodified Simple (81 physical plus
 one linked document) and Fluent (86 documents) themes compile and construct, each
 realizing 34 control/theme cases. All 21 candidate packages build and pass inventory
-inspection; clean external consumer execution is still required. Temporary theme
-and upstream outputs are removed after retaining their result summaries.
+inspection and clean external consumer execution. This includes installed CLI/LSP
+and companion tools, eight LSP process suites, portable/Avalonia consumers, source
+and resource emission, standalone automation/MCP/agents and all three provider SDK
+adapters. Temporary consumer caches and large theme/upstream outputs are removed
+after retaining their result summaries.
 
 Remaining completion work:
 
 - Run the full browser suite with the additional MCP/artifact/account acceptance
   and Pages-origin/base-path pairing on the merged candidate.
-- Validate all 21 shipping packages with their external consumers and remaining
-  CI scripts; fix failures, remove obsolete artifacts and update the PR.
+- Close any remaining browser failures, remove obsolete artifacts and update the PR.
 
-Main is merged through `4711ad5`; the merged native solution passes its full build
+Main is merged through `8ebd279`; the merged native solution passes its full build
 and test suite. The existing Playground contains the integration. Public Pages
 deployment remains dependent on the PR reaching main.
 

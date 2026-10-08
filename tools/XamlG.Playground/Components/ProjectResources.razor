@@ -52,7 +52,7 @@
     private CodeEditor? _editor;
     private XamlSyntaxTree? _lastObserved;
     private long _editorEpoch;
-    private (XamlSyntaxTree Document, TextSpan Span)? _pendingReveal;
+    private (XamlSyntaxTree Document, TextSpan Span, bool Focus)? _pendingReveal;
     private XamlSyntaxTree? Active => Documents.Snapshot.TryGetValue(_activePath, out var syntax) ? syntax : null;
     private XamlProjectDocumentResult? Output => Result?.Project?.Documents.FirstOrDefault(d => d.Input.LogicalPath == _activePath && ReferenceEquals(d.Input.Syntax, Active));
 
@@ -60,12 +60,12 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_pendingReveal is { } pending && ReferenceEquals(pending.Document, Active) && _editor is { IsRetired: false } editor)
-        { _pendingReveal = null; await editor.RevealAsync(pending.Span); }
+        { _pendingReveal = null; await editor.RevealAsync(pending.Span, pending.Focus); }
     }
-    public void Reveal(string path, TextSpan span)
+    public void Reveal(string path, TextSpan span, bool focus = true)
     {
         if (!Documents.Snapshot.TryGetValue(path, out var document)) return;
-        SelectDocument(path); _pendingReveal = (document, span); StateHasChanged();
+        SelectDocument(path); _pendingReveal = (document, span, focus); StateHasChanged();
     }
 
     public void SynchronizeDocuments(string? preferredPath = null)

@@ -29,7 +29,7 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
     private string? _publishedText;
     private bool _retired;
     private Task? _disposal;
-    private TextSpan? _pendingReveal;
+    private (TextSpan Span, bool Focus)? _pendingReveal;
 
     public bool IsRetired => _retired;
 
@@ -52,7 +52,7 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
             // A parameter replacement may arrive while Monaco assets are loading.
             var current = _parameterText ?? Text;
             if (current != initialText) await session.InvokeAsync("setEditorText", current);
-            if (_pendingReveal is { } reveal) { _pendingReveal = null; await session.InvokeAsync("reveal", reveal.Start, reveal.Length); }
+            if (_pendingReveal is { } reveal) { _pendingReveal = null; await session.InvokeAsync("reveal", reveal.Span.Start, reveal.Span.Length, reveal.Focus); }
         }
         catch
         {
@@ -118,11 +118,11 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
     public async Task<string> GetTextAsync() => await TryGetTextAsync()
         ?? throw new ObjectDisposedException(nameof(CodeEditor), "The source editor retired during capture.");
 
-    public Task RevealAsync(TextSpan span)
+    public Task RevealAsync(TextSpan span, bool focus = true)
     {
         if (_retired) return Task.CompletedTask;
-        if (_session == null) { _pendingReveal = span; return Task.CompletedTask; }
-        return _session.InvokeAsync("reveal", span.Start, span.Length);
+        if (_session == null) { _pendingReveal = (span, focus); return Task.CompletedTask; }
+        return _session.InvokeAsync("reveal", span.Start, span.Length, focus);
     }
 
     public Task SetDiagnosticsAsync(IEnumerable<PlaygroundDiagnostic> diagnostics) => _retired || _session == null ? Task.CompletedTask :
