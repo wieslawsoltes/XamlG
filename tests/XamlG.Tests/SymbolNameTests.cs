@@ -31,4 +31,40 @@ public sealed class SymbolNameTests
         Assert.False(second.HasAttribute(new[] { "System.ObsoleteAttribute" }));
         Assert.Equal("View", first.MetadataName()); Assert.Equal("View", second.MetadataName());
     }
+
+    [Fact]
+    public void CachedMembersPreserveHidingAndInterfaceOrderAcrossConcurrentReads()
+    {
+        const string source = "public class Base { public int Value; } public class Derived : Base { public new string Value; } " +
+            "public interface IBase { int Value {get;} } public interface ILeft : IBase { int Left {get;} } " +
+            "public interface IRight : IBase { int Right {get;} } public interface IChild : ILeft, IRight { new string Value {get;} }";
+        var compilation = CompilationFactory.Create(source);
+        var derived = compilation.GetTypeByMetadataName("Derived")!;
+        var contract = compilation.GetTypeByMetadataName("IChild")!;
+        var expectedContractMembers = contract.GetMembers().Concat(contract.AllInterfaces.SelectMany(type => type.GetMembers())).ToArray();
+        Parallel.For(0, 64, _ =>
+        {
+            Assert.Equal(new[] { "Derived", "Base" }, derived.Members("Value").Select(member => member.ContainingType.Name));
+            Assert.Equal(new[] { "IChild", "IBase" }, contract.Members("Value").Select(member => member.ContainingType.Name));
+            Assert.Equal(expectedContractMembers, contract.Members());
+            Assert.Empty(derived.Members("Missing"));
+        });
+        var replacement = CompilationFactory.Create("public class Derived { public bool Value; public int Missing; }").GetTypeByMetadataName("Derived")!;
+        Assert.Single(replacement.Members("Value"));
+        Assert.Single(replacement.Members("Missing"));
+        Assert.Equal(2, derived.Members("Value").Count());
+        Assert.Empty(derived.Members("Missing"));
+    }
+
+    [Fact]
+    public void MetadataLookupCachesDoNotCrossCompilationRevisions()
+    {
+        var first = new RoslynTypeSystem(CompilationFactory.Create("public class Before {}"));
+        var second = new RoslynTypeSystem(CompilationFactory.Create("public class After {}"));
+        for (var i = 0; i < 2; i++)
+        {
+            Assert.NotNull(first.Find("Before")); Assert.Null(first.Find("After"));
+            Assert.Null(second.Find("Before")); Assert.NotNull(second.Find("After"));
+        }
+    }
 }

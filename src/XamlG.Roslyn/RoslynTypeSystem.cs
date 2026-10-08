@@ -9,6 +9,7 @@ namespace XamlG.Roslyn;
 public sealed class RoslynTypeSystem
 {
     private readonly ConcurrentDictionary<(string Namespace, string Name, int Arity), TypeResolution> _types = new();
+    private readonly ConcurrentDictionary<string, INamedTypeSymbol?> _metadataTypes = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<ITypeSymbol, ImmutableArray<IMethodSymbol>> _addMethods = new(SymbolEqualityComparer.Default);
     private readonly ConcurrentDictionary<ITypeSymbol, IMethodSymbol?> _markupMethods = new(SymbolEqualityComparer.Default);
     private readonly ConcurrentDictionary<INamedTypeSymbol, ImmutableArray<IPropertySymbol>> _declaredContentProperties = new(SymbolEqualityComparer.Default);
@@ -33,7 +34,8 @@ public sealed class RoslynTypeSystem
     public CSharpCompilation Compilation { get; }
     public XamlTypeSystemConfiguration Configuration { get; }
     public ImmutableArray<XmlNamespaceMapping> NamespaceMappings { get; }
-    public INamedTypeSymbol? Find(string metadataName) => Compilation.GetTypeByMetadataName(metadataName);
+    public INamedTypeSymbol? Find(string metadataName) => _metadataTypes.TryGetValue(metadataName, out var type)
+        ? type : _metadataTypes.GetOrAdd(metadataName, Compilation.GetTypeByMetadataName);
     public INamedTypeSymbol Special(SpecialType type) => Compilation.GetSpecialType(type);
     public bool IsAccessible(ISymbol symbol, INamedTypeSymbol? within = null) => Compilation.IsSymbolAccessibleWithin(symbol, (ISymbol?)within ?? Compilation.Assembly);
     /// <summary>Resolves provider alternatives independently of the assignment target, preferring
@@ -47,7 +49,8 @@ public sealed class RoslynTypeSystem
         .OrderBy(method => method.Parameters.Length)
         .ThenBy(method => method.ReturnType.SpecialType == SpecialType.System_Object ? 1 : 0)
         .FirstOrDefault();
-    public TypeResolution Resolve(string xmlNamespace, string name, int arity = 0) => _types.GetOrAdd((xmlNamespace, name, arity), key => ResolveCore(key.Namespace, key.Name, key.Arity));
+    public TypeResolution Resolve(string xmlNamespace, string name, int arity = 0) => _types.TryGetValue((xmlNamespace, name, arity), out var type)
+        ? type : _types.GetOrAdd((xmlNamespace, name, arity), key => ResolveCore(key.Namespace, key.Name, key.Arity));
     private TypeResolution ResolveCore(string xmlNamespace, string name, int arity)
     {
         if (XamlNames.IsLanguage(xmlNamespace))
@@ -137,7 +140,8 @@ public sealed class RoslynTypeSystem
                     return attribute.ConstructorArguments.Length == 0 || attribute.ConstructorArguments[0].Value is true;
         return false;
     }
-    public ImmutableArray<IMethodSymbol> AddMethods(ITypeSymbol type) => _addMethods.GetOrAdd(type, CollectAddMethods);
+    public ImmutableArray<IMethodSymbol> AddMethods(ITypeSymbol type) => _addMethods.TryGetValue(type, out var methods)
+        ? methods : _addMethods.GetOrAdd(type, CollectAddMethods);
     private ImmutableArray<IMethodSymbol> CollectAddMethods(ITypeSymbol type)
     {
         var methods = new List<IMethodSymbol>();
