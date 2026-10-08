@@ -5,7 +5,14 @@ import { test as base, expect } from '@playwright/test';
 // traffic, CORS and browser origin checks run normally. Public verification uses
 // the same tests without any interception.
 export const test = base.extend({
-  context: async ({ context, baseURL }, use) => {
+  // Manual compilation scenarios intentionally inspect stale source/preview
+  // boundaries. Live-update scenarios opt into the application's real defaults.
+  liveUpdates: [false, { option: true }],
+  context: async ({ context, baseURL, liveUpdates }, use) => {
+    if (!liveUpdates) await context.addInitScript(() => {
+      // Init scripts also run in about:blank and opaque sandbox documents.
+      try { localStorage.setItem('xamlg.live-updates', JSON.stringify({ compile: false, preview: false })); } catch { }
+    });
     const origin = new URL(baseURL).origin;
     if (process.env.XAMLG_TEST_MCP_URL && origin.startsWith('https:'))
       await context.grantPermissions(['local-network-access'], { origin });

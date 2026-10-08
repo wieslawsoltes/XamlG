@@ -37,6 +37,11 @@ public partial class AgentWorkbench
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_module != null && _renderedSection != _section)
+        {
+            _renderedSection = _section;
+            await _module.InvokeVoidAsync("resetAgentPanelScroll", _contentElement, _section);
+        }
         if (_focusRunReview) { _focusRunReview = false; await _runReviewCancel.FocusAsync(); }
         if (_module != null && _connected && Selected != null)
         {
@@ -53,7 +58,9 @@ public partial class AgentWorkbench
         _connectionMode = _rememberedConnectionMode ?? (await _module.InvokeAsync<bool>("agentConnected") ? "companion" : "direct");
         if (BrowserRuntime != null) BrowserRuntime.Session.Harness.EventPublished += BrowserEventPublished;
         await _module.InvokeVoidAsync("installAgentWorkbench", _reference, _ownerId);
-        await RefreshAsync(); _ = PollAsync();
+        await RefreshAsync();
+        if (Selected != null) { _section = "Conversation"; StateHasChanged(); }
+        _ = PollAsync();
     }
     private async Task PollAsync()
     {

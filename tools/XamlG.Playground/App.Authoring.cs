@@ -71,7 +71,7 @@ public partial class App
         CloseAuthoring();
         var snapshot = undo ? _workspaceEdits.Undo(_workspaceEdits.Current.Revision) : _workspaceEdits.Redo(_workspaceEdits.Current.Revision);
         RestoreWorkspace(snapshot);
-        await SaveDraftAsync(); await CompileSnapshotAsync();
+        await SaveDraftAsync(); await CompileSnapshotAsync(); await RefreshAutomaticPreviewAsync();
     }
     private Task RequestMainCommandAsync(string command) => DocumentCommandAsync(_activeDocumentPath, command);
     private async Task AuthoringCommandAsync(EditorCommandRequest request)
@@ -156,7 +156,7 @@ public partial class App
         await CaptureEditorsAsync();
         var snapshot = _workspaceEdits.Apply(_authoringRevision, edits, description, candidate => ValidateWorkspace(candidate.Documents));
         RestoreWorkspace(snapshot); CloseAuthoring();
-        await SaveDraftAsync(); await CompileSnapshotAsync();
+        await SaveDraftAsync(); await CompileSnapshotAsync(); await RefreshAutomaticPreviewAsync();
         _status = description + " · " + edits.Count(e => e.Changes.Length != 0) + " documents · one project undo step";
     }
     private void RenameNameChanged(string value) { _renameName = value; _renamePlan = null; _authoringError = null; }

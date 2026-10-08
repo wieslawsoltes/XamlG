@@ -76,6 +76,7 @@ public partial class App
     {
         if (!OwnsDocument(buffer)) return;
         ApplyDocumentText(buffer, text); await SaveDraftAsync();
+        ScheduleAutomaticUpdate();
     }
     private async Task CaptureDocumentBuffersAsync()
     {

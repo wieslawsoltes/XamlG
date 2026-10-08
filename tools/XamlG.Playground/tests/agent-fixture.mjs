@@ -89,11 +89,15 @@ export async function withAgentWorkbench({ page, request, baseURL }, handle, exe
     await test.info().attach('companion.log', { body: log.replaceAll(token, '[fixture owner]').replaceAll(environment.XAMLG_STUDIO_TOKEN, '[fixture client]'), contentType: 'text/plain' });
     throw error;
   } finally {
-    await page.unrouteAll({ behavior: 'ignoreErrors' });
-    host.kill('SIGTERM');
-    await Promise.race([once(host, 'exit'), new Promise(resolve => setTimeout(resolve, 5000))]);
-    if (host.exitCode === null) { host.kill('SIGKILL'); await once(host, 'exit'); }
-    fixture.closeAllConnections(); await new Promise(resolve => fixture.close(resolve));
+    try {
+      await page.unrouteAll({ behavior: 'ignoreErrors' }).catch(error => { if (!page.isClosed()) throw error; });
+    } finally {
+      // A timed-out browser page must not prevent isolated host/server cleanup.
+      host.kill('SIGTERM');
+      await Promise.race([once(host, 'exit'), new Promise(resolve => setTimeout(resolve, 5000))]);
+      if (host.exitCode === null) { host.kill('SIGKILL'); await once(host, 'exit'); }
+      fixture.closeAllConnections(); await new Promise(resolve => fixture.close(resolve));
+    }
   }
 }
 

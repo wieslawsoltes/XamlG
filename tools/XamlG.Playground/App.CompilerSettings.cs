@@ -111,7 +111,7 @@ public partial class App
             if (!_ready || _busy || _disposed) throw new InvalidOperationException("The IDE operation was superseded.");
             _automationActivity.Add("call", name, "Studio owner", "started", 0);
             var result = await _automation.CallLocalAsync(name, arguments, new("Studio owner", cancellationToken, "studio-owner"));
-            if (tool.Effect == AutomationEffect.Edit) await SaveDraftAsync();
+            if (tool.Effect == AutomationEffect.Edit) { await SaveDraftAsync(); ScheduleAutomaticUpdate(); }
             _automationActivity.Add("call", name, "Studio owner", "completed", System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             return result;
         }

@@ -10,6 +10,7 @@ public partial class App
         _status = "Project resource changed · compile to update all dependent documents";
         ReconcileSourceBuffers();
         await SaveDraftAsync();
+        ScheduleAutomaticUpdate();
     }
     private async Task LoadResourceExampleAsync()
     {
@@ -53,6 +54,7 @@ public partial class App
         _selectedElement = null; _error = null; _result = null;
         ReconcileSourceBuffers();
         await SaveDraftAsync(); await CompileSnapshotAsync();
+        await RefreshAutomaticPreviewAsync();
         await OpenDocumentAsync("Resources/Palette.axaml");
     }
 }

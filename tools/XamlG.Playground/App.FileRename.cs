@@ -78,7 +78,7 @@ public partial class App
             // File identity, source and the selected editor change before the first await.
             RestoreWorkspace(snapshot, plan.Moves.Single().NewPath); CloseFileMove();
             var completedGeneration = _fileMoveGeneration;
-            await SaveDraftAsync(); await CompileSnapshotAsync();
+            await SaveDraftAsync(); await CompileSnapshotAsync(); await RefreshAutomaticPreviewAsync();
             if (completedGeneration != _fileMoveGeneration) return;
             await OpenDocumentAsync(plan.Moves.Single().NewPath);
             _status = "Resource moved · linked sources updated · one project undo step";

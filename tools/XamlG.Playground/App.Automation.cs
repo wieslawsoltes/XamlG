@@ -442,6 +442,7 @@ public partial class App
     }
     private async Task RetireAutomationWorkspaceAsync()
     {
+        CancelAutomaticUpdate();
         _browserAgents.RetireWorkspace();
         if (_agentWorkbench != null) await _agentWorkbench.ClosePanelAsync();
         RetireDocumentBuffers();

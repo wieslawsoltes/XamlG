@@ -10,6 +10,7 @@ namespace XamlG.Playground.Components;
 public partial class AgentWorkbench
 {
     [Parameter] public BrowserAgentRuntime? BrowserRuntime { get; set; }
+    [Parameter] public EventCallback AccessRequested { get; set; }
     private string _connectionMode = "direct", _apiKey = "", _relayUrl = "http://127.0.0.1:4893", _relayToken = "";
     private bool _acceptBrowserExposure;
     private bool IsDirect => _connectionMode == "direct";

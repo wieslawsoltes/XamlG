@@ -6,8 +6,10 @@ namespace XamlG.Playground.Components;
 public partial class AgentWorkbench
 {
     private static readonly string[] Sections = ["Conversation", "Connection", "Tasks", "Plan", "Changes", "Queue", "Permissions", "Tools", "Activity"];
-    private string _section = "Conversation", _toolFilter = "", _toolScope = "", _ruleTool = "", _ruleDecision = "ask";
+    private string _section = "Connection", _toolFilter = "", _toolScope = "", _ruleTool = "", _ruleDecision = "ask";
     private string _agentActivityFilter = "";
+    private string? _renderedSection;
+    private Microsoft.AspNetCore.Components.ElementReference _contentElement;
     private bool _activityCurrentTask = true, _modelsBusy;
     private string? _deleteTaskId;
     private ToolView[] _toolCatalog = [];
@@ -22,6 +24,16 @@ public partial class AgentWorkbench
     private Dictionary<string, string> ToolRuleValues => JsonSerializer.Deserialize<Dictionary<string, string>>(_toolRules) ?? new();
     private bool RetiredView(string id) => TaskConnections.GetValueOrDefault(id) == BackendId && !_state.Tasks.Any(task => task.Id == id);
     private bool PaneVisible(string section) => _section == section;
+    private int SectionCount(string section) => section switch
+    {
+        "Conversation" => _state.Pending.Count(pending => pending.TaskId == _selectedId),
+        "Tasks" => _state.Tasks.Length,
+        "Plan" => Selected?.Plan.Length ?? 0,
+        "Changes" => SelectedChanges?.Files.Length ?? 0,
+        "Queue" => Selected?.Queue.Messages.Length ?? 0,
+        _ => 0
+    };
+    private string ConnectionLabel => IsDirect ? "Direct API" : IsBrowser ? "Local provider relay" : "Paired companion";
     private async Task SelectSectionAsync(string section)
     {
         _section = section;
