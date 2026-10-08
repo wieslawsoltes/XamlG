@@ -4,7 +4,7 @@ SDK and package versions are pinned in `global.json` and `Directory.Packages.pro
 
 ## Validation workflow ownership
 
-`eng/validation-workflows.json` is the authoritative inventory: seven pull-request workflows plus a separate Pages deployment workflow. `scripts/verify-workflow-inventory.py` checks the file inventory; it does not certify execution outcomes.
+`eng/validation-workflows.json` is the authoritative inventory: eight pull-request workflows plus a separate Pages deployment workflow. `scripts/verify-workflow-inventory.py` checks the file inventory; it does not certify execution outcomes.
 
 | Workflow | Responsibility |
 | --- | --- |
@@ -15,6 +15,7 @@ SDK and package versions are pinned in `global.json` and `Directory.Packages.pro
 | `playground.yml` | Production WebAssembly publish and browser acceptance. |
 | `release.yml` | All package candidates, package inspection and clean installed-tool/application consumers. Actual publication is separately gated. |
 | `controlcatalog.yml` | Complete pinned catalog and both copied XamlG themes: component construction, real Skia rendering, desktop lifetime and trimmed WebAssembly page/demo sweeps. |
+| `compiler-profile.yml` | Full Csc generation/compilation/analysis profiles for both themes and the catalog, including generated sources and allocation/GC reports. Performance acceptance still uses the separate XamlX benchmark. |
 | `pages.yml` | Deployment followed by public build-identity and browser acceptance checks. |
 
 The former standalone solution, tooling, workspace, LSP, checkpoint, shipping and worktree workflows were consolidated rather than retained as duplicate builds. Native OS jobs, host-process validation and the two theme jobs still create independent detached worktrees, use separate outputs and verify that source was not modified before cleanup. They are parallel validation jobs, not autonomous coding agents.

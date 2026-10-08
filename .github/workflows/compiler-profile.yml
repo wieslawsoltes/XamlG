@@ -1,7 +1,6 @@
 name: Compiler profiling
 on:
   pull_request:
-    paths: ['src/**', 'samples/**', 'scripts/profile-controlcatalog.py', 'scripts/prepare-controlcatalog.py', 'tools/XamlG.TraceAnalysis/**', 'Directory.*', '.github/workflows/compiler-profile.yml']
   workflow_dispatch:
 permissions:
   contents: read
