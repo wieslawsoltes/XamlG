@@ -10,6 +10,7 @@ internal sealed class EmissionContext
     private int _temporary;
     private readonly Dictionary<ISymbol, string> _descriptors = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<IMethodSymbol, string> _initSetters = new(SymbolEqualityComparer.Default);
+    private readonly Dictionary<string, int> _sourceRecords = new(StringComparer.Ordinal);
     public EmissionContext(BoundDocument document, CancellationToken cancellation)
     { Document = document; Cancellation = cancellation; Diagnostics.AddRange(document.Diagnostics); Id = CSharpNames.StableId(document.Options.DocumentId ?? document.Syntax.Path); }
     public BoundDocument Document { get; }
@@ -48,8 +49,22 @@ internal sealed class EmissionContext
         if (_initSetters.TryGetValue(method, out var name)) return name;
         name = "__init_" + Id + "_" + _initSetters.Count; _initSetters.Add(method, name); return name;
     }
+    public string SourceInfo(string record)
+    {
+        if (!_sourceRecords.TryGetValue(record, out var index))
+        { index = _sourceRecords.Count; _sourceRecords.Add(record, index); }
+        return "__source_" + Id + "[" + index + "]";
+    }
     public void EmitMetadataHelpers()
     {
+        if (_sourceRecords.Count != 0)
+        {
+            Writer.Line("private static readonly global::XamlG.Runtime.XamlSourceInfoTable __source_" + Id + " = new(" +
+                CSharpNames.Literal(Document.Syntax.Path) + ", " + Document.Syntax.Version.ToString(System.Globalization.CultureInfo.InvariantCulture) + "L, new string[]");
+            Writer.Open("");
+            foreach (var pair in _sourceRecords.OrderBy(pair => pair.Value)) Writer.Line(CSharpNames.Literal(pair.Key) + ",");
+            Writer.Close(");");
+        }
         foreach (var pair in _descriptors)
         {
             var type = pair.Key.ContainingType.CSharpName(); var name = CSharpNames.Literal(pair.Key.Name); string expression;

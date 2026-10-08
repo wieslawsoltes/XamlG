@@ -49,12 +49,13 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
             var digest = CSharpNames.StableId(syntax.Text.Substring(source.Start, source.Length));
             declarations[member] = declarations.TryGetValue(member, out var previous) ? CSharpNames.StableId(previous + digest) : digest;
         }
-        var map = "new global::System.Collections.Generic.Dictionary<string, string>(global::System.StringComparer.Ordinal) { " +
-            string.Join(", ", declarations.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => "{ " + CSharpNames.Literal(p.Key) + ", " + CSharpNames.Literal(p.Value) + " }")) + " }";
-        var identity = value.Name == null ? "null" : CSharpNames.Literal(value.Key);
-        context.Writer.Line(frame + ".Session.RegisterSource(" + CSharpNames.Literal(value.Key) + ", new global::XamlG.Runtime.XamlSourceInfo(" +
-            CSharpNames.Literal(syntax.Path) + ", " + span.Start + ", " + span.Length + ", " + identity + ", " + CSharpNames.Literal(fingerprint) + ", " + map +
-            ", version: " + syntax.Version.ToString(System.Globalization.CultureInfo.InvariantCulture) + "L));");
+        var record = new System.Text.StringBuilder();
+        void Number(int number) => record.Append(number.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(':');
+        void Text(string? text) { Number(text?.Length ?? -1); record.Append(text); }
+        Number(span.Start); Number(span.Length);
+        Text(value.Name == null ? null : value.Key); Text(fingerprint); Number(declarations.Count);
+        foreach (var pair in declarations.OrderBy(p => p.Key, StringComparer.Ordinal)) { Text(pair.Key); Text(pair.Value); }
+        context.Writer.Line(frame + ".Session.RegisterSource(" + CSharpNames.Literal(value.Key) + ", " + context.SourceInfo(record.ToString()) + ");");
     }
     private static TextSpan Clamp(TextSpan span, int length)
     {

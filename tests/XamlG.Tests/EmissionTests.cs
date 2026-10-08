@@ -126,4 +126,25 @@ public sealed class EmissionTests
         Assert.True(XamlRuntimeSession.TryGet(root, out var session)); var node = Assert.Single(session!.Nodes);
         Assert.True(session.Apply(0, new[] { new XamlPropertyUpdate(node.Key, "Title", "after") }).Applied); Assert.Equal("after", Property(root, "Title"));
     }
+    [Fact]
+    public void SourceMetadataIsSharedWithoutSharingInstancesOrMutationState()
+    {
+        var xaml = "<Panel " + Namespaces + "><Item x:Name='named' Text='a:b😀'/></Panel>";
+        using var code = CompiledXaml.Create(xaml, Model);
+        var first = code.Build(); var second = code.Build();
+        Assert.True(XamlRuntimeSession.TryGet(first, out var firstSession));
+        Assert.True(XamlRuntimeSession.TryGet(second, out var secondSession));
+        var firstItem = ((IList)Property(first, "Children")!)[0]!;
+        var secondItem = ((IList)Property(second, "Children")!)[0]!;
+        var node = firstSession!.FindNode(firstItem)!;
+        var source = node.Source!;
+        Assert.Same(source, secondSession!.FindNode(secondItem)!.Source);
+        Assert.Equal("Test.axaml", source.Path); Assert.Equal(0, source.Version);
+        Assert.Equal(xaml.IndexOf("<Item", StringComparison.Ordinal), source.Start);
+        Assert.Equal("<Item x:Name='named' Text='a:b😀'/>", xaml.Substring(source.Start, source.Length));
+        Assert.Equal(node.Key, source.Identity); Assert.Null(firstSession.FindNode(first)!.Source!.Identity);
+        Assert.Equal(24, source.Fingerprint.Length); Assert.Equal(24, source.Declarations["Text"].Length);
+        Assert.True(firstSession.Apply(0, new[] { new XamlPropertyUpdate(node.Key, "Text", "changed") }).Applied);
+        Assert.Equal("a:b😀", Property(secondItem, "Text")); Assert.Equal(0, secondSession.Revision);
+    }
 }
