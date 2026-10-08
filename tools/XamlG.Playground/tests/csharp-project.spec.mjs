@@ -56,7 +56,11 @@ test('multiple C# files compile with XAML, support cross-file rename, runtime me
   expect(project.version).toBe(4);
   expect(project.codeFiles['Models/Labels.cs']).toBe(model);
   expect(JSON.parse(project.documents['CompilerSettings.json'])).toEqual(project.compilerOptions);
+  const savedDraft = await page.evaluate(() => localStorage.getItem('xamlg.draft'));
   await page.reload(); await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
+  await share(page);
+  await call(page, 'xamlg_project_get');
+  expect(await page.evaluate(() => localStorage.getItem('xamlg.draft'))).toBe(savedDraft);
   await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Draft restored');

@@ -252,6 +252,9 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await expect(restore).not.toContainText('Second after');
     await restore.getByRole('button', { name: 'Confirm source restore', exact: true }).click();
     await expect.poll(async () => (await readSource()).text).toBe(reviewAfter.replace('First 🦊 after', 'First 🦊 before'));
+    // Restoration refreshes its review asynchronously. Wait for that capture
+    // before Undo, so this assertion concerns a deliberately stale review.
+    await expect(workbench.getByLabel('Selected change block')).toHaveText('Change 1 of 1');
     // Source restore is one ordinary project transaction, including its exact CRLF/LF.
     await page.evaluate(async () => {
       const project = await window.xamlgAutomation.call('xamlg_project_get', {});

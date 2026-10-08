@@ -128,12 +128,16 @@ test('HTTP MCP read-only policy allows designer plans and runtime reads while de
   await openStudio(page); const client = await connectMcp(page, request); const invoke = client.call;
   try {
     const edit = await writeDocument(invoke, 'View.axaml', canvas);
-    const tree = await invoke('xamlg_runtime_run', { expectedRevision: edit.revision });
-    const target = (await invoke('xamlg_designer_targets', { objectIds: [named(tree)[0].id], expectedRuntimeRevision: tree.revision })).targets[0];
-    const args = { items: [{ objectId: target.objectId, bounds: { ...target.bounds, x: target.bounds.x + 8 } }], expectedSourceRevision: edit.revision, expectedRuntimeRevision: tree.revision };
+    await invoke('xamlg_runtime_run', { expectedRevision: edit.revision });
     await page.getByTestId('agent-access').click();
     await page.getByLabel('Permission profile').selectOption('ReadOnly');
     await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
+    // Changing docked tools changes the preview's visibility and runtime revision.
+    // Inspect its current geometry after returning to the preview.
+    await page.locator('[data-tab-id="preview"]').click();
+    const tree = await invoke('xamlg_runtime_tree');
+    const target = (await invoke('xamlg_designer_targets', { objectIds: [named(tree)[0].id], expectedRuntimeRevision: tree.revision })).targets[0];
+    const args = { items: [{ objectId: target.objectId, bounds: { ...target.bounds, x: target.bounds.x + 8 } }], expectedSourceRevision: edit.revision, expectedRuntimeRevision: tree.revision };
     expect((await invoke('xamlg_designer_geometry_plan', args)).documents).toHaveLength(1);
     expect((await invoke('xamlg_runtime_properties', { objectId: target.objectId })).properties.length).toBeGreaterThan(0);
     await expect(invoke('xamlg_designer_geometry_apply', args)).rejects.toThrow(/permission|permit|denied|policy/i);

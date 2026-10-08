@@ -119,8 +119,14 @@ test('owner compiler UI supports Undo, Redo, draft restoration and version-4 exp
   await page.getByRole('button', { name: 'Redo', exact: false }).click();
   await expect(overflow()).toBeChecked({ timeout: 15000 });
   await expect(pane.getByRole('combobox', { name: 'Optimization' })).toHaveValue('Debug');
+  const savedDraft = await page.evaluate(() => localStorage.getItem('xamlg.draft'));
   await page.reload();
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
+  pane = await compilerPane(page);
+  // The restored tool performs an automatic options read. It must not overwrite
+  // the saved project before the user explicitly restores it.
+  await expect(pane.getByRole('button', { name: 'Compile project', exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => localStorage.getItem('xamlg.draft'))).toBe(savedDraft);
   await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Draft restored without executing');

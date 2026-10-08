@@ -143,7 +143,10 @@ test('MCP waits observe source updates without blocking edits and owner cancella
     const ownerCancel = await waitTask(mcp, { milliseconds: 60000, resources: [] });
     await page.getByTestId('agent-workbench').click();
     const pane = page.getByRole('region', { name: 'Coding agent workbench' });
-    await pane.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await pane.getByRole('navigation').getByRole('button', { name: 'Connection', exact: true }).click();
+    await pane.getByLabel('Agent connection', { exact: true }).selectOption('companion');
+    await pane.getByRole('button', { name: 'Refresh coding agent', exact: true }).click();
+    await pane.getByRole('navigation').getByRole('button', { name: 'Activity', exact: true }).click();
     const operations = pane.locator('details.agent-operations'); await operations.locator('summary').click();
     const operation = operations.locator('.agent-operation').filter({ hasText: ownerCancel.taskId });
     await expect(operation).toContainText('Working'); await operation.getByRole('button', { name: 'Cancel operation' }).click();

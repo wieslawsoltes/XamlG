@@ -94,10 +94,8 @@ test('Monaco definitions open an unopened C# file through Dockyard', async ({ pa
   await write(page, 'Code.cs', 'namespace Model; public class Page { public int Read(Item item) => item.Number; }');
   await page.locator('[data-tab-id="document:Code.cs"]').click();
   await command(page, 'Number;', 'editor.action.revealDefinition', 2);
-  const files = page.getByRole('region', { name: 'C# project documents' });
-  await expect(files).toBeVisible();
-  await expect(files.getByLabel('C# source document')).toHaveValue('Models/Zebra.cs');
-  await expect(files.locator('.monaco-editor')).toBeVisible();
+  await expect(page.locator('[data-tab-id="document:Models%2FZebra.cs"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.source-pane[data-document-path="Models/Zebra.cs"] .monaco-editor')).toBeVisible();
   await expect.poll(() => page.evaluate(() => {
     const editor = monaco.editor.getEditors().find(e => e.getModel()?.uri.path.endsWith('/Models/Zebra.cs'));
     return editor.getModel().getWordAtPosition(editor.getPosition())?.word;

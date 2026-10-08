@@ -390,6 +390,7 @@ public partial class App
             await _automationGate.WaitAsync(cancellation.Token); entered = true;
             if (!_sharing || !_ready || _busy) throw new AutomationException("unavailable", "Enable agent access and wait for the current IDE operation.");
             await CaptureEditorsAsync(); // Include edits still queued in Monaco before validating revisions.
+            var previousRevision = SourceRevision;
             var context = new AutomationCallContext(caller, cancellation.Token, principalId);
             var result = method switch
             {
@@ -398,7 +399,7 @@ public partial class App
                 "complete" => AutomationJson.Element(await _automation.CompleteAsync(name, arguments.GetProperty("argument").GetString()!, arguments.GetProperty("value").GetString()!, context)),
                 _ => throw new AutomationException("unknown_method", "Unknown automation method.")
             };
-            await SaveDraftAsync();
+            if (SourceRevision != previousRevision) await SaveDraftAsync();
             _automationActivity.Add(method, name, caller, "completed", System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             StateHasChanged(); return result;
         }

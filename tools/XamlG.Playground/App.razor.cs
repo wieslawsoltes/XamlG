@@ -95,7 +95,9 @@ public partial class App
     private async Task CaptureEditorsAsync()
     {
         await CaptureDocumentBuffersAsync();
-        await SaveDraftAsync();
+        // Restored tool panels can inspect the startup project before the user
+        // restores a saved draft. Reads must not replace that draft with defaults.
+        await SaveDraftAsync(onlyIfChanged: true);
     }
     private async Task RunAsync()
     {
@@ -149,10 +151,12 @@ public partial class App
         if (_module != null) await _module.InvokeVoidAsync("setTheme", _theme);
     }
     private Dictionary<string, string> ResourceTexts() => Compiler.Resources.Snapshot.ToDictionary(p => p.Key, p => p.Value.Text, StringComparer.Ordinal);
-    private async Task SaveDraftAsync()
+    private async Task SaveDraftAsync(bool onlyIfChanged = false)
     {
+        var previous = SourceRevision;
         RecordWorkspace();
-        if (_module != null) await _module.InvokeVoidAsync("saveDraft", _document.Current.Text, _code, ResourceTexts(), CodeTexts(), Compiler.Settings);
+        if (_module != null && (!onlyIfChanged || SourceRevision != previous))
+            await _module.InvokeVoidAsync("saveDraft", _document.Current.Text, _code, ResourceTexts(), CodeTexts(), Compiler.Settings);
     }
     private async Task RestoreDraftAsync()
     {
