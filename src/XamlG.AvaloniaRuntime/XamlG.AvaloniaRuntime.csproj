@@ -1,7 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- Real input dispatch uses Avalonia's platform input pipeline. The exact
+         package dependency below is required by Avalonia for these APIs. -->
+    <AvaloniaAccessUnstablePrivateApis>true</AvaloniaAccessUnstablePrivateApis>
+    <Avalonia_I_Want_To_Use_Private_Apis_In_Nuget_Package_And_Promise_To_Pin_The_Exact_Avalonia_Version_In_Package_Dependency>true</Avalonia_I_Want_To_Use_Private_Apis_In_Nuget_Package_And_Promise_To_Pin_The_Exact_Avalonia_Version_In_Package_Dependency>
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);AVA3001</MSBuildWarningsAsMessages>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../XamlG.Runtime/XamlG.Runtime.csproj" />
-    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia" VersionOverride="[12.1.3]" />
   </ItemGroup>
 </Project>

@@ -36,20 +36,20 @@ internal static class CompiledBindingInputReader
         }
         var path = namedPath ?? positional.FirstOrDefault();
         BindingTextValue? Read(string name) => named.FirstOrDefault(a => a.Name == name) is { } argument
-            ? new(argument.Value, argument.Span) : null;
+            ? new(argument.Value, argument.ValueSpan ?? argument.Span) : null;
         var relativeText = Read(AvaloniaBindingMetadata.RelativeSource);
-        var relative = relativeText == null ? null : MarkupExtensionParser.Parse(
-            relativeText.Text, relativeText.Span, context.Diagnostics.Add);
+        var relative = relativeText == null ? null : MarkupExtensionParser.ParseAtSource(
+            relativeText.Text, relativeText.Span, context.Syntax.Text, context.Diagnostics.Add);
         if (relativeText != null && relative == null)
         {
             context.Report("XG3211", "RelativeSource requires a statically configured source extension.", relativeText.Span);
             return null;
         }
         var attributes = named.Where(a => !CompileTimeMembers.Contains(a.Name!))
-            .Select(a => new XamlAttributeSyntax(a.Name!, a.Value, a.Span, a.Span, a.Span, '"')).ToImmutableArray();
-        var element = new XamlElementSyntax(syntax.Name, syntax.Span, syntax.Span,
+            .Select(a => new XamlAttributeSyntax(a.Name!, a.Value, a.NameSpan ?? a.Span, a.ValueSpan ?? a.Span, a.Span, '"')).ToImmutableArray();
+        var element = new XamlElementSyntax(syntax.Name, syntax.NameSpan ?? syntax.Span, syntax.Span,
             new(syntax.Span.End, 0), attributes, ImmutableArray<XamlSyntaxNode>.Empty, true, syntax.Span);
-        return new(element, scope, scope, new(path?.Value ?? string.Empty, path?.Span ?? syntax.Span),
+        return new(element, scope, scope, new(path?.Value ?? string.Empty, path?.ValueSpan ?? path?.Span ?? syntax.Span),
             Read(AvaloniaBindingMetadata.DataType), Read(AvaloniaBindingMetadata.ElementName), relative == null ? null : new(relative, scope));
     }
 
@@ -139,7 +139,7 @@ internal static class CompiledBindingInputReader
         var relativeText = Read(AvaloniaBindingMetadata.RelativeSource);
         if (relative == null && relativeText != null)
         {
-            var parsed = MarkupExtensionParser.Parse(relativeText.Text, relativeText.Span, context.Diagnostics.Add);
+            var parsed = MarkupExtensionParser.ParseAtSource(relativeText.Text, relativeText.Span, context.Syntax.Text, context.Diagnostics.Add);
             if (parsed != null) relative = new(parsed, relativeText.Scope ?? scope);
         }
         if (relativeText != null && relative == null)

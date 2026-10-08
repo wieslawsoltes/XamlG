@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Official MCP SDK adapters for reusable XamlG automation hosts.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../XamlG.Automation/XamlG.Automation.csproj" />
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="ModelContextProtocol.Extensions.Tasks" />
+  </ItemGroup>
+</Project>

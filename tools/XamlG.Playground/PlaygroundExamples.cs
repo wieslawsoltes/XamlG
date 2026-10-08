@@ -14,7 +14,7 @@ public static class PlaygroundExamples
                 <TextBlock Text="One compiler. Every host. Inspect the syntax, binding and generated output."
                            TextWrapping="Wrap" FontSize="15" Foreground="#516079" />
                 <Border Background="#E1E8FF" Padding="16" CornerRadius="8">
-                  <TextBlock Text="Edit a property, then press Run preview." Foreground="#324FAC" />
+                  <TextBlock Text="Edit a property to update the live preview." Foreground="#324FAC" />
                 </Border>
                 <Button Content="A real Avalonia button" HorizontalAlignment="Left" Padding="18,10" />
               </StackPanel>

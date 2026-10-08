@@ -81,7 +81,8 @@ internal sealed class AvaloniaNamedSourceCatalog
                 VisitValues(parent, member, syntax.Children, nested);
                 continue;
             }
-            var type = _context.ResolveType(syntax.Name, nested, syntax.NameSpan, nested.Directive(syntax, "TypeArguments")?.Value, report: false);
+            var typeArguments = nested.Directive(syntax, "TypeArguments");
+            var type = _context.ResolveTypeAtSource(syntax.Name, nested, syntax.NameSpan, typeArguments?.Value, report: false, typeArgumentSpan: typeArguments?.ValueSpan);
             if (type == null) continue;
             var scopeRoot = member?.Symbol.HasAttribute(_context.Types.Configuration.DeferredContentAttributes) == true ? syntax : parent.ScopeRoot;
             Visit(new(type, syntax, nested, parent, member, scopeRoot, _entries.Count));

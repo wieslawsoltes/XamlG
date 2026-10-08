@@ -67,12 +67,13 @@ internal sealed class AvaloniaItemInferenceDependencies(BindingContext context, 
         if (value is XamlTextSyntax text)
         {
             if (!text.Value.StartsWith("{", StringComparison.Ordinal) || text.Value.StartsWith("{}", StringComparison.Ordinal)) return null;
-            var markup = MarkupExtensionParser.Parse(text.Value, text.Span, _ => { });
+            var markup = MarkupExtensionParser.ParseAtSource(text.Value, text.Span, context.Syntax.Text, _ => { });
             if (markup == null || IsIntrinsic(scope, markup.Name)) return null;
-            type = context.ResolveType(markup.Name, scope, markup.Span, report: false, extension: true);
-            syntax = new(markup.Name, markup.Span, markup.Span, new(markup.Span.End, 0),
+            type = context.ResolveTypeAtSource(markup.Name, scope, markup.NameSpan ?? markup.Span, report: false, extension: true);
+            syntax = new(markup.Name, markup.NameSpan ?? markup.Span, markup.Span, new(markup.Span.End, 0),
                 markup.Arguments.Where(argument => argument.Name != null).Select(argument =>
-                    new XamlAttributeSyntax(argument.Name!, argument.Value, argument.Span, argument.Span, argument.Span, '"')).ToImmutableArray(),
+                    new XamlAttributeSyntax(argument.Name!, argument.Value, argument.NameSpan ?? argument.Span,
+                        argument.ValueSpan ?? argument.Span, argument.Span, '"')).ToImmutableArray(),
                 ImmutableArray<XamlSyntaxNode>.Empty, true, markup.Span);
         }
         else if (value is XamlElementSyntax element)
@@ -81,7 +82,8 @@ internal sealed class AvaloniaItemInferenceDependencies(BindingContext context, 
             scope = scope.Push(element);
             var ns = scope.Expand(element.Name).Namespace;
             if (IsIntrinsic(scope, element.Name) || ns != null && (scope.IgnoredNamespaces.Contains(ns) || context.Types.Configuration.IgnoredNamespaces.Contains(ns))) return null;
-            type = context.ResolveType(element.Name, scope, element.NameSpan, scope.Directive(element, "TypeArguments")?.Value, report: false);
+            var typeArguments = scope.Directive(element, "TypeArguments");
+            type = context.ResolveTypeAtSource(element.Name, scope, element.NameSpan, typeArguments?.Value, report: false, typeArgumentSpan: typeArguments?.ValueSpan);
         }
         else return null;
         return type == null ? null : new(type, syntax, scope, string.Empty, false, owner.NameScopeId);

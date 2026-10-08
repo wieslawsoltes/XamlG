@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', error => console.log('BROWSER ERROR:', error.stack ?? error.message));
@@ -15,22 +15,24 @@ test('compiles and runs the production compiler with a real Avalonia canvas', as
   await page.getByTestId('run-preview').click();
   await expect(page.locator('.statusbar')).toContainText('Preview running');
   await expect(page.locator('#avalonia-preview canvas').first()).toBeVisible();
-  await page.getByRole('tab', { name: 'Visual tree', exact: true }).click();
-  await expect(page.locator('.inspector-body')).toContainText('StackPanel');
-  await page.getByRole('tab', { name: 'Syntax', exact: true }).click();
-  await expect(page.locator('.inspector-body')).toContainText('xmlns');
+  await page.locator('[data-tab-id="visual-tree"]').click();
+  await expect(page.locator('.inspector-body:visible')).toContainText('StackPanel');
+  await page.locator('[data-tab-id="syntax"]').click();
+  await expect(page.locator('.inspector-body:visible')).toContainText('xmlns');
   await page.screenshot({ path: '../../artifacts/playground-studio.png', fullPage: true });
 });
 
 test('source generator output handles code-behind and private event methods', async ({ page }) => {
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByLabel('Example', { exact: true }).selectOption('1');
+  await page.keyboard.press('Escape');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
   await page.getByTestId('run-preview').click();
   await expect(page.locator('.statusbar')).toContainText('Preview running');
-  await page.getByRole('tab', { name: 'Visual tree', exact: true }).click();
-  await expect(page.locator('.inspector-body')).toContainText('CounterView');
+  await page.locator('[data-tab-id="visual-tree"]').click();
+  await expect(page.locator('.inspector-body:visible')).toContainText('CounterView');
 });
 
 test('mobile layout stays within the viewport and supports light theme', async ({ page }) => {

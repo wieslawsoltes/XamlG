@@ -25,6 +25,25 @@ public sealed class BindingPathParser
         return parser._failed ? null : new(parser._segments.ToImmutable(), span);
     }
 
+    /// <summary>Parse decoded binding text while mapping segments and diagnostics to
+    /// complete raw XML ranges, including encoded characters and surrounding whitespace.</summary>
+    public static BindingPathSyntax? ParseAtSource(string text, TextSpan span, string source,
+        Action<XamlDiagnostic> report, CancellationToken cancellationToken = default)
+    {
+        XamlDecodedTextMap map;
+        try { map = XamlDecodedTextMap.Create(source, span); }
+        catch (ArgumentException) { return Parse(text, span, report, cancellationToken); }
+        var start = 0;
+        if (map.Text != text)
+        {
+            if (map.Text.Trim() != text) return Parse(text, span, report, cancellationToken);
+            start = map.Text.Length - map.Text.TrimStart().Length;
+        }
+        TextSpan Map(TextSpan value) => map.ToSource(new(value.Start + start, value.Length));
+        var parsed = Parse(text, new(0, text.Length), diagnostic => report(diagnostic with { Span = Map(diagnostic.Span) }), cancellationToken);
+        return parsed == null ? null : new(parsed.Segments.Select(segment => segment with { Span = Map(segment.Span) }).ToImmutableArray(), span);
+    }
+
     private void Read(int depth, bool nested)
     {
         if (depth > 64) { Error("Binding expression nesting exceeds 64 levels."); return; }

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 
 // This explicitly exercises the pinned upstream contribution that produced the
 // production stack trace; ordinary editor replacement is tested separately.

@@ -1,0 +1,17 @@
+<div class="agent-markdown">
+    @foreach (var block in _blocks)
+    {
+        @switch (block.Kind)
+        {
+            case "code":
+                <div class="agent-code-block"><div class="agent-code-heading"><span>@block.Language</span><button aria-label="Copy code" @onclick="() => CopyRequested.InvokeAsync(block.Text)">Copy code</button></div><pre tabindex="0"><code>@block.Text</code></pre></div>
+                break;
+            case "plain": <pre>@block.Text</pre> break;
+            case "heading": <h4>@Inline(block.Parts)</h4> break;
+            case "ordered": <ol>@foreach (var item in block.Items) { <li>@Inline(item)</li> }</ol> break;
+            case "unordered": <ul>@foreach (var item in block.Items) { <li>@Inline(item)</li> }</ul> break;
+            default: <p>@Inline(block.Parts)</p> break;
+        }
+    }
+    @if (_truncated) { <p>Public display shortened. Use Copy or transcript export for the available complete message.</p> }
+</div>

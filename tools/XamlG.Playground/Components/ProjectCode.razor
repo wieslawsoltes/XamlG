@@ -1,0 +1,74 @@
+<section class="project-code" aria-label="C# project documents">
+    <div class="resource-toolbar">
+        <select aria-label="C# source document" value="@_activePath" @onchange="SwitchAsync" disabled="@Busy">
+            <option value="">Select a C# document</option>
+            @foreach (var path in Documents.Snapshot.Keys.Order(StringComparer.Ordinal)) { <option value="@path">@path</option> }
+        </select>
+        <button @onclick="RemoveAsync" disabled="@(Busy || Active == null)">Remove C# file</button>
+    </div>
+    <div class="resource-toolbar">
+        <input aria-label="C# file path" @bind="_newPath" placeholder="Models/Model.cs" disabled="@Busy" />
+        <button @onclick="AddAsync" disabled="@Busy">Add C# file</button>
+        <button @onclick="MoveAsync" disabled="@(Busy || Active == null)">Move to path</button>
+    </div>
+    @if (_error != null) { <p class="runtime-error" role="alert">@_error</p> }
+    @if (Active is { } document)
+    {
+        <small>@document.Path · revision @document.Version</small>
+        <button @onclick="() => OpenRequested.InvokeAsync(document.Path)">Open source document</button>
+    }
+    else { <p class="empty">Add C# models, controls and partial classes. All source files share the same XAML compilation and preview assembly.</p> }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public CSharpProjectDocumentStore Documents { get; set; } = default!;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public EventCallback CaptureRequested { get; set; }
+    [Parameter] public EventCallback<string> OpenRequested { get; set; }
+    private string _activePath = "", _newPath = "Models/Model.cs";
+    private string? _error;
+    private CSharpProjectDocument? Active => Documents.Snapshot.GetValueOrDefault(_activePath);
+    protected override void OnParametersSet() => SynchronizeSelection();
+    public void SynchronizeDocuments() { SynchronizeSelection(); StateHasChanged(); }
+    private void SynchronizeSelection() => Activate(Active != null ? _activePath : Documents.Snapshot.Keys.Order(StringComparer.Ordinal).FirstOrDefault() ?? "");
+    private void Activate(string path) => _activePath = path;
+    private Task CaptureAsync() => CaptureRequested.InvokeAsync();
+    private async Task SwitchAsync(ChangeEventArgs args)
+    {
+        try { await CaptureAsync(); Activate(args.Value?.ToString() ?? ""); _error = null; if (Active != null) await OpenRequested.InvokeAsync(_activePath); }
+        catch (Exception error) { _error = error.Message; }
+    }
+    private async Task AddAsync()
+    {
+        try
+        {
+            await CaptureAsync(); var document = Documents.Add(_newPath, "// C# source shared by the project's XAML and code-behind.\n");
+            Activate(document.Path); _error = null; await Changed.InvokeAsync(); await OpenRequested.InvokeAsync(document.Path);
+        }
+        catch (Exception error) { _error = error.Message; }
+    }
+    private async Task MoveAsync()
+    {
+        try
+        {
+            await CaptureAsync();
+            if (Active is not { } document) return;
+            var target = CSharpProjectDocumentStore.NormalizePath(_newPath);
+            var files = Documents.Snapshot.ToDictionary(p => p.Key, p => p.Value.Text, StringComparer.Ordinal);
+            if (target == document.Path || files.ContainsKey(target)) throw new ArgumentException("Choose an unused C# file path.");
+            files.Remove(document.Path); files.Add(target, document.Text); Documents.ReplaceAll(files);
+            Activate(target); _error = null; await Changed.InvokeAsync(); await OpenRequested.InvokeAsync(target);
+        }
+        catch (Exception error) { _error = error.Message; }
+    }
+    private async Task RemoveAsync()
+    {
+        try
+        {
+            await CaptureAsync(); if (Active is { } document) Documents.Remove(document.Path, document.Version);
+            SynchronizeSelection(); _error = null; await Changed.InvokeAsync();
+        }
+        catch (Exception error) { _error = error.Message; }
+    }
+}

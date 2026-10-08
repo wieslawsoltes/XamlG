@@ -13,6 +13,7 @@ internal sealed class IntrinsicMarkupBinder(BindingContext context, bool report 
     {
         var arguments = ImmutableArray.CreateBuilder<MarkupArgumentSyntax>();
         string? typeArguments = null;
+        TextSpan? typeArgumentSpan = null;
         foreach (var argument in syntax.Arguments)
         {
             var name = argument.Name == null ? default : scope.Expand(argument.Name, true);
@@ -20,10 +21,11 @@ internal sealed class IntrinsicMarkupBinder(BindingContext context, bool report 
             {
                 if (typeArguments != null) return Invalid("Duplicate x:TypeArguments.", argument.Span);
                 typeArguments = argument.Value;
+                typeArgumentSpan = argument.ValueSpan ?? argument.Span;
             }
             else arguments.Add(argument);
         }
-        return BindCore(scope.Expand(syntax.Name).LocalName, arguments.ToImmutable(), target, scope, syntax.Span, typeArguments, scope);
+        return BindCore(scope.Expand(syntax.Name).LocalName, arguments.ToImmutable(), target, scope, syntax.Span, typeArguments, scope, typeArgumentSpan);
     }
 
     public BoundExpression? BindObject(XamlElementSyntax syntax, ITypeSymbol target, NamespaceScope scope)
@@ -33,6 +35,7 @@ internal sealed class IntrinsicMarkupBinder(BindingContext context, bool report 
         var arguments = ImmutableArray.CreateBuilder<MarkupArgumentSyntax>();
         var valueScope = scope;
         string? typeArguments = null;
+        TextSpan? typeArgumentSpan = null;
         foreach (var attribute in syntax.Attributes)
         {
             var name = scope.Expand(attribute.Name, true);
@@ -44,6 +47,7 @@ internal sealed class IntrinsicMarkupBinder(BindingContext context, bool report 
                 {
                     if (typeArguments != null) return Invalid("Duplicate x:TypeArguments.", attribute.Span);
                     typeArguments = attribute.Value;
+                    typeArgumentSpan = attribute.ValueSpan;
                     continue;
                 }
             }
@@ -65,14 +69,16 @@ internal sealed class IntrinsicMarkupBinder(BindingContext context, bool report 
                 if (!attribute.IsNamespace && !(attributeName.Namespace == XamlNames.Xml && attributeName.LocalName == "space") && !IsIgnored(attributeName, nested))
                     return Invalid($"Unsupported attribute '{attribute.Name}' on x:{kind}.{property}.", attribute.NameSpan);
             }
-            arguments.Add(new(property, string.Concat(element.Children.OfType<XamlTextSyntax>().Select(text => text.Value)), element.Span));
+            var textNodes = element.Children.OfType<XamlTextSyntax>().ToArray();
+            var valueSpan = textNodes.Length == 1 && !textNodes[0].IsCData ? textNodes[0].Span : element.Span;
+            arguments.Add(new(property, string.Concat(textNodes.Select(text => text.Value)), valueSpan));
             valueScope = nested;
         }
-        return BindCore(kind, arguments.ToImmutable(), target, valueScope, syntax.Span, typeArguments, scope);
+        return BindCore(kind, arguments.ToImmutable(), target, valueScope, syntax.Span, typeArguments, scope, typeArgumentSpan);
     }
 
     private BoundExpression? BindCore(string kind, ImmutableArray<MarkupArgumentSyntax> arguments, ITypeSymbol target,
-        NamespaceScope scope, TextSpan span, string? typeArguments, NamespaceScope typeArgumentScope)
+        NamespaceScope scope, TextSpan span, string? typeArguments, NamespaceScope typeArgumentScope, TextSpan? typeArgumentSpan)
     {
         var property = ArgumentProperty(kind);
         if (typeArguments != null && kind is not ("Type" or "Static")) return Invalid($"x:{kind} does not accept x:TypeArguments.", span);
@@ -86,12 +92,25 @@ internal sealed class IntrinsicMarkupBinder(BindingContext context, bool report 
         if (arguments.Length != 1 || arguments[0].Name != null && arguments[0].Name != property || string.IsNullOrWhiteSpace(arguments[0].Value))
             return Invalid($"x:{kind} requires exactly one positional argument or {property} property.", span);
         var argument = arguments[0].Value.Trim();
+        var argumentSpan = arguments[0].ValueSpan ?? arguments[0].Span;
+        // Keep the expression's diagnostic/source-info extent while locating its CLR
+        // type/member and explicit generic arguments at their actual written values.
+        if (argumentSpan.End <= context.Syntax.Text.Length)
+        {
+            try
+            {
+                var map = XamlDecodedTextMap.Create(context.Syntax.Text, argumentSpan);
+                if (map.Text.Trim() == argument)
+                    argumentSpan = map.ToSource(new(map.Text.IndexOf(argument, StringComparison.Ordinal), argument.Length));
+            }
+            catch (ArgumentException) { } // Preserve approximate spans for split text/CDATA and error diagnostics.
+        }
         switch (kind)
         {
             case "Type":
-                var type = context.Values.ResolveTypeLiteral(argument, scope, span, typeArguments, report, typeArgumentScope);
+                var type = context.Values.ResolveTypeLiteralAtSource(argument, scope, argumentSpan, typeArguments, report, typeArgumentScope, typeArgumentSpan);
                 return type == null ? null : new BoundTypeExpression(type, context.Types.Find(ClrNames.Type)!, span);
-            case "Static": return new MarkupBinder(context).Static(argument, target, scope, span, typeArguments, typeArgumentScope, report);
+            case "Static": return new MarkupBinder(context).Static(argument, target, scope, argumentSpan, typeArguments, typeArgumentScope, report, typeArgumentSpan) is { } value ? value with { Span = span } : null;
             case "Reference": return new BoundReferenceExpression(argument, target, span);
             default: return null;
         }

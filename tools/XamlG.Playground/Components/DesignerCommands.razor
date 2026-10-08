@@ -1,6 +1,6 @@
 <div class="designer-commands">
     <button data-testid="design-mode" class="@(Enabled ? "primary" : "")" disabled="@Disabled" aria-pressed="@Enabled" @onclick="Toggle">@(Enabled ? "◈ Design mode" : "◈ Design")</button>
-    @if (Enabled) { <small>Drag · resize · Shift aspect · Alt free</small> }
+    @if (Enabled) { <small>Ctrl/⌘ click selects a group · drag · resize · Shift aspect · Alt free</small> }
 </div>
 
 @code {

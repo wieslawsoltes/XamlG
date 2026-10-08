@@ -13,6 +13,13 @@
     { "id": "XamlG.AvaloniaRuntime", "project": "src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" },
     { "id": "XamlG.Avalonia", "project": "src/XamlG.Avalonia/XamlG.Avalonia.csproj" },
     { "id": "XamlG.Cli", "project": "tools/XamlG.Cli/XamlG.Cli.csproj", "command": "xamlg" },
-    { "id": "XamlG.Lsp", "project": "tools/XamlG.Lsp/XamlG.Lsp.csproj", "command": "xamlg-lsp" }
+    { "id": "XamlG.Lsp", "project": "tools/XamlG.Lsp/XamlG.Lsp.csproj", "command": "xamlg-lsp" },
+    { "id": "XamlG.Automation", "project": "src/XamlG.Automation/XamlG.Automation.csproj" },
+    { "id": "XamlG.Mcp", "project": "src/XamlG.Mcp/XamlG.Mcp.csproj" },
+    { "id": "XamlG.Agents", "project": "src/XamlG.Agents/XamlG.Agents.csproj" },
+    { "id": "XamlG.Agents.OpenAI", "project": "src/XamlG.Agents.OpenAI/XamlG.Agents.OpenAI.csproj" },
+    { "id": "XamlG.Agents.Anthropic", "project": "src/XamlG.Agents.Anthropic/XamlG.Agents.Anthropic.csproj" },
+    { "id": "XamlG.Agents.Gemini", "project": "src/XamlG.Agents.Gemini/XamlG.Agents.Gemini.csproj" },
+    { "id": "XamlG.Studio.Host", "project": "tools/XamlG.Studio.Host/XamlG.Studio.Host.csproj", "command": "xamlg-studio" }
   ]
 }

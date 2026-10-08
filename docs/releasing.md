@@ -1,6 +1,6 @@
 # Build, package and release
 
-`eng/release-manifest.json` is the explicit inventory of fourteen shipping packages: twelve compiler/library/integration packages and the `xamlg` / `xamlg-lsp` tools. `XamlG.Avalonia` is the single-reference integration package. Tests, the test-only XamlX baseline assembly and the browser application are not NuGet library packages.
+`eng/release-manifest.json` is the explicit inventory of twenty-one shipping packages: eighteen compiler/library/integration packages and the `xamlg`, `xamlg-lsp` and `xamlg-studio` tools. `XamlG.Avalonia` is the single-reference integration package. Tests, the test-only XamlX baseline assembly and the browser application are not NuGet library packages.
 
 ## Candidate validation
 
@@ -13,7 +13,7 @@ Use a fresh output directory. The script never silently overwrites previous arti
 
 The candidate contains NuGet packages, portable-symbol packages for ordinary libraries, the exact Git source archive, inventory, release notes and SHA256SUMS. Nuspecs are checked for version, MIT license and exact repository commit. Analyzer dependencies are bundled without shadowing host Roslyn assemblies. Test-only XamlX dependencies are forbidden. The package readme and third-party notices are retained.
 
-The consumer test uses an empty package cache and source mapping: `XamlG.*` comes from the candidate directory; other dependencies come from NuGet. It installs both tools, executes real stdio/watch tests, emits assemblies with the installed CLI, evaluates a project with the packaged MSBuild host, and executes portable and Avalonia applications through the packaged generator.
+The consumer test uses an empty package cache and source mapping: `XamlG.*` comes from the candidate directory; other dependencies come from NuGet. It installs all three tools, executes real stdio/watch tests, emits assemblies with the installed CLI, evaluates a project with the packaged MSBuild host, and executes portable and Avalonia applications through the packaged generator. `scripts/test-studio-packages.py` also builds and runs a standalone automation/agent/MCP consumer outside the repository. Its temporary tool installation, source and package cache are removed on success or failure.
 
 The single-reference shipping consumer additionally covers handwritten/URI loader calls, initialization idempotence, actual binary/managed-resource contents, two target frameworks, unchanged-build timestamps, edits, resource renames, CLI adapter/source/assembly output, refusal to overwrite externally edited generated files and clean/rebuild. Declaring an embedded asset or producing an assembly without loading its contents is not sufficient.
 

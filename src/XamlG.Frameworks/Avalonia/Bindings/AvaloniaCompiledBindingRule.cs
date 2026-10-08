@@ -90,7 +90,7 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
         var configuration = target.Annotations.TryGet(AvaloniaBindingScope.Key, out var current) ? current : new(null, false);
         var itemType = inferDataContext ? null : AvaloniaItemTypeInference.Read(context);
         var pathScope = input.Path.Scope ?? input.Scope;
-        var path = BindingPathParser.Parse(input.Path.Text, input.Path.Span, context.Diagnostics.Add, context.Cancellation);
+        var path = BindingPathParser.ParseAtSource(input.Path.Text, input.Path.Span, context.Syntax.Text, context.Diagnostics.Add, context.Cancellation);
         if (path == null) return null;
         var declaredType = input.DataType == null ? null : AvaloniaBindingScopeRule.ResolveDataType(
             context, input.DataType.Text, input.DataType.Scope ?? input.Scope, input.DataType.Span);

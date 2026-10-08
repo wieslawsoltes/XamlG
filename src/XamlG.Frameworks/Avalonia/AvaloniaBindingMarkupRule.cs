@@ -23,8 +23,9 @@ public sealed class AvaloniaBindingMarkupRule : IXamlMarkupBindingRule, IXamlObj
         // obey the same policy: a failed compiled path is never retried as reflection.
         if (_compiled.TryBindElement(context, syntax, targetType, parentScope, out expression)) return true;
         var scope = parentScope.Push(syntax);
-        var type = context.ResolveType(syntax.Name, scope, syntax.NameSpan,
-            scope.Directive(syntax, "TypeArguments")?.Value, report: false);
+        var typeArguments = scope.Directive(syntax, "TypeArguments");
+        var type = context.ResolveTypeAtSource(syntax.Name, scope, syntax.NameSpan,
+            typeArguments?.Value, report: false, typeArgumentSpan: typeArguments?.ValueSpan);
         if (type == null || !IsReflectionValue(context, type)) return false;
         var extension = ReflectionProvider(context, syntax.Span);
         if (extension == null) return true;
@@ -40,7 +41,7 @@ public sealed class AvaloniaBindingMarkupRule : IXamlMarkupBindingRule, IXamlObj
         expression = null;
         var binding = context.Types.Find(AvaloniaMetadata.BindingBase);
         if (binding == null) return false;
-        var type = context.ResolveType(syntax.Name, scope, syntax.Span, report: false, extension: true);
+        var type = context.ResolveTypeAtSource(syntax.Name, scope, syntax.NameSpan ?? syntax.Span, report: false, extension: true);
         if (type == null || !context.Types.Compilation.ClassifyCommonConversion(type, binding).IsImplicit) return false;
         if (IsReflectionValue(context, type))
         {
@@ -48,10 +49,10 @@ public sealed class AvaloniaBindingMarkupRule : IXamlMarkupBindingRule, IXamlObj
             if (type == null) return true;
         }
         var attributes = syntax.Arguments.Where(a => a.Name != null).Select(a =>
-            new XamlAttributeSyntax(a.Name!, a.Value, a.Span, a.Span, a.Span, '"')).ToImmutableArray();
+            new XamlAttributeSyntax(a.Name!, a.Value, a.NameSpan ?? a.Span, a.ValueSpan ?? a.Span, a.Span, '"')).ToImmutableArray();
         var positional = syntax.Arguments.Where(a => a.Name == null).Select(a =>
-            (XamlSyntaxNode)new XamlTextSyntax(a.Value, false, a.Span)).ToImmutableArray();
-        var element = new XamlElementSyntax(syntax.Name, syntax.Span, syntax.Span, new(syntax.Span.End, 0),
+            (XamlSyntaxNode)new XamlTextSyntax(a.Value, false, a.ValueSpan ?? a.Span)).ToImmutableArray();
+        var element = new XamlElementSyntax(syntax.Name, syntax.NameSpan ?? syntax.Span, syntax.Span, new(syntax.Span.End, 0),
             attributes, ImmutableArray<XamlSyntaxNode>.Empty, true, syntax.Span);
         var nameScope = context.Ancestors.FirstOrDefault()?.NameScopeId ?? 0;
         var bound = context.Objects.Bind(element, scope, type, false, nameScope, positional);

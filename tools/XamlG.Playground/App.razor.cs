@@ -11,12 +11,11 @@ namespace XamlG.Playground;
 
 public partial class App
 {
-    private static readonly string[] InspectorTabs = { "C# output", "Resources", "Syntax", "Bound tree", "Visual tree", "Properties", "Pipeline" };
     private XamlDocumentSession _document = new(PlaygroundExamples.All[0].Xaml, "View.axaml");
     private string _code = PlaygroundExamples.All[0].Code;
     private BrowserCompilation? _result;
-    private CodeEditor? _xamlEditor;
-    private CodeEditor? _codeEditor;
+    private CodeEditor? _xamlEditor => DocumentEditor("View.axaml");
+    private CodeEditor? _codeEditor => DocumentEditor("Code.cs");
     private IJSObjectReference? _module;
     private AvaloniaVisualNode? _visualTree;
     private AvaloniaVisualNode? _selectedVisual;
@@ -33,27 +32,56 @@ public partial class App
     private bool _busy;
     private bool _previewShown;
     private bool _disposed;
+    private bool _initializing, _startupFailed;
+    private readonly CancellationTokenSource _startupCancellation = new();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        await ReconcileDockDocumentsAsync();
+        await RevealDocumentBuffersAsync();
+        if (firstRender) await InitializeStudioAsync();
+    }
+    private async Task InitializeStudioAsync()
+    {
+        if (_initializing || _ready || _disposed) return;
+        _initializing = true; _error = null;
+        var cancellationToken = _startupCancellation.Token;
+        _status = "Loading compiler metadata…";
+        StateHasChanged();
         try
         {
-            _module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+            _module ??= await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+            _shellHooks ??= await _module.InvokeAsync<IJSObjectReference>("installStudioShell");
             _theme = await _module.InvokeAsync<string>("loadTheme");
             await _module.InvokeVoidAsync("setTheme", _theme);
+            await LoadLiveUpdatesAsync();
             await Compiler.InitializeAsync((current, total) =>
             {
+                if (_disposed) return;
                 _status = $"Loading compiler metadata · {current} / {total}";
                 _ = InvokeAsync(StateHasChanged);
-            });
+            }, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            await _module.InvokeVoidAsync("waitForElement", "avalonia-preview");
             await Preview.InitializeAsync("avalonia-preview", new Uri(Navigation.BaseUri));
-            _ready = true;
+            _automationReference ??= DotNetObjectReference.Create(this);
+            await _module.InvokeVoidAsync("installAutomation", _automationReference);
+            cancellationToken.ThrowIfCancellationRequested();
+            _ready = true; _startupFailed = false;
             _status = "Ready · compile or run the project";
-            await CompileSnapshotAsync();
+            await CompileSnapshotAsync(captureEditors: true);
+            await RefreshAutomaticPreviewAsync();
         }
-        catch (Exception error) { Report(error); }
-        if (!_disposed) StateHasChanged();
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            if (!_disposed)
+            {
+                Report(error); _startupFailed = !_ready;
+                if (_startupFailed) _status = "Could not finish loading Studio · check the connection and retry";
+            }
+        }
+        finally { _initializing = false; if (!_disposed) StateHasChanged(); }
     }
     private void UpdateXaml(string text)
     {
@@ -68,7 +96,11 @@ public partial class App
     {
         _code = text; _status = "Code changed · compile to update inspections"; await SaveDraftAsync();
     }
-    private Task CompileAsync() => CompileSnapshotAsync(captureEditors: true);
+    private Task CompileAsync()
+    {
+        CancelAutomaticUpdate();
+        return CompileSnapshotAsync(captureEditors: true);
+    }
     private async Task CompileSnapshotAsync(bool captureEditors = false)
     {
         if (!_ready || _busy) return;
@@ -79,19 +111,20 @@ public partial class App
             _result = null; _status = "Compiling XAML project and C#…";
             StateHasChanged(); await Task.Yield();
             _result = Compiler.Analyze(_document.Current, _code);
+            NotifyCompilerResources();
             _status = _result.Success ? $"Compilation succeeded · {_result.Project?.Documents.Length ?? 1} documents · {_result.ElapsedMilliseconds:0.0} ms" : "Compilation has errors";
-            if (_xamlEditor != null) await _xamlEditor.SetDiagnosticsAsync(_result.Diagnostics.Where(d => d.Path == "View.axaml"));
-            if (_codeEditor != null) await _codeEditor.SetDiagnosticsAsync(_result.Diagnostics.Where(d => d.Path == "Code.cs"));
+            foreach (var buffer in _documentBuffers.Values.ToArray())
+                if (buffer.Editor is { IsRetired: false } editor) await editor.SetDiagnosticsAsync(_result.Diagnostics.Where(d => !d.IsSuppressed && d.Path == buffer.Path));
         }
         catch (Exception error) { _result = null; Report(error); }
         finally { _busy = false; }
     }
     private async Task CaptureEditorsAsync()
     {
-        if (_xamlEditor != null) UpdateXaml(await _xamlEditor.GetTextAsync());
-        if (_codeEditor != null) _code = await _codeEditor.GetTextAsync();
-        if (_resourceEditor != null) await _resourceEditor.CaptureAsync();
-        await SaveDraftAsync();
+        await CaptureDocumentBuffersAsync();
+        // Restored tool panels can inspect the startup project before the user
+        // restores a saved draft. Reads must not replace that draft with defaults.
+        await SaveDraftAsync(onlyIfChanged: true);
     }
     private async Task RunAsync()
     {
@@ -101,7 +134,8 @@ public partial class App
         _busy = true;
         try
         {
-            _visualTree = await Preview.ShowAsync(Compiler.Run(_result));
+            _visualTree = await ShowTrustedCompilationAsync(_result);
+            _automation.NotifyResourceChanged("xamlg://runtime");
             _previewShown = true; _status = "Preview running · actual Avalonia visual tree available";
         }
         catch (Exception error) { Report(error); }
@@ -110,40 +144,33 @@ public partial class App
     private async Task SelectExampleAsync(ChangeEventArgs args)
     {
         if (_busy || !int.TryParse(args.Value?.ToString(), out var index) || index < 0 || index >= PlaygroundExamples.All.Count) return;
+        await RetireAutomationWorkspaceAsync();
         _exampleIndex = index;
         var example = PlaygroundExamples.All[index];
         Compiler.Resources.ReplaceAll(new Dictionary<string, string>());
+        Compiler.CodeFiles.ReplaceAll(new Dictionary<string, string>());
         _document = new(example.Xaml, "View.axaml"); _code = example.Code;
+        ResetCompilerSettings();
         _selectedElement = null; _error = null; _result = null;
         ResetWorkspaceHistory();
         await CompileSnapshotAsync();
+        await RefreshAutomaticPreviewAsync();
     }
     private async Task SelectSyntaxAsync(XamlInspectionNode node)
     {
-        if (_result == null || !ReferenceEquals(_result.Analysis.Syntax, _document.Current))
+        if (InspectionAnalysis is not { } analysis || !ReferenceEquals(analysis.Syntax, DesignerSyntax(_inspectionPath)))
         { _status = "Source changed · compile before selecting an inspection node"; return; }
-        _selectedElement = _document.Current.FindElement(node.Span.Start); _editorTab = "xaml";
-        if (_xamlEditor != null) await _xamlEditor.RevealAsync(node.Span);
+        _selectedDesignerSyntax = analysis.Syntax;
+        _selectedElement = analysis.Syntax.FindElement(node.Span.Start);
+        await RevealDocumentAsync(analysis.Syntax.Path, node.Span);
         if (_selectedElement != null)
         {
             var attribute = _selectedElement.Attributes.FirstOrDefault(a => !a.IsNamespace);
             if (attribute != null) { _propertyName = attribute.Name; _propertyValue = attribute.Value; }
         }
     }
-    private void SelectVisual(AvaloniaVisualNode node) { _selectedVisual = node; _inspectorTab = "Properties"; }
+    private async Task SelectVisual(AvaloniaVisualNode node) { _selectedVisual = node; await ShowPaneAsync("properties"); }
     private void RefreshVisuals() { try { _visualTree = Preview.Inspect(); } catch (Exception error) { Report(error); } }
-    private async Task ApplyPropertyAsync()
-    {
-        if (_selectedElement == null || _busy) return;
-        try
-        {
-            var position = _selectedElement.Span.Start;
-            _document.Apply(XamlDesignerEdits.SetProperty(_document.Current, _selectedElement, _propertyName, _propertyValue), requireWellFormed: true);
-            _selectedElement = _document.Current.FindElement(position);
-            await SaveDraftAsync(); await CompileSnapshotAsync();
-        }
-        catch (Exception error) { Report(error); }
-    }
     private Task UndoAsync() => NavigateWorkspaceAsync(true);
     private Task RedoAsync() => NavigateWorkspaceAsync(false);
     private async Task ToggleThemeAsync()
@@ -152,10 +179,12 @@ public partial class App
         if (_module != null) await _module.InvokeVoidAsync("setTheme", _theme);
     }
     private Dictionary<string, string> ResourceTexts() => Compiler.Resources.Snapshot.ToDictionary(p => p.Key, p => p.Value.Text, StringComparer.Ordinal);
-    private async Task SaveDraftAsync()
+    private async Task SaveDraftAsync(bool onlyIfChanged = false)
     {
+        var previous = SourceRevision;
         RecordWorkspace();
-        if (_module != null) await _module.InvokeVoidAsync("saveDraft", _document.Current.Text, _code, ResourceTexts());
+        if (_module != null && (!onlyIfChanged || SourceRevision != previous))
+            await _module.InvokeVoidAsync("saveDraft", _document.Current.Text, _code, ResourceTexts(), CodeTexts(), Compiler.Settings);
     }
     private async Task RestoreDraftAsync()
     {
@@ -167,12 +196,23 @@ public partial class App
             var resources = draft.TryGetProperty("resources", out var source) && source.ValueKind == JsonValueKind.Object
                 ? source.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? string.Empty, StringComparer.Ordinal)
                 : new Dictionary<string, string>();
-            Compiler.Resources.ReplaceAll(resources);
-            _document = new(draft.GetProperty("xaml").GetString() ?? string.Empty, "View.axaml");
-            _code = draft.GetProperty("code").GetString() ?? string.Empty; _selectedElement = null;
+            var documents = new Dictionary<string, string>(resources, StringComparer.Ordinal);
+            if (draft.TryGetProperty("codeFiles", out var codeFiles) && codeFiles.ValueKind == JsonValueKind.Object)
+                foreach (var item in codeFiles.EnumerateObject())
+                {
+                    if (!IsCSharpPath(item.Name)) throw new ArgumentException("Only C# documents belong in codeFiles.");
+                    documents.Add(item.Name, item.Value.GetString() ?? string.Empty);
+                }
+            documents.Add("View.axaml", draft.GetProperty("xaml").GetString() ?? string.Empty);
+            documents.Add("Code.cs", draft.GetProperty("code").GetString() ?? string.Empty);
+            documents.Add(CompilerSettingsPath, draft.TryGetProperty("compilerOptions", out var settings) && settings.ValueKind != JsonValueKind.Null ? settings.GetRawText() : DefaultCompilerSettingsText);
+            ValidateWorkspace(documents);
+            await RetireAutomationWorkspaceAsync();
+            RestoreWorkspace(_workspaceEdits.ReplaceAll(SourceRevision, documents, "Restore draft", recordHistory: false));
             ResetWorkspaceHistory();
             await CompileSnapshotAsync();
-            _status = "Draft restored without executing it · review the code before Run";
+            await RefreshAutomaticPreviewAsync();
+            if (!_autoCompile || !_autoPreview) _status = "Draft restored without executing it · review the code before Run";
         }
         catch (Exception error) { Report(error); }
     }
@@ -180,30 +220,25 @@ public partial class App
     {
         if (_module == null || _busy) return;
         await CaptureEditorsAsync();
-        var current = _result?.Success == true && ReferenceEquals(_result.Analysis.Syntax, _document.Current) &&
-            _result.ResourceRevision == Compiler.Resources.Revision && _result.Compilation.SyntaxTrees.First().ToString() == _code;
+        var current = _result?.Success == true && IsCompilationCurrent(_result);
         var content = JsonSerializer.Serialize(new
         {
-            format = "xamlg-project", version = 2, xaml = _document.Current.Text, code = _code, resources = ResourceTexts(),
+            format = "xamlg-project", version = 4, xaml = _document.Current.Text, code = _code, resources = ResourceTexts(), codeFiles = CodeTexts(), compilerOptions = Compiler.Settings,
             generated = current ? _result!.Analysis.Output.Source : null,
             generatedFiles = current ? _result!.Project?.Documents.ToDictionary(d => d.Output.HintName, d => d.Output.Source, StringComparer.Ordinal) : null
-        }, new JsonSerializerOptions { WriteIndented = true });
+        }, CompilerSettingsJson);
         await _module.InvokeVoidAsync("download", "xamlg-project.json", content, "application/json");
     }
     private async Task RevealDiagnosticAsync(PlaygroundDiagnostic diagnostic)
     {
-        if (Compiler.Resources.Snapshot.ContainsKey(diagnostic.Path))
-        {
-            if (_resourceEditor != null) { await _resourceEditor.CaptureAsync(); _resourceEditor.SelectDocument(diagnostic.Path); }
-            _inspectorTab = "Resources"; return;
-        }
-        var code = diagnostic.Path == "Code.cs"; _editorTab = code ? "code" : "xaml";
-        var source = code ? _code : _document.Current.Text; var map = new SourceLineMap(source);
+        await CaptureEditorsAsync();
+        var generated = !WorkspaceTexts().ContainsKey(diagnostic.Path);
+        var source = generated ? _result?.Compilation.SyntaxTrees.FirstOrDefault(tree => tree.FilePath == diagnostic.Path)?.ToString() : Source(diagnostic.Path);
+        if (source == null) return;
         try
         {
-            var start = map.GetOffset(new(diagnostic.StartLine - 1, diagnostic.StartColumn - 1));
-            var editor = code ? _codeEditor : _xamlEditor;
-            if (editor != null) await editor.RevealAsync(new(start, Math.Min(1, source.Length - start)));
+            var start = new SourceLineMap(source).GetOffset(new(diagnostic.StartLine - 1, diagnostic.StartColumn - 1));
+            await RevealDocumentAsync(diagnostic.Path, new(start, Math.Min(1, source.Length - start)), generated: generated);
         }
         catch (ArgumentOutOfRangeException) { }
     }
@@ -215,6 +250,18 @@ public partial class App
     }
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
+        _startupCancellation.Cancel();
+        _startupCancellation.Dispose();
+        CancelAutomaticUpdate();
+        RetireDocumentBuffers();
+        if (_dockHooks != null) { await _dockHooks.InvokeVoidAsync("dispose"); await _dockHooks.DisposeAsync(); }
+        _dockReference?.Dispose();
+        if (_shellHooks != null) { await _shellHooks.InvokeVoidAsync("dispose"); await _shellHooks.DisposeAsync(); }
+        _browserAgents.Dispose();
+        RevokeAutomation(); _runtimeInspector?.Dispose(); _buildArtifacts.Dispose();
+        if (_module != null) await _module.InvokeVoidAsync("disconnectAutomation");
+        _automationReference?.Dispose();
         _disposed = true; Preview.Dispose();
         if (_module != null) await _module.DisposeAsync();
     }

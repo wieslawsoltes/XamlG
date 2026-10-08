@@ -15,7 +15,8 @@ public sealed class ObjectBinder
     {
         _context.Cancellation.ThrowIfCancellationRequested();
         var scope = parentScope.Push(syntax);
-        var type = overrideType ?? _context.ResolveType(syntax.Name, scope, syntax.NameSpan, scope.Directive(syntax, "TypeArguments")?.Value);
+        var typeArguments = scope.Directive(syntax, "TypeArguments");
+        var type = overrideType ?? _context.ResolveTypeAtSource(syntax.Name, scope, syntax.NameSpan, typeArguments?.Value, typeArgumentSpan: typeArguments?.ValueSpan);
         if (type == null) return null;
         if (!(isRoot && _context.RootClass != null) &&
             _context.Types.Configuration.MarkupExtensionSuffix is { Length: > 0 } suffix && type.Name.EndsWith(suffix, StringComparison.Ordinal) &&
