@@ -58,7 +58,11 @@ public static class AvaloniaFrameworkProfile
                     new XamlServiceMapping(AvaloniaMetadata.RootProvider, XamlServiceKind.RootObject),
                     new XamlServiceMapping(AvaloniaMetadata.ValueTarget, XamlServiceKind.ProvideValueTarget),
                     new XamlServiceMapping(AvaloniaMetadata.UriContext, XamlServiceKind.UriContext),
-                    new XamlServiceMapping(AvaloniaMetadata.ParentProvider, XamlServiceKind.ParentStack),
+                    new XamlServiceMapping(AvaloniaMetadata.ParentProvider, XamlServiceKind.ParentStack)
+                    {
+                        ImplementationInterfaceMetadataName = AvaloniaMetadata.EagerParentProvider,
+                        ParentProviderAdapter = new(AvaloniaMetadata.RuntimeHelpers, "AsEagerParentStackProvider")
+                    },
                     new XamlServiceMapping(AvaloniaMetadata.NamespaceProvider, XamlServiceKind.XmlNamespaces, AvaloniaMetadata.NamespaceItem))
             },
             BindingRules = ImmutableArray.Create<IXamlBindingRule>(directives, bindings, new AvaloniaStyleDirectiveRule(), classes, deferredResources),

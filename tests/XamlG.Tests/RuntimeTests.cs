@@ -11,6 +11,22 @@ public sealed class RuntimeTests
         Assert.Same(root, frame.RootObject); Assert.Equal(new[] { child, root }, frame.Parents); Assert.Equal("Text", frame.TargetProperty);
     }
     [Fact]
+    public void DirectParentStacksAreSharedByTargetFramesAndIsolateBranches()
+    {
+        var root = new object(); var first = new object(); var second = new object();
+        var context = new XamlRuntimeContext();
+        var parent = context.Push(root, "root");
+        var firstFrame = parent.Push(first, "first");
+        var secondFrame = parent.Push(second, "second");
+        Assert.Empty(context.DirectParentsStack);
+        Assert.Equal(new[] { root }, parent.DirectParentsStack);
+        Assert.Equal(new[] { root, first }, firstFrame.DirectParentsStack);
+        Assert.Equal(new[] { root, second }, secondFrame.DirectParentsStack);
+        Assert.Same(firstFrame.DirectParentsStack, firstFrame.ForTarget(first, "Text").DirectParentsStack);
+        Assert.Same(firstFrame.DirectParentsStack, firstFrame.WithNamespaces(new Dictionary<Type, object>()).DirectParentsStack);
+        Assert.Equal(firstFrame.Parents.Reverse(), firstFrame.DirectParentsStack);
+    }
+    [Fact]
     public void ForwardNameFixupsRunAtCompletion()
     {
         var context = new XamlRuntimeContext(); var expected = new object(); object? actual = null;

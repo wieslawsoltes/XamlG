@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Immutable;
 using XamlG.Compiler;
+using XamlG.Syntax;
 using Xunit;
 
 namespace XamlG.Tests;
@@ -99,5 +100,71 @@ public sealed class ServiceContractTests
         Assert.Equal(true, Property(scope, "Completed"));
         var values = (IDictionary)Property(scope, "Values")!;
         Assert.Same(((IList)Property(root, "Children")!)[0], values["child"]);
+    }
+
+    private const string EagerModel = """
+        namespace ContractFixture
+        {
+            public interface IEagerParents : IParents
+            {
+                System.Collections.Generic.IReadOnlyList<object> DirectParentsStack { get; }
+                IEagerParents ParentProvider { get; }
+            }
+            public interface IBadParents : IParents { int DirectParentsStack { get; } }
+            public static class ParentAdapters
+            {
+                public static IEagerParents Wrap(IParents parents) => (IEagerParents)parents;
+                public static object WrongReturn(IParents parents) => parents;
+                public static IEagerParents WrongArgument(string parents) => null;
+                public static IEagerParents Generic<T>(IParents parents) => null;
+            }
+            public class EagerExtension
+            {
+                public object ProvideValue(System.IServiceProvider services)
+                {
+                    var parents = (IEagerParents)services.GetService(typeof(IParents));
+                    return parents.ParentProvider == null && parents.DirectParentsStack.Count == 1 &&
+                        object.ReferenceEquals(parents.DirectParentsStack[0], System.Linq.Enumerable.First(parents.Parents)) &&
+                        services.GetService(typeof(IEagerParents)) == null;
+                }
+            }
+        }
+        """;
+
+    private static XamlFrameworkProfile EagerProfile(string implementation, string? adapter) => XamlFrameworkProfile.Portable with
+    {
+        Runtime = new()
+        {
+            Services = ImmutableArray.Create(new XamlServiceMapping("ContractFixture.IParents", XamlServiceKind.ParentStack)
+            {
+                ImplementationInterfaceMetadataName = implementation,
+                ParentProviderAdapter = adapter == null ? null : new("ContractFixture.ParentAdapters", adapter)
+            })
+        }
+    };
+
+    [Fact]
+    public void ServiceImplementationCanExtendItsLookupContract()
+    {
+        using var code = CompiledXaml.Create("<Panel xmlns='clr-namespace:ContractFixture' Value='{Eager}'/>", Model + EagerModel,
+            EagerProfile("ContractFixture.IEagerParents", "Wrap"));
+        Assert.Equal(true, Property(code.Build(), "Value"));
+    }
+
+    [Theory]
+    [InlineData("ContractFixture.Missing", "Wrap")]
+    [InlineData("ContractFixture.Panel", "Wrap")]
+    [InlineData("ContractFixture.IRoot", "Wrap")]
+    [InlineData("ContractFixture.IBadParents", "Wrap")]
+    [InlineData("ContractFixture.IEagerParents", null)]
+    [InlineData("ContractFixture.IEagerParents", "WrongReturn")]
+    [InlineData("ContractFixture.IEagerParents", "WrongArgument")]
+    [InlineData("ContractFixture.IEagerParents", "Generic")]
+    public void InvalidServiceImplementationsAreDiagnosedBeforeEmission(string implementation, string? adapter)
+    {
+        var result = new XamlCompiler().Bind(XamlSyntaxTree.Parse("<Panel xmlns='clr-namespace:ContractFixture'/>", "Services.xaml"),
+            CompilationFactory.Create(Model + EagerModel), EagerProfile(implementation, adapter));
+        Assert.False(result.Success);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "XG1100");
     }
 }

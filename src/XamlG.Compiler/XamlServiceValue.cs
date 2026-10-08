@@ -8,5 +8,7 @@ public enum XamlServiceValue
     TargetProperty,
     Parents,
     BaseUri,
-    XmlNamespaces
+    XmlNamespaces,
+    DirectParents,
+    ParentProvider
 }

@@ -14,7 +14,7 @@ internal sealed class ServiceContractEmitter
         var contracts = _context.Document.Runtime.Services;
         if (contracts.Length == 0) return;
         var writer = _context.Writer;
-        writer.Open("private sealed class " + _context.ServicesType + " : " + string.Join(", ", contracts.Select(s => s.InterfaceType.CSharpName()).Distinct()));
+        writer.Open("private sealed class " + _context.ServicesType + " : " + string.Join(", ", contracts.Select(s => s.ImplementationType.CSharpName()).Distinct()));
         writer.Line("private readonly " + CSharpNames.Context + " _context;");
         writer.Line("public " + _context.ServicesType + "(" + CSharpNames.Context + " context) => _context = context;");
         var emitted = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
@@ -42,6 +42,9 @@ internal sealed class ServiceContractEmitter
         XamlServiceValue.BaseUri => "_context.BaseUri",
         XamlServiceValue.XmlNamespaces => "_context.GetNamespaceValue(typeof(" + contract.InterfaceType.CSharpName() + "))",
         XamlServiceValue.Parents => "_context.EnumerateParents(typeof(" + contract.InterfaceType.CSharpName() + "), static __provider => ((" + contract.InterfaceType.CSharpName() + ")__provider)." + CSharpNames.Identifier(property.Property.Name) + ")",
+        XamlServiceValue.DirectParents => "_context.DirectParentsStack",
+        XamlServiceValue.ParentProvider => "(_context.GetExternalService(typeof(" + contract.InterfaceType.CSharpName() + ")) is " + contract.InterfaceType.CSharpName() +
+            " __parent ? " + contract.ParentProviderAdapter!.ContainingType.CSharpName() + "." + CSharpNames.Method(contract.ParentProviderAdapter) + "(__parent) : null)",
         _ => throw new ArgumentOutOfRangeException(nameof(property))
     };
 }

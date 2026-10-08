@@ -62,6 +62,8 @@ The Avalonia profile exposes name-reference policies to reusable tooling: `Eleme
 
 ## Build integration
 
+The parent-stack service implements Avalonia's eager protocol as well as its base lookup contract. `DirectParentsStack` returns a cached local list in root-to-nearest order; `ParentProvider` adapts the external provider using Avalonia's public helper. Ordinary enumeration and eager traversal preserve the same nearest-to-root order across construction, template and deferred-resource scopes. Portable profiles can describe an implementation interface extending their service lookup interface and a static parent-provider adapter.
+
 `AvaloniaFrameworkProfile.Create(createSourceInfo: true)` enables Avalonia's public `XamlSourceInfo` metadata on constructed object elements and markup extensions. Locations use one-based XML line/column positions and the physical syntax document path. Metadata is attached after construction and before initialization; populating an existing root preserves its metadata. Resource keys receive locations immediately, including entries whose values are deferred. Compiled resource merges preserve imported locations and record local overrides. This metadata is separate from XamlG's session-owned editing metadata and remains available after session disposal.
 
 The generator and workspace hosts read `XamlGCreateSourceInfo`, then `AvaloniaXamlCreateSourceInfo`, and otherwise enable metadata for `Configuration=Debug`. Direct profile creation defaults to disabled. `XamlWorkspaceOptions.CreateSourceInfo` overrides project configuration.
