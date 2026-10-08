@@ -16,6 +16,7 @@ XamlX submodule `d7e37ca63dc9b13cdc95ca165938d4904fa0eddf`.
 | XamlX's `NewObjectEmitter` evaluates arguments directly on the IL stack. | Emit exact scalar literals directly. Keep typed temporaries for other arguments to preserve overload selection and conversion timing. A broader expression-suffix trial reduced source but did not consistently improve compilation. |
 | XamlX pools typed temporary locals. | Reuse a typed local after its assignment lifetime ends, within its declaration scope. Exclude closure-sensitive and custom raw-code documents. |
 | Context setup is shared in the IL backend. | Share generated context creation, namescope initialization and completion, with fresh instances and document-specific namespace data. |
+| Resource aliases repeat the same small construction and deferred-lifetime body. | Share ordinary typed construction and deferred markup helpers; pass each occurrence's constants, node key and source index. Preserve initialization, services, editing registration and failure cleanup. |
 | Avalonia's color intrinsic evaluates its public parser during compilation and emits a packed value. | Use the copied, private color parser in the generator; emit `Color.FromUInt32` or a fresh brush constructor with numeric arguments. HSL/HSV literals use numeric constructors. |
 | Roslyn still parses, binds, lowers and analyzes the generated program. | Measure captured output with normal analyzers separately. Reducing generator allocations alone cannot remove this cost. |
 
@@ -34,6 +35,24 @@ method bodies, 1,759 local slots and 251,699 IL bytes. These are whole-assembly
 counts, including common handwritten C#; XamlG also retains editing metadata,
 construction ownership and failure cleanup. Counts describe structure, not a
 runtime or compiler speedup.
+
+The next construction-sharing round reduces Fluent's generated C# from
+12,392,791 to 10,970,468 bytes. Its largest resource document shares 1,021
+instances of one deferred markup body. Each entry retains its own statically
+typed function and literal arguments; the generated helpers contain normal
+constructors, setters and `ProvideValue` calls. There is no instruction stream
+or interpreter. Framework source-info callbacks, custom descriptors, names,
+initialization callbacks and observable argument conversions retain the normal
+construction path.
+
+Trimming dataflow is the largest reported analyzer contributor in the current
+profile. The [upstream analyzer](https://github.com/dotnet/runtime/blob/main/src/tools/illink/src/ILLink.RoslynAnalyzer/DynamicallyAccessedMembersAnalyzer.cs)
+analyzes generated operation blocks, and its
+[local dataflow engine](https://github.com/dotnet/runtime/blob/main/src/tools/illink/src/ILLink.RoslynAnalyzer/DataFlow/LocalDataFlowAnalysis.cs)
+iterates over reachable local functions until state converges. This supports
+reducing repeated method bodies and exception regions as a structural target.
+Analyzer times overlap; they are not additive parts of Csc wall time. Normal
+trimming analysis remains enabled in measurements and validation.
 
 ## Transformation audit
 
@@ -72,6 +91,20 @@ than unique values or runtime executions.
 | FontFeature | 0 | 0 | 5 |
 | HsvColor | 0 | 0 | 3 |
 | DateTime | 0 | 0 | 2 |
+
+After the color and animation/tokenizer ports, actual source captures contain
+zero calls to `Color.Parse`, `HsvColor.Parse`, `Easing.Parse`, `Cue.Parse`,
+`IterationCount.Parse`, `KeySpline.Parse`, `Rect.Parse` or `PixelRect.Parse` in
+all three projects. This removes 3,047 runtime parser call sites from this
+inventory. Geometry, transforms, keyboard gestures/cursors, box shadows, font
+features and the two date/time calls remain.
+
+Animation parsing preserves the upstream percentage and suffix grammar and
+constructs fresh easing/key-spline objects. Key-spline constructors accept values
+that property setters reject, so spline easing uses the parsed-key-spline
+constructor overload. Numeric literals use the copied tokenizer instead of a
+second token-list implementation. Tests compare accepted values, rejected input
+and source-info behavior against the public framework parsers and XamlX loader.
 
 Further ports must preserve the parser's accepted grammar, invariant-culture
 behavior, numeric rounding, constructor semantics and fresh object ownership.
