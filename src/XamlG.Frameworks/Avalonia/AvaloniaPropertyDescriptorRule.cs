@@ -15,9 +15,8 @@ public sealed class AvaloniaPropertyDescriptorRule : IXamlMemberBindingRule
         var propertyType = context.Types.Find(AvaloniaMetadata.Property);
         if (propertyType == null) return member;
         var owner = member.Symbol.ContainingType;
-        var field = owner.Members(member.Name + AvaloniaMetadata.PropertySuffix).OfType<IFieldSymbol>()
-            .FirstOrDefault(f => f.IsStatic && context.Types.IsAccessible(f) && context.Types.Compilation.ClassifyCommonConversion(f.Type, propertyType).IsImplicit);
-        return field == null ? member : AvaloniaTemplatePriority.Apply(context,
-            member with { TargetDescriptor = new BoundStaticExpression(field, field.Type, member.Span) }, field);
+        var registration = AvaloniaRegisteredPropertyResolver.Find(context, owner, member.Name);
+        return registration == null ? member : AvaloniaTemplatePriority.Apply(context,
+            member with { TargetDescriptor = registration.Reference(member.Span) }, registration.FieldType);
     }
 }

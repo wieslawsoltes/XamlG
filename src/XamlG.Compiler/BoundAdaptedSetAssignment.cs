@@ -10,4 +10,7 @@ public sealed record BoundAdaptedSetAssignment(BoundMember Member, BoundExpressi
 {
     /// <summary>When requested by an adapter, its returned IDisposable belongs to the constructed view session.</summary>
     public bool OwnAdapterResult { get; init; }
+    /// <summary>Optional statically bound equivalent of the complete dispatch, fallback and lifetime handling.
+    /// Takes the target, evaluated object value, target descriptor and IServiceProvider, and returns void.</summary>
+    public IMethodSymbol? RuntimeDispatcher { get; init; }
 }

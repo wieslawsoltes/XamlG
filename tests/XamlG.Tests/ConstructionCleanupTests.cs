@@ -5,6 +5,35 @@ namespace XamlG.Tests;
 
 public sealed class ConstructionCleanupTests
 {
+    [Fact]
+    public void NewlyConstructedRootsKeepConstructorSessionsUntilTheirOwnerIsDisposed()
+    {
+        const string model = """
+            using XamlG.Runtime;
+            namespace Lifecycle {
+                public class InitializedView {
+                    public XamlRuntimeSession ConstructorSession { get; }
+                    public int Released;
+                    public InitializedView() {
+                        ConstructorSession = new XamlRuntimeSession();
+                        ConstructorSession.TrackCleanup(() => Released++);
+                        ConstructorSession.Attach(this);
+                    }
+                }
+            }
+            """;
+        using var code = CompiledXaml.Create("<InitializedView xmlns='clr-namespace:Lifecycle'/>", model);
+        var root = code.Build();
+        var constructor = (XamlG.Runtime.XamlRuntimeSession)root.GetType().GetProperty("ConstructorSession")!.GetValue(root)!;
+        Assert.False(constructor.IsDisposed);
+        Assert.True(XamlG.Runtime.XamlRuntimeSession.TryGet(root, out var owner));
+        Assert.NotSame(constructor, owner);
+        owner!.Dispose();
+        owner.Dispose();
+        Assert.True(constructor.IsDisposed);
+        Assert.Equal(1, root.GetType().GetField("Released")!.GetValue(root));
+    }
+
     private const string Model = """
         using System;
         using XamlG.Runtime;

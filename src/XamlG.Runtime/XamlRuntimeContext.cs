@@ -70,6 +70,7 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
     public object? TargetObject { get; }
     public object? TargetProperty { get; }
     public string? NodeKey { get; }
+    internal object? NodeObject => NodeKey == null ? null : _frameObject ?? _parent?.NodeObject;
     public Uri? BaseUri { get => _uriOwner._baseUri; set => _uriOwner._baseUri = value; }
     public IContainer? Container => null;
     public object? Instance => _useTypeDescriptorStubs ? null : TargetObject;
@@ -111,18 +112,22 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
         }
     }
 
-    public XamlRuntimeContext PushRoot(object value, string key)
+    public XamlRuntimeContext PushRoot(object value, string key) => PushRoot(value, key, null);
+
+    public XamlRuntimeContext PushRoot(object value, string key, XamlSourceInfo? source)
     {
         _root = value;
         _intermediateRoot = value;
-        return Push(value, key);
+        return Push(value, key, source);
     }
 
-    public XamlRuntimeContext Push(object value, string key)
+    public XamlRuntimeContext Push(object value, string key) => Push(value, key, null);
+
+    public XamlRuntimeContext Push(object value, string key, XamlSourceInfo? source)
     {
         if (_root == null && _parent == null) _root = value;
         if (_intermediateRoot == null) _intermediateRoot = value;
-        Session.Register(key, value, NodeKey);
+        Session.Register(key, value, NodeKey, source);
         return new(this, value, TargetObject, TargetProperty, key, false);
     }
 

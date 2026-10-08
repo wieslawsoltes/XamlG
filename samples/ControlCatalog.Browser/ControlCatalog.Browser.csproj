@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net10.0-browser</TargetFramework>
+    <WasmEnableThreads>false</WasmEnableThreads>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DebuggerSupport>true</DebuggerSupport>
+    <WasmDebugLevel>5</WasmDebugLevel>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <TrimmerRootDescriptor Include="ILLink.Descriptors.xml" />
+    <StaticWebAssetFingerprintPattern Include="JS" Pattern="*.js" Expression="#[.{fingerprint}]!" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src/Skia/Avalonia.Skia/Avalonia.Skia.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src/Browser/Avalonia.Browser/Avalonia.Browser.csproj" />
+    <ProjectReference Include="../ControlCatalog/ControlCatalog.csproj" />
+  </ItemGroup>
+
+  <Import Project="$(ControlCatalogAvaloniaRoot)/src/Browser/Avalonia.Browser/build/Avalonia.Browser.props" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/src/Browser/Avalonia.Browser/build/Avalonia.Browser.targets" />
+</Project>

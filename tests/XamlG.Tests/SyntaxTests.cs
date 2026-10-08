@@ -40,6 +40,18 @@ public sealed class SyntaxTests
         var rootScope = NamespaceScope.Empty.Push(tree.Root!); var childScope = rootScope.Push((XamlElementSyntax)tree.Root!.Children[0]);
         Assert.Equal("one", rootScope.Expand("a:T").Namespace); Assert.Equal("two", childScope.Expand("a:T").Namespace);
     }
+    [Fact]
+    public void SpaceAndIgnorableScopesRemainIndependentWhenBindingsAreUnchanged()
+    {
+        var tree = XamlSyntaxTree.Parse("<Root xmlns:mc='http://schemas.openxmlformats.org/markup-compatibility/2006' xmlns:a='urn:a'><Child xml:space='preserve' mc:Ignorable='a'><Leaf xml:space='default'/></Child><Sibling/></Root>");
+        var root = NamespaceScope.Empty.Push(tree.Root!);
+        var childNode = (XamlElementSyntax)tree.Root!.Children[0];
+        var child = root.Push(childNode); var leaf = child.Push((XamlElementSyntax)childNode.Children[0]);
+        var sibling = root.Push((XamlElementSyntax)tree.Root.Children[1]);
+        Assert.False(root.PreserveSpace); Assert.True(child.PreserveSpace); Assert.False(leaf.PreserveSpace);
+        Assert.Empty(root.IgnoredNamespaces); Assert.Contains("urn:a", child.IgnoredNamespaces); Assert.Contains("urn:a", leaf.IgnoredNamespaces);
+        Assert.False(sibling.PreserveSpace); Assert.Empty(sibling.IgnoredNamespaces);
+    }
     [Theory]
     [InlineData("<Root><Child></Root>")]
     [InlineData("<Root A='unfinished")]

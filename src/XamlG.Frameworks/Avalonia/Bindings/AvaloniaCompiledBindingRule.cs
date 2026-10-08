@@ -122,6 +122,8 @@ public sealed class AvaloniaCompiledBindingRule : IXamlMarkupBindingRule
                 sourceType = new BindingSourceResolver(context).Named(namedReference.Name, namedReference.Span).Type;
             else if (source?.Type is { SpecialType: not SpecialType.System_Object } explicitType)
                 sourceType = explicitType;
+            else if (source != null && BindingResourceTypeResolver.Find(context, source) is { } resourceType)
+                sourceType = resourceType;
         }
         BoundBindingSource? initialSource = null;
         if (input.ElementName != null)

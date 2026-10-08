@@ -9,6 +9,27 @@ namespace XamlG.Avalonia.Tests;
 public sealed class ElementBindingServiceTests
 {
     [AvaloniaTheory]
+    [InlineData("Tag", " RelativeSource='{RelativeSource Self}'")]
+    [InlineData("$self.Tag", "")]
+    public void CompiledMultiBindingSelfUsesReceivingControl(string path, string source)
+    {
+        var xaml = "<TextBlock " + ResourceProjectFixture.Namespace + " x:CompileBindings='True' Tag='before'>" +
+            "<TextBlock.Text><MultiBinding StringFormat='{}{0}'><Binding Path='" + path + "'" + source +
+            "/></MultiBinding></TextBlock.Text></TextBlock>";
+        var baseline = AvaloniaUpstreamCompilation.Compile(xaml);
+        Assert.Null(baseline.Error);
+        foreach (var view in new[] { Assert.IsType<TextBlock>(baseline.Root),
+                     Assert.IsType<TextBlock>(new ResourceProjectFixture(new[] { ("View.axaml", xaml) }).Build("View.axaml")) })
+        {
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("before", view.Text);
+            view.Tag = "after";
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal("after", view.Text);
+        }
+    }
+
+    [AvaloniaTheory]
     [InlineData("Binding", false)]
     [InlineData("Binding", true)]
     [InlineData("ReflectionBinding", false)]

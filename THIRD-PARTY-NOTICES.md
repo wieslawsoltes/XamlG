@@ -26,6 +26,10 @@ THE SOFTWARE.
 
 No upstream IL compiler or reflection type system is included in XamlG production packages. The XamlX test-reference assembly is not packable.
 
+## ControlCatalog and themes port
+
+The complete ControlCatalog, desktop/browser hosts, MiniMvvm, Avalonia.Themes.Simple and Avalonia.Themes.Fluent are ported from `wieslawsoltes/Avalonia` revision `a9429a328057befa287ffb5e981f58b86a86eda0`. Copyright (c) AvaloniaUI OÜ. All Rights Reserved. See [the port notice](samples/UPSTREAM-NOTICE.md), [retained upstream MIT license](samples/UPSTREAM-LICENSE.md) and [upstream third-party notices](samples/UPSTREAM-THIRD-PARTY-NOTICES.md). The import manifest records all original file identities and documented adaptations.
+
 ## Package dependencies
 
 Roslyn, Avalonia, Dockyard.Blazor, ModelContextProtocol, OpenAI, Microsoft.IdentityModel.JsonWebTokens, System.Security.Cryptography.ProtectedData, Anthropic, Google.GenAI, Monaco Editor, Playwright and other package dependencies retain their own licenses and notices. The browser asset build copies Monaco from its pinned npm package with its license files. Avalonia Browser and Dockyard assets are published from their NuGet packages without removing package attribution. The compiler's Avalonia adapter uses public metadata contracts; its production source is not a copy of XamlX's IL compiler.

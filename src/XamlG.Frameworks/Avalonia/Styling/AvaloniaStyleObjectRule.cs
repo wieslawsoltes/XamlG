@@ -11,14 +11,17 @@ public sealed class AvaloniaStyleObjectRule : IXamlObjectBindingRule
     public void Initialize(BindingContext context, ObjectBindingBuilder target)
     {
         var parent = context.Ancestors.Skip(1).FirstOrDefault();
-        var control = context.Types.Find(AvaloniaMetadata.Control);
-        var templateContract = control == null ? null : context.Types.Find("Avalonia.Controls.ITemplate`1")?.Construct(control);
-        if (parent != null && templateContract != null && parent.Syntax.Children.Contains(target.Syntax) &&
-            parent.Annotations.TryGet(AvaloniaStyleAnnotations.SetterTarget, out var detachedTarget) &&
+        if (parent != null && parent.Annotations.TryGet(AvaloniaStyleAnnotations.SetterTarget, out var detachedTarget) &&
             parent.Annotations.TryGet(AvaloniaStyleAnnotations.SetterProperty, out var detachedProperty) &&
-            !context.Types.Compilation.ClassifyCommonConversion(detachedProperty.ValueType, templateContract).IsImplicit &&
-            context.Types.Compilation.ClassifyCommonConversion(target.Type, templateContract).IsImplicit)
-            target.Annotations.Set(AvaloniaStyleAnnotations.DetachedTemplateTarget, detachedTarget);
+            parent.Syntax.Children.Contains(target.Syntax))
+        {
+            var control = context.Types.Find(AvaloniaMetadata.Control);
+            var templateContract = control == null ? null : context.Types.Find("Avalonia.Controls.ITemplate`1")?.Construct(control);
+            if (templateContract != null &&
+                !context.Types.Compilation.ClassifyCommonConversion(detachedProperty.ValueType, templateContract).IsImplicit &&
+                context.Types.Compilation.ClassifyCommonConversion(target.Type, templateContract).IsImplicit)
+                target.Annotations.Set(AvaloniaStyleAnnotations.DetachedTemplateTarget, detachedTarget);
+        }
         var inherited = FindTarget(context, target);
         var declared = target.Scope.Directive(target.Syntax, AvaloniaStyleMetadata.SetterTargetType);
         var declaredType = declared == null ? null : AvaloniaBindingScopeRule.ResolveDataType(context, declared.Value, target.Scope, declared.ValueSpan);

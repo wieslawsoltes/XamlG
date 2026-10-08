@@ -71,14 +71,14 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
                     var registeredProperty = AvaloniaRegisteredPropertyResolver.Find(context, type, segment.Name);
                     if (registeredProperty != null)
                     {
-                        context.Symbols.Add(new(segment.Span, (ISymbol?)property ?? registeredProperty.Field, "binding-member"));
+                        context.Symbols.Add(new(segment.Span, (ISymbol?)property ?? registeredProperty.Declaration, "binding-member"));
                         var registeredAccessor = _accessors.Registered(registeredProperty, segment.Span);
                         if (registeredAccessor == null) return null;
                         builder = Property(builder, registeredAccessor, segment);
                         type = registeredAccessor.ValueType; writable = registeredAccessor.CanWrite;
                         if (builder != null && sourceDataType != null &&
-                            registeredProperty.Field.Name == AvaloniaBindingMetadata.DataContext + AvaloniaMetadata.PropertySuffix &&
-                            registeredProperty.Field.ContainingType.HasMetadataName(AvaloniaStyleMetadata.StyledElement))
+                            registeredProperty.FieldName == AvaloniaBindingMetadata.DataContext + AvaloniaMetadata.PropertySuffix &&
+                            registeredProperty.Declaration.ContainingType.HasMetadataName(AvaloniaStyleMetadata.StyledElement))
                         { type = sourceDataType; builder = _expressions.GenericCall(builder, "TypeCast", type, segment.Span); }
                         break;
                     }

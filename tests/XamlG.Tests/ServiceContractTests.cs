@@ -89,6 +89,27 @@ public sealed class ServiceContractTests
         Assert.Equal("First", Property(root, "Namespace"));
         Assert.Equal("Second", Property(((IList)Property(root, "Children")!)[0]!, "Namespace"));
     }
+    [Fact]
+    public void DeferredFactoriesAndSiblingsKeepTheirLexicalNamespaces()
+    {
+        const string extra = "namespace ContractFixture { public class Template { [Content, DeferredContent] public Func<IServiceProvider,object> Content {get;set;} } }";
+        const string xaml = "<Panel xmlns='clr-namespace:ContractFixture' xmlns:vm='clr-namespace:First'>" +
+            "<Panel.Value><Template xmlns:vm='clr-namespace:Second'><Panel Namespace='{Namespace}'>" +
+            "<Panel xmlns:vm='clr-namespace:Third' Namespace='{Namespace}'/><Panel Namespace='{Namespace}'/>" +
+            "</Panel></Template></Panel.Value><Panel Namespace='{Namespace}'/></Panel>";
+        using var code = CompiledXaml.Create(xaml, Model + extra, Profile);
+        var root = code.Build();
+        Assert.Equal("First", Property(((IList)Property(root, "Children")!)[0]!, "Namespace"));
+        var factory = (Delegate)Property(Property(root, "Value")!, "Content")!;
+        for (var i = 0; i < 2; i++)
+        {
+            var content = factory.DynamicInvoke(new object?[] { null })!;
+            Assert.Equal("Second", Property(content, "Namespace"));
+            var children = (IList)Property(content, "Children")!;
+            Assert.Equal("Third", Property(children[0]!, "Namespace"));
+            Assert.Equal("Second", Property(children[1]!, "Namespace"));
+        }
+    }
 
     [Fact]
     public void RegistersAndCompletesTheFrameworkNameScope()

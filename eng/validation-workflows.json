@@ -5,7 +5,10 @@
     "upstream-compatibility.yml",
     "theme-corpus.yml",
     "playground.yml",
-    "release.yml"
+    "release.yml",
+    "controlcatalog.yml"
   ],
-  "deployment": ["pages.yml"]
+  "deployment": [
+    "pages.yml"
+  ]
 }

@@ -1,0 +1,9 @@
+<Project>
+  <!-- NuGet imports buildTransitive assets automatically. For source consumers in this
+       repository, the same single integration reference selects the shipped targets. -->
+  <ItemGroup>
+    <_XamlGIntegrationReference Include="@(ProjectReference->WithMetadataValue('Filename', 'XamlG.Avalonia'))" />
+  </ItemGroup>
+  <Import Project="eng/XamlG.Source.props" />
+  <Import Project="eng/XamlG.Source.targets" />
+</Project>

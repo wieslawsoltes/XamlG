@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using XamlG.CSharp.Resources;
 using XamlG.Runtime;
 using XamlG.Syntax;
+using XamlG.Compiler;
 using Xunit;
 
 namespace XamlG.Tests;
@@ -18,16 +19,19 @@ public sealed class ProjectIncrementalityTests
     }
     private static XamlProjectDocument Document(string path, string text, string type = "A") =>
         new(XamlSyntaxTree.Parse("<" + type + " xmlns='clr-namespace:Model' Text='" + text + "'/>", path), path);
-    [Fact]
-    public void ValueOnlyEditBindsAndEmitsExactlyOneDocument()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public void ValueOnlyEditBindsAndEmitsExactlyOneDocument(int concurrency)
     {
         var compilation = Compilation(); var compiler = new XamlProjectCompiler();
+        var options = new XamlCompilerOptions { MaxDegreeOfParallelism = concurrency };
         var first = Document("First.xaml", "first"); var second = Document("Second.xaml", "second");
-        var initial = compiler.Compile(new[] { first, second }, compilation);
+        var initial = compiler.Compile(new[] { first, second }, compilation, options: options);
         Assert.True(initial.Success); Assert.Equal(new XamlProjectStatistics(2, 0, 2, 0), initial.Statistics);
-        var unchanged = compiler.Compile(new[] { first, second }, compilation);
+        var unchanged = compiler.Compile(new[] { first, second }, compilation, options: options);
         Assert.Equal(new XamlProjectStatistics(0, 2, 0, 2), unchanged.Statistics);
-        var changed = compiler.Compile(new[] { Document(first.LogicalPath, "changed"), second }, compilation);
+        var changed = compiler.Compile(new[] { Document(first.LogicalPath, "changed"), second }, compilation, options: options);
         Assert.Equal(new XamlProjectStatistics(1, 1, 1, 1), changed.Statistics);
         Assert.Same(initial.Documents[1].Document, changed.Documents[1].Document);
         Assert.Same(initial.Documents[1].Output, changed.Documents[1].Output);
@@ -58,5 +62,27 @@ public sealed class ProjectIncrementalityTests
         using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
         Assert.Throws<OperationCanceledException>(() => compiler.Compile(new[] { document }, compilation, cancellationToken: cancellation.Token));
         Assert.True(compiler.Compile(new[] { document }, compilation).Success);
+    }
+    [Fact]
+    public void ConcurrentDocumentsHaveIdenticalOutputDiagnosticsAndCacheBehavior()
+    {
+        var compilation = Compilation();
+        var inputs = Enumerable.Range(0, 32).Select(i => Document(i + ".xaml", "value " + i)).ToArray();
+        var options = new XamlCompilerOptions { MaxDegreeOfParallelism = 4 };
+        var serial = new XamlProjectCompiler().Compile(inputs, compilation);
+        var compiler = new XamlProjectCompiler();
+        var parallel = compiler.Compile(inputs.Reverse(), compilation, options: options);
+        Assert.True(serial.Success); Assert.True(parallel.Success);
+        Assert.Equal(serial.Statistics, parallel.Statistics);
+        Assert.Equal(serial.Documents.Select(document => document.Output.Source), parallel.Documents.Select(document => document.Output.Source));
+        Assert.Equal(serial.Documents.SelectMany(document => document.Output.Diagnostics), parallel.Documents.SelectMany(document => document.Output.Diagnostics));
+        Assert.Equal(serial.SourceIntegration.Source, parallel.SourceIntegration.Source);
+        var cached = compiler.Compile(inputs, compilation, options: options);
+        Assert.Equal(new XamlProjectStatistics(0, 32, 0, 32), cached.Statistics);
+        var duplicates = inputs.Concat(new[] { inputs[0] }).ToArray();
+        serial = new XamlProjectCompiler().Compile(duplicates, compilation);
+        parallel = compiler.Compile(duplicates, compilation, options: options);
+        Assert.False(serial.Success); Assert.False(parallel.Success);
+        Assert.Equal(serial.Documents.SelectMany(document => document.Output.Diagnostics), parallel.Documents.SelectMany(document => document.Output.Diagnostics));
     }
 }

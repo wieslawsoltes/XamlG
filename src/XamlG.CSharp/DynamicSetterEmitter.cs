@@ -20,7 +20,7 @@ internal sealed class DynamicSetterEmitter
     {
         var key = target.CSharpName() + "\n" + string.Join("\n", setters.Select(Describe));
         if (_plans.TryGetValue(key, out var existing)) return existing.Name;
-        var name = "__XamlDynamicSet_" + CSharpNames.StableId(key);
+        var name = "__XamlDynamicSet_" + _context.StableId(key);
         _plans.Add(key, (name, target, setters));
         return name;
     }

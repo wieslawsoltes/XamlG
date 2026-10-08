@@ -10,7 +10,8 @@ public sealed class XamlRuntimeSession : IDisposable
     private readonly Dictionary<string, XamlRuntimeNode> _nodes = new(StringComparer.Ordinal);
     private readonly Dictionary<object, string> _instances = new(XamlObjectIdentityComparer.Instance);
     private readonly Dictionary<(string Node, string Member), XamlRuntimeProperty> _properties = new();
-    private readonly List<Action> _cleanup = new();
+    private readonly List<object> _cleanup = new();
+    private readonly HashSet<XamlRuntimeSession> _constructedSessions = new();
     private readonly int _threadId = Thread.CurrentThread.ManagedThreadId;
     private bool _disposed;
     private bool _applying;
@@ -28,17 +29,28 @@ public sealed class XamlRuntimeSession : IDisposable
         CheckThread();
         if (Sessions.TryGetValue(root, out var previous) && !ReferenceEquals(previous, this))
         {
-            if (!XamlConstructionScope.AdoptPreviousSession(root, this, previous)) previous.Dispose();
+            if (!_constructedSessions.Contains(previous) && !XamlConstructionScope.AdoptPreviousSession(root, this, previous)) previous.Dispose();
             Sessions.Remove(root);
         }
         if (!Sessions.TryGetValue(root, out _)) Sessions.Add(root, this);
     }
-    public void Register(string key, object instance, string? parentKey)
+    /// <summary>Owns initialization performed by a newly constructed child. A deferred
+    /// factory may subsequently attach its own session to that same child without retiring
+    /// the resources and bindings installed by its constructor.</summary>
+    public void TrackConstruction(object instance)
+    {
+        CheckThread();
+        if (TryGet(instance, out var session) && !ReferenceEquals(session, this) && _constructedSessions.Add(session!))
+            TrackDisposable(session);
+    }
+    public void Register(string key, object instance, string? parentKey) => Register(key, instance, parentKey, null);
+
+    internal void Register(string key, object instance, string? parentKey, XamlSourceInfo? source)
     {
         CheckThread();
         if (_nodes.TryGetValue(key, out var old) && !ReferenceEquals(old.Instance, instance))
             throw new InvalidOperationException($"Duplicate generated node key '{key}'.");
-        _nodes[key] = new(key, instance, parentKey);
+        _nodes[key] = new(key, instance, parentKey) { Source = source };
         if (!_instances.ContainsKey(instance)) _instances.Add(instance, key);
     }
     public void RegisterSource(string key, XamlSourceInfo source)
@@ -54,11 +66,22 @@ public sealed class XamlRuntimeSession : IDisposable
     }
     public void RegisterProperty<T>(string key, string member, Func<T> getter, Action<T> setter)
     {
-        CheckThread(); _properties[(key, member)] = new(typeof(T), () => getter(), value => setter((T)value!));
+        CheckThread(); _properties[(key, member)] = new XamlDelegateProperty<T>(getter, setter);
+    }
+    internal void RegisterProperty(string key, string member, XamlRuntimeProperty property)
+    {
+        CheckThread();
+        _properties[(key, member)] = property;
     }
     public void TrackCleanup(Action action)
     {
         CheckThread(); _cleanup.Add(action ?? throw new ArgumentNullException(nameof(action)));
+    }
+    /// <summary>Owns a subscription without a separate generated closure. Null subscriptions require no cleanup.</summary>
+    public void TrackDisposable(IDisposable? subscription)
+    {
+        CheckThread();
+        if (subscription != null) _cleanup.Add(subscription);
     }
     public XamlMutationResult Apply(long expectedRevision, IReadOnlyList<XamlPropertyUpdate> updates)
     {
@@ -98,9 +121,22 @@ public sealed class XamlRuntimeSession : IDisposable
         if (_disposed) return; CheckThread(); _disposed = true;
         var errors = new List<Exception>();
         for (var i = _cleanup.Count - 1; i >= 0; i--)
-            try { _cleanup[i](); } catch (Exception error) { errors.Add(error); }
-        _cleanup.Clear(); _properties.Clear(); _instances.Clear(); _nodes.Clear();
+            try
+            {
+                if (_cleanup[i] is Action action) action();
+                else ((IDisposable)_cleanup[i]).Dispose();
+            }
+            catch (Exception error) { errors.Add(error); }
+        _cleanup.Clear(); _constructedSessions.Clear(); _properties.Clear(); _instances.Clear(); _nodes.Clear();
         if (errors.Count != 0) throw new AggregateException("Generated event cleanup failed.", errors);
+    }
+    /// <summary>Retires a failed construction while retaining both failures if cleanup also throws.</summary>
+    public void DisposeAfterConstructionFailure(Exception constructionFailure)
+    {
+        if (constructionFailure == null) throw new ArgumentNullException(nameof(constructionFailure));
+        try { Dispose(); }
+        catch (Exception cleanupFailure)
+        { throw new AggregateException("XAML construction and cleanup both failed.", constructionFailure, cleanupFailure); }
     }
     private void CheckThread()
     {

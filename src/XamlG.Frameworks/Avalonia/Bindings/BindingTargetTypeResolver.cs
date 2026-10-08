@@ -10,6 +10,12 @@ internal static class BindingTargetTypeResolver
 {
     public static INamedTypeSymbol Resolve(BindingContext context, ObjectBindingBuilder target)
     {
+        // Child bindings are evaluated against the object receiving the MultiBinding.
+        // Preserve setter target resolution when the containing object is a Setter.
+        var multiBinding = context.Types.Find("Avalonia.Data.MultiBinding");
+        if (multiBinding != null && context.Types.Compilation.ClassifyCommonConversion(target.Type, multiBinding).IsImplicit)
+            target = context.Ancestors.SkipWhile(ancestor => !ReferenceEquals(ancestor, target))
+                .Skip(1).FirstOrDefault() ?? target;
         if (!AvaloniaStyleScope.Is(target.Type, AvaloniaStyleMetadata.Setter)) return target.Type;
         return target.Annotations.TryGet(AvaloniaStyleAnnotations.SetterTarget, out var setterTarget)
             ? setterTarget : AvaloniaStyleObjectRule.FindTarget(context, target) ?? target.Type;

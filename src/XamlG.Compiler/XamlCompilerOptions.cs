@@ -4,6 +4,9 @@ namespace XamlG.Compiler;
 
 public sealed record XamlCompilerOptions
 {
+    /// <summary>Maximum concurrent documents during project binding/emission. Defaults to one;
+    /// hosts may opt in only when their framework rules and resource resolver support concurrent calls.</summary>
+    public int MaxDegreeOfParallelism { get; init; } = 1;
     /// <summary>Applies build-only document directives. Enabled automatically by the project compiler.</summary>
     public bool IsPrecompilation { get; init; }
     public bool GenerateBuildMethod { get; init; } = true;

@@ -1,0 +1,14 @@
+<Project>
+  <Import Project="../Directory.Build.props" />
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <ControlCatalogAvaloniaRoot Condition="'$(ControlCatalogAvaloniaRoot)' == ''">$(MSBuildThisFileDirectory)../artifacts/controlcatalog-upstream</ControlCatalogAvaloniaRoot>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(ControlCatalogAvaloniaRoot)/build/avalonia.snk</AssemblyOriginatorKeyFile>
+    <NoWarn>$(NoWarn);CS8002</NoWarn>
+    <SharedAssetsPath>$(MSBuildThisFileDirectory)SharedAssets</SharedAssetsPath>
+  </PropertyGroup>
+</Project>

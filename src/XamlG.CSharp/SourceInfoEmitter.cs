@@ -17,23 +17,20 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
 
     public void EmitConstructed(string target, TextSpan location)
     {
-        if (context.Document.Runtime.SourceInfo is not { } source) return;
-        var metadata = source.CreateValue(context.Document.Syntax, location);
-        var arguments = metadata.Arguments.Cast<BoundConstantExpression>().Select(argument => argument.Value switch
-        {
-            null => "null", string text => CSharpNames.Literal(text),
-            int number => number.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            _ => throw new InvalidOperationException("Unexpected source-information constructor argument.")
-        });
-        context.Writer.Line(source.ObjectSetter.ContainingType.CSharpName() + "." + CSharpNames.Method(source.ObjectSetter) + "(" + target +
-            ", new " + source.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", arguments) + "));");
+        if (context.Document.Runtime.SourceInfo == null) return;
+        var position = context.Document.Syntax.Lines.GetPosition(location.Start);
+        context.Writer.Line(context.SourceInfoSetter() + "(" + target + ", " +
+            (position.Line + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + ", " +
+            (position.Character + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + ");");
     }
 
-    public void Emit(BoundObject value, string frame)
+    public string Get(BoundObject value) => context.SourceInfoTable + "[" + Index(value) + "]";
+
+    public int Index(BoundObject value)
     {
         var syntax = context.Document.Syntax;
         var span = Clamp(value.Syntax.Span, syntax.Text.Length);
-        var fingerprint = CSharpNames.StableId(value.Type.CSharpName() + "\0" + syntax.Text.Substring(span.Start, span.Length));
+        var fingerprint = context.StableId(value.Type.CSharpName() + "\0" + syntax.Text.Substring(span.Start, span.Length));
         var declarations = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var assignment in value.Assignments)
         {
@@ -46,15 +43,16 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
             };
             if (member == null) continue;
             var source = Clamp(assignment.Span, syntax.Text.Length);
-            var digest = CSharpNames.StableId(syntax.Text.Substring(source.Start, source.Length));
-            declarations[member] = declarations.TryGetValue(member, out var previous) ? CSharpNames.StableId(previous + digest) : digest;
+            var digest = context.StableId(syntax.Text.Substring(source.Start, source.Length));
+            declarations[member] = declarations.TryGetValue(member, out var previous) ? context.StableId(previous + digest) : digest;
         }
-        var map = "new global::System.Collections.Generic.Dictionary<string, string>(global::System.StringComparer.Ordinal) { " +
-            string.Join(", ", declarations.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => "{ " + CSharpNames.Literal(p.Key) + ", " + CSharpNames.Literal(p.Value) + " }")) + " }";
-        var identity = value.Name == null ? "null" : CSharpNames.Literal(value.Key);
-        context.Writer.Line(frame + ".Session.RegisterSource(" + CSharpNames.Literal(value.Key) + ", new global::XamlG.Runtime.XamlSourceInfo(" +
-            CSharpNames.Literal(syntax.Path) + ", " + span.Start + ", " + span.Length + ", " + identity + ", " + CSharpNames.Literal(fingerprint) + ", " + map +
-            ", version: " + syntax.Version.ToString(System.Globalization.CultureInfo.InvariantCulture) + "L));");
+        var record = new System.Text.StringBuilder();
+        void Number(int number) => record.Append(number.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(':');
+        void Text(string? text) { Number(text?.Length ?? -1); record.Append(text); }
+        Number(span.Start); Number(span.Length);
+        Text(value.Name == null ? null : value.Key); Text(fingerprint); Number(declarations.Count);
+        foreach (var pair in declarations.OrderBy(p => p.Key, StringComparer.Ordinal)) { Text(pair.Key); Text(pair.Value); }
+        return context.SourceInfoIndex(record.ToString());
     }
     private static TextSpan Clamp(TextSpan span, int length)
     {

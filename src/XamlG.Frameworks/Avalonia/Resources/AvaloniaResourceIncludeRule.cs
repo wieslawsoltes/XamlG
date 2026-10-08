@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
 using XamlG.Compiler.Resources;
@@ -21,7 +22,7 @@ public sealed class AvaloniaResourceIncludeRule : IXamlObjectExpressionRule
         expression = Resolve(context, syntax, parentScope, type.HasMetadataName(AvaloniaResourceMetadata.StyleInclude));
         return true;
     }
-    internal static BoundResourceExpression? Resolve(BindingContext context, XamlElementSyntax syntax, NamespaceScope parentScope, bool style)
+    internal static BoundExpression? Resolve(BindingContext context, XamlElementSyntax syntax, NamespaceScope parentScope, bool style)
     {
         var scope = parentScope.Push(syntax);
         var sources = new List<(string Value, TextSpan Span)>();
@@ -45,10 +46,39 @@ public sealed class AvaloniaResourceIncludeRule : IXamlObjectExpressionRule
         { context.Report("XG3301", "Includes require a project resource catalog. Compile the document set with XamlProjectCompiler.", sources[0].Span); return null; }
         var lookup = context.Options.Resources.Resolve(context.Options.ResourceUri ?? context.Options.BaseUri, sources[0].Value);
         if (!lookup.Success)
-        { context.Report("XG3301", lookup.Error!, sources[0].Span); return null; }
+        {
+            var external = ReferencedResource(context, sources[0].Value, sources[0].Span, style);
+            if (external != null) return external;
+            context.Report("XG3301", lookup.Error!, sources[0].Span); return null;
+        }
         var expected = context.Types.Find(style ? AvaloniaResourceMetadata.Style : AvaloniaResourceMetadata.Dictionary);
         if (expected == null || !context.Types.Compilation.ClassifyCommonConversion(lookup.Resource!.RootType, expected).IsImplicit)
         { context.Report("XG3306", "The include target must be " + (style ? "an IStyle" : "a ResourceDictionary") + ", not '" + lookup.Resource!.RootType.ToDisplayString() + "'.", sources[0].Span); return null; }
-        return new(lookup.Resource!, sources[0].Span);
+        return new BoundResourceExpression(lookup.Resource!, sources[0].Span);
+    }
+
+    private static BoundExpression? ReferencedResource(BindingContext context, string source, TextSpan span, bool style)
+    {
+        string normalized;
+        try { normalized = XamlResourceUri.Resolve(context.Options.ResourceUri ?? context.Options.BaseUri, source); }
+        catch (ArgumentException) { return null; }
+        var uri = new Uri(normalized);
+        if (uri.Scheme != AvaloniaResourceMetadata.Scheme ||
+            string.Equals(uri.Host, context.Types.Compilation.AssemblyName, StringComparison.OrdinalIgnoreCase)) return null;
+        var assembly = context.Types.Compilation.SourceModule.ReferencedAssemblySymbols
+            .FirstOrDefault(candidate => string.Equals(candidate.Identity.Name, uri.Host, StringComparison.OrdinalIgnoreCase));
+        if (assembly == null || assembly.GetAttributes().Any(attribute =>
+                attribute.AttributeClass?.HasMetadataName("XamlG.Runtime.XamlCompiledResourceAttribute") == true)) return null;
+        var method = context.Types.Find("XamlG.AvaloniaRuntime.AvaloniaReferencedResource")?
+            .GetMembers(style ? "LoadStyle" : "LoadDictionary").OfType<IMethodSymbol>()
+            .FirstOrDefault(candidate => candidate.IsStatic && candidate.Parameters.Length == 2 && context.Types.IsAccessible(candidate));
+        if (method == null) return null;
+        var address = uri.Scheme + "://" + assembly.Identity.Name + uri.AbsolutePath;
+        return new BoundCallExpression(method, null, ImmutableArray.Create<BoundExpression>(
+            new BoundServiceExpression(method.Parameters[0].Type, span),
+            new BoundConstantExpression(address, context.Types.Special(SpecialType.System_String), span)), span)
+        {
+            RuntimeDependency = new(assembly.Identity.Name, "CompiledAvaloniaXaml.!XamlLoader")
+        };
     }
 }

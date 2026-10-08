@@ -36,7 +36,7 @@ internal static class AvaloniaRegisteredPropertyResolver
         var property = parsed.Owner == null ? FindUnqualified(context, owner, name) : Find(context, owner, name);
         if (property != null)
         {
-            context.Symbols.Add(new(span, property.Field, "registered-property"));
+            context.Symbols.Add(new(span, property.Declaration, "registered-property"));
             return property;
         }
         if (report) context.Report("XG3103", $"Registered property '{text}' was not found on '{owner.ToDisplayString()}'.", span);
@@ -67,7 +67,7 @@ internal static class AvaloniaRegisteredPropertyResolver
             .FirstOrDefault(candidate => candidate.IsStatic && context.Types.IsAccessible(candidate));
         var propertyType = context.Types.Find(AvaloniaStyleMetadata.Property);
         return valueType != null && field != null && propertyType != null &&
-            context.Types.Compilation.ClassifyCommonConversion(field.Type, propertyType).IsImplicit ? new(field, valueType) : null;
+            context.Types.Compilation.ClassifyCommonConversion(field.Type, propertyType).IsImplicit ? new(field, valueType) : FindGenerated(context, declaringType, name);
     }
 
     public static RegisteredProperty? Find(BindingContext context, ITypeSymbol owner, string name)
@@ -78,6 +78,24 @@ internal static class AvaloniaRegisteredPropertyResolver
             for (var current = field.Type as INamedTypeSymbol; current != null; current = current.BaseType)
                 if (current.OriginalDefinition.HasMetadataName(AvaloniaStyleMetadata.GenericProperty))
                     return new(field, current.TypeArguments[0]);
+        return FindGenerated(context, owner, name);
+    }
+
+    private static RegisteredProperty? FindGenerated(BindingContext context, ITypeSymbol owner, string name)
+    {
+        var property = owner.Members(name).OfType<IPropertySymbol>().FirstOrDefault(candidate =>
+            !candidate.IsStatic && !candidate.IsIndexer && !candidate.DeclaringSyntaxReferences.IsEmpty && context.Types.IsAccessible(candidate));
+        if (property == null) return null;
+        foreach (var attribute in property.GetAttributes())
+        {
+            INamedTypeSymbol? registration = null;
+            if (attribute.AttributeClass?.HasMetadataName("Avalonia.GeneratedStyledPropertyAttribute") == true)
+                registration = context.Types.Find("Avalonia.StyledProperty`1")?.Construct(property.Type);
+            else if (attribute.AttributeClass?.HasMetadataName("Avalonia.GeneratedDirectPropertyAttribute") == true)
+                registration = context.Types.Find("Avalonia.DirectProperty`2")?.Construct(property.ContainingType, property.Type);
+            if (registration != null)
+                return new(property, registration, property.Type, property.Name + AvaloniaMetadata.PropertySuffix);
+        }
         return null;
     }
 }

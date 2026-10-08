@@ -88,10 +88,81 @@ public sealed class EmissionTests
         using var code = CompiledXaml.Create("<Factory " + Namespaces + " x:FactoryMethod='Create'><x:Arguments><x:Int32>31</x:Int32></x:Arguments></Factory>", Model); Assert.Equal(31, Property(code.Build(), "Value"));
     }
     [Fact]
+    public void BuildAndPopulatePreserveConstructionAndDeferredRootOwnership()
+    {
+        const string extra = """
+            namespace Fixture {
+              public static class Arguments { public static int Reads; public static int Next => ++Reads; }
+              public class SeededPanel : Panel { public SeededPanel(int seed) { Seed=seed; } public int Seed {get;} }
+            }
+            """;
+        using var code = CompiledXaml.Create("<SeededPanel " + Namespaces + " Title='before' Value='{Root}'>" +
+            "<x:Arguments><x:Static Member='Arguments.Next'/></x:Arguments>" +
+            "<Template><Panel Value='{Root}'/></Template></SeededPanel>", Model + extra);
+        var built = code.Build();
+        var existing = Activator.CreateInstance(code.Assembly.GetType("Fixture.SeededPanel")!, new object[] { 99 })!;
+        code.Assembly.GetType(code.Emission.FactoryMetadataName)!.GetMethod(code.Emission.PopulateMethodName)!
+            .Invoke(null, new object?[] { existing, null });
+        Assert.Equal(1, code.Assembly.GetType("Fixture.Arguments")!.GetField("Reads")!.GetValue(null));
+        Assert.Equal(1, Property(built, "Seed"));
+        Assert.Equal(99, Property(existing, "Seed"));
+        foreach (var root in new[] { built, existing })
+        {
+            Assert.Same(root, Property(root, "Value"));
+            var template = ((IList)Property(root, "Children")!)[0]!;
+            var factory = (Delegate)Property(template, "Content")!;
+            Assert.Same(root, Property(factory.DynamicInvoke(new object?[] { null })!, "Value"));
+            Assert.True(XamlRuntimeSession.TryGet(root, out var session));
+            var node = session!.FindNode(root)!;
+            Assert.NotNull(node.Source);
+            Assert.True(session.Apply(0, new[] { new XamlPropertyUpdate(node.Key, "Title", "after") }).Applied);
+            Assert.Equal("after", Property(root, "Title"));
+        }
+    }
+    [Fact]
     public void GeneratedPropertySettersSupportLiveTransactions()
     {
         using var code = CompiledXaml.Create("<Panel " + Namespaces + " Title='before'/>", Model); var root = code.Build();
         Assert.True(XamlRuntimeSession.TryGet(root, out var session)); var node = Assert.Single(session!.Nodes);
         Assert.True(session.Apply(0, new[] { new XamlPropertyUpdate(node.Key, "Title", "after") }).Applied); Assert.Equal("after", Property(root, "Title"));
+    }
+    [Fact]
+    public void SharedPropertyDispatchPreservesMemberTypesAndTargets()
+    {
+        using var code = CompiledXaml.Create("<Panel " + Namespaces + " Title='before' Count='1' Value='{x:Null}'><Item Text='child' Number='2'/></Panel>", Model);
+        var root = code.Build(); var child = ((IList)Property(root, "Children")!)[0]!;
+        Assert.True(XamlRuntimeSession.TryGet(root, out var session));
+        var rootKey = session!.FindNode(root)!.Key; var childKey = session.FindNode(child)!.Key;
+        Assert.False(session.Apply(0, new[] { new XamlPropertyUpdate(rootKey, "Count", "invalid") }).Applied);
+        Assert.True(session.Apply(0, new[] {
+            new XamlPropertyUpdate(rootKey, "Title", "after"), new XamlPropertyUpdate(rootKey, "Count", 3),
+            new XamlPropertyUpdate(rootKey, "Value", child), new XamlPropertyUpdate(childKey, "Text", null),
+            new XamlPropertyUpdate(childKey, "Number", 4)
+        }).Applied);
+        Assert.Equal("after", Property(root, "Title")); Assert.Equal(3, Property(root, "Count"));
+        Assert.Same(child, Property(root, "Value")); Assert.Null(Property(child, "Text")); Assert.Equal(4, Property(child, "Number"));
+    }
+    [Fact]
+    public void SourceMetadataIsSharedWithoutSharingInstancesOrMutationState()
+    {
+        var xaml = "<Panel " + Namespaces + "><Item x:Name='named' Text='a:b😀'/></Panel>";
+        using var code = CompiledXaml.Create(xaml, Model);
+        var first = code.Build(); var second = code.Build();
+        Assert.True(XamlRuntimeSession.TryGet(first, out var firstSession));
+        Assert.True(XamlRuntimeSession.TryGet(second, out var secondSession));
+        var firstItem = ((IList)Property(first, "Children")!)[0]!;
+        var secondItem = ((IList)Property(second, "Children")!)[0]!;
+        var node = firstSession!.FindNode(firstItem)!;
+        var source = node.Source!;
+        Assert.Same(source, secondSession!.FindNode(secondItem)!.Source);
+        Assert.Equal("Test.axaml", source.Path); Assert.Equal(0, source.Version);
+        Assert.Equal(xaml.IndexOf("<Item", StringComparison.Ordinal), source.Start);
+        Assert.Equal("<Item x:Name='named' Text='a:b😀'/>", xaml.Substring(source.Start, source.Length));
+        Assert.Equal(node.Key, source.Identity); Assert.Null(firstSession.FindNode(first)!.Source!.Identity);
+        Assert.Equal("e13e9ef631c2305222e120cd.xaml.g.cs", code.Emission.HintName);
+        Assert.Equal("2baf7e528ec8a4dbe9ee586c", source.Fingerprint);
+        Assert.Equal(24, source.Declarations["Text"].Length);
+        Assert.True(firstSession.Apply(0, new[] { new XamlPropertyUpdate(node.Key, "Text", "changed") }).Applied);
+        Assert.Equal("a:b😀", Property(secondItem, "Text")); Assert.Equal(0, secondSession.Revision);
     }
 }

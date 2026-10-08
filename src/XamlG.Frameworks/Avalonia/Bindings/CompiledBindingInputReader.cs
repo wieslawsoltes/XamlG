@@ -16,7 +16,13 @@ internal static class CompiledBindingInputReader
         NamespaceScope scope)
     {
         var positional = syntax.Arguments.Where(a => a.Name == null).ToArray();
-        var named = syntax.Arguments.Where(a => a.Name != null).ToArray();
+        var named = syntax.Arguments.Where(a => a.Name != null).Select(argument =>
+        {
+            var expanded = scope.Expand(argument.Name!, true);
+            return expanded.Namespace != null && XamlNames.IsLanguage(expanded.Namespace) &&
+                   expanded.LocalName == AvaloniaBindingMetadata.DataType
+                ? argument with { Name = AvaloniaBindingMetadata.DataType } : argument;
+        }).ToArray();
         if (named.GroupBy(a => a.Name, StringComparer.Ordinal).Any(g => g.Count() != 1))
         {
             context.Report("XG3210", "A binding argument cannot be specified more than once.", syntax.Span);

@@ -18,7 +18,7 @@ public sealed class AvaloniaStylePropertyRule : IXamlPropertyBindingRule
                 context.Members.AddSet(target, member, selector.Expression, span);
             return true;
         }
-        if (member.Name == AvaloniaStyleMetadata.ClassesMember && member.ValueType.HasMetadataName(AvaloniaStyleMetadata.Classes) && values.All(v => v is XamlTextSyntax))
+        if (member.Getter != null && member.ValueType.HasMetadataName(AvaloniaStyleMetadata.Classes) && values.All(v => v is XamlTextSyntax))
         {
             var add = context.Types.AddMethods(member.ValueType).FirstOrDefault(m => m.Parameters.Length == 1 && m.Parameters[0].Type.SpecialType == SpecialType.System_String);
             if (add == null) { context.Report("XG3104", "The Classes.Add contract is unavailable.", span); return true; }
