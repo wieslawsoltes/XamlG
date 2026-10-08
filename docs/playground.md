@@ -209,6 +209,8 @@ dotnet build tools/XamlG.Studio.Host -c Release
 PLAYGROUND_PAGES_PREVIEW=1 python3 scripts/test-browser-studio.py
 ```
 
+Set `PLAYGROUND_ASSET_PORT` to an unused port when another checkout is running browser tests (default: `8765`). Companion ports and private test stores are isolated automatically.
+
 Acceptance covers real controls/code-behind, inspections, immediate edits, undo/redo, mobile themes, canvas gestures, isolation/reset, resource projects, exports/drafts and dependency errors. These are behavioral tests, not exhaustive pixel or browser-engine certification.
 
 ## Semantic authoring commands

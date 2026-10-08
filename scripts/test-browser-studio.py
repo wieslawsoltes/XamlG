@@ -27,7 +27,8 @@ def main():
         reservation.bind(('127.0.0.1', 0))
         port = reservation.getsockname()[1]
     pages_preview = os.environ.get('PLAYGROUND_PAGES_PREVIEW') == '1'
-    origin_url = urlsplit(os.environ.get('PLAYGROUND_URL', 'https://wieslawsoltes.github.io/XamlG/' if pages_preview else 'http://127.0.0.1:8765/'))
+    asset_port = os.environ.get('PLAYGROUND_ASSET_PORT', '8765')
+    origin_url = urlsplit(os.environ.get('PLAYGROUND_URL', 'https://wieslawsoltes.github.io/XamlG/' if pages_preview else f'http://127.0.0.1:{asset_port}/'))
     origin = f'{origin_url.scheme}://{origin_url.netloc}'
     token, owner_token = secrets.token_hex(32), secrets.token_hex(32)
     environment = dict(os.environ, XAMLG_STUDIO_TOKEN=token, XAMLG_STUDIO_OWNER_TOKEN=owner_token,
