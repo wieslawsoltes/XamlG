@@ -12,5 +12,6 @@ internal sealed class CSharpWriter
     }
     public void Open(string header) { Line(header); Line("{"); Indent++; }
     public void Close(string suffix = "") { Indent--; Line("}" + suffix); }
+    public void Prepend(string text) => _text.Insert(0, text);
     public override string ToString() => _text.ToString();
 }

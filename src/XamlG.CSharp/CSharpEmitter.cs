@@ -14,7 +14,7 @@ public sealed class CSharpEmitter
         => Emit(document, cancellationToken, shareServices: false);
 
     internal XamlEmissionResult Emit(BoundDocument document, CancellationToken cancellationToken, bool shareServices,
-        SharedPropertyTables? sharedProperties = null)
+        SharedPropertyTables? sharedProperties = null, bool exportResources = false)
     {
         using var context = new EmissionContext(document, cancellationToken);
         context.SharedProperties = sharedProperties;
@@ -107,6 +107,7 @@ public sealed class CSharpEmitter
         context.DynamicSetters.Emit(); context.DynamicAdds.Emit(); context.EmitMetadataHelpers();
         if (nesting == 0) writer.Close(); else for (var i = 0; i < nesting; i++) writer.Close();
         if (namespaceName.Length != 0) writer.Close();
+        if (exportResources) XamlResourceExports.Emit(context, typeName, build);
         return new(context.Id + ".xaml.g.cs", writer.ToString(), typeName, build, populate,
             context.Diagnostics.ToImmutableArray(), context.Mappings.ToImmutableArray())
             {

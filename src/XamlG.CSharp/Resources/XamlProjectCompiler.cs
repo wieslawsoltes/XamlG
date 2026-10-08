@@ -118,7 +118,7 @@ public sealed class XamlProjectCompiler
             { emission = cachedOutput; Interlocked.Increment(ref reusedOutputs); }
             else
             {
-                emission = XamlResourceExports.Add(bound[i], new CSharpEmitter().Emit(bound[i], cancellationToken, shareServices: true, properties?[i])); Interlocked.Increment(ref emittedCount);
+                emission = new CSharpEmitter().Emit(bound[i], cancellationToken, shareServices: true, properties?[i], exportResources: true); Interlocked.Increment(ref emittedCount);
                 if (ReferenceEquals(bound[i], entries[i].Document))
                 {
                     entries[i].Output = emission;
