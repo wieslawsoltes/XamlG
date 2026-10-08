@@ -44,8 +44,7 @@ internal sealed class LeafConstructionEmitter(EmissionContext context, ValueEmit
             writer.Open("private static " + value.Type.CSharpName() + " " + factory.Name + "(" + CSharpNames.Context +
                 " __frame, string __key, int __sourceIndex" + (parameters.Length == 0 ? string.Empty : ", " + string.Join(", ", declarations)) + ")");
             writer.Line("var __value = new " + value.Type.CSharpName() + "(" + string.Join(", ", arguments) + ");");
-            writer.Line("__frame.Session.TrackConstruction(__value);");
-            writer.Line("__frame.Push(__value, __key, " + context.SourceInfoTable + "[__sourceIndex]);");
+            writer.Line("__frame.PushConstructed(__value, __key, " + context.SourceInfoTable + "[__sourceIndex]);");
             if (value.SupportsInitialize)
             {
                 writer.Line("((global::System.ComponentModel.ISupportInitialize)__value).BeginInit();");

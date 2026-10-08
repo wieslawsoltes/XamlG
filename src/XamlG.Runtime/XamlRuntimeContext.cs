@@ -123,6 +123,14 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
 
     public XamlRuntimeContext Push(object value, string key) => Push(value, key, null);
 
+    /// <summary>Owns a newly constructed object's initialization session before
+    /// registering its node and creating its construction frame.</summary>
+    public XamlRuntimeContext PushConstructed(object value, string key, XamlSourceInfo? source)
+    {
+        Session.TrackConstruction(value);
+        return Push(value, key, source);
+    }
+
     public XamlRuntimeContext Push(object value, string key, XamlSourceInfo? source)
     {
         if (_root == null && _parent == null) _root = value;

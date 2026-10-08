@@ -4,6 +4,51 @@ namespace XamlG.Tests;
 public sealed class RuntimeTests
 {
     [Fact]
+    public void ConstructedFramesPreserveMetadataAndOwnConstructorSessions()
+    {
+        var root = new object(); var child = new object();
+        var context = new XamlRuntimeContext();
+        using var owner = context.Session;
+        var constructor = new XamlRuntimeSession(); var released = 0;
+        constructor.TrackCleanup(() => released++); constructor.Attach(child);
+        var parent = context.PushRoot(root, "root").ForTarget(root, "Content");
+        var source = new XamlSourceInfo("View.xaml", 4, 9, "child", "fingerprint");
+        var frame = parent.PushConstructed(child, "child", source);
+        Assert.Same(root, frame.RootObject); Assert.Same(root, frame.TargetObject);
+        Assert.Equal("Content", frame.TargetProperty); Assert.Equal("child", frame.NodeKey);
+        Assert.Equal(new[] { child, root }, frame.Parents);
+        Assert.Same(source, owner.FindNode(child)!.Source);
+        Assert.Equal("root", owner.FindNode(child)!.ParentKey);
+        Assert.False(constructor.IsDisposed);
+        context.Complete(root); owner.Dispose(); owner.Dispose();
+        Assert.True(constructor.IsDisposed); Assert.Equal(1, released);
+    }
+
+    [Fact]
+    public void DuplicateConstructedNodesStillOwnCleanupInTheCorrectDeferredScope()
+    {
+        var context = new XamlRuntimeContext();
+        using var outer = context.Session;
+        var parent = context.PushRoot(new object(), "outer");
+        var deferred = parent.CreateDeferredScope();
+        using var owner = deferred.Session;
+        var released = new List<string>();
+        object Child(string name)
+        {
+            var child = new object(); var constructor = new XamlRuntimeSession();
+            constructor.TrackCleanup(() => released.Add(name)); constructor.Attach(child);
+            return child;
+        }
+        var first = Child("first"); var second = Child("second");
+        deferred.PushConstructed(first, "child", null);
+        var failure = Assert.Throws<InvalidOperationException>(() => deferred.PushConstructed(second, "child", null));
+        owner.DisposeAfterConstructionFailure(failure);
+        Assert.Equal(new[] { "second", "first" }, released);
+        Assert.False(outer.IsDisposed);
+        Assert.Null(outer.FindNode(first)); Assert.Null(outer.FindNode(second));
+    }
+
+    [Fact]
     public void FramesPreserveTargetsAndParentOrder()
     {
         var root = new object(); var child = new object(); var context = new XamlRuntimeContext(root: root);

@@ -27,7 +27,7 @@ internal sealed class ObjectEmitter
     public string ConstructRoot(BoundObject value, string parentContext) =>
         Construct(value, _runtime.Scope(parentContext, value.Scope), _context.RootVariable);
 
-    private string Construct(BoundObject value, string parentContext, string variable)
+    private string Construct(BoundObject value, string parentContext, string variable, bool track = true)
     {
         var arguments = value.Arguments.IsDefaultOrEmpty ? Array.Empty<string>() :
             _values.EmitArguments(value.FactoryMethod ?? value.Constructor!, value.Arguments, parentContext);
@@ -35,7 +35,7 @@ internal sealed class ObjectEmitter
             ? value.FactoryMethod.ContainingType.CSharpName() + "." + CSharpNames.Method(value.FactoryMethod) + "(" + string.Join(", ", arguments) + ")"
             : "new " + value.Type.CSharpName() + "(" + string.Join(", ", arguments) + ")";
         _context.Writer.Line("var " + variable + " = " + creation + ";");
-        _context.Writer.Line(parentContext + ".Session.TrackConstruction(" + variable + ");");
+        if (track) _context.Writer.Line(parentContext + ".Session.TrackConstruction(" + variable + ");");
         _source.EmitConstructed(value, variable);
         return variable;
     }
@@ -57,10 +57,13 @@ internal sealed class ObjectEmitter
         if (existing == null && consume == null && initialize == null && _leaves.CanShare(value))
             return _leaves.Emit(value, parentContext);
         var variable = existing ?? (value.IsRoot ? _context.RootVariable : _context.Temporary("object"));
+        // Framework source-info setters can execute user code and must remain after
+        // tracking but before node registration. Preserve that sequence when enabled.
+        var trackWithFrame = existing == null && !value.IsRoot && _context.Document.Runtime.SourceInfo == null;
         if (existing == null)
-            Construct(value, parentContext, variable);
+            Construct(value, parentContext, variable, track: !trackWithFrame);
         var frame = _context.Temporary("context");
-        writer.Line("var " + frame + " = " + parentContext + (value.IsRoot ? ".PushRoot(" : ".Push(") + variable + ", " + CSharpNames.Literal(value.Key) + ", " + _source.Get(value) + ");");
+        writer.Line("var " + frame + " = " + parentContext + (value.IsRoot ? ".PushRoot(" : trackWithFrame ? ".PushConstructed(" : ".Push(") + variable + ", " + CSharpNames.Literal(value.Key) + ", " + _source.Get(value) + ");");
         _context.InheritFrameNamespaces(frame, parentContext);
         if (value.Name != null)
         {
