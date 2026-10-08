@@ -10,6 +10,9 @@ public sealed class RoslynTypeSystem
 {
     private readonly ConcurrentDictionary<(string Namespace, string Name, int Arity), TypeResolution> _types = new();
     private readonly ConcurrentDictionary<ITypeSymbol, ImmutableArray<IMethodSymbol>> _addMethods = new(SymbolEqualityComparer.Default);
+    private readonly ConcurrentDictionary<ITypeSymbol, IMethodSymbol?> _markupMethods = new(SymbolEqualityComparer.Default);
+    private readonly ConcurrentDictionary<INamedTypeSymbol, ImmutableArray<IPropertySymbol>> _declaredContentProperties = new(SymbolEqualityComparer.Default);
+    private readonly ConcurrentDictionary<INamedTypeSymbol, IPropertySymbol?> _contentProperties = new(SymbolEqualityComparer.Default);
     private readonly ImmutableArray<IAssemblySymbol> _assemblies;
     public RoslynTypeSystem(CSharpCompilation compilation, XamlTypeSystemConfiguration? configuration = null)
     {
@@ -34,7 +37,9 @@ public sealed class RoslynTypeSystem
     public bool IsAccessible(ISymbol symbol, INamedTypeSymbol? within = null) => Compilation.IsSymbolAccessibleWithin(symbol, (ISymbol?)within ?? Compilation.Assembly);
     /// <summary>Resolves provider alternatives independently of the assignment target, preferring
     /// parameterless providers and then typed results within each parameter shape.</summary>
-    public IMethodSymbol? MarkupExtensionMethod(ITypeSymbol type) => type.Members().OfType<IMethodSymbol>()
+    public IMethodSymbol? MarkupExtensionMethod(ITypeSymbol type) => _markupMethods.TryGetValue(type, out var method)
+        ? method : _markupMethods.GetOrAdd(type, SelectMarkupExtensionMethod);
+    private IMethodSymbol? SelectMarkupExtensionMethod(ITypeSymbol type) => type.Members().OfType<IMethodSymbol>()
         .Where(method => (method.Name == Configuration.MarkupExtensionMethod || method.Name == Configuration.TypedMarkupExtensionMethod) &&
             !method.IsStatic && !method.IsGenericMethod && !method.ReturnsVoid && !method.ReturnsByRef && !method.ReturnsByRefReadonly && IsAccessible(method) &&
             (method.Parameters.Length == 0 || method.Parameters.Length == 1 && method.Parameters[0].RefKind == RefKind.None && method.Parameters[0].Type.HasMetadataName(ClrNames.IServiceProvider)))
@@ -74,7 +79,9 @@ public sealed class RoslynTypeSystem
         var result = candidates.OrderBy(c => c.ContainingAssembly.Identity.ToString(), StringComparer.Ordinal).ThenBy(c => c.MetadataName(), StringComparer.Ordinal).ToImmutableArray();
         return new(result.Length == 1 ? result[0] : null, result);
     }
-    public ImmutableArray<IPropertySymbol> GetDeclaredContentProperties(INamedTypeSymbol type)
+    public ImmutableArray<IPropertySymbol> GetDeclaredContentProperties(INamedTypeSymbol type) =>
+        _declaredContentProperties.TryGetValue(type, out var properties) ? properties : _declaredContentProperties.GetOrAdd(type, FindDeclaredContentProperties);
+    private ImmutableArray<IPropertySymbol> FindDeclaredContentProperties(INamedTypeSymbol type)
     {
         var result = new HashSet<IPropertySymbol>(SymbolEqualityComparer.Default);
         foreach (var property in type.GetMembers().OfType<IPropertySymbol>())
@@ -87,7 +94,9 @@ public sealed class RoslynTypeSystem
         }
         return result.ToImmutableArray();
     }
-    public IPropertySymbol? GetContentProperty(INamedTypeSymbol type)
+    public IPropertySymbol? GetContentProperty(INamedTypeSymbol type) => _contentProperties.TryGetValue(type, out var property)
+        ? property : _contentProperties.GetOrAdd(type, FindContentProperty);
+    private IPropertySymbol? FindContentProperty(INamedTypeSymbol type)
     {
         for (var current = type; current != null; current = current.BaseType)
         { var properties = GetDeclaredContentProperties(current); if (properties.Length != 0) return properties[0]; }

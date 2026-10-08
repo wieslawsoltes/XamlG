@@ -19,7 +19,7 @@ For each area, inspect the upstream implementation and integration points, compa
 | Resources and project linking | Open: eager/deferred/merged/theme resources, includes, exported factories, source information and invalidation. |
 | Build and markup integration | Open: compiler/build directives, generated fields/initializers, loader adaptation, package settings and application consumers. |
 | Diagnostics and recovery | Open: upstream warnings/errors, location/phase, malformed input, cancellation and recovery after edits. |
-| Performance | Open: measure cold generation, unchanged runs, a XAML edit, a C# edit and repeated metadata/provider lookup; optimize demonstrated repeated work without retaining symbols across compilations. |
+| Performance | Initial generator baseline and metadata-cache improvement measured; see [the harness and results](performance.md). Continue reviewing runtime parent traversal and other demonstrated repeated work without retaining symbols across compilations. |
 | Final validation | Pending the full review: native/upstream suites, original theme construction, MSBuild/package/host consumers and production browser checks at recorded revisions. |
 
 ## Collection findings

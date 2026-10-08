@@ -95,6 +95,25 @@ public sealed class GeneratorTests
     }
 
     [Fact]
+    public void CSharpEditsInvalidatePositiveAndNegativeProviderLookups()
+    {
+        var model = Model.Replace("InitializeComponent();", string.Empty);
+        var provider = "namespace Example { public sealed class TextValue { public string ProvideValue() => \"value\"; } }";
+        var input = new InMemoryAdditionalText("Value.axaml", "<Panel xmlns='clr-namespace:Example' Text='{TextValue}'/>");
+        var driver = Driver(new[] { input }).RunGenerators(Compilation(model + provider));
+        Assert.Empty(driver.GetRunResult().Diagnostics);
+        Assert.Single(driver.GetRunResult().GeneratedTrees);
+
+        driver = driver.RunGenerators(Compilation(model + "namespace Example { public sealed class TextValue { } }"));
+        Assert.Contains(driver.GetRunResult().Diagnostics, diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        Assert.Empty(driver.GetRunResult().GeneratedTrees);
+
+        driver = driver.RunGenerators(Compilation(model + provider));
+        Assert.Empty(driver.GetRunResult().Diagnostics);
+        Assert.Single(driver.GetRunResult().GeneratedTrees);
+    }
+
+    [Fact]
     public void ExplicitDisableProducesNoSourcesOrDiagnostics()
     {
         var options = new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string> { ["build_property.XamlGEnabled"] = "false" });
