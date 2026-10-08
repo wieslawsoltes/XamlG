@@ -82,7 +82,8 @@ internal sealed partial class AutomationMcpSubscriptions
         if (request.Params.Ref is not ResourceTemplateReference { Uri: { } template }) return new();
         var host = Hosts.FirstOrDefault(host => host.Resources.Any(resource => resource.IsTemplate && resource.Uri == template));
         if (host is not IAutomationCompletions completions) return new();
-        var result = await completions.CompleteAsync(template, request.Params.Argument.Name, request.Params.Argument.Value, new("mcp", cancellationToken));
+        var principal = request.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "mcp";
+        var result = await completions.CompleteAsync(template, request.Params.Argument.Name, request.Params.Argument.Value, new("mcp", cancellationToken, principal));
         return new() { Completion = new() { Values = result.Values.Take(100).ToArray(), Total = result.Total, HasMore = result.HasMore || result.Values.Count > 100 } };
     }
 

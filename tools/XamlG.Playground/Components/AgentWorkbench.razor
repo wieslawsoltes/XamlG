@@ -206,7 +206,7 @@
                     <button @onclick="ExportPatchAsync" disabled="@Review.Busy">Save review patch</button>
                     @if (changes.Files.Length > 0)
                     {
-                        <label>Review document <select value="@Review.Path" @onchange="SelectReviewFileAsync" disabled="@Review.Busy">@foreach (var file in changes.Files) { <option>@file.Path</option> }</select></label>
+                        <label>Review document <select @key="(_selectedId, changes.ReviewId)" value="@Review.Path" @onchange="SelectReviewFileAsync" disabled="@Review.Busy">@foreach (var file in changes.Files) { <option value="@file.Path">@file.Path</option> }</select></label>
                         <button @onclick="OpenReviewSourceAsync" disabled="@(!ReviewIsCurrent || changes.Files.FirstOrDefault(file => file.Path == Review.Path)?.AfterLength == null)">Open current document</button>
                         <button @onclick="PreviewChangesAsync" disabled="@Review.Busy">Show before and after</button>
                         <button @onclick="PreviewDiffAsync" disabled="@Review.Busy">Unified diff</button>

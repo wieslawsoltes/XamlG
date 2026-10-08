@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.FileProviders;
+using ModelContextProtocol.AspNetCore;
 using ModelContextProtocol.Protocol;
 using XamlG.Automation;
 using XamlG.Mcp;
@@ -98,7 +99,7 @@ if (builder.Configuration.GetValue("stdio", false))
     builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
     mcp.WithStdioServerTransport();
 }
-else mcp.WithHttpTransport();
+else mcp.WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.StatefulForInitializeClients);
 var app = builder.Build();
 app.Use(async (context, next) =>
 {

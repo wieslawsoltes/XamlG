@@ -356,22 +356,40 @@ empty Boolean ARIA selection attributes and first-line navigation columns losing
 hidden byte-order mark at the Monaco/Roslyn boundary. The keyboard regression holds
 draft responses until after cancel/resubmit, so it does not depend on transport speed.
 
-The complete browser suite currently contains 64 scenarios in 24 files. These focused
-passes and the earlier compiler/runtime/designer checks do not certify the remaining
-agent thread/account acceptance or a complete current browser run.
+Four additional agent browser scenarios pass: independent task/pane review drafts,
+feedback targets and bounded diff paging; historical thread paging, late responses,
+expanded tool entries and reading position; output-limited replies and reviewed resume;
+and Stop cancelling a real provider stream while retaining incomplete public text.
+They also verify context handoff and that unsent drafts/feedback never enter provider
+requests or public exports. Returning to a task exposed a stale review-document
+picker; its DOM identity now follows the task and comparison.
+
+Ten new MCP protocol cases pass through the official SDK and real HTTP. They cover
+principal-bound task reads/updates/cancellation/subscriptions, workspace replacement,
+retention limits, cleanup, bounded error results, opt-in and permission denial;
+encoded resource templates, authenticated completion, read permissions, legacy and
+modern exact-URI subscriptions, independent cancellation and unsubscribe/resubscribe;
+and complete catalog paging, invalid/stale cursors and embedding-owned pagination.
+Validation found SDK cancellation could cancel another principal's execution even
+when the store declined the request. Task mutation handlers now check ownership
+before invoking the SDK. Completion now carries the transport principal. The companion
+enables sessions for legacy HTTP clients while keeping modern HTTP stateless.
+
+The complete browser suite currently contains 68 scenarios in 25 files. These focused
+passes and the earlier compiler/runtime/designer checks do not certify account
+acceptance or a complete current browser run.
 
 Remaining completion work:
 
-- Finish agent review/thread UI acceptance for feedback, task/pane isolation,
-  historical paging and incomplete replies. Expand MCP Tasks/resource/artifact checks,
-  including cancellation, ownership, permissions and workspace replacement.
+- Finish integrated MCP wait/resource/build-artifact acceptance, including actual
+  browser emission/download, cancellation, ownership, permissions and workspace replacement.
 - Exercise deterministic ChatGPT OAuth, identity rejection, credential storage,
   refresh/sign-out races, account-bound tools and the account workbench UI.
-- Update and run the complete 64-case browser suite with Pages-origin/base-path pairing,
+- Update and run the complete browser suite with Pages-origin/base-path pairing,
   all 21 package consumers and remaining CI scripts; fix failures and update the PR.
 
-Main remains merged through `46553c8`; fetching upstream at this checkpoint found
-no newer commits. The existing Playground contains the integration. Public Pages
+Main remains merged through `46553c8`; upstream `c964d82` is queued for this checkpoint's
+merge. The existing Playground contains the integration. Public Pages
 deployment remains dependent on the PR reaching main.
 
 ## Implementation details and earlier validation
