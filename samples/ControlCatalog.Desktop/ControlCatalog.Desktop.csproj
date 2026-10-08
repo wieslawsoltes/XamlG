@@ -1,19 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>$(AvsCurrentTargetFramework)</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UseMicroCom>true</UseMicroCom>
     <ApplicationIcon>$(SharedAssetsPath)\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Compile Include="..\..\src\Avalonia.X11\NativeDialogs\Gtk.cs" Link="NativeControls\Gtk\Gtk.cs" />
-    <Compile Include="..\..\src\Avalonia.X11\Interop\Glib.cs" Link="NativeControls\Gtk\Glib.cs" />
-    <Compile Include="..\..\src\Avalonia.Base\Platform\Interop\Utf8Buffer.cs" Link="NativeControls\Utf8Buffer.cs" />
-  </ItemGroup>
 
   <ItemGroup>
     <Content Include="NativeControls\Gtk\nodes.mp4">
@@ -22,12 +17,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Avalonia.Wayland\Avalonia.Wayland.csproj" />
-    <ProjectReference Include="..\..\src\Headless\Avalonia.Headless.Vnc\Avalonia.Headless.Vnc.csproj" />
-    <ProjectReference Include="..\..\src\Avalonia.Dialogs\Avalonia.Dialogs.csproj" />
-    <ProjectReference Include="..\..\src\Linux\Avalonia.LinuxFramebuffer\Avalonia.LinuxFramebuffer.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src\Avalonia.Wayland\Avalonia.Wayland.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src\Headless\Avalonia.Headless.Vnc\Avalonia.Headless.Vnc.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src\Avalonia.Dialogs\Avalonia.Dialogs.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src\Linux\Avalonia.LinuxFramebuffer\Avalonia.LinuxFramebuffer.csproj" />
     <ProjectReference Include="..\ControlCatalog\ControlCatalog.csproj" />
-    <ProjectReference Include="..\..\src\Avalonia.X11\Avalonia.X11.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src\Avalonia.X11\Avalonia.X11.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -36,8 +31,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
-  <Import Project="..\..\build\BuildTargets.targets" />
-  <Import Project="..\..\build\SampleApp.props" />
-  <Import Project="..\..\build\ReferenceCoreLibraries.props" />
-  <Import Project="..\..\build\MicroCOM.props" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build\BuildTargets.targets" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build\SampleApp.props" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build\ReferenceCoreLibraries.props" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build\MicroCOM.props" />
 </Project>

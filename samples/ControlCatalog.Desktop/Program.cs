@@ -37,6 +37,15 @@ namespace ControlCatalog.Desktop
 
             var builder = BuildAvaloniaApp();
 
+            var validation = Array.IndexOf(args, "--xamlg-validate");
+            if (validation >= 0)
+            {
+                if (validation + 1 == args.Length)
+                    throw new ArgumentException("--xamlg-validate requires a JSON output path.");
+                return builder.AfterSetup(_ => CatalogValidationHost.Start(args[validation + 1]))
+                    .StartWithClassicDesktopLifetime(args);
+            }
+
             double GetScaling()
             {
                 var idx = Array.IndexOf(args, "--scaling");

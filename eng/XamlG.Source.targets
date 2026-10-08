@@ -1,0 +1,19 @@
+<Project>
+  <ItemGroup Condition="'$(_XamlGUseSourceAssets)' == 'true' and '@(_XamlGIntegrationReference)' != ''">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../src/XamlG.Generator/XamlG.Generator.csproj;$(MSBuildThisFileDirectory)../src/XamlG.Syntax/XamlG.Syntax.csproj;$(MSBuildThisFileDirectory)../src/XamlG.Roslyn/XamlG.Roslyn.csproj;$(MSBuildThisFileDirectory)../src/XamlG.Compiler/XamlG.Compiler.csproj;$(MSBuildThisFileDirectory)../src/XamlG.CSharp/XamlG.CSharp.csproj;$(MSBuildThisFileDirectory)../src/XamlG.Frameworks/XamlG.Frameworks.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" PrivateAssets="all" />
+  </ItemGroup>
+  <Import Project="../src/XamlG.Generator/buildTransitive/XamlG.Generator.targets" Condition="'$(_XamlGUseSourceAssets)' == 'true'" />
+  <Target Name="EnableXamlGSourceReference" BeforeTargets="PrepareForBuild;GenerateMSBuildEditorConfigFileShouldRun"
+          Condition="'$(_XamlGUseSourceAssets)' == 'true' and '@(_XamlGIntegrationReference)' != '' and '$(XamlGEnabled)' != 'false'">
+    <PropertyGroup>
+      <XamlGEnabled>true</XamlGEnabled>
+      <XamlGFramework>Avalonia</XamlGFramework>
+      <EnableAvaloniaXamlCompilation>false</EnableAvaloniaXamlCompilation>
+      <AvaloniaNameGeneratorIsEnabled>false</AvaloniaNameGeneratorIsEnabled>
+      <InterceptorsNamespaces>$(InterceptorsNamespaces);XamlG.Generated.Loaders</InterceptorsNamespaces>
+      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+      <_XamlGFrameworkInputTarget Condition="'$(AvaloniaBuildTasksLocation)' != ''">_InjectAvaloniaAdditionalFiles</_XamlGFrameworkInputTarget>
+    </PropertyGroup>
+  </Target>
+</Project>

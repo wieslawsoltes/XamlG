@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/Avalonia.Themes.Simple/Avalonia.Themes.Simple.csproj" />
+    <Project Path="samples/Avalonia.Themes.Fluent/Avalonia.Themes.Fluent.csproj" />
+    <Project Path="samples/MiniMvvm/MiniMvvm.csproj" />
+    <Project Path="samples/ControlCatalog/ControlCatalog.csproj" />
+    <Project Path="samples/ControlCatalog.Desktop/ControlCatalog.Desktop.csproj" />
+    <Project Path="samples/ControlCatalog.Browser/ControlCatalog.Browser.csproj" />
+    <Project Path="samples/ControlCatalog.Tests/ControlCatalog.Tests.csproj" />
+  </Folder>
+</Solution>

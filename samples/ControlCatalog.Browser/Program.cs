@@ -21,6 +21,16 @@ internal partial class Program
 {
     public static async Task Main(string[] args)
     {
+        try { await Run(args); }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(error);
+            throw;
+        }
+    }
+
+    private static async Task Run(string[] args)
+    {
         Trace.Listeners.Add(new ConsoleTraceListener());
     
         var options = ParseArgs(args) ?? new BrowserPlatformOptions();

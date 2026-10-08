@@ -29,3 +29,7 @@ No upstream IL compiler or reflection type system is included in XamlG productio
 ## Package dependencies
 
 Roslyn, Avalonia, Monaco Editor, Playwright and other package dependencies retain their own licenses and notices. The browser asset build copies Monaco from its pinned npm package with its license files. Avalonia Browser assets are published from the NuGet package without removing its package attribution. The compiler's Avalonia adapter uses public metadata contracts; its production source is not a copy of XamlX's IL compiler.
+
+## ControlCatalog and themes port
+
+The complete ControlCatalog, desktop/browser hosts, MiniMvvm, Avalonia.Themes.Simple and Avalonia.Themes.Fluent are ported from `wieslawsoltes/Avalonia` revision `a9429a328057befa287ffb5e981f58b86a86eda0`. Copyright (c) AvaloniaUI OÜ. All Rights Reserved. See [the port notice](samples/UPSTREAM-NOTICE.md), [retained upstream MIT license](samples/UPSTREAM-LICENSE.md) and [upstream third-party notices](samples/UPSTREAM-THIRD-PARTY-NOTICES.md). The import manifest records all original file identities and documented adaptations.

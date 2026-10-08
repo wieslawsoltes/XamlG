@@ -10,3 +10,9 @@ const dotnetRuntime = await dotnet
 const config = dotnetRuntime.getConfig();
 
 await dotnetRuntime.runMain(config.mainAssemblyName, [globalThis.location.href]);
+
+// Expose the managed validation entry point only for an explicitly requested test run.
+if (new URLSearchParams(globalThis.location.search).has('xamlg-validate')) {
+    const exports = await dotnetRuntime.getAssemblyExports(config.mainAssemblyName);
+    globalThis.xamlgValidateCatalog = () => exports.Program.ValidateCatalog();
+}

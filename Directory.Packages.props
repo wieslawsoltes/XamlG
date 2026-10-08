@@ -22,5 +22,8 @@
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.12" />
     <PackageVersion Include="Moq" Version="4.20.72" />
     <PackageVersion Include="System.Reactive" Version="6.0.1" />
+    <PackageVersion Include="SkiaSharp" Version="3.119.4" />
+    <PackageVersion Include="MicroCom.Runtime" Version="0.11.6" />
+    <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
   </ItemGroup>
 </Project>

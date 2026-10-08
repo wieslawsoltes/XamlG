@@ -1,6 +1,6 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>$(AvsCurrentTargetFramework)</TargetFrameworks>
+    <TargetFrameworks>net10.0</TargetFrameworks>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IncludeAvaloniaGenerators>true</IncludeAvaloniaGenerators>
   </PropertyGroup>
@@ -23,16 +23,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\packages\Avalonia\Avalonia.csproj" />
-    <ProjectReference Include="..\..\src\Avalonia.Controls.ColorPicker\Avalonia.Controls.ColorPicker.csproj" />
-    <ProjectReference Include="..\..\src\Avalonia.Themes.Simple\Avalonia.Themes.Simple.csproj" />
-    <ProjectReference Include="..\..\src\Avalonia.Themes.Fluent\Avalonia.Themes.Fluent.csproj" />
-    <ProjectReference Include="..\..\src\Avalonia.Fonts.Inter\Avalonia.Fonts.Inter.csproj" />
-    <ProjectReference Include="..\..\src\Skia\Avalonia.Skia\Avalonia.Skia.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/packages\Avalonia\Avalonia.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src\Avalonia.Controls.ColorPicker\Avalonia.Controls.ColorPicker.csproj" />
+    <ProjectReference Include="../Avalonia.Themes.Simple/Avalonia.Themes.Simple.csproj" />
+    <ProjectReference Include="../Avalonia.Themes.Fluent/Avalonia.Themes.Fluent.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src\Avalonia.Fonts.Inter\Avalonia.Fonts.Inter.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src\Skia\Avalonia.Skia\Avalonia.Skia.csproj" />
     <ProjectReference Include="..\MiniMvvm\MiniMvvm.csproj" />
+    <ProjectReference Include="../../src/XamlG.Avalonia/XamlG.Avalonia.csproj" />
   </ItemGroup>
 
-  <Import Project="..\..\build\BuildTargets.targets" />
-  <Import Project="..\..\build\SourceGenerators.props" />
-  <Import Project="..\..\build\SkiaSharp.props" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build\BuildTargets.targets" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build\SourceGenerators.props" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build\SkiaSharp.props" />
 </Project>

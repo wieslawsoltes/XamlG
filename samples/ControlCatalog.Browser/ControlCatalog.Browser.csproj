@@ -1,6 +1,6 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
   <PropertyGroup>
-    <TargetFramework>$(AvsCurrentBrowserTargetFramework)</TargetFramework>
+    <TargetFramework>net10.0-browser</TargetFramework>
     <WasmEnableThreads>false</WasmEnableThreads>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DebuggerSupport>true</DebuggerSupport>
@@ -13,11 +13,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/Skia/Avalonia.Skia/Avalonia.Skia.csproj" />
-    <ProjectReference Include="../../src/Browser/Avalonia.Browser/Avalonia.Browser.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src/Skia/Avalonia.Skia/Avalonia.Skia.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src/Browser/Avalonia.Browser/Avalonia.Browser.csproj" />
     <ProjectReference Include="../ControlCatalog/ControlCatalog.csproj" />
   </ItemGroup>
 
-  <Import Project="../../src/Browser/Avalonia.Browser/build/Avalonia.Browser.props" />
-  <Import Project="../../src/Browser/Avalonia.Browser/build/Avalonia.Browser.targets" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/src/Browser/Avalonia.Browser/build/Avalonia.Browser.props" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/src/Browser/Avalonia.Browser/build/Avalonia.Browser.targets" />
 </Project>
