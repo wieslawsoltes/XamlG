@@ -45,6 +45,9 @@ public sealed class XamlIncrementalGenerator : IIncrementalGenerator
         {
             var options = new XamlCompilerOptions
             {
+                // GeneratorEnvironment selects built-in immutable profiles; custom compiler
+                // hosts retain the sequential default for potentially stateful rules.
+                MaxDegreeOfParallelism = 8,
                 GenerateInitializeComponent = environment.Options.GenerateInitializeComponent,
                 GenerateNamedFields = environment.Options.GenerateNamedFields
             };

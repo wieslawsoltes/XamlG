@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlG.Compiler;
 using XamlG.Compiler.Resources;
@@ -31,6 +32,7 @@ public sealed class XamlProjectCompiler
         var inputs = documents.OrderBy(d => d.LogicalPath, StringComparer.Ordinal).ToArray();
         if (inputs.Length > 16384) throw new ArgumentException("A project cannot exceed 16384 XAML documents.", nameof(documents));
         profile ??= XamlFrameworkProfile.Portable; options ??= new();
+        if (options.MaxDegreeOfParallelism < 1) throw new ArgumentOutOfRangeException(nameof(options), "Maximum document concurrency must be positive.");
         options = options with
         {
             IsPrecompilation = true,
@@ -69,7 +71,7 @@ public sealed class XamlProjectCompiler
         var duplicates = new HashSet<string>(inputs.Where(d => profile.Directives.ShouldCompile(d.Syntax, options))
             .GroupBy(d => d.LogicalPath, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key), StringComparer.Ordinal);
         var boundCount = 0; var reusedBindings = 0;
-        for (var i = 0; i < inputs.Length; i++)
+        ForEachDocument(inputs.Length, options, cancellationToken, i =>
         {
             cancellationToken.ThrowIfCancellationRequested();
             var input = inputs[i]; string? addressError = null;
@@ -77,43 +79,53 @@ public sealed class XamlProjectCompiler
             catch (ArgumentException error) { addressError = error.Message; }
             if (!duplicates.Contains(input.LogicalPath) && _documents.TryGetValue(input.LogicalPath, out var cached) &&
                 ReferenceEquals(cached.Input.Syntax, input.Syntax) && cached.Input.ResourceUri == input.ResourceUri)
-            { entries[i] = cached; bound[i] = cached.Document; reusedBindings++; }
+            { entries[i] = cached; bound[i] = cached.Document; Interlocked.Increment(ref reusedBindings); }
             else
             {
                 var itemOptions = options with
                 { DocumentId = input.LogicalPath, ResourceUri = addresses[i], BaseUri = addresses[i] ?? options.BaseUri, Resources = catalog };
                 var document = new XamlCompiler().Bind(input.Syntax, types, profile, itemOptions, cancellationToken);
-                entries[i] = new(input, document); bound[i] = document; boundCount++;
-                if (!duplicates.Contains(input.LogicalPath)) _documents[input.LogicalPath] = entries[i];
+                entries[i] = new(input, document); bound[i] = document; Interlocked.Increment(ref boundCount);
             }
             if (!bound[i].IsSkipped)
             {
                 if (addressError != null) bound[i] = AddError(bound[i], "XG3300", addressError);
                 if (duplicates.Contains(input.LogicalPath)) bound[i] = AddError(bound[i], "XG3300", "Duplicate logical XAML path: " + input.LogicalPath);
             }
-        }
+        });
+        // Keep the cache read-only while workers bind and publish in stable input order.
+        for (var i = 0; i < inputs.Length; i++)
+            if (!duplicates.Contains(inputs[i].LogicalPath)) _documents[inputs[i].LogicalPath] = entries[i];
         foreach (var group in addresses.Select((uri, index) => (Uri: uri, Index: index)).Where(p => p.Uri != null && !bound[p.Index].IsSkipped).GroupBy(p => p.Uri, StringComparer.Ordinal).Where(g => g.Count() > 1))
             foreach (var item in group) bound[item.Index] = AddError(bound[item.Index], "XG3300", "Duplicate resource URI: " + item.Uri);
         foreach (var group in bound.Select((d, i) => (Document: d, Index: i)).Where(p => !p.Document.IsSkipped && p.Document.ClassName != null).GroupBy(p => p.Document.ClassName, StringComparer.Ordinal).Where(g => g.Count() > 1))
             foreach (var item in group) bound[item.Index] = AddError(item.Document, "XG2002", "More than one XAML document declares x:Class '" + group.Key + "'.");
         XamlResourceGraph.Validate(bound, cancellationToken);
         var emissions = new XamlEmissionResult[inputs.Length]; var emittedCount = 0; var reusedOutputs = 0;
-        for (var i = 0; i < inputs.Length; i++)
+        ForEachDocument(inputs.Length, options, cancellationToken, i =>
         {
             cancellationToken.ThrowIfCancellationRequested();
             XamlEmissionResult emission;
             if (ReferenceEquals(bound[i], entries[i].Document) && entries[i].Output is { } cachedOutput)
-            { emission = cachedOutput; reusedOutputs++; }
+            { emission = cachedOutput; Interlocked.Increment(ref reusedOutputs); }
             else
             {
-                emission = XamlResourceExports.Add(bound[i], new CSharpEmitter().Emit(bound[i], cancellationToken)); emittedCount++;
+                emission = XamlResourceExports.Add(bound[i], new CSharpEmitter().Emit(bound[i], cancellationToken)); Interlocked.Increment(ref emittedCount);
                 if (ReferenceEquals(bound[i], entries[i].Document)) entries[i].Output = emission;
             }
             emissions[i] = emission;
-        }
+        });
         XamlResourceGraph.ValidateEmissions(bound, emissions, cancellationToken);
         var output = inputs.Select((input, index) => new XamlProjectDocumentResult(input, addresses[index], bound[index], emissions[index])).ToImmutableArray();
         return new(output, catalog) { Statistics = new(boundCount, reusedBindings, emittedCount, reusedOutputs) };
+    }
+    private static void ForEachDocument(int count, XamlCompilerOptions options, CancellationToken cancellationToken, Action<int> action)
+    {
+        var concurrency = Math.Min(options.MaxDegreeOfParallelism, Environment.ProcessorCount);
+        if (concurrency == 1 || count < 2)
+        { for (var i = 0; i < count; i++) { cancellationToken.ThrowIfCancellationRequested(); action(i); } }
+        else
+            Parallel.For(0, count, new ParallelOptions { CancellationToken = cancellationToken, MaxDegreeOfParallelism = concurrency }, action);
     }
     private static BoundDocument AddError(BoundDocument document, string code, string message) => document with
     { Diagnostics = document.Diagnostics.Add(new XamlDiagnostic(code, message, document.Syntax.Root?.NameSpan ?? new TextSpan(0, 0))) };
