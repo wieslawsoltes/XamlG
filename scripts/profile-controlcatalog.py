@@ -64,7 +64,14 @@ def response_file(build_log, output, project, generator_directory):
         raise RuntimeError(f"The XamlG generator is missing from {build_log}")
     if not generator_directory.exists():
         shutil.copytree(Path(generator[1] or generator[2]).parent, generator_directory)
-    arguments = arguments[:generator.start()] + f'/analyzer:"{generator_directory / "XamlG.Generator.dll"}"' + arguments[generator.end():]
+    # MSBuild can pass the generator's dependencies as separate analyzer items.
+    # Pin those locations too: Roslyn's loader may prefer a registered dependency
+    # over a DLL next to the generator, defeating an otherwise frozen snapshot.
+    assemblies = {path.name: path for path in generator_directory.glob("XamlG.*.dll")}
+    def snapshot_analyzer(match):
+        path = Path(match[1] or match[2])
+        return f'/analyzer:"{assemblies[path.name]}"' if path.name in assemblies else match[0]
+    arguments = re.sub(r'/analyzer:(?:"([^"\n]+)"|(\S+))', snapshot_analyzer, arguments)
     replacements = {"out": output / f"{project}.dll", "refout": output / "ref" / f"{project}.dll",
                     "generatedfilesout": output / "generated"}
     replacements["refout"].parent.mkdir(parents=True, exist_ok=True)
@@ -113,6 +120,56 @@ def stack_summary(path):
             "exclusive": rows(exclusive), "inclusive": rows(inclusive)}
 
 
+def isolate_phases(command, response, directory, project, iterations, environment):
+    """Controlled diagnostic ablations; never used as the XamlX acceptance result."""
+    original = response.read_text()
+    generated = sorted((directory / "generated" / "XamlG.Generator").rglob("*.cs"))
+    if not generated:
+        raise RuntimeError(f"No captured XamlG sources in {directory}")
+    pregenerated, count = re.subn(r'/analyzer:(?:"[^"\n]*XamlG\.Generator\.dll"|\S*XamlG\.Generator\.dll)',
+                                "", original)
+    if count != 1:
+        raise RuntimeError(f"Expected one XamlG analyzer in {response}")
+    pregenerated += " " + " ".join(f'"{path}"' for path in generated)
+    no_trim, trim_count = re.subn(r'/analyzer:(?:"[^"\n]*ILLink\.RoslynAnalyzer\.dll"|\S*ILLink\.RoslynAnalyzer\.dll)',
+                                 "", pregenerated)
+    variants = {"full": original, "pregenerated": pregenerated}
+    if trim_count:
+        variants["pregenerated-no-trim"] = no_trim
+    variants["pregenerated-no-analyzers"] = pregenerated + " /skipanalyzers+"
+    result = {"scope": "Diagnostic phase isolation, not acceptance timings. Pregenerated runs replace only "
+                       "the XamlG generator/analyzer with its captured C#; other generators remain enabled. "
+                       "No-trim removes ILLink analysis; no-analyzers skips analysis but retains other generators. "
+                       "These separately compiled syntax trees can behave differently in Roslyn; differences "
+                       "are diagnostic and are not additive phase costs.",
+              "generated_sha256": {str(path.relative_to(directory)): hashlib.sha256(path.read_bytes()).hexdigest()
+                                   for path in generated}, "runs": []}
+    responses = {}
+    for name, arguments in variants.items():
+        output = directory / "phases" / name
+        (output / "ref").mkdir(parents=True)
+        for option, path in {"out": output / f"{project}.dll", "refout": output / "ref" / f"{project}.dll"}.items():
+            arguments, count = re.subn(r'/' + option + r':(?:"[^"]*"|\S+)', lambda _: f'/{option}:"{path}"', arguments)
+            if count != 1:
+                raise RuntimeError(f"Expected one /{option} in {response}")
+        # Do not overwrite the snapshot consumed by pregenerated runs.
+        arguments = re.sub(r'/generatedfilesout:(?:"[^"]*"|\S+)', "", arguments)
+        responses[name] = output / "compiler.rsp"
+        responses[name].write_text(arguments)
+    names = list(variants)
+    for iteration in range(iterations):
+        order = names[iteration % len(names):] + names[:iteration % len(names)]
+        for name in order:
+            response_path = responses[name]
+            measurement = run(command[:-1] + ["@" + str(response_path)],
+                              response_path.parent / f"compiler-{iteration + 1}.log", environment, ROOT / "samples" / project)
+            measurement.update(variant=name, iteration=iteration + 1)
+            result["runs"].append(measurement)
+            print(f"{project} phase {name} #{iteration + 1}: {measurement['wall_seconds']:.3f}s", flush=True)
+            (directory / "phases.json").write_text(json.dumps(result, indent=2) + "\n")
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dotnet", default="dotnet")
@@ -120,6 +177,8 @@ def main():
     parser.add_argument("--iterations", type=int, default=3)
     parser.add_argument("--projects", nargs="+", choices=PROJECTS, default=PROJECTS)
     parser.add_argument("--skip-prepare", action="store_true")
+    parser.add_argument("--isolate-phases", action="store_true",
+                        help="Also compare generated-source and analyzer ablations for diagnosis, outside acceptance timings.")
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts/controlcatalog-profile")
     args = parser.parse_args()
     if args.iterations < 1:
@@ -165,6 +224,8 @@ def main():
             measurement = run(command, directory / f"compiler-{iteration + 1}.log", environment, ROOT / "samples" / project)
             entry["compiler_runs"].append(measurement)
             print(f"{project} Csc #{iteration + 1}: {measurement['wall_seconds']:.3f}s", flush=True)
+        if args.isolate_phases:
+            entry["phase_isolation"] = isolate_phases(command, response, directory, project, args.iterations, environment)
         print(f"Tracing {project} (timing includes profiler overhead)", flush=True)
         entry["trace"] = run([tracer, "collect", "--profile", "dotnet-sampled-thread-time,gc-verbose",
                               "--format", "Speedscope", "--output", str(directory / "compiler.nettrace"),

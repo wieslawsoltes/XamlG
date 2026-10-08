@@ -44,5 +44,6 @@ Console.WriteLine(JsonSerializer.Serialize(new
     pausesByReason = pauses.Select(pair => new { reason = pair.Key, count = pair.Value.Count,
         totalMilliseconds = pair.Value.Sum(), maximumMilliseconds = pair.Value.Max() }),
     allocations = allocations.OrderByDescending(pair => pair.Value.Bytes).Take(60)
-        .Select(pair => new { type = pair.Key, estimatedBytes = pair.Value.Bytes, ticks = pair.Value.Ticks })
+        .Select(pair => new { type = pair.Key, estimatedBytes = pair.Value.Bytes, ticks = pair.Value.Ticks }),
+    allocationStacks = AllocationStacks.Read(args[0])
 }, new JsonSerializerOptions { WriteIndented = true }));

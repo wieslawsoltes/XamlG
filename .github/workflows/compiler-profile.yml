@@ -26,7 +26,7 @@ jobs:
           dotnet tool install dotnet-trace --tool-path artifacts/profile-tools --version 9.0.661903
           dotnet build tools/XamlG.TraceAnalysis -c Release -p:NuGetAudit=false -warnaserror
       - name: Profile generation, C# compilation and analysis for all three projects
-        run: python3 scripts/profile-controlcatalog.py --dotnet-trace artifacts/profile-tools/dotnet-trace
+        run: python3 scripts/profile-controlcatalog.py --dotnet-trace artifacts/profile-tools/dotnet-trace --isolate-phases
       - name: Summarize allocations and garbage collection
         if: ${{ !cancelled() }}
         run: |
