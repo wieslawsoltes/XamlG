@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.Versioning;
@@ -11,6 +10,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Logging;
 using Avalonia.Media;
+using Avalonia.Media.Fonts;
 using Avalonia.Rendering;
 using Avalonia.Threading;
 using ControlCatalog;
@@ -84,16 +84,11 @@ internal partial class Program
     public static AppBuilder BuildAvaloniaApp()
            => AppBuilder.Configure<App>()
                .WithInterFont()
-               .With(new FontManagerOptions
-               {
-                   DefaultFamilyName = "fonts:Inter#Inter",
-                   // The browser Skia font list advertises Cascadia Mono, but this runtime cannot
-                   // resolve its keyed system-font face. Use a bundled face for that request too.
-                   FontFamilyMappings = new Dictionary<string, FontFamily>
-                   {
-                       ["Cascadia Mono"] = new FontFamily("fonts:Inter#Inter")
-                   }
-               });
+               .With(new FontManagerOptions { DefaultFamilyName = "fonts:Inter#Inter" })
+               // Browser hosts have no OS font installation. Expose the bundled fonts to the
+               // font picker instead of Skia's unresolvable keyed Cascadia system-font entries.
+               .ConfigureFonts(manager => manager.AddFontCollection(new EmbeddedFontCollection(
+                   new Uri("fonts:SystemFonts"), new Uri("avares://Avalonia.Fonts.Inter/Assets"))));
 
     private static BrowserPlatformOptions? ParseArgs(string[] args)
     {

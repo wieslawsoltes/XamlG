@@ -12,6 +12,7 @@ using Avalonia.Themes.Fluent;
 using Avalonia.VisualTree;
 using ControlCatalog.Models;
 using ControlCatalog.Pages;
+using XamlG.Runtime;
 
 namespace ControlCatalog.Validation;
 
@@ -26,6 +27,10 @@ public static class CatalogValidation
 {
     public static async Task<List<CatalogValidationResult>> RunAsync(Action<Control> show)
     {
+        if (!XamlRuntimeSession.TryGet(Application.Current!, out _) ||
+            !XamlRuntimeSession.TryGet(Application.Current!.Resources["SimpleTheme"]!, out _) ||
+            !XamlRuntimeSession.TryGet(Application.Current.Resources["FluentTheme"]!, out _))
+            throw new InvalidOperationException("The application and both themes must have XamlG initializer sessions.");
         var results = new List<CatalogValidationResult>();
         foreach (var theme in new[] { CatalogTheme.Simple, CatalogTheme.Fluent })
         foreach (var dark in new[] { false, true })
