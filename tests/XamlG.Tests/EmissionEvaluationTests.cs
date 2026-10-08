@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
+using XamlG.Runtime;
 using XamlG.Syntax;
 using Xunit;
 
@@ -25,6 +26,8 @@ public sealed class EmissionEvaluationTests
         public class Item { public Item() { View.Log.Add("new"); } }
         public static class Methods
         {
+            public static object GetValue(View target) => target.Value;
+            public static void SetValue(View target, object value) => target.Value = value;
             public static object Call(Argument first, Item second, int third) { View.Log.Add("call:" + third); return second; }
             public static object Call(Argument first, Item second, byte third) => throw new System.Exception("Wrong overload");
         }
@@ -47,6 +50,36 @@ public sealed class EmissionEvaluationTests
         using var code = CompiledXaml.Create("<View xmlns='clr-namespace:Evaluation' Value='{Call}'/>", Model, profile);
         var root = code.Build();
         Assert.Equal("convert:first,new,call:7,set", root.GetType().GetProperty("Events")!.GetValue(root));
+    }
+
+    [Fact]
+    public void AliasedMembersKeepDistinctLivePropertyNames()
+    {
+        var profile = XamlFrameworkProfile.Portable with { BindingRules = ImmutableArray.Create<IXamlBindingRule>(new AliasRule()) };
+        using var code = CompiledXaml.Create("<View xmlns='clr-namespace:Evaluation' First='first' Second='second'/>", Model, profile);
+        var root = code.Build();
+        Assert.Equal("second", root.GetType().GetProperty("Value")!.GetValue(root));
+        Assert.True(XamlRuntimeSession.TryGet(root, out var session));
+        var key = session!.FindNode(root)!.Key;
+        Assert.True(session.Apply(0, new[] { new XamlPropertyUpdate(key, "First", "changed first") }).Applied);
+        Assert.Equal("changed first", root.GetType().GetProperty("Value")!.GetValue(root));
+        Assert.True(session.Apply(1, new[] { new XamlPropertyUpdate(key, "Second", "changed second") }).Applied);
+        Assert.Equal("changed second", root.GetType().GetProperty("Value")!.GetValue(root));
+    }
+
+    private sealed class AliasRule : IXamlBindingRule
+    {
+        public bool TryBindAttribute(BindingContext context, ObjectBindingBuilder target, XamlAttributeSyntax attribute, NamespaceScope scope)
+        {
+            if (attribute.Name is not ("First" or "Second")) return false;
+            var methods = context.Types.Find("Evaluation.Methods")!;
+            var getter = (IMethodSymbol)methods.GetMembers("GetValue").Single();
+            var setter = (IMethodSymbol)methods.GetMembers("SetValue").Single();
+            var member = new BoundMember(attribute.Name, BoundMemberKind.AttachedProperty, getter, getter.ReturnType, getter, setter, attribute.Span);
+            target.Assignments.Add(new BoundSetAssignment(member,
+                new BoundConstantExpression(attribute.Value, context.Types.Special(SpecialType.System_String), attribute.Span), attribute.Span));
+            return true;
+        }
     }
 
     private sealed class DescriptorRule : IXamlBindingRule

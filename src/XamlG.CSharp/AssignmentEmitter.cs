@@ -37,9 +37,9 @@ internal sealed class AssignmentEmitter
                         if (owner.Type.IsReferenceType)
                         {
                             var receiver = "((" + owner.Type.CSharpName() + ")__target)";
-                            writer.Line(_context.PropertyRegistration(set.Member.ValueType,
+                            writer.Line(_context.PropertyRegistration(set.Member.ValueType, set.Member.Name,
                                 Get(set.Member, owner.Type, receiver), SetExpression(set.Member, owner.Type, receiver, "(" + set.Member.ValueType.CSharpName() + ")__value!"),
-                                frame + ".Session, " + CSharpNames.Literal(owner.Key) + ", " + CSharpNames.Literal(set.Member.Name) + ", " + target));
+                                frame));
                         }
                         else
                             writer.Line(frame + ".Session.RegisterProperty<" + set.Member.ValueType.CSharpName() + ">(" + CSharpNames.Literal(owner.Key) + ", " + CSharpNames.Literal(set.Member.Name) + ", () => " + Get(set.Member, owner.Type, target) + ", __value => { " + SetExpression(set.Member, owner.Type, target, "__value") + "; });");

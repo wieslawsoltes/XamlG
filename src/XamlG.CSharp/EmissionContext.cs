@@ -13,7 +13,7 @@ internal sealed class EmissionContext : IDisposable
     private readonly Dictionary<ISymbol, string> _descriptors = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<IMethodSymbol, string> _initSetters = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<string, int> _sourceRecords = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, (int Index, string Type, string Get, string Set)> _propertyAccessors = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (int Index, string Type, string Name, string Get, string Set)> _propertyAccessors = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _frameNamespaces = new(StringComparer.Ordinal);
     public EmissionContext(BoundDocument document, CancellationToken cancellation)
     { Document = document; Cancellation = cancellation; Diagnostics.AddRange(document.Diagnostics); Id = StableId(document.Options.DocumentId ?? document.Syntax.Path); }
@@ -72,16 +72,16 @@ internal sealed class EmissionContext : IDisposable
         _sourceInfoSetter = true;
         return "__SetSourceInfo_" + Id;
     }
-    public string PropertyRegistration(ITypeSymbol value, string get, string set, string arguments)
+    public string PropertyRegistration(ITypeSymbol value, string name, string get, string set, string frame)
     {
         var type = value.TypeKind == TypeKind.Dynamic ? "object" : value.CSharpName();
-        var key = type + "\0" + get + "\0" + set;
+        var key = type + "\0" + name + "\0" + get + "\0" + set;
         if (!_propertyAccessors.TryGetValue(key, out var accessor))
         {
-            accessor = (_propertyAccessors.Count, type, get, set);
+            accessor = (_propertyAccessors.Count, type, name, get, set);
             _propertyAccessors.Add(key, accessor);
         }
-        return "__properties_" + Id + ".Register(" + arguments + ", " + accessor.Index + ");";
+        return "__properties_" + Id + ".Register(" + frame + ", " + accessor.Index + ");";
     }
     public void EmitMetadataHelpers()
     {
@@ -98,7 +98,8 @@ internal sealed class EmissionContext : IDisposable
         {
             var accessors = _propertyAccessors.Values.OrderBy(accessor => accessor.Index).ToArray();
             Writer.Line("private static readonly global::XamlG.Runtime.XamlPropertyTable __properties_" + Id + " = new(new global::System.Type[] { " +
-                string.Join(", ", accessors.Select(accessor => "typeof(" + accessor.Type + ")")) + " }, __GetProperty_" + Id + ", __SetProperty_" + Id + ");");
+                string.Join(", ", accessors.Select(accessor => "typeof(" + accessor.Type + ")")) + " }, new string[] { " +
+                string.Join(", ", accessors.Select(accessor => CSharpNames.Literal(accessor.Name))) + " }, __GetProperty_" + Id + ", __SetProperty_" + Id + ");");
             Writer.Open("private static object? __GetProperty_" + Id + "(object __target, int __index)");
             Writer.Open("switch (__index)");
             foreach (var accessor in accessors) Writer.Line("case " + accessor.Index + ": return " + accessor.Get + ";");

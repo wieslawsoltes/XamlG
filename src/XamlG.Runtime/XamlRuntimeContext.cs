@@ -70,6 +70,7 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
     public object? TargetObject { get; }
     public object? TargetProperty { get; }
     public string? NodeKey { get; }
+    internal object? NodeObject => NodeKey == null ? null : _frameObject ?? _parent?.NodeObject;
     public Uri? BaseUri { get => _uriOwner._baseUri; set => _uriOwner._baseUri = value; }
     public IContainer? Container => null;
     public object? Instance => _useTypeDescriptorStubs ? null : TargetObject;

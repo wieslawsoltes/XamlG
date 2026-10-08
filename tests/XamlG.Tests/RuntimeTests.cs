@@ -108,4 +108,48 @@ public sealed class RuntimeTests
         Assert.True(session.Apply(0, new[] { new XamlPropertyUpdate("first", "Value", 8) }).Applied);
         Assert.Equal(8, first.Value); Assert.Equal(2, second.Value);
     }
+    [Fact]
+    public void NamedAccessorsUseConstructionNodesAcrossTargetAndNamespaceFrames()
+    {
+        var types = new[] { typeof(int) }; var names = new[] { "Value" };
+        var accessor = new XamlPropertyTable(types, names, static (target, _) => ((AccessorTarget)target).Value,
+            static (target, _, value) => ((AccessorTarget)target).Value = (int)value!);
+        types[0] = typeof(string); names[0] = "Changed";
+        var first = new AccessorTarget { Value = 1 }; var second = new AccessorTarget { Value = 2 };
+        var unrelated = new AccessorTarget { Value = 3 };
+        var context = new XamlRuntimeContext();
+        var parent = context.PushRoot(first, "first");
+        var child = parent.Push(second, "second");
+        accessor.Register(parent.ForTarget(unrelated, "Other"), 0);
+        accessor.Register(child.WithNamespaces(new Dictionary<Type, object>()).ForTarget(first, "Other"), 0);
+        using var session = context.Session;
+        Assert.False(session.Apply(0, new[] { new XamlPropertyUpdate("first", "Value", "bad") }).Applied);
+        Assert.True(session.Apply(0, new[] {
+            new XamlPropertyUpdate("first", "Value", 4), new XamlPropertyUpdate("second", "Value", 5)
+        }).Applied);
+        Assert.Equal(4, first.Value); Assert.Equal(5, second.Value); Assert.Equal(3, unrelated.Value);
+
+        var deferred = child.CreateDeferredScope();
+        using var deferredSession = deferred.Session;
+        Assert.Throws<InvalidOperationException>(() => accessor.Register(deferred.ForTarget(first, "Other"), 0));
+        accessor.Register(deferred.Push(unrelated, "first"), 0);
+        Assert.True(deferredSession.Apply(0, new[] { new XamlPropertyUpdate("first", "Value", 6) }).Applied);
+        Assert.Equal(4, first.Value); Assert.Equal(6, unrelated.Value); Assert.Equal(1, session.Revision);
+    }
+    [Fact]
+    public void NamedAccessorsRequireMatchingMetadataAndACurrentNode()
+    {
+        static object? Get(object target, int index) => null;
+        static void Set(object target, int index, object? value) { }
+        var types = new[] { typeof(int) };
+        Assert.Throws<ArgumentNullException>(() => new XamlPropertyTable(types, null!, Get, Set));
+        Assert.Throws<ArgumentException>(() => new XamlPropertyTable(types, Array.Empty<string>(), Get, Set));
+        Assert.Throws<ArgumentException>(() => new XamlPropertyTable(types, new string[] { null! }, Get, Set));
+        var accessor = new XamlPropertyTable(types, new[] { "Value" }, Get, Set);
+        Assert.Throws<ArgumentNullException>(() => accessor.Register(null!, 0));
+        var context = new XamlRuntimeContext();
+        using var session = context.Session;
+        Assert.Throws<InvalidOperationException>(() => accessor.Register(context, 0));
+        Assert.Throws<InvalidOperationException>(() => new XamlPropertyTable(types, Get, Set).Register(context.Push(new object(), "root"), 0));
+    }
 }
