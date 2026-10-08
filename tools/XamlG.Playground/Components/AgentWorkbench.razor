@@ -3,30 +3,60 @@
 @inject IJSRuntime JavaScript
 
 <section class="agent-workbench" aria-label="Coding agent workbench">
-    <header class="agent-heading"><div><h2>Coding agent</h2><small>@(IsDirect ? "Direct API" : IsBrowser ? "Local provider relay" : "Paired companion") · @(_state.ToolCount) tools</small></div><span class="tab-spacer"></span>
+    <header class="agent-heading">
+        <span class="agent-avatar"><AgentIcon Name="Agent" /></span>
+        <div class="agent-heading-title"><h2>Coding agent</h2><button class="agent-connection-shortcut" @onclick='() => SelectSectionAsync("Connection")' aria-label="Open agent connection"><span class="agent-connection-dot @(_connected && ProviderReady ? "is-ready" : "")"></span>@ConnectionLabel</button></div>
+        <span class="tab-spacer"></span>
         @if (AnyRunning) { <button class="agent-stop" @onclick='() => CommandAsync("stop", new { })'>Stop</button> }
-        <button @onclick="RefreshAsync" disabled="@_refreshing" aria-label="Refresh coding agent">↻</button>
+        <button class="agent-icon-button" @onclick="RefreshAsync" disabled="@_refreshing" aria-label="Refresh coding agent" title="Refresh coding agent"><AgentIcon Name="Refresh" /></button>
     </header>
     <nav class="agent-navigation" aria-label="Agent sections">
-        @foreach (var section in Sections) { <button aria-pressed="@PaneVisible(section)" @onclick="() => SelectSectionAsync(section)">@section</button> }
+        @foreach (var section in Sections)
+        {
+            <button aria-label="@section" aria-pressed="@PaneVisible(section)" @onclick="() => SelectSectionAsync(section)"><AgentIcon Name="@section" /><span>@section</span>@if (SectionCount(section) is > 0 and var count) { <span class="agent-count" aria-hidden="true">@count</span> }</button>
+        }
     </nav>
-    <div class="agent-content">
-    <section class="agent-section" hidden="@(!PaneVisible("Connection"))" aria-label="Agent connection settings">
+    @if (_connected && _state.Tasks.Length > 0)
+    {
+        <div class="agent-task-context">
+            <div class="agent-task-picker"><label>Task <select aria-label="Task" value="@_selectedId" @onchange="SelectTaskAsync">@foreach (var task in _state.Tasks) { <option value="@task.Id">@task.Name · @task.Status</option> }</select></label><button class="agent-icon-button" aria-label="New task" title="New task" @onclick='() => SelectSectionAsync("Tasks")'><AgentIcon Name="Plus" /></button></div>
+            @if (Selected is { } contextTask)
+            {
+                <details class="agent-task-status"><summary><span class="agent-status" data-status="@contextTask.Status">@contextTask.Status</span><span>@contextTask.TotalTokens.ToString("N0") tokens</span><span>@contextTask.CheckpointCount checkpoints</span></summary>
+                    <p role="status">@contextTask.StatusReason</p>
+                    <p class="agent-context-model">@contextTask.ProviderId · @contextTask.Model</p>
+                    <dl class="agent-metrics"><div><dt>Reported tokens</dt><dd>@contextTask.ReportedTokens.ToString("N0")</dd></div><div><dt>Estimated tokens</dt><dd>@contextTask.EstimatedTokens.ToString("N0")</dd></div><div><dt>Context</dt><dd>@((contextTask.NativeContextBytes / 1024d).ToString("N1")) KiB</dd></div></dl>
+                    @if (contextTask.Account is { } taskAccount) { <p>ChatGPT plan account: @taskAccount.Label. Output allowance is an estimate, not a server cap; one response can exceed the remaining task budget.</p> }
+                    @if (contextTask.RetryAfterUtc is { } cooldown && cooldown > DateTimeOffset.UtcNow) { <p>Provider cooldown until @cooldown.ToLocalTime().ToString("T").</p> }
+                    @if (contextTask.OutputLimitToExceed is { } outputLimit) { <p>Resume requires an effective output allowance above @outputLimit.ToString("N0") tokens.</p> }
+                    @if (contextTask.IsPreviousWorkspace) { <p class="agent-notice">Previous workspace: this task remains available for review and export. Create a new task to work on the current project.</p> }
+                </details>
+            }
+        </div>
+    }
+    <div class="agent-content @(PaneVisible("Conversation") && Selected != null ? "is-conversation" : "")">
+    <section class="agent-section agent-section-connection" hidden="@(!PaneVisible("Connection"))" aria-label="Agent connection settings">
+    <div class="agent-section-heading"><div><h3>Connect your agent</h3><p>Choose where it runs and how to sign in.</p></div><AgentIcon Name="Connection" /></div>
+    <div class="agent-card">
     <label>Agent connection <select aria-label="Agent connection" value="@_connectionMode" @onchange="ConnectionChangedAsync" disabled="@(AnyRunning || _modelsBusy || _runReview != null)">
         <option value="direct">Direct API · run in this browser</option><option value="relay">Local provider relay · API keys stay local</option><option value="companion">Paired companion · server and account agents</option>
     </select></label>
-            <label>Provider <select disabled="@(AnyRunning || _modelsBusy)" aria-label="Provider" @bind="_provider" @bind:after="ProviderChanged">@foreach (var provider in _state.Providers) { <option value="@provider">@ProviderLabel(provider)</option> }</select></label>
-            @if (_provider == ChatGptProvider) { <p>New task account: @(ActiveAccount?.Label ?? "Select and sign in to an account above"). Uses ChatGPT plan allowance; account mode never falls back to API-key billing.</p> }
-            <label>Model <input @bind="_model" list="agent-models" placeholder="Model ID" /></label>
-            <datalist id="agent-models">@foreach (var model in _models) { <option value="@model.Slug">@model.DisplayName</option> }</datalist>
-            <button @onclick="DiscoverModelsAsync" disabled="@(AnyRunning || _modelsBusy || string.IsNullOrEmpty(_provider) || !ProviderReady)">Discover models</button>
+    <p class="agent-help">@(IsDirect ? "Run with your provider API key directly in Studio. No companion or MCP pairing required." : IsBrowser ? "Run in Studio using provider keys stored in your local companion." : "Run agents in the companion, with API keys or your ChatGPT account.")</p>
+    @if (!IsBrowser)
+    {
+        <div class="agent-inline-actions"><span class="agent-status">@(_connected ? "Companion connected" : "Companion not connected")</span><button @onclick="() => AccessRequested.InvokeAsync()">Open Agent access</button></div>
+    }
+    </div>
+    <div class="agent-card">
+        <h4>Provider access</h4>
+        <label>Provider <select disabled="@(AnyRunning || _modelsBusy)" aria-label="Provider" @bind="_provider" @bind:after="ProviderChanged">@foreach (var provider in _state.Providers) { <option value="@provider">@ProviderLabel(provider)</option> }</select></label>
+        @if (_provider == ChatGptProvider) { <p>New task account: @(ActiveAccount?.Label ?? "Select and sign in to an account below"). Uses ChatGPT plan allowance; account mode never falls back to API-key billing.</p> }
     @if (IsDirect)
     {
         <section class="agent-direct-connection" aria-label="Direct API connection">
-            <p>Use your own OpenAI, Anthropic or Gemini API key. Requests go directly to the selected provider; no companion or MCP pairing is required.</p>
-            <label>API key <input type="password" aria-label="API key" autocomplete="off" spellcheck="false" maxlength="4096" @bind="_apiKey" @bind:event="oninput" disabled="@(AnyRunning || _modelsBusy)" /></label>
+            <label>API key <input placeholder="Paste your provider API key" type="password" aria-label="API key" autocomplete="off" spellcheck="false" maxlength="4096" @bind="_apiKey" @bind:event="oninput" disabled="@(AnyRunning || _modelsBusy)" /></label>
             <label><input type="checkbox" @bind="_acceptBrowserExposure" disabled="@(AnyRunning || _modelsBusy)" /> Accept browser key exposure</label>
-            <p class="muted">The key stays in this page's memory and is accessible to page code and browser extensions. It is cleared when you change provider or close the pane. Direct requests depend on provider CORS support.</p>
+            <p class="agent-help">The key stays in this page's memory and is accessible to page code and browser extensions. It is cleared when you change provider or close the pane. Direct requests depend on provider CORS support.</p>
             <button @onclick="ClearDirectCredentials">Clear credentials</button>
         </section>
     }
@@ -83,31 +113,48 @@
                 @if (_accountMessage != null) { <p role="status">@_accountMessage</p> }
             </details>
         }
+    </div>
+    <div class="agent-card">
+        <div class="agent-section-heading"><h4>Model</h4><span class="agent-status">@(_modelsBusy ? "Loading models…" : _models.Length > 0 ? $"{_models.Length} available" : "Choose a model")</span></div>
+        <label>Model <input @bind="_model" list="agent-models" placeholder="Enter or discover a model ID" /></label>
+        <datalist id="agent-models">@foreach (var model in _models) { <option value="@model.Slug">@model.DisplayName</option> }</datalist>
+        <div class="agent-inline-actions"><button @onclick="DiscoverModelsAsync" disabled="@(AnyRunning || _modelsBusy || string.IsNullOrEmpty(_provider) || !ProviderReady)">Discover models</button><span class="agent-help">@(ProviderReady ? "Or enter a model ID above." : "Complete provider access to discover models.")</span></div>
+    </div>
+    <div class="agent-panel-footer"><button class="primary" @onclick='() => SelectSectionAsync("Tasks")' disabled="@(!_connected || !ProviderReady || string.IsNullOrWhiteSpace(_model))">Continue to tasks <AgentIcon Name="Arrow" /></button></div>
     </section>
     @if (!_connected && !PaneVisible("Connection"))
     { <div class="agent-empty"><h3>Connect your coding agent</h3><p>Use a provider API key in this browser, or a local companion.</p><button class="primary" @onclick='() => SelectSectionAsync("Connection")'>Open connection</button></div> }
     @if (_connected)
     {
+        <section class="agent-section agent-section-tasks" hidden="@(!PaneVisible("Tasks"))" aria-label="Agent tasks">
+        <div class="agent-section-heading"><div><h3>Your tasks</h3><p>Separate conversations, plans, and permissions.</p></div><span class="agent-status">@_state.Tasks.Length / 8</span></div>
         @if (_state.Tasks.Length > 0)
         {
-            <label>Task <select aria-label="Task" value="@_selectedId" @onchange="SelectTaskAsync">@foreach (var task in _state.Tasks) { <option value="@task.Id">@task.Name · @task.Status</option> }</select></label>
+            <div class="agent-task-list" aria-label="Task list">
+                @foreach (var task in _state.Tasks)
+                {
+                    <button class="agent-task-card" aria-pressed="@(task.Id == _selectedId)" @onclick="() => Select(task.Id)"><AgentIcon Name="Conversation" /><span><strong>@task.Name</strong><small>@task.ProviderId · @task.Model</small></span><span class="agent-status" data-status="@task.Status">@task.Status</span></button>
+                }
+            </div>
         }
-        <section class="agent-section" hidden="@(!PaneVisible("Tasks"))" aria-label="Agent tasks">
-        <details class="agent-create" open>
+        <details class="agent-create agent-card" open>
             <summary>New task</summary>
             @if (_state.Providers.Length == 0) { <p>Configure a provider key in the companion environment, then restart it.</p> }
-            <p>@ProviderLabel(_provider) · @(_model.Length == 0 ? "Choose a model in Connection" : _model)</p>
-            <button @onclick='() => SelectSectionAsync("Connection")'>Choose provider and model</button>
+            <div class="agent-inline-actions"><p>@ProviderLabel(_provider) · @(_model.Length == 0 ? "Choose a model in Connection" : _model)</p><button @onclick='() => SelectSectionAsync("Connection")'>Choose provider and model</button></div>
             <label>Task name <input @bind="_name" maxlength="200" /></label>
-            <button @onclick="CreateAsync" disabled="@(string.IsNullOrWhiteSpace(_model) || string.IsNullOrWhiteSpace(_provider) || !ProviderReady || _state.Tasks.Length >= 8)">Create task</button>
+            <button class="primary" @onclick="CreateAsync" disabled="@(string.IsNullOrWhiteSpace(_model) || string.IsNullOrWhiteSpace(_provider) || !ProviderReady || _state.Tasks.Length >= 8)"><AgentIcon Name="Plus" /> Create task</button>
+            @if (_state.Tasks.Length >= 8) { <p class="agent-help">All eight task slots are in use. Export and delete a finished task to make room.</p> }
         </details>
         @if (Selected is { } managedTask) {
-            <div class="agent-task-actions">
-                <input aria-label="Rename task" @bind="_taskName" maxlength="200" />
+            <div class="agent-card"><h4>Manage selected task</h4>
+                <label>Rename task <input aria-label="Rename task" @bind="_taskName" maxlength="200" /></label>
+                <div class="agent-task-actions">
                 <button @onclick='() => CommandAsync("rename", new { id = managedTask.Id, text = _taskName })' disabled="@IsRunning(managedTask)">Rename</button>
-                <button @onclick='() => _deleteTaskId = managedTask.Id' disabled="@IsRunning(managedTask)">Delete</button>
+                <button class="agent-danger" @onclick='() => _deleteTaskId = managedTask.Id' disabled="@IsRunning(managedTask)">Delete</button>
+                </div><h4>Keep or share context</h4><div class="agent-task-actions">
                 <button @onclick="ExportAsync">Export thread</button>
                 <button @onclick="CopyThreadAsync">Copy public thread</button><button @onclick="BeginHandoffAsync">New task with context</button>
+                </div>
             </div>
         }
         </section>
@@ -115,25 +162,21 @@
         {
             @if (_state.Pending.Any(pending => pending.TaskId == selected.Id) && !PaneVisible("Conversation"))
             { <button class="agent-pending-notice" @onclick='() => SelectSectionAsync("Conversation")'>Your response is needed · open conversation</button> }
-            <details class="agent-task-status"><summary>@selected.Name · @selected.Status · @selected.TotalTokens.ToString("N0") tokens</summary>
-            <p role="status">@selected.Status · @selected.TotalTokens.ToString("N0") tokens · @selected.CheckpointCount checkpoints @selected.StatusReason</p>
-            @if (selected.Account is { } taskAccount) { <p>ChatGPT plan account: @taskAccount.Label. Output allowance is an estimate, not a server cap; one response can exceed the remaining task budget.</p> }
-            <p>@selected.ReportedTokens.ToString("N0") provider-reported tokens · @selected.EstimatedTokens.ToString("N0") estimated tokens · @((selected.NativeContextBytes / 1024d).ToString("N1")) KiB context</p>
-            @if (selected.RetryAfterUtc is { } cooldown && cooldown > DateTimeOffset.UtcNow) { <p>Provider cooldown until @cooldown.ToLocalTime().ToString("T").</p> }
-            @if (selected.OutputLimitToExceed is { } outputLimit) { <p>Resume requires an effective output allowance above @outputLimit.ToString("N0") tokens.</p> }
-            @if (selected.IsPreviousWorkspace) { <p class="empty">Previous workspace: this task remains available for review and export. Create a new task to work on the current project.</p> }
-            </details>
             <section class="agent-section agent-section-conversation" hidden="@(!PaneVisible("Conversation"))" aria-label="Agent conversation">
-            <div class="agent-task-actions"><button @onclick="() => PageThreadAsync(true)" disabled="@(Thread.Busy || !ThreadHasEarlier)">Earlier messages</button><button @onclick="() => PageThreadAsync(false)" disabled="@(Thread.Busy || !ThreadHasLater)">Newer messages</button><button @onclick="FollowThreadAsync">Follow latest</button></div>
+            <div class="agent-thread-toolbar"><button @onclick="() => PageThreadAsync(true)" disabled="@(Thread.Busy || !ThreadHasEarlier)">Earlier messages</button><button @onclick="() => PageThreadAsync(false)" disabled="@(Thread.Busy || !ThreadHasLater)">Newer messages</button><button @onclick="FollowThreadAsync">Follow latest</button></div>
             @if (Thread.Page != null) { <p role="status">Reading an earlier page. Follow latest returns to the current response.</p> }
             <div class="agent-thread" role="log" tabindex="0" aria-label="Agent thread" aria-live="off" data-task-id="@selected.Id" @ref="_threadElement">
+                @if (!VisibleEvents.Any() && VisibleLiveText.Length == 0)
+                {
+                    <div class="agent-empty agent-thread-empty"><span class="agent-empty-icon"><AgentIcon Name="Conversation" /></span><h3>What would you like to build?</h3><p>Ask about the project, describe a change, or investigate a runtime issue.</p><p class="agent-help">Review permissions before each run. Tool requests appear here when they need your approval.</p></div>
+                }
                 @foreach (var item in VisibleEvents)
                 {
                     @if (item.Kind.StartsWith("tool", StringComparison.Ordinal))
                     { <details @key="item.Sequence" data-sequence="@item.Sequence" class="agent-message agent-tool"><summary>@item.Kind · @(item.Text.Length > 100 ? item.Text[..100] + "…" : item.Text)</summary><button @onclick="() => CopyTextAsync(item.Text)">Copy</button><pre>@item.Text</pre></details> }
                     else
                     {
-                        <article @key="item.Sequence" data-sequence="@item.Sequence" class="agent-message agent-@item.Kind"><small>@(item.Kind == "assistant_incomplete" ? "assistant · incomplete" : item.Kind)</small><button @onclick="() => CopyTextAsync(item.Text)">Copy</button>
+                        <article @key="item.Sequence" data-sequence="@item.Sequence" class="agent-message agent-@item.Kind"><div class="agent-message-heading"><small>@(item.Kind == "assistant_incomplete" ? "assistant · incomplete" : item.Kind)</small><button @onclick="() => CopyTextAsync(item.Text)">Copy</button></div>
                             @if (item.Kind is "user" or "assistant" or "question" or "answer") { <AgentMarkdown Text="@item.Text" CopyRequested="CopyTextAsync" /> }
                             else { <pre>@item.Text</pre> }
                         </article>
@@ -141,6 +184,7 @@
                 }
                 @if (VisibleLiveText.Length != 0) { <article class="agent-message"><small>@(Thread.Page == null ? "assistant · streaming" : "assistant · captured partial reply")</small><pre>@VisibleLiveText</pre></article> }
             </div>
+            <div class="agent-pending-list">
             @foreach (var pending in _state.Pending.Where(p => p.TaskId == selected.Id))
             {
                 <section class="agent-pending" @key="pending.Id" aria-label="Agent request">
@@ -173,17 +217,22 @@
                     <button @onclick='() => CommandAsync("stop", new { })'>Cancel request and stop</button>
                 </section>
             }
-            <label>Message <textarea @ref="_composerElement" data-task-id="@selected.Id" data-can-submit="@(CanRun ? "true" : "false")" value="@_draft" @oninput="DraftChangedAsync" rows="4" maxlength="262144" placeholder="Describe the change or investigation" /></label>
-            <p class="agent-keyboard-hint">Enter or Ctrl+Enter reviews a run. Shift+Enter adds a line. You can keep drafting during a response.</p>
+            </div>
+            <div class="agent-composer">
+            <label>Message <textarea @ref="_composerElement" data-task-id="@selected.Id" data-can-submit="@(CanRun ? "true" : "false")" value="@_draft" @oninput="DraftChangedAsync" rows="3" maxlength="262144" placeholder="Describe the change or investigation" /></label>
+            <p class="agent-keyboard-hint"><kbd>Enter</kbd> review run <span>·</span> <kbd>Shift+Enter</kbd> new line</p>
             <div class="agent-run-actions">
-                <button class="primary" @onclick="RunAsync" disabled="@(!CanRun)">Run</button>
+                <button class="primary" @onclick="RunAsync" disabled="@(!CanRun)">Run <AgentIcon Name="Arrow" /></button>
                 <button @onclick="ResumeAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || selected.Status != "paused" || selected.RetryAfterUtc > DateTimeOffset.UtcNow)">Resume</button>
                 <button @onclick="QueueDraftAsync" disabled="@(selected.IsPreviousWorkspace || _queueBusy || string.IsNullOrWhiteSpace(_draft) || selected.Status is "cancelled" or "failed")">Queue follow-up</button>
                 <button @onclick='() => CommandAsync("stop", new { })' disabled="@(!_state.Tasks.Any(IsRunning))">Stop &amp; revoke</button>
                 <button @onclick="ReviewCompaction" disabled="@(selected.IsPreviousWorkspace || AnyRunning)">Compact context</button>
             </div>
+            @if (!ProviderReady) { <button class="agent-composer-notice" @onclick='() => SelectSectionAsync("Connection")'>Complete provider access in Connection to run this task <AgentIcon Name="Arrow" /></button> }
+            </div>
             </section>
             <section class="agent-section agent-section-permissions" hidden="@(!PaneVisible("Permissions"))" aria-label="Agent permissions">
+            <div class="agent-section-heading"><div><h3>Permissions &amp; limits</h3><p>Control what this task can do and spend.</p></div><AgentIcon Name="Permissions" /></div>
             @if (_state.ActivePermissions is { } active)
             {
                 <section class="agent-active-permissions"><h3>Active run authority</h3><p>@active.Policy.Profile · expires @active.ExpiresAt.ToLocalTime().ToString("T")</p>
@@ -197,21 +246,26 @@
             <details class="agent-options" open>
                 <summary>Run permissions and limits</summary>
                 <p>Settings belong to the selected task. @(IsBrowser ? "These permissions are independent of external MCP access." : "The live project's companion access policy also applies to every operation.")</p>
-                <button @onclick="() => SetPreset(false)">Extended limits</button><button @onclick="() => SetPreset(true)">Large limits</button>
-                <button @onclick="SaveNumericPreferencesAsync">Save numeric defaults</button><button @onclick="ResetPermissions">Reset task permissions</button>
-                <p>Saved defaults contain numeric limits only. New tasks begin with Ask permissions.</p>
+                <fieldset class="agent-fieldset"><legend>Permission profile</legend>
                 <label>Task permission profile <select aria-label="Task permission profile" @bind="_profile">@foreach (var profile in _state.Constraints.AllowedProfiles) { <option>@profile</option> }</select></label>
                 <label><input type="checkbox" @bind="_neverAsk" /> Deny operations that require a review</label>
+                <button @onclick="ResetPermissions">Reset task permissions</button>
+                </fieldset>
+                <fieldset class="agent-fieldset"><legend>Scope rules</legend><p class="agent-help">Override the profile for a specific part of Studio.</p><div class="agent-form-grid">
                 @foreach (var scope in Scopes)
                 {
                     <label>@scope <select value="@_scopes.GetValueOrDefault(scope, "default")" @onchange="args => ChangeScope(scope, args)"><option>default</option><option>allow</option><option>ask</option><option>deny</option></select></label>
                 }
-                <fieldset class="agent-tool-rules"><legend>Exact tool rules</legend>
+                </div></fieldset>
+                <fieldset class="agent-tool-rules agent-fieldset"><legend>Exact tool rules</legend><p class="agent-help">Set a decision for an individual tool.</p>
                     <label>Tool <select aria-label="Permission tool" @bind="_ruleTool"><option value="">Choose a tool</option>@foreach (var tool in _toolCatalog) { <option value="@tool.Name">@tool.Name</option> }</select></label>
                     <label>Decision <select aria-label="Tool permission decision" @bind="_ruleDecision"><option>allow</option><option>ask</option><option>deny</option></select></label>
                     <button @onclick="SetToolRule" disabled="@string.IsNullOrEmpty(_ruleTool)">Set tool rule</button>
                     @foreach (var rule in ToolRuleValues) { <div class="agent-rule"><code>@rule.Key</code><strong>@rule.Value</strong><button @onclick="() => RemoveToolRule(rule.Key)">Remove rule</button></div> }
                 </fieldset>
+                <fieldset class="agent-fieldset"><legend>Run budgets</legend>
+                <div class="agent-inline-actions"><button @onclick="() => SetPreset(false)">Extended limits</button><button @onclick="() => SetPreset(true)">Large limits</button></div>
+                <div class="agent-form-grid">
                 <label>Requests per run <input type="number" min="1" max="10000" @bind="_requests" /></label>
                 <label>Tool calls per run <input type="number" min="1" max="10000" @bind="_tools" /></label>
                 <label>@(selected.Account == null ? "Output tokens per request" : "Output reserve (not a cap)") <input type="number" min="1" max="1000000" @bind="_outputTokens" /></label>
@@ -221,22 +275,30 @@
                 <label>Automatic retries <input type="number" min="0" max="10" @bind="_retries" /></label>
                 <label>Request timeout minutes <input type="number" min="1" max="30" @bind="_timeoutMinutes" /></label>
                 <label>Lease minutes <input type="number" min="1" max="60" @bind="_leaseMinutes" /></label>
+                </div><div class="agent-inline-actions"><button @onclick="SaveNumericPreferencesAsync">Save numeric defaults</button></div><p class="agent-help">Saved defaults contain numeric limits only. New tasks begin with Ask permissions.</p>
+                </fieldset>
+                <fieldset class="agent-fieldset"><legend>Context &amp; compaction</legend>
                 <label><input type="checkbox" @bind="_autoCompact" /> Compact context automatically at complete tool boundaries</label>
+                <div class="agent-form-grid">
                 <label>Automatic compaction input tokens (0 disables this threshold) <input type="number" min="0" max="2000000" @bind="Preferences.Numeric.AutomaticInputTokens" /></label>
                 <label>Model context window tokens (0 unspecified) <input type="number" min="0" max="4000000" @bind="Preferences.Numeric.ModelContextWindowTokens" /></label>
                 <label>Recent complete turns to retain <input type="number" min="0" max="16" @bind="Preferences.Numeric.RecentCompleteTurns" /></label>
                 <label>Checkpoint output tokens <input type="number" min="256" max="8192" @bind="Preferences.Numeric.CheckpointOutputTokens" /></label>
+                </div></fieldset>
             </details>
             </section>
             <section class="agent-section agent-section-plan" hidden="@(!PaneVisible("Plan"))" aria-label="Agent plan">
+            <div class="agent-section-heading"><div><h3>Task plan</h3><p>Track the agent’s approach and progress.</p></div><AgentIcon Name="Plan" /></div>
             @if (selected.Plan.Length > 0)
             {
-                <ol class="agent-plan">@foreach (var step in selected.Plan) { <li><strong>@step.Status</strong> @step.Text</li> }</ol>
+                <div class="agent-plan-progress"><span>@selected.Plan.Count(step => step.Status == "completed") of @selected.Plan.Length complete</span><progress value="@selected.Plan.Count(step => step.Status == "completed")" max="@selected.Plan.Length" aria-label="Plan progress"></progress></div>
+                <ol class="agent-plan">@foreach (var step in selected.Plan) { <li data-status="@step.Status"><div><strong class="agent-status" data-status="@step.Status">@step.Status.Replace('_', ' ')</strong><p>@step.Text</p></div></li> }</ol>
             }
-            @if (selected.Plan.Length == 0) { <p class="empty">The agent has not published a plan for this task.</p> }
+            @if (selected.Plan.Length == 0) { <div class="agent-empty"><span class="agent-empty-icon"><AgentIcon Name="Plan" /></span><h3>No plan yet</h3><p>The agent has not published a plan for this task. Ask it to plan the work in Conversation.</p><button @onclick='() => SelectSectionAsync("Conversation")'>Open conversation</button></div> }
             <p class="muted">Plan status is reported by the agent. Check its validation evidence in the conversation.</p>
             </section>
             <section class="agent-section agent-section-queue" hidden="@(!PaneVisible("Queue"))" aria-label="Agent queue">
+            <div class="agent-section-heading"><div><h3>Follow-up queue</h3><p>Prepare the next requests without interrupting a run.</p></div><span class="agent-status">@selected.Queue.Messages.Length waiting</span></div>
             @if (selected.Queue.Messages.Length > 0)
             {
                 <details class="agent-queue" open>
@@ -246,20 +308,28 @@
                         @foreach (var message in selected.Queue.Messages) { <option @key="message.Id" value="@message.Id">@(message.Text.Length > 120 ? message.Text[..120] + "…" : message.Text)</option> }
                     </select></label>
                     <label>Edit queued message <textarea @bind="QueueEdit.Text" @bind:event="oninput" maxlength="100000" rows="4" /></label>
+                    <div class="agent-inline-actions">
                     <button @onclick="SaveQueueAsync" disabled="@(_queueBusy || string.IsNullOrWhiteSpace(QueueEdit.Text))">Save queued edit</button>
                     <button @onclick="() => SelectQueue(QueueEdit.Id)" disabled="@_queueBusy">Reload queued message</button>
+                    </div><div class="agent-inline-actions agent-queue-order"><span class="agent-help">Position @(QueueIndex + 1) of @selected.Queue.Messages.Length</span>
                     <button @onclick="() => MoveQueueAsync(-1)" disabled="@(_queueBusy || QueueIndex <= 0)">Move up</button>
                     <button @onclick="() => MoveQueueAsync(1)" disabled="@(_queueBusy || QueueIndex < 0 || QueueIndex >= selected.Queue.Messages.Length - 1)">Move down</button>
-                    <button @onclick="RemoveQueueAsync" disabled="@_queueBusy">Remove queued message</button>
-                    <button @onclick="ReviewQueuedRun" disabled="@(selected.IsPreviousWorkspace || _queueBusy || AnyRunning || selected.Status is not ("ready" or "completed") || QueueIndex < 0)">Send selected message</button>
-                    <button @onclick="ClearQueueAsync" disabled="@_queueBusy">Clear queue</button>
+                    </div><div class="agent-inline-actions">
+                    <button class="agent-danger" @onclick="RemoveQueueAsync" disabled="@_queueBusy">Remove queued message</button>
+                    </div><div class="agent-panel-footer">
+                    <button class="primary" @onclick="ReviewQueuedRun" disabled="@(selected.IsPreviousWorkspace || _queueBusy || AnyRunning || selected.Status is not ("ready" or "completed") || QueueIndex < 0)">Send selected message</button>
+                    <button class="agent-danger" @onclick="ClearQueueAsync" disabled="@_queueBusy">Clear queue</button>
+                    </div>
                 </details>
             }
-            @if (selected.Queue.Messages.Length == 0) { <p class="empty">No queued follow-ups. Draft a message in Conversation, then choose Queue follow-up.</p> }
+            @if (selected.Queue.Messages.Length == 0) { <div class="agent-empty"><span class="agent-empty-icon"><AgentIcon Name="Queue" /></span><h3>Your queue is empty</h3><p>Draft a message in Conversation, then choose Queue follow-up. You review each message before it runs.</p><button @onclick='() => SelectSectionAsync("Conversation")'>Draft a follow-up</button></div> }
             </section>
             <section class="agent-section agent-section-changes" hidden="@(!PaneVisible("Changes"))" aria-label="Agent changes">
+            <div class="agent-section-heading"><div><h3>Source changes</h3><p>Review, give feedback, or restore source edits.</p></div><AgentIcon Name="Changes" /></div>
+            <div class="agent-filter-bar">
             <label>Source comparison <select value="@(_latestRun ? "latest" : "task")" @onchange="ChangeBaselineAsync" disabled="@Review.Busy"><option value="task">Since task start</option><option value="latest">Since latest run</option></select></label>
             <button @onclick="RefreshReviewAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || Review.Busy || SelectedChanges == null)">Refresh changes</button>
+            </div>
             @if (Review.Capture is { } changes)
             {
                 <details class="agent-changes" open>
@@ -268,19 +338,20 @@
                     @if (!ReviewIsCurrent) { <p role="status">Source or checkpoint changed. Refresh changes before feedback, navigation or restoration.</p> }
                     @foreach (var file in changes.Files)
                     {
-                        <label><input type="checkbox" checked="@_restorePaths.Contains(file.Path)" @onchange="args => SelectRestore(file.Path, args)" disabled="@(!ReviewIsCurrent)" /> @file.Path (@file.BeforeLength → @file.AfterLength characters)</label>
+                        <label class="agent-change-file"><input type="checkbox" checked="@_restorePaths.Contains(file.Path)" @onchange="args => SelectRestore(file.Path, args)" disabled="@(!ReviewIsCurrent)" /> @file.Path (@file.BeforeLength → @file.AfterLength characters)</label>
                     }
-                    <button @onclick="ReviewRestore" disabled="@(!ReviewIsCurrent || AnyRunning || _restorePaths.Count == 0)">Restore selected files</button>
-                    <button @onclick="ExportPatchAsync" disabled="@Review.Busy">Save review patch</button>
+                    <div class="agent-inline-actions"><button @onclick="ReviewRestore" disabled="@(!ReviewIsCurrent || AnyRunning || _restorePaths.Count == 0)">Restore selected files</button>
+                    <button @onclick="ExportPatchAsync" disabled="@Review.Busy">Save review patch</button></div>
+                    @if (changes.Files.Length == 0) { <div class="agent-empty"><span class="agent-empty-icon"><AgentIcon Name="Changes" /></span><h3>No source changes</h3><p>The project matches this checkpoint.</p></div> }
                     @if (changes.Files.Length > 0)
                     {
                         <label>Review document <select @key="(_selectedId, changes.ReviewId)" value="@Review.Path" @onchange="SelectReviewFileAsync" disabled="@Review.Busy">@foreach (var file in changes.Files) { <option value="@file.Path">@file.Path</option> }</select></label>
-                        <button @onclick="OpenReviewSourceAsync" disabled="@(!ReviewIsCurrent || changes.Files.FirstOrDefault(file => file.Path == Review.Path)?.AfterLength == null)">Open current document</button>
+                        <div class="agent-inline-actions"><button @onclick="OpenReviewSourceAsync" disabled="@(!ReviewIsCurrent || changes.Files.FirstOrDefault(file => file.Path == Review.Path)?.AfterLength == null)">Open current document</button>
                         <button @onclick="PreviewChangesAsync" disabled="@Review.Busy">Show before and after</button>
-                        <button @onclick="PreviewDiffAsync" disabled="@Review.Busy">Unified diff</button>
+                        <button @onclick="PreviewDiffAsync" disabled="@Review.Busy">Unified diff</button></div>
                     }
                     @if (Review.Preview is { } preview)
-                    { <div><h4>Before · @preview.Path</h4><pre>@preview.Before</pre><h4>After</h4><pre>@preview.After</pre></div> }
+                    { <div class="agent-source-preview"><section><h4>Before · @preview.Path</h4><pre>@preview.Before</pre></section><section><h4>After</h4><pre>@preview.After</pre></section></div> }
                     @if (Review.Diff is { } diff)
                     {
                         @if (diff.Coarse) { <p>Large changed region shown as replacement lines.</p> }
@@ -312,31 +383,42 @@
                     @if (Review.FeedbackTarget != null) { <p>A selected diff line is attached to this feedback.</p><button @onclick="() => Review.FeedbackTarget = null">Clear line target</button> }
                     <button @onclick="QueueReviewFeedbackAsync" disabled="@(!ReviewIsCurrent || _queueBusy || string.IsNullOrWhiteSpace(Review.Feedback))">Queue review feedback</button>
                 </details>
-            }            </section>
+            }
+            else { <div class="agent-empty"><span class="agent-empty-icon"><AgentIcon Name="Changes" /></span><h3>No comparison yet</h3><p>Source changes will appear here after a run. Refresh to compare the current project with its checkpoint.</p></div> }
+            </section>
         }
         else if (_section is "Conversation" or "Plan" or "Changes" or "Queue" or "Permissions")
         { <div class="agent-empty"><h3>Start a task</h3><p>Choose a provider and model, then create a task. Each task keeps its own conversation, plan, source review, and permissions.</p><button @onclick='() => SelectSectionAsync("Tasks")'>New task</button></div> }
             <section class="agent-section agent-section-tools" hidden="@(!PaneVisible("Tools"))" aria-label="Agent tools">
-                <div class="agent-section-heading"><h3>Available tools</h3><button @onclick="LoadToolsAsync">Refresh catalog</button></div>
+                <div class="agent-section-heading"><div><h3>Available tools</h3><p>Explore the agent’s access to this workspace.</p></div><button @onclick="LoadToolsAsync">Refresh catalog</button></div>
+                <div class="agent-filter-bar">
                 <label>Search tools <input @bind="_toolFilter" @bind:event="oninput" placeholder="Name or description" /></label>
                 <label>Scope <select @bind="_toolScope"><option value="">All scopes</option>@foreach (var scope in Scopes) { <option>@scope</option> }</select></label>
-                <p class="muted">@VisibleTools.Count() tools. Availability does not grant permission to execute a tool.</p>
+                </div>
+                <div class="agent-result-summary"><span class="agent-status">@VisibleTools.Count() tools</span><span class="agent-help">Each operation follows the task’s permissions.</span></div>
                 @foreach (var tool in VisibleTools)
                 {
-                    <details class="agent-catalog-tool"><summary><code>@tool.Name</code><span>@tool.Scope · @tool.Effect @(tool.Destructive ? "· destructive" : "")</span></summary>
+                    <details class="agent-catalog-tool"><summary><code>@tool.Name</code><span class="agent-tool-tags"><span>@tool.Scope</span><span>@tool.Effect</span>@if (tool.Destructive) { <span class="agent-danger">destructive</span> }</span></summary>
                         <p>@tool.Description</p>
                         @foreach (var effect in tool.AdditionalEffects ?? []) { <p>Also affects @effect.Scope · @effect.Effect</p> }
+                        <h4>Input schema</h4>
                         <pre>@JsonSerializer.Serialize(tool.InputSchema, new JsonSerializerOptions { WriteIndented = true })</pre>
                     </details>
                 }
+                @if (!VisibleTools.Any()) { <div class="agent-empty"><span class="agent-empty-icon"><AgentIcon Name="Tools" /></span><h3>No matching tools</h3><p>Try another name, description, or scope.</p><button @onclick='() => { _toolFilter = ""; _toolScope = ""; }'>Clear tool filters</button></div> }
             </section>
             <section class="agent-section agent-section-activity" hidden="@(!PaneVisible("Activity"))" aria-label="Agent activity">
-                <div class="agent-section-heading"><h3>Activity</h3><button @onclick="LoadActivityAsync">Refresh activity</button></div>
-                <label>Filter activity <input @bind="_agentActivityFilter" @bind:event="oninput" /></label>
+                <div class="agent-section-heading"><div><h3>Activity</h3><p>Requests, tools, and task events in one place.</p></div><button @onclick="LoadActivityAsync">Refresh activity</button></div>
+                <div class="agent-card agent-activity-filters">
+                <label>Filter activity <input @bind="_agentActivityFilter" @bind:event="oninput" placeholder="Search events" /></label>
                 <label><input type="checkbox" @bind="_activityCurrentTask" /> Selected task only</label>
-                <div class="agent-task-actions"><button @onclick="ExportAgentActivityAsync">Export activity</button><button @onclick="ClearAgentActivityAsync">Clear activity</button></div>
-                <p class="muted">Most recent 500 events, up to 512 KiB. Public messages remain in the conversation.</p>
-                @foreach (var item in VisibleActivity.Reverse()) { <article class="agent-activity-entry" @key="item.Sequence"><small>@item.Time.ToLocalTime().ToString("T") · @item.Kind</small><pre>@item.Text</pre></article> }
+                <div class="agent-task-actions"><button @onclick="ExportAgentActivityAsync">Export activity</button><button class="agent-danger" @onclick="ClearAgentActivityAsync">Clear activity</button></div>
+                </div>
+                <div class="agent-result-summary"><span class="agent-status">@VisibleActivity.Count() events</span><span class="agent-help">Most recent 500 events, up to 512 KiB.</span></div>
+                <div class="agent-activity-list">
+                @foreach (var item in VisibleActivity.Reverse()) { <article class="agent-activity-entry" @key="item.Sequence"><div class="agent-message-heading"><strong>@item.Kind</strong><time datetime="@item.Time.ToString("O")">@item.Time.ToLocalTime().ToString("T")</time></div><pre>@item.Text</pre></article> }
+                </div>
+                @if (!VisibleActivity.Any()) { <div class="agent-empty"><span class="agent-empty-icon"><AgentIcon Name="Activity" /></span><h3>No activity to show</h3><p>Events appear as the agent works. Adjust the filters to include other tasks or event types.</p></div> }
         @if (!IsBrowser) { <details class="agent-operations">
             <summary>MCP operations (@(_state.Operations?.Length ?? 0))</summary>
             <p>Background waits expire after two minutes. Cancelling stops a wait immediately.</p>
@@ -353,7 +435,7 @@
     </div>
     @if (_deleteTaskId is { } deleting)
     {
-        <div class="authoring-backdrop"><section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Delete agent task"><h2>Delete task?</h2>
+        <div class="authoring-backdrop"><section class="authoring-dialog agent-dialog" role="dialog" aria-modal="true" aria-label="Delete agent task"><h2>Delete task?</h2>
             <p>Delete @_state.Tasks.FirstOrDefault(task => task.Id == deleting)?.Name and its conversation, queue, and source checkpoints. Project source is retained.</p>
             <footer><button @onclick="() => _deleteTaskId = null">Cancel</button><button @onclick="DeleteTaskAsync">Delete task permanently</button></footer>
         </section></div>
@@ -361,7 +443,7 @@
     @if (_error != null) { <p class="runtime-error" role="alert">@_error</p> }
     @if (_handoff != null)
     {
-        <div class="authoring-backdrop"><section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Review task context">
+        <div class="authoring-backdrop"><section class="authoring-dialog agent-dialog" role="dialog" aria-modal="true" aria-label="Review task context">
             <h2>New task with context</h2><p>Edit this public excerpt, then create a draft for a new task. Run it after reviewing its own permissions.</p>
             <label>New task name <input @bind="_name" maxlength="200" /></label>
             <label>Provider <select @bind="_provider" @bind:after="ProviderChanged">@foreach (var provider in _state.Providers) { <option value="@provider">@ProviderLabel(provider)</option> }</select></label>
@@ -373,7 +455,7 @@
     }
     @if (_restoreReview is { } restore)
     {
-        <div class="authoring-backdrop"><section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Review source restore">
+        <div class="authoring-backdrop"><section class="authoring-dialog agent-dialog" role="dialog" aria-modal="true" aria-label="Review source restore">
             <h2>@(restore.Block == null ? "Restore selected source" : "Restore selected change")</h2>
             <p>Restore @(restore.Block == null ? "these files" : "this block") to the @(restore.LatestRun ? "latest-run" : "task-start") checkpoint at reviewed revision @restore.Revision. This comparison includes manual edits made during the task. Restoration creates a normal project undo step.</p>
             <ul>@foreach (var path in restore.Paths) { <li>@path</li> }</ul>
@@ -391,7 +473,7 @@
     @if (_runReview is { } review)
     {
         <div class="authoring-backdrop" @onkeydown='args => { if (args.Key == "Escape") CancelRunReview(); }' @onkeydown:stopPropagation="true">
-            <section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Review agent run">
+            <section class="authoring-dialog agent-dialog" role="dialog" aria-modal="true" aria-label="Review agent run">
                 <header><h2>@(review.Compact ? "Review context compaction" : "Review agent run")</h2></header>
                 <p><strong>@review.Name</strong> · @review.Provider · @review.Model</p>
                 <p>This run uses the current live project. Permission profile: <strong>@review.Profile</strong>.</p>

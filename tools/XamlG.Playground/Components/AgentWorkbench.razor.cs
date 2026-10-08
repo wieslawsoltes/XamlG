@@ -53,7 +53,9 @@ public partial class AgentWorkbench
         _connectionMode = _rememberedConnectionMode ?? (await _module.InvokeAsync<bool>("agentConnected") ? "companion" : "direct");
         if (BrowserRuntime != null) BrowserRuntime.Session.Harness.EventPublished += BrowserEventPublished;
         await _module.InvokeVoidAsync("installAgentWorkbench", _reference, _ownerId);
-        await RefreshAsync(); _ = PollAsync();
+        await RefreshAsync();
+        if (Selected != null) { _section = "Conversation"; StateHasChanged(); }
+        _ = PollAsync();
     }
     private async Task PollAsync()
     {

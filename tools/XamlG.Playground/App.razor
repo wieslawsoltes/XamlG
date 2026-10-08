@@ -193,7 +193,7 @@
             </div>
 </section>
     </BrowserTemplate>
-    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("agent")" Context="pane"><AgentWorkbench @ref="_agentWorkbench" BrowserRuntime="_browserAgents" SourceRevision="SourceRevision" SourceRequested="NavigateAgentSourceAsync" /></BrowserTemplate>
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("agent")" Context="pane"><AgentWorkbench @ref="_agentWorkbench" BrowserRuntime="_browserAgents" SourceRevision="SourceRevision" SourceRequested="NavigateAgentSourceAsync" AccessRequested='() => ShowPaneAsync("agent-access")' /></BrowserTemplate>
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("agent-access")" Context="pane">
     <section class="agent-access-panel" aria-label="Agent access">
         <h2>MCP agent access</h2>
