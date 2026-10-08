@@ -1,6 +1,49 @@
 import { test, expect } from './studio-fixture.mjs';
 import { openStudio, call, writeDocument } from './live-preview.mjs';
 
+test('agent and inspector inputs changed during an in-flight save retain the latest value', async ({ page }) => {
+  await openStudio(page, false);
+  await page.getByTestId('agent-workbench').click();
+  const agent = page.getByRole('region', { name: 'Coding agent workbench' });
+  await agent.getByRole('navigation', { name: 'Agent sections' }).getByRole('button', { name: 'Connection', exact: true }).click();
+  const moduleState = key => page.evaluate(async key => (await xamlgBoot.importModule('studio.js')).loadStudioState(key), key);
+  for (const panel of ['agent', 'inspector']) {
+    const key = panel === 'agent' ? 'agent-ui' : 'runtime-ui:Properties';
+    if (panel === 'inspector') {
+      await page.getByTestId('run-preview').click();
+      await page.locator('[data-tab-id="runtime"]').click();
+    }
+    const input = panel === 'agent' ? agent.getByLabel('API key', { exact: true }) : page.getByRole('region', { name: 'Avalonia runtime properties' }).getByLabel('Find property');
+    const value = state => panel === 'agent' ? state?.connections?.['direct:openai']?.apiKey : state?.propertyFilter;
+    await input.fill('synthetic-initial-value');
+    await expect.poll(async () => value(await moduleState(key))).toBe('synthetic-initial-value');
+    await page.evaluate(key => {
+      const encrypt = crypto.subtle.encrypt.bind(crypto.subtle);
+      let first = true;
+      globalThis.delayedStudioSave = { held: false };
+      crypto.subtle.encrypt = async (...args) => {
+        if (first && new TextDecoder().decode(args[0].additionalData) === key) {
+          first = false; delayedStudioSave.held = true;
+          await new Promise(resolve => delayedStudioSave.release = resolve);
+        }
+        return encrypt(...args);
+      };
+      delayedStudioSave.restore = () => { crypto.subtle.encrypt = encrypt; };
+    }, key);
+    try {
+      await input.fill('synthetic-first-save');
+      await expect.poll(() => page.evaluate(() => delayedStudioSave.held)).toBe(true);
+      await input.fill('synthetic-latest-value');
+      await page.evaluate(() => delayedStudioSave.release());
+      await expect.poll(async () => value(await moduleState(key)), { timeout: 10000 }).toBe('synthetic-latest-value');
+    } finally { await page.evaluate(() => { delayedStudioSave.release?.(); delayedStudioSave.restore(); }); }
+  }
+  await page.reload();
+  await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
+  expect((await moduleState('agent-ui')).connections['direct:openai'].apiKey).toBe('synthetic-latest-value');
+  expect((await moduleState('runtime-ui:Properties')).propertyFilter).toBe('synthetic-latest-value');
+});
+
 test('companion credentials are remembered before pairing and Forget removes retained versions', async ({ page }) => {
   await openStudio(page, false);
   await page.getByTestId('agent-access').click();

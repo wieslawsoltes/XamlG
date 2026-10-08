@@ -8,7 +8,7 @@ public partial class AgentWorkbench
     private static readonly JsonSerializerOptions SavedJson = new(ViewJson) { IncludeFields = true };
     private Dictionary<string, SavedConnection> _savedConnections = new(StringComparer.Ordinal);
     private string? _credentialProfileKey, _lastSavedUi, _failedSavedUi;
-    private bool _preferencesLoaded, _saveScheduled;
+    private bool _preferencesLoaded, _saveScheduled, _savePending;
     private string? _storageError;
 
     private void RememberConnection()
@@ -66,12 +66,22 @@ public partial class AgentWorkbench
     }
     private void ScheduleUiSave()
     {
-        if (!_preferencesLoaded || _saveScheduled || _disposed) return;
+        if (!_preferencesLoaded || _disposed) return;
+        _savePending = true;
+        if (_saveScheduled) return;
         _saveScheduled = true; _ = SaveLaterAsync();
     }
     private async Task SaveLaterAsync()
     {
-        try { await Task.Delay(200, _lifetime.Token); await InvokeAsync(SaveUiStateAsync); }
+        try
+        {
+            do
+            {
+                await Task.Delay(200, _lifetime.Token);
+                _savePending = false;
+                await InvokeAsync(SaveUiStateAsync);
+            } while (_savePending && !_disposed);
+        }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         finally { _saveScheduled = false; }
     }

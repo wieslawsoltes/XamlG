@@ -6,7 +6,7 @@ namespace XamlG.Playground.Components;
 public partial class RuntimeWorkbench
 {
     private IJSObjectReference? _preferencesModule;
-    private bool _preferencesLoaded, _preferenceSaveScheduled;
+    private bool _preferencesLoaded, _preferenceSaveScheduled, _preferenceSavePending;
     private string? _lastPreferences, _failedPreferences;
     private string PreferenceKey => "runtime-ui:" + Panel;
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -29,14 +29,24 @@ public partial class RuntimeWorkbench
             }
             catch (JSException error) { _error = error.Message; StateHasChanged(); }
         }
-        else if (_preferencesLoaded && !_preferenceSaveScheduled && !_disposed)
+        else if (_preferencesLoaded && !_disposed)
         {
+            _preferenceSavePending = true;
+            if (_preferenceSaveScheduled) return;
             _preferenceSaveScheduled = true; _ = SavePreferencesLaterAsync();
         }
     }
     private async Task SavePreferencesLaterAsync()
     {
-        try { await Task.Delay(200, _lifetime.Token); await InvokeAsync(SavePreferencesAsync); }
+        try
+        {
+            do
+            {
+                await Task.Delay(200, _lifetime.Token);
+                _preferenceSavePending = false;
+                await InvokeAsync(SavePreferencesAsync);
+            } while (_preferenceSavePending && !_disposed);
+        }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         finally { _preferenceSaveScheduled = false; }
     }
