@@ -4,6 +4,7 @@
     <Description>Symbol-only framework profiles and semantic adapters for XamlG.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="Avalonia/Parsing/KeyGesture.cs;Avalonia/Parsing/Key.cs;Avalonia/Parsing/IKeyboardDevice.cs;Avalonia/Parsing/Cursor.cs" />
     <ProjectReference Include="../XamlG.Compiler/XamlG.Compiler.csproj" />
     <None Update="Avalonia/Parsing/LICENSE.md" Pack="true" PackagePath="licenses/Avalonia/" />
   </ItemGroup>

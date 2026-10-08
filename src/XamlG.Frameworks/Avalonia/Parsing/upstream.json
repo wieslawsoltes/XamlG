@@ -56,6 +56,26 @@
       "source": "src/Avalonia.Base/Utilities/SpanStringTokenizer.cs",
       "destination": "src/XamlG.Frameworks/Avalonia/Parsing/SpanStringTokenizer.cs",
       "sha256": "c41378ae61f26a74a8d9039f32781447d4e1f1b73ceb8ced2a9f8f57b748d2b3"
+    },
+    {
+      "source": "src/Avalonia.Base/Input/KeyGesture.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/KeyGesture.cs",
+      "sha256": "3aee6af3c2bf51e89f6200a9e76309c4fd6c651043fb7137fc505a2bcad79a25"
+    },
+    {
+      "source": "src/Avalonia.Base/Input/Key.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Key.cs",
+      "sha256": "1521a13a06bc1f159f70f15e87b1f724c929b11b05ae0d071677dade5b226aaa"
+    },
+    {
+      "source": "src/Avalonia.Base/Input/IKeyboardDevice.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/IKeyboardDevice.cs",
+      "sha256": "e44fde43fde5eb018eb16ea20ca5602627017bff0760ec0bc235dec464905c99"
+    },
+    {
+      "source": "src/Avalonia.Base/Input/Cursor.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Cursor.cs",
+      "sha256": "40479c6084f5f654416f77f7edcd4b280dae783cbc5e0922cb1a5bf9e082c9d3"
     }
   ]
 }
