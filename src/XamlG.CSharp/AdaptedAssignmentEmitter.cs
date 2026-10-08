@@ -28,7 +28,7 @@ internal sealed class AdaptedAssignmentEmitter(EmissionContext context, ValueEmi
                     context.Error("An owned adapter result must implement IDisposable.", assignment.Span);
                 var subscription = context.Temporary("subscription");
                 writer.Line("global::System.IDisposable? " + subscription + " = " + call + ";");
-                writer.Line(frame + ".Session.TrackCleanup(() => " + subscription + "?.Dispose());");
+                writer.Line(frame + ".Session.TrackDisposable(" + subscription + ");");
             }
             else writer.Line(call + ";");
             writer.Close();

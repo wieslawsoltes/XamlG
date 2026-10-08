@@ -10,7 +10,7 @@ public sealed class XamlRuntimeSession : IDisposable
     private readonly Dictionary<string, XamlRuntimeNode> _nodes = new(StringComparer.Ordinal);
     private readonly Dictionary<object, string> _instances = new(XamlObjectIdentityComparer.Instance);
     private readonly Dictionary<(string Node, string Member), XamlRuntimeProperty> _properties = new();
-    private readonly List<Action> _cleanup = new();
+    private readonly List<object> _cleanup = new();
     private readonly HashSet<XamlRuntimeSession> _constructedSessions = new();
     private readonly int _threadId = Thread.CurrentThread.ManagedThreadId;
     private bool _disposed;
@@ -41,7 +41,7 @@ public sealed class XamlRuntimeSession : IDisposable
     {
         CheckThread();
         if (TryGet(instance, out var session) && !ReferenceEquals(session, this) && _constructedSessions.Add(session!))
-            TrackCleanup(session!.Dispose);
+            TrackDisposable(session);
     }
     public void Register(string key, object instance, string? parentKey) => Register(key, instance, parentKey, null);
 
@@ -76,6 +76,12 @@ public sealed class XamlRuntimeSession : IDisposable
     public void TrackCleanup(Action action)
     {
         CheckThread(); _cleanup.Add(action ?? throw new ArgumentNullException(nameof(action)));
+    }
+    /// <summary>Owns a subscription without a separate generated closure. Null subscriptions require no cleanup.</summary>
+    public void TrackDisposable(IDisposable? subscription)
+    {
+        CheckThread();
+        if (subscription != null) _cleanup.Add(subscription);
     }
     public XamlMutationResult Apply(long expectedRevision, IReadOnlyList<XamlPropertyUpdate> updates)
     {
@@ -115,7 +121,12 @@ public sealed class XamlRuntimeSession : IDisposable
         if (_disposed) return; CheckThread(); _disposed = true;
         var errors = new List<Exception>();
         for (var i = _cleanup.Count - 1; i >= 0; i--)
-            try { _cleanup[i](); } catch (Exception error) { errors.Add(error); }
+            try
+            {
+                if (_cleanup[i] is Action action) action();
+                else ((IDisposable)_cleanup[i]).Dispose();
+            }
+            catch (Exception error) { errors.Add(error); }
         _cleanup.Clear(); _constructedSessions.Clear(); _properties.Clear(); _instances.Clear(); _nodes.Clear();
         if (errors.Count != 0) throw new AggregateException("Generated event cleanup failed.", errors);
     }
