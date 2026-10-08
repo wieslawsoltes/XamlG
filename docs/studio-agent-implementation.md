@@ -50,10 +50,10 @@ SDKs; live paid-account validation, if unavailable, must be reported separately.
 
 The implementation branch is `codex/studio-mcp-agent`, based on `19cb780`.
 Main is merged at implementation checkpoints; the latest merged upstream commit
-is `c964d82` (including literal/enum conversions, Avalonia class/setter contracts,
+is `4711ad5` (including literal/enum conversions, Avalonia class/setter contracts,
 precompilation/visibility directives, the remaining compiled-binding paths and
 transform contracts, deferred resource callbacks, implicit child collection contracts
-and adder precedence).
+and adder precedence, compilation metadata caching and eager parent-stack services).
 The original checkout contains unrelated local compiler edits and is left intact.
 The locally available pinned SDK is `/tmp/xamlg-dotnet-10.0.401/dotnet`.
 
@@ -206,8 +206,8 @@ survive pane reopening within this page; they are not saved in browser storage.
 
 The implementation-first pass has reached validation. On 2026-10-08 the complete
 native solution and integrated Playground build with warnings treated as errors.
-The native suite passes all 2,014 tests after merging `c964d82`:
-266 core, 169 Tooling, 1,342 Avalonia, 129 automation/MCP/agent, 94 language-server
+The native suite passes all 2,059 tests after merging `4711ad5`:
+277 core, 169 Tooling, 1,351 Avalonia, 154 automation/MCP/agent, 94 language-server
 and 14 workspace tests. This includes 42 official-SDK provider transport cases.
 The expanded behavioral coverage and browser/package acceptance listed below are
 still required; passing the existing native suite does not complete those checks.
@@ -403,12 +403,12 @@ current browser run.
 
 Remaining completion work:
 
-- Merge newer main changes, then run the full native and browser suites with the
-  additional MCP/artifact/account acceptance and Pages-origin/base-path pairing.
+- Run the full browser suite with the additional MCP/artifact/account acceptance
+  and Pages-origin/base-path pairing on the merged candidate.
 - Validate all 21 shipping packages with their external consumers and remaining
   CI scripts; fix failures, remove obsolete artifacts and update the PR.
 
-Main is merged through `c964d82`; the merged native solution passes its full build
+Main is merged through `4711ad5`; the merged native solution passes its full build
 and test suite. The existing Playground contains the integration. Public Pages
 deployment remains dependent on the PR reaching main.
 
