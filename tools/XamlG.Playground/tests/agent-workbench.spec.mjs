@@ -86,7 +86,7 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
       if (host.exitCode != null) throw new Error(hostLog);
       try { return (await request.get(`http://127.0.0.1:${companionPort}/health`)).ok(); } catch { return false; }
     }).toBe(true);
-    await page.goto('./'); await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
+    await page.goto('./'); await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true', { timeout: 60000 });
     await page.getByTestId('agent-access').click();
     await page.getByLabel('Enable access to this live project').check();
     await page.getByLabel('Permission profile', { exact: true }).selectOption('FullAccess');
@@ -198,7 +198,7 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await expect(review).toContainText('Saved queued follow-up');
     await expect(review.getByRole('button', { name: 'Confirm run', exact: true })).toBeDisabled();
     await expect(page.evaluate(async ({ taskId, queuedId }) => {
-      const studio = await import('./studio.js');
+      const studio = await window.xamlgBoot.importModule('studio.js');
       const state = await studio.agentRequest('state', {});
       const task = state.tasks.find(item => item.id === taskId);
       return studio.agentRequest('run', { id: taskId, message: null, options: { policy: { profile: 'fullAccess' } },
@@ -209,7 +209,7 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await agentSection(workbench, 'Queue');
     await workbench.getByRole('button', { name: 'Send selected message', exact: true }).click();
     await page.evaluate(async ({ taskId, queuedId }) => {
-      const studio = await import('./studio.js');
+      const studio = await window.xamlgBoot.importModule('studio.js');
       const state = await studio.agentRequest('state', {});
       const task = state.tasks.find(item => item.id === taskId);
       await studio.agentRequest('queue_edit', { id: taskId, messageId: queuedId, text: 'Reviewed after concurrent queue edit', expectedRevision: task.queue.revision });

@@ -19,6 +19,14 @@ attempts, with bounded backoff and `Retry-After` support. Permanent errors and s
 delays above 15 seconds stop automatic retries. If loading fails, **Retry loading**
 starts it again without reloading the page or discarding source edits.
 
+The initial browser runtime also limits parallel downloads and retries transient
+failures through its boot-resource hook, including in isolated previews. Studio's JavaScript
+modules share a loader that retries failed downloads up to three times without
+creating separate editor or agent registries. A failure before the application
+starts shows **Reload the page**; compiler metadata failures after startup use
+**Retry loading** and preserve the active editor buffers. Runtime integrity checks
+and the isolated preview's credential and content-security restrictions still apply.
+
 ## Source, semantics and pixels
 
 The studio includes XAML/C# editors, compiler/generated-C# diagnostics, source mappings, syntax and typed-operation inspection, realized visual trees, property/structure editing, undo/redo, project drafts/export and responsive dark/light themes.
@@ -128,6 +136,15 @@ Isolation is not an operating-system resource quota. Code may consume CPU/memory
 Both hosts bound loaded preview assemblies because collectible browser load contexts are not assumed. Trusted mode needs page reload to reclaim loaded code; isolated mode can discard its runtime independently. Local visual gestures are disabled in isolated mode, while source edits continue through isolated execution rather than silently loading code into the editor.
 
 ## Coding agents
+
+The workbench uses a single row of section icons with tooltips and accessible
+names; labels expand when the dock has room. Task status and usage expand from
+the task selector, and the compact composer leaves more room for the conversation.
+Started and completed events share one tool card. Each card shows the operation,
+its outcome, and a short result summary. Expand it for structured fields and
+collections; raw data stays in a separate disclosure. Large results show bounded,
+labelled excerpts, while provider context and transcript exports retain the original
+results. History paging and expanded tool cards survive task and dock changes.
 
 Open **Coding agent → Connection** and choose one of three transports:
 

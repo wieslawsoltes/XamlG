@@ -50,7 +50,7 @@ public partial class App
         StateHasChanged();
         try
         {
-            _module ??= await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+            _module ??= await JavaScript.InvokeAsync<IJSObjectReference>("xamlgBoot.importModule", "studio.js");
             _shellHooks ??= await _module.InvokeAsync<IJSObjectReference>("installStudioShell");
             _theme = await _module.InvokeAsync<string>("loadTheme");
             await _module.InvokeVoidAsync("setTheme", _theme);

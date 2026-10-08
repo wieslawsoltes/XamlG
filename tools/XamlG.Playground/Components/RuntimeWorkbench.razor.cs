@@ -238,7 +238,7 @@ public partial class RuntimeWorkbench : IDisposable
     private async Task ExportResultAsync()
     {
         if (_details == null) return;
-        await using var module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+        await using var module = await JavaScript.InvokeAsync<IJSObjectReference>("xamlgBoot.importModule", "studio.js");
         await module.InvokeVoidAsync("download", "xamlg-runtime-inspection.json", Pretty(_details), "application/json");
     }
     public void Dispose() { _disposed = true; _lifetime.Cancel(); _lifetime.Dispose(); }

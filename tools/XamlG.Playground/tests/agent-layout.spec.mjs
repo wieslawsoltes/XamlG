@@ -1,10 +1,69 @@
 import { test, expect as baseExpect } from './studio-fixture.mjs';
 const expect = baseExpect.configure({ timeout: 20000 });
-import { openStudio } from './live-preview.mjs';
-import { agentSection } from './agent-fixture.mjs';
+import { openStudio, call, writeDocument } from './live-preview.mjs';
+import { agentSection, withAgentWorkbench, agentReply, sendAgentEvent, createAgentTask, reviewAgentRun, completedTask } from './agent-fixture.mjs';
 import { providerEvents, modelCatalog } from './agent-provider-fixtures.mjs';
 
 const sections = ['Conversation', 'Connection', 'Tasks', 'Plan', 'Changes', 'Queue', 'Permissions', 'Tools', 'Activity'];
+
+test('tool cards present large results and errors without exposing raw JSON in the conversation', async ({ page, request, baseURL }, testInfo) => {
+  test.setTimeout(120000);
+  await withAgentWorkbench({ page, request, baseURL }, ({ response, sequence }) => {
+    const output = sequence <= 2 ? [{ type: 'function_call', id: `read_${sequence}`, call_id: 'reused_call_id', name: 'xamlg_document_read',
+      arguments: JSON.stringify({ path: sequence === 1 ? 'Code.cs' : 'Missing.cs' }), status: 'completed' }] : null;
+    sendAgentEvent(response, agentReply('Source inspected. The missing file was reported.', sequence, false, output)); response.end();
+  }, async ({ page, pane, api }) => {
+    await writeDocument((name, args) => call(page, name, args), 'Code.cs', '// <img src=x onerror="window.toolOutputExecuted=true">\n' +
+      Array.from({ length: 250 }, (_, i) => `// Source line ${i}: keep the complete result in provider history and exports.`).join('\n'));
+    const id = await createAgentTask(pane, 'Inspect source results');
+    await reviewAgentRun(page, pane, 'Read source and report a missing file.');
+    await completedTask(api, id);
+    const cards = pane.getByRole('log').locator('.agent-tool');
+    await expect(cards).toHaveCount(2);
+    await expect(cards.nth(0)).toHaveAttribute('data-status', 'Completed');
+    await expect(cards.nth(1)).toHaveAttribute('data-status', 'Failed');
+    for (const card of await cards.all()) {
+      expect(await card.locator(':scope > summary').innerText()).not.toMatch(/[{}]|tool_started|tool_completed/);
+      await expect(card.locator('pre').first()).not.toBeVisible();
+    }
+    await cards.first().locator(':scope > summary').click();
+    await expect(cards.first().getByText('Structured excerpt. Export the thread for the complete result.')).toBeVisible();
+    await expect(cards.first().locator('.agent-result-fields').first()).toContainText('Code.cs');
+    await expect(cards.first().locator('.agent-raw-result pre')).not.toBeVisible();
+    await expect(cards.first().locator('img, iframe, script')).toHaveCount(0);
+    expect(await page.evaluate(() => window.toolOutputExecuted)).toBeUndefined();
+    await cards.first().locator('.agent-raw-result > summary').click();
+    await expect(cards.first().locator('.agent-raw-result pre')).toContainText('Source line 0');
+    await cards.first().locator('.agent-raw-result > summary').click();
+    await page.screenshot({ path: testInfo.outputPath('compact-agent-results.png') });
+    const exported = JSON.parse(await api('export', { id }));
+    expect(JSON.stringify(exported)).toContain('Source line 249');
+
+    // Tool JSON is data: marker-shaped strings and large counts must not crash
+    // the renderer or prevent reading the rest of the conversation.
+    await page.route('**/agent/state', async route => {
+      const response = await route.fetch();
+      try {
+        const state = await response.json();
+        const task = state.tasks.find(task => task.id === id);
+        const last = task.events.at(-1);
+        task.events.push({ ...last, sequence: last.sequence + 1, kind: 'tool_completed', toolName: 'xamlg_inspect_values',
+          toolCallId: 'render-values', text: JSON.stringify({ values: [42, null, true, { $moreItems: 'ordinary value' },
+            { $moreItems: -1 }, { $moreItems: 2147483647 }, { $moreItems: 2147483647 }] }) });
+        await route.fulfill({ response, json: state });
+      } finally { await response.dispose(); }
+    });
+    const follow = pane.getByRole('button', { name: 'Follow latest', exact: true });
+    if (await follow.isVisible()) await follow.click();
+    await pane.getByRole('button', { name: 'Refresh coding agent', exact: true }).click();
+    const values = pane.getByRole('log').locator('.agent-tool').filter({ hasText: 'Inspect values' });
+    await expect(values).toHaveAttribute('data-status', 'Completed');
+    await values.locator(':scope > summary').click();
+    await values.locator('.agent-result-branch > summary').first().click();
+    await expect(values.locator('.agent-result-fields').first()).toContainText('ordinary value');
+    await expect(values.locator('.agent-result-fields').first()).toContainText('4294967299 items');
+  });
+});
 
 test('agent onboarding and all panels remain usable in a narrow dock and floating window', async ({ page }) => {
   const errors = [];
@@ -42,6 +101,17 @@ test('agent onboarding and all panels remain usable in a narrow dock and floatin
   await page.getByRole('dialog', { name: 'Review agent run' }).getByRole('button', { name: 'Confirm run', exact: true }).click();
   await expect(pane.locator('.agent-task-status')).toContainText('completed');
   await expect(pane.getByRole('log')).toContainText('Review detail 20');
+  const planCall = pane.getByRole('log').locator('.agent-tool');
+  await expect(planCall).toHaveCount(1);
+  await expect(planCall.locator(':scope > summary')).toContainText('Agent plan');
+  await expect(planCall.locator(':scope > summary')).toContainText('Completed');
+  expect(await planCall.locator(':scope > summary').innerText()).not.toMatch(/[{}]|tool_started|tool_completed/);
+  await planCall.locator(':scope > summary').click();
+  await expect(planCall.locator('.agent-result-fields').first()).toBeVisible();
+  await expect(planCall.locator('.agent-raw-result pre')).not.toBeVisible();
+  await planCall.locator('.agent-raw-result > summary').click();
+  await expect(planCall.locator('.agent-raw-result pre')).toContainText('inspect');
+  await planCall.locator(':scope > summary').click();
   expect(requests).toBe(2);
   await pane.getByLabel('Message', { exact: true }).fill('Keep this draft while browsing panels.');
   await agentSection(pane, 'Plan');
@@ -66,6 +136,11 @@ test('agent onboarding and all panels remain usable in a narrow dock and floatin
     }
   }
   await agentSection(pane, 'Conversation');
+  for (const [selector, maximum] of [['.agent-heading', 40], ['.agent-navigation', 36], ['.agent-task-context', 36], ['.agent-composer', 110]]) {
+    expect((await pane.locator(selector).boundingBox()).height, `${selector} remains compact`).toBeLessThanOrEqual(maximum);
+  }
+  const navigationRows = await pane.getByRole('navigation').getByRole('button').evaluateAll(buttons => new Set(buttons.map(button => Math.round(button.getBoundingClientRect().top))).size);
+  expect(navigationRows).toBe(1);
   await expect(pane.getByLabel('Message', { exact: true })).toHaveValue('Keep this draft while browsing panels.');
   const composer = await pane.locator('.agent-composer').boundingBox(), bounds = await pane.boundingBox();
   expect(composer.y + composer.height).toBeLessThanOrEqual(bounds.y + bounds.height + 1);

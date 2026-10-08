@@ -1,0 +1,81 @@
+@using System.Text.Json
+
+<details class="agent-message agent-event-card @(IsTool ? "agent-tool" : "agent-event")" data-sequence="@Sequence" data-event-sequences="@Sequences" data-status="@Status">
+    <summary title="@ToolName">
+        <AgentIcon Name="@(IsTool ? "Tools" : "Activity")" />
+        <span class="agent-event-description"><strong>@Title</strong>@if (_summary.Length > 0) { <span>@_summary</span> }</span>
+        @if (IsTool) { <span class="agent-event-state">@Status</span> }
+        <span class="agent-event-chevron" aria-hidden="true">›</span>
+    </summary>
+    <div class="agent-event-body">
+        @if (ToolName != null) { <code class="agent-tool-name">@ToolName</code> }
+        @if (_value is { } value)
+        {
+            @if (ResultPreview != null) { <p class="agent-help">Structured excerpt. Export the thread for the complete result.</p> }
+            <AgentResultTree Value="value" />
+        }
+        else if (!IsTool || Kind == "tool_started") { <p>@Text</p> }
+        else { <p class="agent-help">Result excerpt. Export the thread for the complete result.</p> }
+        <details class="agent-raw-result"><summary>@(_value != null ? "Raw data" : "Event details")</summary><button @onclick="() => CopyRequested.InvokeAsync(Text)">Copy</button><pre>@PrettyText</pre></details>
+    </div>
+</details>
+
+@code {
+    [Parameter] public long Sequence { get; set; }
+    [Parameter] public string? Sequences { get; set; }
+    [Parameter] public string Kind { get; set; } = "";
+    [Parameter] public string Text { get; set; } = "";
+    [Parameter] public string? ToolName { get; set; }
+    [Parameter] public JsonElement? ResultPreview { get; set; }
+    [Parameter] public bool Running { get; set; }
+    [Parameter] public bool Historical { get; set; }
+    [Parameter] public EventCallback<string> CopyRequested { get; set; }
+    private JsonElement? _value;
+    private string _summary = "", _text = "", _preview = "";
+    private bool _error;
+    private bool IsTool => Kind.StartsWith("tool", StringComparison.Ordinal);
+    private string Title => IsTool ? ToolName == null ? "Tool result" : Humanize(ToolName.Replace("xamlg_", "", StringComparison.Ordinal)) : Humanize(Kind);
+    private string Status => _error ? "Failed" : Kind == "tool_started" ? Historical ? "Started" : Running ? "Running" : "Interrupted" : "Completed";
+    private string PrettyText => _value != null && ResultPreview == null ? JsonSerializer.Serialize(_value, new JsonSerializerOptions { WriteIndented = true }) : Text;
+    protected override void OnParametersSet()
+    {
+        var preview = ResultPreview?.GetRawText() ?? "";
+        if (_text == Text && _preview == preview) return;
+        _text = Text; _preview = preview; _value = ResultPreview; _error = false;
+        if (_value == null && (Text.StartsWith('{') || Text.StartsWith('[')))
+        {
+            try { using var parsed = JsonDocument.Parse(Text); _value = parsed.RootElement.Clone(); }
+            catch (JsonException) { }
+        }
+        _summary = Kind == "tool_started" ? "" : Summary();
+    }
+    private string Summary()
+    {
+        if (_value is not { } value) return IsTool ? "Result available" : Text;
+        if (value.ValueKind == JsonValueKind.Array) return $"{Count(value):N0} items";
+        if (value.ValueKind != JsonValueKind.Object) return value.ToString();
+        if (value.TryGetProperty("error", out var error) && error.ValueKind is not (JsonValueKind.Null or JsonValueKind.False))
+        {
+            _error = true;
+            return error.ValueKind == JsonValueKind.Object && error.TryGetProperty("message", out var message) ? message.ToString() : error.ValueKind == JsonValueKind.String ? error.GetString() ?? "Tool reported an error" : "Tool reported an error";
+        }
+        if (value.TryGetProperty("success", out var success) && success.ValueKind == JsonValueKind.False) _error = true;
+        var parts = new List<string>();
+        foreach (var field in value.EnumerateObject())
+        {
+            if (field.Name.StartsWith('$')) continue;
+            if (field.Value.ValueKind == JsonValueKind.Array) parts.Add($"{Count(field.Value):N0} {Humanize(field.Name).ToLowerInvariant()}");
+            else if (field.Name is "path" or "name" && field.Value.ValueKind == JsonValueKind.String) parts.Insert(0, field.Value.GetString() ?? "");
+            else if (field.Name is "revision" or "status" or "total") parts.Add($"{Humanize(field.Name)} {field.Value}");
+            else if (field.Name is "message" or "summary") parts.Insert(0, field.Value.ToString());
+            if (parts.Count == 3) break;
+        }
+        return parts.Count > 0 ? string.Join(" · ", parts) : _error ? "Review the result" : $"{value.EnumerateObject().Count():N0} result fields";
+    }
+    internal static long Count(JsonElement array) => array.EnumerateArray().Sum(item => item.ValueKind == JsonValueKind.Object && item.EnumerateObject().Count() == 1 && item.TryGetProperty("$moreItems", out var omitted) && omitted.ValueKind == JsonValueKind.Number && omitted.TryGetInt32(out var count) && count >= 0 ? (long)count : 1L);
+    internal static string Humanize(string text)
+    {
+        text = System.Text.RegularExpressions.Regex.Replace(text.Replace('_', ' '), "([a-z])([A-Z])", "$1 $2");
+        return text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
+    }
+}
