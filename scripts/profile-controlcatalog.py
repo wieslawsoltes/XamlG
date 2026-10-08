@@ -13,9 +13,11 @@ from pathlib import Path
 import platform
 import re
 import shutil
+import statistics
 import subprocess
 import time
 from compiler_tools import dotnet_environment
+from generator_timings import read_generator_timings
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECTS = ("Avalonia.Themes.Simple", "Avalonia.Themes.Fluent", "ControlCatalog")
@@ -42,7 +44,32 @@ def run(command, log, environment, cwd=ROOT):
                            system_seconds=after.ru_stime - before.ru_stime)
     if result.returncode:
         raise RuntimeError(f"Command failed ({result.returncode}); see {log}")
+    timings = read_generator_timings(log.read_text())
+    if timings["all_generators_seconds"] is not None:
+        measurement["generator_timing"] = timings
     return measurement
+
+
+def timing_summary(report):
+    lines = ["| Project | XamlG generation | All generators | Complete Csc | Captured C# + analyzers |",
+             "| --- | ---: | ---: | ---: | ---: |"]
+    for entry in report["projects"]:
+        runs = entry["compiler_runs"]
+        def median(key):
+            values = [run["generator_timing"][key] for run in runs
+                      if run.get("generator_timing", {}).get(key) is not None]
+            return f"{statistics.median(values):.3f}s" if values else "Unavailable"
+        captured = [run["wall_seconds"] for run in entry.get("phase_isolation", {}).get("runs", [])
+                    if run["variant"] == "pregenerated"]
+        isolated = f"{statistics.median(captured):.3f}s" if captured else "Not measured"
+        whole = statistics.median(run["wall_seconds"] for run in runs)
+        lines.append(f"| {entry['project']} | {median('xamlg_seconds')} | {median('all_generators_seconds')} | {whole:.3f}s | {isolated} |")
+    return "\n".join(lines) + ("\n\nMedians of fresh compiler processes. Generation uses Roslyn's reported elapsed "
+        "times from the actual full compiler run. Captured C# is a separate run replacing XamlG with its "
+        "generated sources, retaining other generators and analyzers. It includes C# parsing, binding, "
+        "analysis, emission and compiler startup. These columns are not additive phases: generated and "
+        "ordinary syntax trees can behave differently in Roslyn. Analyzer elapsed times overlap and "
+        "must not be subtracted from Csc wall time. Use the full XamlX benchmark for acceptance.\n")
 
 
 def response_file(build_log, output, project, generator_directory):
@@ -235,6 +262,7 @@ def main():
         entry.update(generated_files=len(generated), generated_bytes=sum(path.stat().st_size for path in generated))
         report["projects"].append(entry)
         (output / "results.json").write_text(json.dumps(report, indent=2) + "\n")
+        (output / "timings.md").write_text(timing_summary(report))
 
 
 if __name__ == "__main__":
