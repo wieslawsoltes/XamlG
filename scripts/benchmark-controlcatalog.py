@@ -9,6 +9,7 @@ import re
 import statistics
 import subprocess
 import time
+from compiler_tools import dotnet_environment
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECTS = ["Avalonia.Themes.Simple", "Avalonia.Themes.Fluent", "ControlCatalog"]
@@ -18,10 +19,10 @@ def capture(*command):
     return subprocess.check_output(command, cwd=ROOT, text=True).strip()
 
 
-def run(command, log):
+def run(command, log, environment):
     started = time.perf_counter()
     with log.open("w") as output:
-        result = subprocess.run(command, cwd=ROOT, stdout=output, stderr=subprocess.STDOUT)
+        result = subprocess.run(command, cwd=ROOT, env=environment, stdout=output, stderr=subprocess.STDOUT)
     elapsed = time.perf_counter() - started
     if result.returncode:
         raise RuntimeError(f"Build failed; see {log}")
@@ -73,6 +74,7 @@ def main():
         parser.error("Use at least three measured iterations.")
     if capture("git", "status", "--porcelain", "--untracked-files=no"):
         raise RuntimeError("Commit tracked changes before benchmarking so the report identifies exact inputs.")
+    args.dotnet, environment = dotnet_environment(args.dotnet)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     manifest = json.loads((ROOT / "samples/controlcatalog-upstream.json").read_text())
@@ -83,6 +85,7 @@ def main():
         "platform": platform.platform(),
         "architecture": platform.machine(),
         "sdk": capture(args.dotnet, "--version"),
+        "dotnet_root": environment["DOTNET_ROOT"],
         "iterations": args.iterations,
         "method": "Sequential warm-cache forced Release rebuilds, one project at a time. Dependencies restored/built before timing; BuildProjectReferences=false, UseSharedCompilation=false, MSBuild maxcpucount=1. New dotnet/compiler processes per measurement. No restore, framework build, browser publish or application execution in timed region. Includes project evaluation, resources, C# and XAML compilation, and output copying; not an isolated XAML parser benchmark.",
         "samples": [],
@@ -98,14 +101,14 @@ def main():
             enabled = "true" if compiler == "XamlG" else "false"
             mode = f"-p:XamlGEnabled={enabled}"
             print(f"Preparing {compiler} dependencies and outputs (not timed)", flush=True)
-            run(common + ["samples/ControlCatalog/ControlCatalog.csproj", mode], output / f"{compiler}-prepare.log")
+            run(common + ["samples/ControlCatalog/ControlCatalog.csproj", mode], output / f"{compiler}-prepare.log", environment)
             for project in PROJECTS:
                 for iteration in range(1, args.iterations + 1):
                     log = output / f"{compiler}-{project}-{iteration}.log"
                     command = common + [f"samples/{project}/{project}.csproj", mode,
                                         "--no-restore", "-p:BuildProjectReferences=false", "-t:Rebuild",
                                         "-clp:PerformanceSummary;Summary"]
-                    elapsed = run(command, log)
+                    elapsed = run(command, log, environment)
                     contents = log.read_text()
                     csc = task_ms(contents, "Csc")
                     xamlx = task_ms(contents, "CompileAvaloniaXamlTask")
@@ -119,7 +122,7 @@ def main():
                     print(f"{compiler} {project} #{iteration}: {elapsed:.3f}s wall, {csc + xamlx}ms compiler tasks", flush=True)
     finally:
         # Leave the normal source-reference defaults usable after the opt-out comparison.
-        run(common + ["samples/ControlCatalog/ControlCatalog.csproj"], output / "restore-default-build.log")
+        run(common + ["samples/ControlCatalog/ControlCatalog.csproj"], output / "restore-default-build.log", environment)
     summary = summarize(report)
     (output / "results.json").write_text(json.dumps(report, indent=2) + "\n")
     (output / "summary.md").write_text(summary)

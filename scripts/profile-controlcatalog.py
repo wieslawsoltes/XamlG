@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import time
+from compiler_tools import dotnet_environment
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECTS = ("Avalonia.Themes.Simple", "Avalonia.Themes.Fluent", "ControlCatalog")
@@ -24,7 +25,7 @@ def capture(*command):
     return subprocess.check_output(command, cwd=ROOT, text=True).strip()
 
 
-def run(command, log, cwd=ROOT):
+def run(command, log, environment, cwd=ROOT):
     try:
         import resource
         before = resource.getrusage(resource.RUSAGE_CHILDREN)
@@ -32,7 +33,7 @@ def run(command, log, cwd=ROOT):
         before = None
     started = time.perf_counter()
     with log.open("w") as output:
-        result = subprocess.run(command, cwd=cwd, stdout=output, stderr=subprocess.STDOUT)
+        result = subprocess.run(command, cwd=cwd, env=environment, stdout=output, stderr=subprocess.STDOUT)
     measurement = {"wall_seconds": time.perf_counter() - started, "log": log.name,
                    "sha256": hashlib.sha256(log.read_bytes()).hexdigest()}
     if before is not None:
@@ -56,7 +57,7 @@ def response_file(build_log, output, project, generator_directory):
     if len(matches) != 1:
         raise RuntimeError(f"Expected exactly one Csc invocation in {build_log}; found {len(matches)}")
     match = matches[0]
-    compiler = Path(match[1] or match[2]).with_suffix(".dll")
+    compiler = Path(match[1] or match[2])
     arguments = match[3]
     generator = re.search(r'/analyzer:(?:"([^"\n]*XamlG\.Generator\.dll)"|(\S*XamlG\.Generator\.dll))', arguments)
     if generator is None:
@@ -123,9 +124,9 @@ def main():
     args = parser.parse_args()
     if args.iterations < 1:
         parser.error("Use at least one unprofiled compiler run.")
-    dotnet = shutil.which(args.dotnet)
+    dotnet, environment = dotnet_environment(args.dotnet)
     tracer = shutil.which(args.dotnet_trace)
-    if not dotnet or not tracer:
+    if not tracer:
         parser.error("Both dotnet and dotnet-trace must be available.")
     dotnet, tracer = str(Path(dotnet).resolve()), str(Path(tracer).resolve())
     output = args.output.resolve()
@@ -136,6 +137,7 @@ def main():
               "tracked_changes": capture("git", "status", "--porcelain", "--untracked-files=no"),
               "sdk": capture(dotnet, "--version"), "trace_tool": capture(tracer, "--version"),
               "platform": platform.platform(), "processor_count_override": os.getenv("DOTNET_PROCESSOR_COUNT"),
+              "dotnet_root": environment["DOTNET_ROOT"],
               "method": "Fresh Csc processes using the actual project command, with every generator and analyzer. "
                         "Unprofiled runs exclude MSBuild; trace runs separately collect sampled managed stacks, GC and allocation ticks. "
                         "Use benchmark-controlcatalog.py for the full added-XAML-cost comparison with XamlX.",
@@ -144,7 +146,7 @@ def main():
              "-p:NuGetAudit=false", "-p:UseSharedCompilation=false", "-m:1", "-nologo"]
     if not args.skip_prepare:
         print("Preparing dependencies (not profiled)", flush=True)
-        run(build + ["samples/ControlCatalog/ControlCatalog.csproj"], output / "prepare.log")
+        run(build + ["samples/ControlCatalog/ControlCatalog.csproj"], output / "prepare.log", environment)
     for project in args.projects:
         directory = output / project
         directory.mkdir(parents=True, exist_ok=True)
@@ -153,20 +155,20 @@ def main():
         build_measurement = run(build + [f"samples/{project}/{project}.csproj", "--no-restore", "-t:Rebuild",
                                         "-p:BuildProjectReferences=false", "-p:EmitCompilerGeneratedFiles=true",
                                         f"-p:CompilerGeneratedFilesOutputPath={directory / 'generated'}",
-                                        "-v:normal", "-clp:PerformanceSummary;Summary"], build_log)
+                                        "-v:normal", "-clp:PerformanceSummary;Summary"], build_log, environment)
         compiler, response = response_file(build_log, directory, project, output / "generator")
         report["generator_assemblies"] = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
                                           for path in sorted((output / "generator").glob("*.dll"))}
-        command = [dotnet, "exec", str(compiler), "/noconfig", "@" + str(response)]
+        command = ([dotnet, "exec", str(compiler)] if compiler.suffix == ".dll" else [str(compiler)]) + ["/noconfig", "@" + str(response)]
         entry = {"project": project, "build": build_measurement, "compiler_runs": []}
         for iteration in range(args.iterations):
-            measurement = run(command, directory / f"compiler-{iteration + 1}.log", ROOT / "samples" / project)
+            measurement = run(command, directory / f"compiler-{iteration + 1}.log", environment, ROOT / "samples" / project)
             entry["compiler_runs"].append(measurement)
             print(f"{project} Csc #{iteration + 1}: {measurement['wall_seconds']:.3f}s", flush=True)
         print(f"Tracing {project} (timing includes profiler overhead)", flush=True)
         entry["trace"] = run([tracer, "collect", "--profile", "dotnet-sampled-thread-time,gc-verbose",
                               "--format", "Speedscope", "--output", str(directory / "compiler.nettrace"),
-                              "--show-child-io", "--"] + command, directory / "trace.log", ROOT / "samples" / project)
+                              "--show-child-io", "--"] + command, directory / "trace.log", environment, ROOT / "samples" / project)
         (directory / "stacks.json").write_text(json.dumps(stack_summary(directory / "compiler.speedscope.json"), indent=2) + "\n")
         generated = sorted((directory / "generated").rglob("*.cs"))
         entry.update(generated_files=len(generated), generated_bytes=sum(path.stat().st_size for path in generated))
