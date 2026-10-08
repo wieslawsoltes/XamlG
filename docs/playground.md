@@ -14,6 +14,11 @@ python scripts/serve-playground.py --port 8765 --directory artifacts/playground/
 
 Open `http://localhost:8765/`. The development server enables public cross-origin asset reads for the isolated preview. Production hosting must likewise allow its runtime assets to be fetched from the opaque-origin frame. Roslyn metadata images are separate from executable runtime assemblies. Publishing preserves Avalonia's stable JavaScript asset URLs.
 
+Compiler metadata downloads retry transient HTTP or transport failures up to three
+attempts, with bounded backoff and `Retry-After` support. Permanent errors and server
+delays above 15 seconds stop automatic retries. If loading fails, **Retry loading**
+starts it again without reloading the page or discarding source edits.
+
 ## Source, semantics and pixels
 
 The studio includes XAML/C# editors, compiler/generated-C# diagnostics, source mappings, syntax and typed-operation inspection, realized visual trees, property/structure editing, undo/redo, project drafts/export and responsive dark/light themes.
