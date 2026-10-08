@@ -52,7 +52,7 @@ public partial class AgentWorkbench
     private sealed class TaskPreferences
     {
         public NumericPreferences Numeric = new();
-        public Dictionary<string, string> Scopes { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, string> Scopes { get; set; } = new(StringComparer.Ordinal);
         public string Profile = "ask", ToolRules = "{}";
         public bool NeverAsk, AutoCompact = true;
     }

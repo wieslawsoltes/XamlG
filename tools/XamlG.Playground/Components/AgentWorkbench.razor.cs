@@ -37,6 +37,7 @@ public partial class AgentWorkbench
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender) ScheduleUiSave();
         if (_module != null && _renderedSection != _section)
         {
             _renderedSection = _section;
@@ -56,10 +57,11 @@ public partial class AgentWorkbench
         await LoadNumericPreferencesAsync();
         _reference = DotNetObjectReference.Create(this);
         _connectionMode = _rememberedConnectionMode ?? (await _module.InvokeAsync<bool>("agentConnected") ? "companion" : "direct");
+        await LoadUiStateAsync();
         if (BrowserRuntime != null) BrowserRuntime.Session.Harness.EventPublished += BrowserEventPublished;
         await _module.InvokeVoidAsync("installAgentWorkbench", _reference, _ownerId);
         await RefreshAsync();
-        if (Selected != null) { _section = "Conversation"; StateHasChanged(); }
+        if (Selected != null) StateHasChanged();
         _ = PollAsync();
     }
     private async Task PollAsync()
@@ -111,6 +113,7 @@ public partial class AgentWorkbench
     {
         if (_module == null || _disposed) return;
         _refreshing = true;
+        var changed = true;
         var version = _connectionVersion;
         try
         {
@@ -119,8 +122,9 @@ public partial class AgentWorkbench
             _connected = connected;
             if (_connected)
             {
-                var next = await RequestAsync<WorkbenchState>("state", new { });
+                var next = await RequestAsync<WorkbenchState>("state", new { revision = _state.Revision });
                 if (_disposed || version != _connectionVersion) return;
+                if (next.Unchanged) { changed = false; return; }
                 foreach (var task in next.Tasks)
                     if (_state.Tasks.FirstOrDefault(previous => previous.Id == task.Id) is { } previous)
                     {
@@ -141,7 +145,7 @@ public partial class AgentWorkbench
             }
         }
         catch (JSException error) { if (version == _connectionVersion) _error = error.Message; }
-        finally { _refreshing = false; if (!_disposed) StateHasChanged(); }
+        finally { _refreshing = false; if (!_disposed && changed) StateHasChanged(); }
     }
     private async Task CommandAsync(string action, object arguments)
     {
@@ -153,8 +157,9 @@ public partial class AgentWorkbench
         _selectedId = _lastSelectedTask = id; _taskName = Selected?.Name ?? ""; _liveText = ""; _runReview = null; _restoreReview = null; _fullAccessAcknowledged = false;
         if (IsBrowser && Selected is { } selected)
         {
-            if (_provider != selected.ProviderId) { ClearDirectCredentials(); _models = []; }
+            if (_provider != selected.ProviderId) { BrowserRuntime?.ClearCredentials(); _models = []; }
             _provider = selected.ProviderId; _model = selected.Model;
+            SelectConnectionProfile();
         }
         EnsureQueueSelection();
     }
@@ -304,7 +309,7 @@ public partial class AgentWorkbench
         }
         _reference?.Dispose(); _lifetime.Dispose();
     }
-    public sealed class WorkbenchState { public int ToolCount { get; set; } public ConstraintView Constraints { get; set; } = new(); public ActivePermissionView? ActivePermissions { get; set; } public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; public AccountStateView? ChatGpt { get; set; } public string? ChatGptError { get; set; } }
+    public sealed class WorkbenchState { public long Revision { get; set; } public bool Unchanged { get; set; } public int ToolCount { get; set; } public ConstraintView Constraints { get; set; } = new(); public ActivePermissionView? ActivePermissions { get; set; } public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; public AccountStateView? ChatGpt { get; set; } public string? ChatGptError { get; set; } }
     public sealed class OperationView
     {
         public string TaskId { get; set; } = "";

@@ -215,7 +215,8 @@
         <p>Runtime operations execute application code. Source edits use the project’s normal revision checks and undo.</p>
         <label>Companion WebSocket <input @bind="_companionUrl" /></label>
         <label>Owner token <input type="password" autocomplete="off" @bind="_companionToken" /></label>
-        <div><button @onclick="ConnectAutomationAsync" disabled="@(!_sharing)">Connect companion</button><button @onclick="DisconnectAutomationAsync">Revoke &amp; disconnect</button></div>
+        <div><button @onclick="ConnectAutomationAsync" disabled="@(!_sharing)">Connect companion</button><button @onclick="DisconnectAutomationAsync">Revoke &amp; disconnect</button><button @onclick="ForgetCompanionConnectionAsync">Forget connection</button></div>
+        <p class="muted">Connections are remembered in this browser. Reconnecting requires fresh MCP permissions.</p>
         <p role="status">@_connectionStatus · @_automation.Tools.Count tools</p>
         <details><summary>Tool catalog</summary>
             <label>Filter capabilities <input @bind="_capabilityFilter" @bind:event="oninput" /></label>

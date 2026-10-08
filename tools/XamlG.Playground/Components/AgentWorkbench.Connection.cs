@@ -22,7 +22,8 @@ public partial class AgentWorkbench
     public async Task ClosePanelAsync()
     {
         if (_disposed) return;
-        if (IsBrowser) ClearDirectCredentials();
+        await SaveUiStateAsync();
+        if (IsBrowser) BrowserRuntime?.ClearCredentials();
         else if (_connected) await RequestAsync<JsonElement>("stop", new { });
         _fullAccessAcknowledged = false; _runReview = null; _restoreReview = null; _handoff = null;
     }
@@ -35,8 +36,9 @@ public partial class AgentWorkbench
         var mode = args.Value?.ToString();
         if (mode is not ("direct" or "relay" or "companion") || mode == _connectionMode || AnyRunning || _modelsBusy || _runReview != null) return;
         _connectionVersion++;
-        ClearDirectCredentials(); _rememberedConnectionMode = _connectionMode = mode; _toolCatalog = []; _agentActivity = []; _state = new(); _selectedId = "";
+        RememberConnection(); BrowserRuntime?.ClearCredentials(); _rememberedConnectionMode = _connectionMode = mode; _toolCatalog = []; _agentActivity = []; _state = new(); _selectedId = "";
         _provider = mode != "companion" ? "openai" : ""; _models = []; _model = ""; _liveText = "";
+        SelectConnectionProfile();
         _runReview = null; _restoreReview = null; _handoff = null; _error = null;
         await RefreshAfterCommandAsync();
     }
@@ -71,7 +73,7 @@ public partial class AgentWorkbench
         _ = InvokeAsync(async () =>
         {
             if (!_disposed && IsBrowser)
-                await ProcessStreamAsync(new EventView { Sequence = item.Sequence, TaskId = item.TaskId, Kind = item.Kind, Text = item.Text });
+                await ProcessStreamAsync(new EventView { Sequence = item.Sequence, TaskId = item.TaskId, Kind = item.Kind, Text = item.Text, ToolName = item.ToolName, ToolCallId = item.ToolCallId });
         });
     }
 }

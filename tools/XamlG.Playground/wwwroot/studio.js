@@ -1,5 +1,8 @@
 const { installCSharpLanguage } = await (globalThis.xamlgBoot?.importModule('csharp-language.js') ?? import('./csharp-language.js'));
 const { SourceBuffer } = await (globalThis.xamlgBoot?.importModule('source-buffer.js') ?? import('./source-buffer.js'));
+const storage = await (globalThis.xamlgBoot?.importModule('studio-storage.js') ?? import('./studio-storage.js'));
+export const loadStudioState = storage.loadStudioState, saveStudioState = storage.saveStudioState,
+  forgetStudioState = storage.forgetStudioState, studioStorageStatus = storage.studioStorageStatus;
 let monacoPromise;
 const editors = new Map();
 let sequence = 0;
@@ -151,10 +154,13 @@ export function resetAgentPanelScroll(content, section) {
   if (inner.left < outer.left) nav.scrollLeft -= outer.left - inner.left;
   else if (inner.right > outer.right) nav.scrollLeft += inner.right - outer.right;
 }
-export function saveDraft(xaml, code, resources = {}, codeFiles = {}, compilerOptions = null) {
-  localStorage.setItem('xamlg.draft', JSON.stringify({ version: 4, xaml, code, resources, codeFiles, compilerOptions }));
+export async function saveDraft(xaml, code, resources = {}, codeFiles = {}, compilerOptions = null, workspace = null) {
+  await saveStudioState('project', { version: 4, xaml, code, resources, codeFiles, compilerOptions, workspace });
+  localStorage.removeItem('xamlg.draft');
 }
-export function loadDraft() {
+export async function loadDraft() {
+  const saved = await loadStudioState('project');
+  if (saved) return saved;
   try {
     const source = localStorage.getItem('xamlg.draft');
     if (!source || source.length > 12 * 1024 * 1024) return null;
