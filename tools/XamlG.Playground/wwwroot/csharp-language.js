@@ -75,6 +75,37 @@ export function installCSharpLanguage(monaco, editors) {
       return locations(model, position, result ?? [], cancellation);
     }
   });
+  monaco.languages.registerTypeDefinitionProvider('csharp', {
+    async provideTypeDefinition(model, position, cancellation) {
+      return locations(model, position, await query(model, position, 'typeDefinition', cancellation) ?? [], cancellation);
+    }
+  });
+  monaco.languages.registerImplementationProvider('csharp', {
+    async provideImplementation(model, position, cancellation) {
+      const result = await query(model, position, 'implementation', cancellation);
+      return locations(model, position, result?.locations ?? [], cancellation);
+    }
+  });
+  monaco.languages.registerDocumentSymbolProvider('csharp', {
+    async provideDocumentSymbols(model, cancellation) {
+      const result = await query(model, { lineNumber: 1, column: 1 }, 'symbols', cancellation);
+      const symbols = monaco.languages.SymbolKind;
+      const kinds = { Namespace: symbols.Namespace, Class: symbols.Class, Struct: symbols.Struct, Interface: symbols.Interface,
+        Enum: symbols.Enum, Delegate: symbols.Function, Method: symbols.Method, Constructor: symbols.Constructor,
+        Property: symbols.Property, Field: symbols.Field, Event: symbols.Event, TypeParameter: symbols.TypeParameter };
+      const roots = [], byId = new Map();
+      for (const item of result?.symbols ?? []) {
+        if (!item.extent) continue;
+        const declaration = item.locations.find(location => location.path === owner(model)?.path &&
+          location.start >= item.extent.start && location.start + location.length <= item.extent.start + item.extent.length) ?? item.extent;
+        const symbol = { name: item.name, detail: item.display, kind: kinds[item.kind] ?? symbols.Variable, tags: [],
+          range: locationRange(item.extent), selectionRange: locationRange(declaration), children: [] };
+        byId.set(item.id, symbol);
+        const parent = byId.get(item.parentId); (parent?.children ?? roots).push(symbol);
+      }
+      return roots;
+    }
+  });
   monaco.languages.registerReferenceProvider('csharp', {
     async provideReferences(model, position, context, cancellation) {
       const result = await query(model, position, 'references', cancellation);

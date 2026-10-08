@@ -142,11 +142,16 @@ Acceptance covers real controls/code-behind, inspections, immediate edits, undo/
 Use Rename, Format and Actions in the source toolbar or Monaco command palette/context menu. F2 opens a symbol-rename dialog with an edit preview; applying it is one project undo step. Shift+Alt+F formats XAML source/selection while preserving literal XML content, or normalizes a C# document with Roslyn. Ctrl+. displays applicable source actions. Resource and auxiliary C# editors expose the same commands. An XAML name can be renamed from its XAML declaration/reference or its generated C# field use; both routes update XAML and C# together.
 
 C# editors provide accessible-symbol completion, hover, method/constructor signature help,
-definitions and references through the reusable `CSharpLanguageService` in `XamlG.Tooling`.
-Definition navigation opens the owning Dockyard document. The generated-C# inspector
+definitions, type definitions, implementations, references and a hierarchical document
+outline through the reusable `CSharpLanguageService` in `XamlG.Tooling`. Navigation opens
+the owning Dockyard document. The generated-C# inspector
 selects every emitted file, including loader adapters, as read-only source. The same
 operations are exposed as `xamlg_csharp_*` tools, with explicit result bounds and source
 revision checks for edits. Interactive editor operations work with agent access disabled.
+MCP additionally exposes declaration search, namespace/type members and type hierarchies.
+Hierarchy bases can come from metadata; derived types and implementations are found in
+the compilation's source and generated declarations. Inspection reports truncation and
+distinguishes editable locations from generated locations.
 
 `CSharpRenameService` verifies compilation and identifier bindings before returning an
 atomic source plan. It rejects source collisions, silent local capture, unresolved
@@ -155,7 +160,12 @@ framework-aware edits. The browser routes XAML-generated field renames to XAML's
 rename service. General C# type/member renames across XAML and inheritance hierarchies
 remain outside this service's current coverage. Formatting uses Roslyn's syntax whitespace
 normalizer; it does not implement desktop `.editorconfig` formatting options. Source
-actions currently offer explicit/inferred local types and verify the resulting type and
-diagnostics, including nullable and target-typed expressions.
+actions offer explicit/inferred local types, explicit/target-typed object creation,
+qualified type/member names, predefined type keywords, constant-preserving `nameof`
+expressions, and method/property expression or block bodies. Candidates must compile;
+the broader rewrites also check types, constants, selected symbols and surviving
+identifier bindings. Actions that would discard comments/directives are omitted.
+These are specific compiler-checked rewrites, not a general Roslyn workspace code-fix
+catalog. Applying an action uses the existing revision-checked project undo transaction.
 
 The project-wide transaction history covers XAML, C#, resource edits and resource additions/removals. Toolbar Undo/Redo and Monaco project shortcuts use that history. New typing is captured before commands, conflicting or stale previews are rejected atomically, and source commands never execute the preview. The main syntax revision remains monotonic across undo so stale visuals cannot be mistaken for the current source.

@@ -18,6 +18,18 @@ public partial class App
 
     private void AddCSharpAutomation()
     {
+        AddAutomation<CSharpOutlineArguments>("csharp_document_symbols", "Read a bounded hierarchical C# declaration outline, including namespaces, nested types, members and optional locals. IDs are result-local; locations distinguish editable and generated source.", AutomationScope.Compiler, AutomationEffect.Read,
+            (args, context) => new { revision = SourceRevision, outline = CSharpLanguage(context.CancellationToken).GetDocumentSymbols(args.Path, args.IncludeLocals, args.MaxResults, args.MaxDepth, context.CancellationToken) });
+        AddAutomation<CSharpSymbolSearchArguments>("csharp_symbols", "Search declarations across the actual C# compilation by name or qualified display. Includes source namespaces/types/members, optional generated declarations, exact locations and explicit truncation.", AutomationScope.Compiler, AutomationEffect.Read,
+            (args, context) => new { revision = SourceRevision, symbols = CSharpLanguage(context.CancellationToken).FindSymbols(args.Query, args.IncludeGenerated, args.MaxResults, context.CancellationToken) });
+        AddAutomation<CSharpMembersArguments>("csharp_members", "Inspect namespace or type members at a C# source/generated position, including optional inherited and implicit members, accessibility, signatures and source locations. Metadata inspection does not execute code.", AutomationScope.Compiler, AutomationEffect.Read,
+            (args, context) => new { revision = SourceRevision, members = CSharpLanguage(context.CancellationToken).GetMembers(args.Path, args.Offset, args.IncludeInherited, args.IncludeImplicit, args.MaxResults, context.CancellationToken) });
+        AddAutomation<CSharpHierarchyArguments>("csharp_type_hierarchy", "Inspect the resolved type, base classes, interfaces and derived/implementing types declared in this compilation. Metadata bases are included; derived types are limited to loaded source/generated declarations.", AutomationScope.Compiler, AutomationEffect.Read,
+            (args, context) => new { revision = SourceRevision, hierarchy = CSharpLanguage(context.CancellationToken).GetTypeHierarchy(args.Path, args.Offset, args.MaxResults, context.CancellationToken) });
+        AddAutomation<PositionArguments>("csharp_type_definitions", "Navigate from a C# expression/member/alias to declarations of its resolved type, including generated partials.", AutomationScope.Compiler, AutomationEffect.Read,
+            (args, context) => new { revision = SourceRevision, definitions = CSharpLanguage(context.CancellationToken).GetTypeDefinitions(args.Path, args.Offset, context.CancellationToken) });
+        AddAutomation<CSharpHierarchyArguments>("csharp_implementations", "Find interface implementations, overrides or derived types in source and generated declarations of this compilation, with bounded exact locations.", AutomationScope.Compiler, AutomationEffect.Read,
+            (args, context) => new { revision = SourceRevision, implementations = CSharpLanguage(context.CancellationToken).GetImplementations(args.Path, args.Offset, args.MaxResults, context.CancellationToken) });
         AddAutomation<CSharpOperationsArguments>("csharp_operations", "Inspect real Roslyn IOperation trees in source or generated C#. UTF-16 (offset=0,length=0) selects all executable roots; other ranges select an enclosing operation or declaration. Flat IDs, types, constants, calls, conversions and truncation are result-local.", AutomationScope.Compiler, AutomationEffect.Read,
             (args, context) => new { revision = SourceRevision, operations = CSharpLanguage(context.CancellationToken).GetOperations(args.Path, args.Offset, args.Length, args.MaxDepth, args.MaxNodes, context.CancellationToken) });
         AddAutomation<CSharpControlFlowArguments>("csharp_control_flow", "Inspect Roslyn's actual control-flow graph for the body containing a UTF-16 offset, including nested local functions/lambdas. Returns bounded blocks, reachability, branches, regions, captures and lowered operations; does not execute code. IDs belong to this result.", AutomationScope.Compiler, AutomationEffect.Read,
@@ -87,6 +99,9 @@ public partial class App
                 "definition" => service.GetDefinitions(request.Path, request.Offset),
                 "references" => service.GetReferences(request.Path, request.Offset),
                 "signature" => service.GetSignatures(request.Path, request.Offset),
+                "symbols" => service.GetDocumentSymbols(request.Path),
+                "typeDefinition" => service.GetTypeDefinitions(request.Path, request.Offset),
+                "implementation" => service.GetImplementations(request.Path, request.Offset),
                 "document" => new { text = service.Tree(request.TargetPath ?? throw new ArgumentException("A target document is required.")).GetText().ToString() },
                 _ => throw new ArgumentException("Unknown C# editor query.")
             };
@@ -135,6 +150,10 @@ public partial class App
     }
 
     public sealed record CSharpCompleteArguments(string Path, int Offset, int MaxResults = 200);
+    public sealed record CSharpOutlineArguments(string Path, bool IncludeLocals = false, int MaxResults = 1000, int MaxDepth = 16);
+    public sealed record CSharpSymbolSearchArguments(string Query = "", bool IncludeGenerated = false, int MaxResults = 200);
+    public sealed record CSharpMembersArguments(string Path, int Offset, bool IncludeInherited = true, bool IncludeImplicit = false, int MaxResults = 200);
+    public sealed record CSharpHierarchyArguments(string Path, int Offset, int MaxResults = 200);
     public sealed record CSharpOperationsArguments(string Path, int Offset = 0, int Length = 0, int MaxDepth = 12, int MaxNodes = 2000);
     public sealed record CSharpControlFlowArguments(string Path, int Offset, int MaxBlocks = 500, int MaxNodes = 2000, int MaxDepth = 12, int MaxRegions = 1000, int MaxSymbols = 1000);
     public sealed record CSharpDataFlowArguments(string Path, int Offset, int Length = 0, int MaxSymbols = 1000);

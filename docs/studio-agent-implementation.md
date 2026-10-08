@@ -340,11 +340,11 @@ or from the existence of a tool name.
 
 The remaining implementation is concentrated in two areas:
 
-- Remaining Roslyn authoring and symbol-navigation coverage, particularly broader
-  semantic source actions and coordinated XAML/C# renames beyond the implemented
-  generated-field route. Existing rename rejects unsupported inheritance/generated
-  dependencies. Operation/control/data-flow inspection and compiler settings are
-  now implemented as described below.
+- Coordinated XAML/C# renames beyond the implemented generated-field route,
+  including inheritance/interface contracts and regeneration of affected generated
+  sources. Existing rename still rejects those dependencies. Broader semantic
+  source actions and symbol navigation are now implemented as described below,
+  alongside operation/control/data-flow inspection and compiler settings.
 - Remaining reference provider/protocol and recovery edge cases, including exact
   stop/failure classification and continuation behavior across the three SDKs.
   The workbench Markdown, Enter/IME, independent review state, source navigation,
@@ -539,3 +539,26 @@ exact block reconstruction and Undo, stale/project/checkpoint races, unchanged
 feedback targets, task/pane isolation, late responses, source navigation, inert
 Markdown, keyboard/IME, scrolling/selection, thread paging and incomplete replies.
 No full suite or provider inference was run during this implementation pass.
+
+The reusable C# language service now supplies document outlines, declaration search,
+namespace/type member inspection, type definitions, type hierarchies and implementation
+navigation. MCP exposes all six operations; Monaco adds outlines, type definitions and
+implementations alongside its existing completion, hover and definition/reference
+providers. Hierarchies include metadata bases and source/generated derived types.
+Result count, outline depth, inspected syntax and display text are bounded, with
+explicit truncation. Locations retain editable/generated provenance and exact spans.
+
+Source actions now cover explicit/target-typed creation, type/member qualification,
+predefined type names, constant-preserving `nameof`, and method/property expression
+or block bodies in addition to local type inference. Controlled syntax rewrites are
+compiled against the actual project; their types, constants, selected symbols and
+surviving identifier bindings are checked before an action is offered. Comments and
+directives constrain available rewrites. Applying an action still recomputes it against
+the expected revision and uses one project undo transaction. This does not introduce
+the desktop Roslyn workspace's general analyzer/code-fix catalog or broaden rename yet.
+
+Targeted Tooling and integrated Playground builds pass without warnings/errors, and
+the JavaScript syntax check passes. Behavioral acceptance remains part of the final
+validation pass: partial/generated declarations, generic interfaces and overrides,
+outline nesting/bounds, Monaco navigation, comment preservation, nullable/target typing,
+overload and binding stability, and atomic action/undo behavior. No full suite was run.

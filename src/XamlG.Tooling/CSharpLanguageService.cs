@@ -165,7 +165,7 @@ public sealed partial class CSharpLanguageService
         return XamlTextDiffer.GetChanges(text, formatted);
     }
 
-    public ImmutableArray<XamlCodeAction> GetActions(string path, int offset, CancellationToken cancellationToken = default)
+    private ImmutableArray<XamlCodeAction> GetLocalTypeActions(string path, int offset, CancellationToken cancellationToken)
     {
         if (!_editable.Contains(path)) return ImmutableArray<XamlCodeAction>.Empty;
         var tree = Tree(path); var token = Token(tree, offset, cancellationToken);
@@ -173,7 +173,7 @@ public sealed partial class CSharpLanguageService
         if (declaration?.Parent is not LocalDeclarationStatementSyntax || declaration.Variables.Count != 1 || declaration.Variables[0].Initializer?.Value is not { } initializer)
             return ImmutableArray<XamlCodeAction>.Empty;
         var model = _compilation.GetSemanticModel(tree); var type = model.GetTypeInfo(declaration.Type, cancellationToken).Type;
-        if (type == null || type.TypeKind == TypeKind.Error || type.IsAnonymousType || type.TypeKind == TypeKind.Pointer || declaration.Type is RefTypeSyntax)
+        if (type == null || type.TypeKind == TypeKind.Error || type.IsAnonymousType || type.TypeKind == TypeKind.Pointer || declaration.Type is RefTypeSyntax || MeaningfulTrivia(declaration.Type))
             return ImmutableArray<XamlCodeAction>.Empty;
         var explicitType = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         string replacement, title;
@@ -220,6 +220,10 @@ public sealed partial class CSharpLanguageService
         var node = token.Parent;
         if (node == null || !token.IsKind(SyntaxKind.IdentifierToken) && node is not PredefinedTypeSyntax) return null;
         if (node is NameSyntax name && model.GetAliasInfo(name, cancellationToken) is { } alias) return alias;
+        if (node is IdentifierNameSyntax aliasName && aliasName.Parent is NameEqualsSyntax { Parent: UsingDirectiveSyntax usingDirective } && usingDirective.Alias?.Name == aliasName)
+            return model.GetDeclaredSymbol(usingDirective, cancellationToken);
+        if (node.AncestorsAndSelf().OfType<BaseNamespaceDeclarationSyntax>().FirstOrDefault() is { } namespaceDeclaration && namespaceDeclaration.Name.GetLastToken() == token)
+            return model.GetDeclaredSymbol(namespaceDeclaration, cancellationToken);
         // Only declaration identifiers own declared symbols. Walking to an enclosing method
         // would incorrectly resolve punctuation, a string, or an unresolved identifier to it.
         var declaration = node switch
@@ -239,6 +243,12 @@ public sealed partial class CSharpLanguageService
             CatchDeclarationSyntax d when d.Identifier == token => node,
             ForEachStatementSyntax d when d.Identifier == token => node,
             EnumMemberDeclarationSyntax d when d.Identifier == token => node,
+            LabeledStatementSyntax d when d.Identifier == token => node,
+            FromClauseSyntax d when d.Identifier == token => node,
+            JoinClauseSyntax d when d.Identifier == token => node,
+            JoinIntoClauseSyntax d when d.Identifier == token => node,
+            LetClauseSyntax d when d.Identifier == token => node,
+            QueryContinuationSyntax d when d.Identifier == token => node,
             _ => null
         };
         return declaration != null ? model.GetDeclaredSymbol(declaration, cancellationToken) : model.GetSymbolInfo(node, cancellationToken).Symbol;
