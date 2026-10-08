@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Text;
 using XamlG.CSharp.Integration;
 using XamlG.Generator;
 using Xunit;
@@ -80,7 +81,9 @@ public sealed class InterceptedLoaderAnalyzerTests
         compilation = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(generated,
             (CSharpParseOptions)original.Options, "Adapter.g.cs"));
         Assert.NotNull(compilation.GetSemanticModel(original).GetInterceptorMethod(invocation));
-        Assert.Empty(await AnalyzeAsync(compilation));
+        var file = new CountingAdditionalText();
+        Assert.Empty(await AnalyzeWithFileAsync(compilation, file));
+        Assert.Equal(0, file.Reads);
 
         using var image = new MemoryStream();
         var emitted = compilation.Emit(image);
@@ -146,6 +149,43 @@ public sealed class InterceptedLoaderAnalyzerTests
         var diagnostics = await Create(source).WithAnalyzers(ImmutableArray.Create<DiagnosticAnalyzer>(new AvaloniaLoaderMigrationAnalyzer()), options).GetAnalyzerDiagnosticsAsync();
         Assert.Equal("XG2001", Assert.Single(diagnostics).Id);
         Assert.True(diagnostics[0].Location.SourceSpan.Start > Source.Length);
+    }
+
+    [Fact]
+    public async Task UnrelatedInvocationsDoNotReadXamlInputs()
+    {
+        var source = Source.Replace("Avalonia.Markup.Xaml.AvaloniaXamlLoader.Load(this)", "System.GC.KeepAlive(this)", StringComparison.Ordinal);
+        var file = new CountingAdditionalText();
+        Assert.Empty(await AnalyzeWithFileAsync(Create(source), file));
+        Assert.Equal(0, file.Reads);
+    }
+
+    [Fact]
+    public async Task UnadaptedCallsShareOneOptOutScan()
+    {
+        var source = Source + string.Concat(Enumerable.Range(0, 20).Select(index =>
+            "\nclass Other" + index + " { void Initialize() => Avalonia.Markup.Xaml.AvaloniaXamlLoader.@Load(this); }"));
+        var file = new CountingAdditionalText();
+        var diagnostics = await AnalyzeWithFileAsync(Create(source), file);
+        Assert.Equal(21, diagnostics.Length);
+        Assert.All(diagnostics, diagnostic => Assert.Equal("XG2001", diagnostic.Id));
+        Assert.Equal(1, file.Reads);
+    }
+
+    private static Task<ImmutableArray<Diagnostic>> AnalyzeWithFileAsync(CSharpCompilation compilation, AdditionalText file) =>
+        compilation.WithAnalyzers(ImmutableArray.Create<DiagnosticAnalyzer>(new AvaloniaLoaderMigrationAnalyzer()),
+            new AnalyzerOptions(ImmutableArray.Create(file), new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string>
+                { ["build_property.XamlGFramework"] = "Avalonia" }))).GetAnalyzerDiagnosticsAsync();
+
+    private sealed class CountingAdditionalText : AdditionalText
+    {
+        public override string Path => "View.axaml";
+        public int Reads;
+        public override SourceText GetText(CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref Reads);
+            return SourceText.From("<Missing/>");
+        }
     }
 
     private static CSharpCompilation Create(string source)
