@@ -1,10 +1,11 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 
 test('isolated execution has a real Avalonia view but cannot access the editor DOM or storage', async ({ page }) => {
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
   await page.evaluate(() => localStorage.setItem('xamlg.isolation-canary', 'editor-only'));
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Run$/ }).click();
   await page.getByTestId('run-isolated').click();
   await expect(page.locator('.statusbar')).toContainText('Isolated preview running');
   const frameElement = page.locator('iframe[title="XamlG isolated preview"]');
@@ -20,8 +21,9 @@ test('isolated execution has a real Avalonia view but cannot access the editor D
   await expect(frame.locator('canvas').first()).toBeVisible();
   await expect(page.locator('.studio')).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('xamlg.isolation-canary'))).toBe('editor-only');
-  await page.getByRole('tab', { name: 'Visual tree', exact: true }).click();
-  await expect(page.locator('.inspector-body')).toContainText('StackPanel');
+  await page.locator('[data-tab-id="visual-tree"]').click();
+  await expect(page.locator('.inspector-body:visible')).toContainText('StackPanel');
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Run$/ }).click();
   await page.getByTestId('reset-isolation').click();
   await expect(frameElement).toHaveCount(0);
 });

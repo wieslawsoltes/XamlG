@@ -13,9 +13,9 @@ internal static class CompiledBindingValueReader
         if (value is XamlTextSyntax text)
         {
             if (!text.Value.StartsWith("{", StringComparison.Ordinal) || text.Value.StartsWith("{}", StringComparison.Ordinal)) return null;
-            var markup = MarkupExtensionParser.Parse(text.Value, text.Span, _ => { });
+            var markup = MarkupExtensionParser.ParseAtSource(text.Value, text.Span, context.Syntax.Text, _ => { });
             if (markup == null || IsIntrinsic(scope, markup.Name)) return null;
-            type = context.ResolveType(markup.Name, scope, markup.Span, report: false, extension: true);
+            type = context.ResolveTypeAtSource(markup.Name, scope, markup.NameSpan ?? markup.Span, report: false, extension: true);
             if (type != null && AvaloniaCompiledBindingRule.ShouldCompile(target, type))
                 return () => CompiledBindingInputReader.FromMarkup(context, markup, scope);
         }

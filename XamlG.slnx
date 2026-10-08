@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/XamlG.Syntax/XamlG.Syntax.csproj" />
+    <Project Path="src/XamlG.Mcp/XamlG.Mcp.csproj" />
     <Project Path="src/XamlG.Roslyn/XamlG.Roslyn.csproj" />
     <Project Path="src/XamlG.Compiler/XamlG.Compiler.csproj" />
     <Project Path="src/XamlG.CSharp/XamlG.CSharp.csproj" />
@@ -11,17 +12,24 @@
     <Project Path="src/XamlG.Workspaces/XamlG.Workspaces.csproj" />
     <Project Path="src/XamlG.LanguageServer/XamlG.LanguageServer.csproj" />
     <Project Path="src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" />
+    <Project Path="src/XamlG.Agents.OpenAI/XamlG.Agents.OpenAI.csproj" />
+    <Project Path="src/XamlG.Agents.Anthropic/XamlG.Agents.Anthropic.csproj" />
+    <Project Path="src/XamlG.Agents.Gemini/XamlG.Agents.Gemini.csproj" />
+    <Project Path="src/XamlG.Agents/XamlG.Agents.csproj" />
+    <Project Path="src/XamlG.Automation/XamlG.Automation.csproj" />
     <Project Path="src/XamlG.Avalonia/XamlG.Avalonia.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/XamlG.Cli/XamlG.Cli.csproj" />
     <Project Path="tools/XamlG.Lsp/XamlG.Lsp.csproj" />
+    <Project Path="tools/XamlG.Studio.Host/XamlG.Studio.Host.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/XamlG.Tests/XamlG.Tests.csproj" />
     <Project Path="tests/XamlG.Tooling.Tests/XamlG.Tooling.Tests.csproj" />
     <Project Path="tests/XamlG.Workspaces.Tests/XamlG.Workspaces.Tests.csproj" />
     <Project Path="tests/XamlG.LanguageServer.Tests/XamlG.LanguageServer.Tests.csproj" />
+    <Project Path="tests/XamlG.Automation.Tests/XamlG.Automation.Tests.csproj" />
     <Project Path="tests/XamlG.Avalonia.Tests/XamlG.Avalonia.Tests.csproj" />
   </Folder>
 </Solution>

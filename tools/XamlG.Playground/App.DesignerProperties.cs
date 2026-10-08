@@ -9,7 +9,7 @@ public partial class App
         if (_selectedElement == null || _busy) return;
         try
         {
-            await CommitDesignerTransactionAsync(XamlDesignerEdits.SetProperty(_document.Current, _selectedElement, _propertyName, _propertyValue));
+            await CommitDesignerTransactionAsync(XamlDesignerEdits.SetProperty(SelectedDesignerSyntax, _selectedElement, _propertyName, _propertyValue));
         }
         catch (Exception error) { Report(error); }
     }

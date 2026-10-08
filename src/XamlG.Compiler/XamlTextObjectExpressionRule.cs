@@ -21,7 +21,8 @@ public sealed class XamlTextObjectExpressionRule : IXamlObjectExpressionRule
             if (name.Namespace != null && XamlNames.IsLanguage(name.Namespace) && name.LocalName is "Key" or "TypeArguments") continue;
             return false;
         }
-        var type = context.ResolveType(syntax.Name, scope, syntax.NameSpan, scope.Directive(syntax, "TypeArguments")?.Value, report: false);
+        var typeArguments = scope.Directive(syntax, "TypeArguments");
+        var type = context.ResolveTypeAtSource(syntax.Name, scope, syntax.NameSpan, typeArguments?.Value, report: false, typeArgumentSpan: typeArguments?.ValueSpan);
         if (type == null) return false;
         if (syntax.Children.Any(node => node is XamlElementSyntax))
         {

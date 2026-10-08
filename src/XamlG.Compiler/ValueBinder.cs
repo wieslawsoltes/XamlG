@@ -17,7 +17,7 @@ public sealed class ValueBinder
         if (text.StartsWith("{}", StringComparison.Ordinal)) text = text.Substring(2);
         else if (text.StartsWith("{", StringComparison.Ordinal))
         {
-            var syntax = MarkupExtensionParser.Parse(text, span, _context.Diagnostics.Add);
+            var syntax = MarkupExtensionParser.ParseAtSource(text, span, _context.Syntax.Text, _context.Diagnostics.Add);
             var value = syntax == null ? null : _markup.Bind(syntax, target, scope);
             return value == null ? null : Coerce(value, target, span, scope, member);
         }
@@ -161,14 +161,16 @@ public sealed class ValueBinder
             if (current.HasMetadataName(ClrNames.TypeConverter)) return true;
         return false;
     }
-    public ITypeSymbol? ResolveTypeLiteral(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, NamespaceScope? typeArgumentScope = null)
+    public ITypeSymbol? ResolveTypeLiteral(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, NamespaceScope? typeArgumentScope = null) =>
+        ResolveTypeLiteralAtSource(name, scope, span, typeArguments, report, typeArgumentScope);
+    public ITypeSymbol? ResolveTypeLiteralAtSource(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, NamespaceScope? typeArgumentScope = null, TextSpan? typeArgumentSpan = null)
     {
         if (name.EndsWith("[]", StringComparison.Ordinal))
         {
-            var element = ResolveTypeLiteral(name.Substring(0, name.Length - 2), scope, span, typeArguments, report, typeArgumentScope);
+            var element = ResolveTypeLiteralAtSource(name.Substring(0, name.Length - 2), scope, span, typeArguments, report, typeArgumentScope, typeArgumentSpan);
             return element == null ? null : _context.Types.Compilation.CreateArrayTypeSymbol(element);
         }
-        return _context.ResolveType(name, scope, span, typeArguments, report, typeArgumentScope: typeArgumentScope);
+        return _context.ResolveTypeAtSource(name, scope, span, typeArguments, report, typeArgumentScope: typeArgumentScope, typeArgumentSpan: typeArgumentSpan);
     }
     public BoundExpression? BindNode(XamlSyntaxNode syntax, ITypeSymbol target, NamespaceScope scope, int nameScope = 0, bool normalizeText = true, ISymbol? member = null)
     {
@@ -209,7 +211,8 @@ public sealed class ValueBinder
                 return value == null ? null : Coerce(value, target, syntax.Span, nested, member);
             }
         }
-        var type = _context.ResolveType(element.Name, nested, element.NameSpan, nested.Directive(element, "TypeArguments")?.Value);
+        var typeArguments = nested.Directive(element, "TypeArguments");
+        var type = _context.ResolveTypeAtSource(element.Name, nested, element.NameSpan, typeArguments?.Value, typeArgumentSpan: typeArguments?.ValueSpan);
         if (type == null) return null;
         if (!element.Children.OfType<XamlElementSyntax>().Any())
         {
@@ -235,7 +238,8 @@ public sealed class ValueBinder
             if (name.LocalName == "Null") return null;
             if (name.LocalName is "True" or "False") return _context.Types.Special(SpecialType.System_Boolean);
         }
-        return _context.ResolveType(element.Name, nested, element.NameSpan, nested.Directive(element, "TypeArguments")?.Value, report: false);
+        var typeArguments = nested.Directive(element, "TypeArguments");
+        return _context.ResolveTypeAtSource(element.Name, nested, element.NameSpan, typeArguments?.Value, report: false, typeArgumentSpan: typeArguments?.ValueSpan);
     }
     public ITypeSymbol? PeekValueType(XamlSyntaxNode syntax, NamespaceScope scope, int nameScope = 0) => new ValueTypeProbe(_context).Peek(syntax, scope, nameScope);
     public bool TryGetStringLiteral(XamlSyntaxNode syntax, NamespaceScope scope, out string value)

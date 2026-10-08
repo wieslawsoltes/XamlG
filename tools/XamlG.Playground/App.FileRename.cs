@@ -74,19 +74,13 @@ public partial class App
             await CaptureEditorsAsync();
             if (generation != _fileMoveGeneration) return;
             if (_workspaceEdits.Current.Revision != _fileMoveRevision) throw new InvalidOperationException("Project source changed after preview. The move was not applied.");
-            var snapshot = _workspaceEdits.ApplyFileRename(_fileMoveRevision, plan, candidate =>
-            {
-                // Enforce the browser resource-store budget before publishing project history.
-                // The temporary store performs source validation only; it never executes code.
-                var resources = candidate.Documents.Where(p => p.Key != "View.axaml" && p.Key != "Code.cs")
-                    .ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
-                new XamlProjectDocumentStore(new[] { "View.axaml" }).ReplaceAll(resources);
-            });
+            var snapshot = _workspaceEdits.ApplyFileRename(_fileMoveRevision, plan, candidate => ValidateWorkspace(candidate.Documents));
             // File identity, source and the selected editor change before the first await.
             RestoreWorkspace(snapshot, plan.Moves.Single().NewPath); CloseFileMove();
             var completedGeneration = _fileMoveGeneration;
             await SaveDraftAsync(); await CompileSnapshotAsync();
             if (completedGeneration != _fileMoveGeneration) return;
+            await OpenDocumentAsync(plan.Moves.Single().NewPath);
             _status = "Resource moved · linked sources updated · one project undo step";
         }
         catch (Exception error) { if (generation == _fileMoveGeneration) _fileMoveError = error.Message; else Report(error); }

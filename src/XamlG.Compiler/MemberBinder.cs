@@ -68,7 +68,11 @@ public sealed class MemberBinder
             }
             var addHandler = owner.Members("Add" + memberName + "Handler").OfType<IMethodSymbol>().FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 2 &&
                 m.Parameters[1].Type.TypeKind == TypeKind.Delegate && _context.Types.IsAccessible(m) && _context.Types.Compilation.ClassifyCommonConversion(target, m.Parameters[0].Type).IsImplicit);
-            if (addHandler != null) return new(memberName, BoundMemberKind.AttachedEvent, addHandler, addHandler.Parameters[1].Type, null, addHandler, span);
+            if (addHandler != null)
+            {
+                _context.Symbols.Add(new(span, addHandler, "attached-event"));
+                return new(memberName, BoundMemberKind.AttachedEvent, addHandler, addHandler.Parameters[1].Type, null, addHandler, span);
+            }
         }
         if (report) _context.Report("XG1005", $"Member '{name}' was not found or is inaccessible on '{target.ToDisplayString()}'.", span);
         return null;

@@ -28,4 +28,4 @@ No upstream IL compiler or reflection type system is included in XamlG productio
 
 ## Package dependencies
 
-Roslyn, Avalonia, Monaco Editor, Playwright and other package dependencies retain their own licenses and notices. The browser asset build copies Monaco from its pinned npm package with its license files. Avalonia Browser assets are published from the NuGet package without removing its package attribution. The compiler's Avalonia adapter uses public metadata contracts; its production source is not a copy of XamlX's IL compiler.
+Roslyn, Avalonia, Dockyard.Blazor, ModelContextProtocol, OpenAI, Microsoft.IdentityModel.JsonWebTokens, System.Security.Cryptography.ProtectedData, Anthropic, Google.GenAI, Monaco Editor, Playwright and other package dependencies retain their own licenses and notices. The browser asset build copies Monaco from its pinned npm package with its license files. Avalonia Browser and Dockyard assets are published from their NuGet packages without removing package attribution. The compiler's Avalonia adapter uses public metadata contracts; its production source is not a copy of XamlX's IL compiler.

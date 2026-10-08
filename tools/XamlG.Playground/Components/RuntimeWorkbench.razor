@@ -1,0 +1,146 @@
+@using XamlG.AvaloniaRuntime.Inspection
+@inject IJSRuntime JavaScript
+
+<section class="runtime-workbench" aria-label="Avalonia runtime @Panel.ToLowerInvariant()">
+    <header><strong>Runtime @Panel.ToLowerInvariant()</strong><button @onclick="RefreshAsync" disabled="@Busy">Refresh runtime</button><span>Revision @_revision</span></header>
+    @if (_error != null) { <p role="alert" class="runtime-error">@_error</p> }
+    @if (_snapshot == null) { <p class="empty">Run a trusted preview to inspect and manipulate its live controls.</p> }
+    else
+    {
+        <div class="runtime-columns">
+            <aside class="runtime-nodes">
+                <label>Tree <select @bind="_treeMode"><option value="visual">Visual</option><option value="logical">Logical</option></select></label>
+                <label>Find object <input @bind="_treeFilter" @bind:event="oninput" /></label>
+                <div class="runtime-node-list" aria-label="Runtime objects">
+                    @foreach (var node in VisibleNodes.Take(500))
+                    { <button class="@(node.Id == _selectedId ? "selected" : "")" style="padding-left:@(8 + Depth(node) * 12)px" title="@node.Id" @onclick="() => SelectNodeAsync(node.Id)" disabled="@Busy">@NodeTitle(node)</button> }
+                </div>
+                <small>@VisibleNodes.Count() matches · @_snapshot.Nodes.Count objects. Refine the filter to display more than 500 matches.</small>
+            </aside>
+            <div class="runtime-content">
+                @if (Selected is { } selected)
+                {
+                    <h3>@NodeTitle(selected)</h3><code>@selected.Id</code>
+                    <p>Visual parent: @selected.VisualParent · Logical parent: @selected.LogicalParent</p>
+                    <div class="runtime-actions">
+                        <button @onclick="FocusAsync" disabled="@Busy">Focus</button><button @onclick="BringIntoViewAsync" disabled="@Busy">Bring into view</button><button @onclick="LayoutAsync" disabled="@Busy">Update layout</button>
+                        @if (selected.Source is { } source) { <button @onclick="() => SourceRequested.InvokeAsync(source)">Open XAML source</button> }
+                    </div>
+                    @if (_panel == "Properties")
+                    {
+                        <label>Classes <input @bind="_classes" /></label><button @onclick="SetClassesAsync" disabled="@Busy">Set classes</button>
+                        <label>Find property <input @bind="_propertyFilter" @bind:event="oninput" /></label>
+                        <div class="runtime-property-list">
+                            @foreach (var property in _properties.Where(property => property.Name.Contains(_propertyFilter, StringComparison.OrdinalIgnoreCase)))
+                            { <button class="@(property.Key == _propertyKey ? "selected" : "")" @onclick="() => SelectProperty(property)"><strong>@property.Name</strong><span>@Display(property.Value)</span><small>@property.Kind · @property.Priority @(property.ReadOnly ? "· read only" : "") @property.Error</small></button> }
+                        </div>
+                        @if (SelectedProperty is { } selectedProperty)
+                        {
+                            <p><code>@selectedProperty.Key</code> · @selectedProperty.Type</p>
+                            <label>Property value (JSON) <textarea @bind="_propertyJson" rows="3" spellcheck="false" /></label>
+                            <button @onclick="SetPropertyAsync" disabled="@(Busy || selectedProperty.ReadOnly)">Set live property</button>
+                            <button @onclick="ClearPropertyAsync" disabled="@(Busy || selectedProperty.ReadOnly || selectedProperty.Kind == "clr")">Clear local value</button>
+                            @if (selectedProperty.Value?.ObjectId is { } propertyObjectId) { <button @onclick="() => OpenObjectReferenceAsync(propertyObjectId)" disabled="@Busy">Inspect property object</button> }
+                            @if (selectedProperty.Value?.ReferenceError is { } referenceError) { <p role="status">@referenceError</p> }
+                        }
+                    }
+                    @if (_panel == "Objects")
+                    {
+                        <label>Object handle <input @bind="_objectId" placeholder="Use selected tree object" /></label>
+                        <label>Object path <input @bind="_objectPath" placeholder="DataContext.Child" /></label><button @onclick="InspectObjectAsync" disabled="@Busy">Inspect object</button>
+                        <p>Leave the path empty when inspecting a returned object or accessibility peer handle.</p>
+                        @if (_objectInspection is { } inspected)
+                        {
+                            <label>Public interface <select @bind="_objectInterface"><option value="">Object members</option>@foreach (var contract in inspected.Interfaces ?? []) { <option value="@contract">@contract.Split(',')[0]</option> }</select></label>
+                            <small>Choose an interface and inspect again to access explicit implementations.</small>
+                            <div class="runtime-property-list">
+                                @foreach (var member in inspected.Members)
+                                {
+                                    <div><strong>@member.Name</strong> · @Display(member.Value) <small>@member.Error @member.Value?.ReferenceError</small>
+                                        @if (member.Value?.ObjectId is { } memberId) { <button @onclick="() => OpenObjectReferenceAsync(memberId)" disabled="@Busy">Inspect</button> }
+                                    </div>
+                                }
+                            </div>
+                            <button @onclick="() => Guard(() => InspectObjectCoreAsync(Math.Max(0, inspected.Offset - 100)))" disabled="@(Busy || inspected.Offset == 0)">Previous members</button>
+                            <button @onclick="() => Guard(() => InspectObjectCoreAsync(inspected.Offset + 100))" disabled="@(Busy || !inspected.HasMore)">Next members</button>
+                            <datalist id="runtime-method-options">@foreach (var signature in inspected.Methods) { <option value="@signature" /> }</datalist>
+                        }
+                        <label>Exact method signature <input @bind="_method" @bind:event="oninput" placeholder="Save()" list="runtime-method-options" /></label>
+                        <label>Method arguments <textarea @bind="_methodArguments" rows="2" spellcheck="false" /></label><button @onclick="InvokeMethodAsync" disabled="@(Busy || _method.Length == 0)">Invoke method</button>
+                        <details><summary>Retained objects</summary>
+                            <p>Returned objects expire after five minutes. Releasing a handle frees the inspector's reference to the object.</p>
+                            <button @onclick="ReadObjectHandlesAsync" disabled="@Busy">Refresh retained objects</button><button @onclick="() => ReleaseObjectHandlesAsync()" disabled="@Busy">Release all retained objects</button>
+                            @if (_objectHandles is { } handles)
+                            {
+                                <p>@handles.Handles.Count / @handles.Capacity retained</p>
+                                @foreach (var handle in handles.Handles)
+                                { <div><code>@handle.Id</code> · @handle.Type · expires @handle.ExpiresAt.ToLocalTime().ToString("T") <button @onclick="() => OpenObjectReferenceAsync(handle.Id)" disabled="@Busy">Inspect</button><button @onclick="() => ReleaseObjectHandlesAsync(handle.Id)" disabled="@Busy">Release</button></div> }
+                            }
+                        </details>
+                    }
+                    @if (_panel is "Bindings" or "Styles" or "Resources")
+                    {
+                        <button @onclick='() => ReadDetailsAsync(_panel == "Bindings" ? "bindings" : _panel == "Styles" ? "styles" : "resources")' disabled="@Busy">Inspect @_panel.ToLowerInvariant()</button>
+                        @if (_panel == "Styles") { <button @onclick='() => ReadDetailsAsync("value_frames")' disabled="@Busy">Inspect effective value frames</button> }
+                        <p>Open Runtime tools from the Tools menu to edit bindings, selectors, setters and resource values.</p>
+                    }
+                    @if (_panel == "Events")
+                    {
+                        <button @onclick='() => ReadDetailsAsync("events")' disabled="@Busy">List routed events</button><label>Routed event <input @bind="_event" @bind:event="oninput" placeholder="Click" /></label>
+                        <button @onclick="WatchEventAsync" disabled="@(Busy || _event.Length == 0)">Watch event</button><button @onclick="RaiseEventAsync" disabled="@(Busy || _event.Length == 0)">Raise event</button>
+                        <button @onclick="ReadChangesAsync" disabled="@Busy">Read new changes</button><button @onclick='() => MutateAsync("xamlg_runtime_event_watches_clear", new { })' disabled="@Busy">Clear watches</button>
+                    }
+                    @if (_panel == "Input")
+                    {
+                        <p>Leave Design mode before sending input. Pointer coordinates are relative to the selected control; empty coordinates use its center.</p>
+                        <label>Modifiers <input @bind="_modifiers" placeholder="Control, Shift" /></label><label>Key <input @bind="_key" /></label><button @onclick="SendKeyAsync" disabled="@Busy">Press key</button>
+                        <label>Text <textarea @bind="_text" @bind:event="oninput" rows="2" maxlength="16384" /></label><button @onclick="SendTextAsync" disabled="@(Busy || _text.Length == 0)">Send text</button>
+                        <label>X <input type="number" @bind="_x" /></label><label>Y <input type="number" @bind="_y" /></label>
+                        <label>Button <select @bind="_button"><option>Left</option><option>Right</option><option>Middle</option><option>XButton1</option><option>XButton2</option></select></label>
+                        <div class="runtime-actions">@foreach (var action in new[] { RuntimePointerAction.Move, RuntimePointerAction.Down, RuntimePointerAction.Up, RuntimePointerAction.Click, RuntimePointerAction.DoubleClick })
+                        { <button @onclick="() => PointerAsync(action)" disabled="@Busy">@action</button> }</div>
+                        <label>Wheel X <input type="number" @bind="_wheelX" /></label><label>Wheel Y <input type="number" @bind="_wheelY" /></label><button @onclick="() => PointerAsync(RuntimePointerAction.Wheel)" disabled="@Busy">Scroll</button>
+                        <button @onclick="ResetInputAsync" disabled="@Busy">Reset pointer and touch input</button>
+                    }
+                    @if (_panel == "Accessibility")
+                    {
+                        <button @onclick="() => ReadAccessibilityAsync()" disabled="@Busy">Inspect accessibility</button>
+                        @if (_accessibility != null)
+                        {
+                            <p>@_accessibility.Total peers · page @(_accessibility.Offset / 100 + 1)</p>
+                            <button @onclick="() => ReadAccessibilityAsync(Math.Max(0, _accessibility.Offset - 100))" disabled="@(Busy || _accessibility.Offset == 0)">Previous peers</button>
+                            <button @onclick="() => ReadAccessibilityAsync(_accessibility.Offset + 100)" disabled="@(Busy || !_accessibility.HasMore)">Next peers</button>
+                            <label>Peer <select value="@_peerId" @onchange="SelectPeer">@foreach (var peerOption in _accessibility.Nodes) { <option value="@peerOption.Id">@PeerTitle(peerOption)</option> }</select></label>
+                            @if (SelectedPeer is { } peer)
+                            {
+                                <dl class="runtime-peer-values">@foreach (var property in peer.Properties) { <dt>@property.Key</dt><dd>@Display(property.Value)</dd> }</dl>
+                                @foreach (var action in Enum.GetValues<RuntimeAccessibilityAction>()) { <button @onclick="() => AccessibilityActionAsync(action)" disabled="@Busy">@action</button> }
+                                <label>Provider <select @bind="_providerName"><option value="">Select provider</option>@foreach (var name in peer.Providers) { <option>@name</option> }</select></label>
+                                <button @onclick="ReadProviderAsync" disabled="@(Busy || _providerName.Length == 0)">Inspect provider</button>
+                                @if (_provider != null && _provider.PeerId == _peerId && (_provider.Provider == _providerName || _provider.Provider.EndsWith("." + _providerName)))
+                                {
+                                    <label>Provider method <select @bind="_providerMethod">@foreach (var method in _provider.Methods) { <option>@method</option> }</select></label>
+                                    <label>Provider arguments <textarea @bind="_providerArguments" rows="2" spellcheck="false" /></label><button @onclick="InvokeProviderAsync" disabled="@(Busy || _providerMethod.Length == 0)">Invoke provider</button>
+                                }
+                                @foreach (var error in peer.Errors) { <p role="status">@error.Key: @error.Value</p> }
+                            }
+                        }
+                    }
+                    @if (_panel == "Tools")
+                    {
+                        <label>Find runtime tool <input @bind="_toolFilter" @bind:event="oninput" /></label>
+                        <label>Tool <select value="@_toolName" @onchange="SelectTool"><option value="">Select operation</option>@foreach (var toolOption in RuntimeTools) { <option value="@toolOption.Name">@toolOption.Name</option> }</select></label>
+                        @if (SelectedTool is { } tool)
+                        {
+                            <p>@tool.Description</p><details><summary>Argument schema</summary><pre>@Pretty(tool.InputSchema)</pre></details>
+                            <button @onclick="PrepareToolArguments" disabled="@Busy">Fill current handles and revision</button>
+                            <label>Arguments (JSON) <textarea @bind="_toolArguments" rows="8" spellcheck="false" /></label><button @onclick="ExecuteToolAsync" disabled="@Busy">Execute runtime operation</button>
+                        }
+                    }
+                    @if (_details is { } details)
+                    { <details class="runtime-result" open><summary>Operation result</summary><button @onclick="ExportResultAsync">Export result</button><pre>@Excerpt(Pretty(details))</pre></details> }
+                }
+            </div>
+        </div>
+    }
+</section>

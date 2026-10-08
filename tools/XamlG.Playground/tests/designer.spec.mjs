@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 
 const source = `<Canvas xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="White">
   <Button x:Name="shape" Canvas.Left="20" Canvas.Top="20" Width="100" Height="50" Content="Drag me" />
@@ -46,6 +46,10 @@ test('Escape cancels a visual gesture without changing the source', async ({ pag
   await page.mouse.move(box.x + 55, box.y + 45);
   await page.mouse.down();
   await page.mouse.move(box.x + 90, box.y + 80, { steps: 5 });
+  // Wait for the asynchronous source highlight: it must not steal the preview's
+  // keyboard focus before cancellation.
+  await expect(page.locator('.statusbar')).toContainText('Selected Button');
+  expect(await page.evaluate(() => monaco.editor.getEditors().some(editor => editor.hasTextFocus()))).toBe(false);
   await page.keyboard.press('Escape');
   await page.mouse.up();
   expect(await getSource(page)).toBe(before);

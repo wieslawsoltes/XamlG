@@ -82,6 +82,8 @@ Strings already assignable to scalar string/object/interface properties bypass m
 
 Use the `XamlG.Avalonia` integration package, or `XamlG.Generator` with `XamlG.Runtime` and `XamlG.AvaloniaRuntime`. The transitive build targets supply XAML AdditionalFiles, expose generator configuration, and disable competing Avalonia XAML/name-generation paths when XamlG is enabled. The Avalonia profile also enables `AllowUnsafeBlocks` for generated managed function pointers used by deferred resources. Portable profiles and projects with `XamlGEnabled=false` retain their existing setting. Eligible handwritten `AvaloniaXamlLoader.Load` calls are adapted through generated Roslyn interceptors; unsupported paths receive diagnostics.
 
+Avalonia deferred resources use the framework's managed function-pointer factory contract. Projects containing these resources must set `<AllowUnsafeBlocks>true</AllowUnsafeBlocks>` so the generated factory calls compile. The generator does not change this project setting implicitly.
+
 `tests/AvaloniaPackagingSmoke` is a real package-consuming project, not a direct-library compilation test. It validates the adapter through MSBuild and the generator after NuGet packing.
 
 ## Compatibility boundary

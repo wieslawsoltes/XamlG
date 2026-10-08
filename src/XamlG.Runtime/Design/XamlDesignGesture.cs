@@ -32,14 +32,13 @@ public sealed class XamlDesignGesture
         if (Handle.HasFlag(XamlResizeHandle.Bottom)) bottom = Math.Max(Snap(bottom + dy), top + MinimumHeight);
         if (lockAspectRatio && Initial.Width > 0 && Initial.Height > 0)
         {
-            var ratio = Initial.Width / Initial.Height;
             var horizontal = Handle.HasFlag(XamlResizeHandle.Left) || Handle.HasFlag(XamlResizeHandle.Right);
             var vertical = Handle.HasFlag(XamlResizeHandle.Top) || Handle.HasFlag(XamlResizeHandle.Bottom);
             var width = right - left; var height = bottom - top;
-            if (horizontal && (!vertical || Math.Abs(width / Initial.Width - 1) >= Math.Abs(height / Initial.Height - 1))) height = width / ratio;
-            else width = height * ratio;
-            var scale = Math.Max(1, Math.Max(MinimumWidth / width, MinimumHeight / height));
-            width *= scale; height *= scale;
+            var scale = horizontal && (!vertical || Math.Abs(width / Initial.Width - 1) >= Math.Abs(height / Initial.Height - 1))
+                ? width / Initial.Width : height / Initial.Height;
+            scale = Math.Max(scale, Math.Max(MinimumWidth / Initial.Width, MinimumHeight / Initial.Height));
+            width = Initial.Width * scale; height = Initial.Height * scale;
             if (Handle.HasFlag(XamlResizeHandle.Left)) left = Initial.Right - width; else right = left + width;
             if (Handle.HasFlag(XamlResizeHandle.Top)) top = Initial.Bottom - height; else bottom = top + height;
         }

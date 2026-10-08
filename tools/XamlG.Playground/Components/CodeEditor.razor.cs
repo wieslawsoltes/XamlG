@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
+using System.Text.Json;
 using XamlG.Playground.Editing;
 using XamlG.Syntax;
 
@@ -16,7 +17,10 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
     [Parameter] public string Language { get; set; } = "xml";
     [Parameter] public bool ReadOnly { get; set; }
     [Parameter] public EventCallback<string> TextChanged { get; set; }
+    [Parameter] public EventCallback Ready { get; set; }
     [Parameter] public EventCallback RunRequested { get; set; }
+    [Parameter] public Func<CSharpEditorQuery, Task<JsonElement>>? LanguageQueryRequested { get; set; }
+    [Parameter] public EventCallback<CSharpNavigationRequest> NavigateRequested { get; set; }
 
     private ElementReference _host = default;
     private EditorInteropSession? _session;
@@ -26,6 +30,7 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
     private string? _publishedText;
     private bool _retired;
     private Task? _disposal;
+    private (TextSpan Span, bool Focus)? _pendingReveal;
 
     public bool IsRetired => _retired;
 
@@ -48,6 +53,8 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
             // A parameter replacement may arrive while Monaco assets are loading.
             var current = _parameterText ?? Text;
             if (current != initialText) await session.InvokeAsync("setEditorText", current);
+            if (_pendingReveal is { } reveal) { _pendingReveal = null; await session.InvokeAsync("reveal", reveal.Span.Start, reveal.Span.Length, reveal.Focus); }
+            await Ready.InvokeAsync();
         }
         catch
         {
@@ -82,6 +89,11 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
     [JSInvokable] public Task Run() => _retired ? Task.CompletedTask : RunRequested.InvokeAsync();
     [JSInvokable] public Task Authoring(EditorCommandRequest request) =>
         _retired ? Task.CompletedTask : AuthoringRequested.InvokeAsync(request);
+    [JSInvokable] public Task<JsonElement> LanguageQuery(CSharpEditorQuery request) =>
+        _retired || request.Path != DocumentPath || LanguageQueryRequested == null ?
+            Task.FromResult(JsonSerializer.SerializeToElement<object?>(null)) : LanguageQueryRequested(request);
+    [JSInvokable] public Task Navigate(CSharpNavigationRequest request) =>
+        _retired ? Task.CompletedTask : NavigateRequested.InvokeAsync(request);
 
     public async Task RequestCommandAsync(string command)
     {
@@ -108,8 +120,12 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
     public async Task<string> GetTextAsync() => await TryGetTextAsync()
         ?? throw new ObjectDisposedException(nameof(CodeEditor), "The source editor retired during capture.");
 
-    public Task RevealAsync(TextSpan span) => _retired || _session == null ? Task.CompletedTask :
-        _session.InvokeAsync("reveal", span.Start, span.Length);
+    public Task RevealAsync(TextSpan span, bool focus = true)
+    {
+        if (_retired) return Task.CompletedTask;
+        if (_session == null) { _pendingReveal = (span, focus); return Task.CompletedTask; }
+        return _session.InvokeAsync("reveal", span.Start, span.Length, focus);
+    }
 
     public Task SetDiagnosticsAsync(IEnumerable<PlaygroundDiagnostic> diagnostics) => _retired || _session == null ? Task.CompletedTask :
         _session.InvokeAsync("setMarkers", diagnostics);

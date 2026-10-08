@@ -1,10 +1,12 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './studio-fixture.mjs';
 
 async function start(page) {
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByLabel('Example', { exact: true }).selectOption('1');
+  await page.keyboard.press('Escape');
   await expect.poll(() => source(page, 'View.axaml')).toContain('CounterView');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
 }
@@ -30,7 +32,7 @@ test('Monaco rename previews XAML and C# and project undo restores both atomical
   const beforeXaml = await source(page, 'View.axaml');
   const beforeCode = await source(page, 'Code.cs');
   await command(page, 'View.axaml', 'counter"', 'rename');
-  const dialog = page.getByRole('dialog', { name: 'Rename XAML name' });
+  const dialog = page.getByRole('dialog', { name: 'Rename XAML symbol' });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('New name', { exact: true }).fill('renamedCounter');
   await dialog.getByRole('button', { name: 'Preview rename', exact: true }).click();
@@ -52,7 +54,7 @@ test('Monaco rename previews XAML and C# and project undo restores both atomical
 test('source changes during rename preview are rejected without overwriting either buffer', async ({ page }) => {
   await start(page);
   await command(page, 'View.axaml', 'counter"', 'rename');
-  const dialog = page.getByRole('dialog', { name: 'Rename XAML name' });
+  const dialog = page.getByRole('dialog', { name: 'Rename XAML symbol' });
   await dialog.getByLabel('New name', { exact: true }).fill('renamedCounter');
   await dialog.getByRole('button', { name: 'Preview rename', exact: true }).click();
   await expect(dialog.getByTestId('rename-files')).toContainText('Code.cs');
@@ -73,7 +75,7 @@ test('Monaco formatting and quick fixes use the shared source services and are u
   const compact = '<StackPanel xmlns="https://github.com/avaloniaui"><TextBlock Txet="Keep &amp; preserve"/></StackPanel>';
   await page.evaluate(value => monaco.editor.getModels().find(m => m.uri.path.endsWith('/View.axaml')).setValue(value), compact);
   await command(page, 'View.axaml', 'Txet', 'actions');
-  const actions = page.getByRole('dialog', { name: 'XAML code actions' });
+  const actions = page.getByRole('dialog', { name: 'Source code actions' });
   await expect(actions).toBeVisible();
   await actions.getByRole('button', { name: "Change 'Txet' to 'Text'", exact: true }).click();
   await expect.poll(() => source(page, 'View.axaml')).toContain('Text="Keep &amp; preserve"');

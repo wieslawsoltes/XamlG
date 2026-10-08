@@ -2,7 +2,7 @@ name: Deploy compiler studio
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'tools/XamlG.Playground/**', 'Directory.*', 'global.json', 'scripts/verify-deployment.mjs', '.github/workflows/pages.yml']
+    paths: ['src/**', 'tools/XamlG.Playground/**', 'tools/XamlG.Studio.Host/**', 'Directory.*', 'global.json', 'scripts/verify-deployment.mjs', 'scripts/prepare-pages.py', 'scripts/serve-playground.py', 'scripts/test-browser-studio.py', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -13,7 +13,7 @@ jobs:
   build:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     permissions:
       contents: read
       pages: write
@@ -32,30 +32,19 @@ jobs:
       - name: Prepare editor and browser testing assets
         working-directory: tools/XamlG.Playground
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npm run prepare-assets
           npx playwright install --with-deps chromium
       - run: dotnet publish tools/XamlG.Playground/XamlG.Playground.csproj -c Release -p:NuGetAudit=false -o artifacts/playground
+      - name: Prepare repository-relative routes and build identity
+        run: python scripts/prepare-pages.py --commit "${{ github.sha }}"
       - name: Execute browser acceptance tests before deployment
         working-directory: tools/XamlG.Playground
-        run: npm test
-      - name: Prepare repository-relative routes and build identity
         env:
-          SOURCE_SHA: ${{ github.sha }}
+          PLAYGROUND_PAGES_PREVIEW: '1'
         run: |
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          site=Path('artifacts/playground/wwwroot')
-          index=site/'index.html'
-          source=index.read_text()
-          if source.count('<base href="/" />') != 1: raise RuntimeError('Expected one explicit application base URI')
-          source=source.replace('<base href="/" />','<base href="/XamlG/" />')
-          index.write_text(source)
-          (site/'404.html').write_text(source)
-          (site/'.nojekyll').write_text('')
-          (site/'build.json').write_text(json.dumps({'commit':os.environ['SOURCE_SHA'],'application':'XamlG Compiler Studio'}))
-          PY
+          dotnet build ../XamlG.Studio.Host -c Release -warnaserror
+          python ../../scripts/test-browser-studio.py
       - uses: actions/upload-pages-artifact@v3
         with:
           path: artifacts/playground/wwwroot
@@ -82,7 +71,7 @@ jobs:
   verify-public:
     needs: deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     env:
       PLAYGROUND_URL: https://wieslawsoltes.github.io/XamlG/
       PLAYGROUND_EXPECTED_COMMIT: ${{ github.sha }}
@@ -93,14 +82,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
       - name: Verify exact public source revision
         run: node scripts/verify-deployment.mjs
       - name: Test the public deployment
         working-directory: tools/XamlG.Playground
         run: |
-          npm install --ignore-scripts --no-audit --no-fund
+          npm ci --ignore-scripts --no-audit --no-fund
           npx playwright install --with-deps chromium
-          npm test
+          dotnet build ../XamlG.Studio.Host -c Release -warnaserror
+          python ../../scripts/test-browser-studio.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -12,6 +12,7 @@
     <Compile Include="../../tools/XamlG.Playground/Editing/*.cs" Link="Playground/Editing/%(Filename)%(Extension)" />
     <Compile Include="../../tools/XamlG.Playground/Components/CodeEditor.razor.cs" Link="Playground/CodeEditor.cs" />
     <Compile Include="../../tools/XamlG.Playground/EditorCommandRequest.cs" Link="Playground/EditorCommandRequest.cs" />
+    <Compile Include="../../tools/XamlG.Playground/CSharpEditorQuery.cs" Link="Playground/CSharpEditorQuery.cs" />
     <Compile Include="../../tools/XamlG.Playground/PlaygroundDiagnostic.cs" Link="Playground/PlaygroundDiagnostic.cs" />
   </ItemGroup>
 </Project>

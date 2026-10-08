@@ -113,6 +113,15 @@ public sealed class XamlWorkspaceEditSession
             return result;
         }
     }
+    /// <summary>Inspect a history destination without consuming Undo/Redo or publishing source.</summary>
+    public XamlWorkspaceSnapshot PreviewHistory(long expectedRevision, bool undo)
+    {
+        lock (_gate)
+        {
+            CheckRevision(expectedRevision);
+            return new(_current.Revision, undo ? _undo.Last?.Value.Before ?? _current.Documents : _redo.Count == 0 ? _current.Documents : _redo.Peek().After);
+        }
+    }
     public void ClearHistory()
     {
         lock (_gate) { _undo.Clear(); _redo.Clear(); _retainedCharacters = 0; }

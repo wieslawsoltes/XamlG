@@ -11,7 +11,7 @@ internal sealed class ValueTypeProbe(BindingContext context)
     {
         if (syntax is XamlTextSyntax textValue && textValue.Value.StartsWith("{", StringComparison.Ordinal) && !textValue.Value.StartsWith("{}", StringComparison.Ordinal))
         {
-            var markup = MarkupExtensionParser.Parse(textValue.Value, textValue.Span, _ => { });
+            var markup = MarkupExtensionParser.ParseAtSource(textValue.Value, textValue.Span, context.Syntax.Text, _ => { });
             if (markup == null) return context.Types.Special(SpecialType.System_Object);
             var expanded = scope.Expand(markup.Name);
             if (expanded.Namespace != null && XamlNames.IsLanguage(expanded.Namespace))
@@ -21,8 +21,9 @@ internal sealed class ValueTypeProbe(BindingContext context)
                 return value == null ? context.Types.Special(SpecialType.System_Object) : value.Type;
             }
             var typeArguments = markup.Arguments.FirstOrDefault(argument => argument.Name != null &&
-                scope.Expand(argument.Name, true) is { LocalName: "TypeArguments", Namespace: { } ns } && XamlNames.IsLanguage(ns))?.Value;
-            var extension = context.ResolveType(markup.Name, scope, markup.Span, typeArguments, report: false, extension: true);
+                scope.Expand(argument.Name, true) is { LocalName: "TypeArguments", Namespace: { } ns } && XamlNames.IsLanguage(ns));
+            var extension = context.ResolveTypeAtSource(markup.Name, scope, markup.NameSpan ?? markup.Span, typeArguments?.Value, report: false, extension: true,
+                typeArgumentSpan: typeArguments?.ValueSpan ?? typeArguments?.Span);
             return extension == null ? context.Types.Special(SpecialType.System_Object) : context.Types.MarkupExtensionMethod(extension)?.ReturnType ?? extension;
         }
         if (syntax is XamlElementSyntax element)
@@ -43,7 +44,7 @@ internal sealed class ValueTypeProbe(BindingContext context)
                     ITypeSymbol? item = null;
                     if (text?.StartsWith("{", StringComparison.Ordinal) == true)
                     {
-                        var markup = MarkupExtensionParser.Parse(text, element.Span, _ => { });
+                        var markup = MarkupExtensionParser.ParseAtSource(text, element.Span, context.Syntax.Text, _ => { });
                         if (markup != null && nested.Expand(markup.Name) is { LocalName: "Type", Namespace: { } ns } && XamlNames.IsLanguage(ns))
                             item = (new IntrinsicMarkupBinder(context, report: false).Bind(markup, context.Types.Find(ClrNames.Type)!, nested) as BoundTypeExpression)?.ReferencedType;
                     }
