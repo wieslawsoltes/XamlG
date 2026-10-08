@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.VisualTree;
 using XamlG.Runtime;
 using XamlG.Runtime.Design;
@@ -31,7 +32,7 @@ public sealed class AvaloniaDesignerSurface : Panel
     private double _gridSize = 8;
     public AvaloniaDesignerSurface()
     {
-        Focusable = true; Children.Add(_overlay);
+        Focusable = true; Background = Brushes.Transparent; Children.Add(_overlay);
         AddHandler(PointerPressedEvent, Pressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerMovedEvent, Moved, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerReleasedEvent, Released, RoutingStrategies.Tunnel, handledEventsToo: true);
@@ -223,9 +224,19 @@ public sealed class AvaloniaDesignerSurface : Panel
     }
     private XamlVisualEdit PlanEdit(GestureEntry entry, XamlDesignRect after, XamlResizeHandle handle)
     {
+        ValidateGestureEntry(entry);
         if (after.Width < entry.Control.MinWidth || after.Height < entry.Control.MinHeight || after.Width > entry.Control.MaxWidth || after.Height > entry.Control.MaxHeight)
             throw new InvalidOperationException("The group resize exceeds a selected control's size constraints.");
-        return new(entry.Source, LayoutPolicy.GetPropertyEdits(entry.Control, entry.Bounds, after, handle));
+        var properties = LayoutPolicy.GetPropertyEdits(entry.Control, entry.Bounds, after, handle);
+        ValidateGestureEntry(entry);
+        return new(entry.Source, properties);
+    }
+    private void ValidateGestureEntry(GestureEntry entry)
+    {
+        if (_content == null || (!ReferenceEquals(entry.Control, _content) && !entry.Control.GetVisualAncestors().Contains(_content)) ||
+            !entry.Control.IsMeasureValid || !entry.Control.IsArrangeValid || BoundsInSurface(entry.Control) != entry.Bounds ||
+            !ReferenceEquals(AvaloniaVisualInspector.FindSource(_content, entry.Control)?.Source, entry.Source))
+            throw new InvalidOperationException("The selected visual's layout or source changed during the gesture. Start the gesture again.");
     }
     private void PublishEdits(IReadOnlyList<XamlVisualEdit> edits)
     {

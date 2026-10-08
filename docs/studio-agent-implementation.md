@@ -205,8 +205,8 @@ survive pane reopening within this page; they are not saved in browser storage.
 
 The implementation-first pass has reached validation. On 2026-10-08 the complete
 native solution and integrated Playground build with warnings treated as errors.
-The native suite passes all 1,860 tests:
-251 core, 126 Tooling, 1,306 Avalonia, 69 automation/MCP/agent, 94 language-server
+The native suite passes all 1,901 tests:
+266 core, 126 Tooling, 1,332 Avalonia, 69 automation/MCP/agent, 94 language-server
 and 14 workspace tests. This includes 42 official-SDK provider transport cases.
 The expanded behavioral coverage and browser/package acceptance listed below are
 still required; passing the existing native suite does not complete those checks.
@@ -240,6 +240,16 @@ only changed a boxed copy. Member edits now write back through writable value-ty
 owners, including array/dictionary/nullable slots, and return the actual stored value
 after owner setters run. Read-only value owners reject edits before mutation;
 reference-valued children and stored boxes remain editable without replacing them.
+
+Designer validation adds 41 native cases: geometry alignment/distribution and group
+transforms, actual compiled-source layout round trips, path-aware selection,
+multi-document atomic edits/Undo, stale plans, min/max constraints, cancellation
+and pointer/keyboard gestures on the real Avalonia surface. The round trips cover
+all horizontal/vertical alignments, Canvas anchors/margins and both StackPanel
+orientations. Validation exposed incorrect margin compensation and opposite-Canvas
+anchor resizing, a zero-size aspect-lock calculation, unreachable resize handles
+outside the selected control, and gestures publishing after runtime layout changed.
+Those cases are fixed and pass. Browser/workbench/MCP acceptance remains pending.
 
 Remaining completion work:
 
@@ -441,9 +451,11 @@ source navigation, preview-root geometry, arrangement anchors, plan review, appl
 and reload. The owner callback includes Designer scope without changing the remote
 permission gate. `xamlg://designer` notifies selection, configuration, source and
 runtime changes. Targeted library/browser builds pass; behavioral validation remains
-pending for group gestures, resource-template provenance, one-step undo, source and
-runtime conflicts, min/max constraints, layout-policy behavior, cancellation and
-the owner/remote permission boundary. The default policy emits Canvas offsets or
+pending in the browser for group gestures, resource-template provenance, one-step
+undo, source/runtime conflicts, constraints, cancellation and the owner/remote
+permission boundary. Native surface and compiler-backed planner tests now cover
+group movement/nudging, multi-document Undo, stale plans, constraints, cancellation
+and the standard layout-policy cases recorded above. The default policy emits Canvas offsets or
 margins and explicit dimensions; it is not a general layout constraint solver.
 
 The Compiler workbench now edits actual Roslyn parse/compilation options: language
