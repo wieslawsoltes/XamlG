@@ -19,6 +19,8 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
     private IServiceProvider? _inner;
     private bool _resolvingInner;
     private readonly bool _useTypeDescriptorStubs;
+    private readonly XamlRuntimeContext _uriOwner;
+    private Uri? _baseUri;
     private object? _root;
     private object? _intermediateRoot;
 
@@ -28,6 +30,7 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
         IReadOnlyDictionary<Type, object>? namespaces = null, bool useTypeDescriptorStubs = false)
     {
         _useTypeDescriptorStubs = useTypeDescriptorStubs;
+        _uriOwner = this;
         _outer = outer;
         _root = root;
         _intermediateRoot = root;
@@ -44,6 +47,8 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
         IReadOnlyDictionary<Type, object>? namespaces = null)
     {
         _useTypeDescriptorStubs = parent._useTypeDescriptorStubs;
+        _uriOwner = newScope ? this : parent._uriOwner;
+        if (newScope) _baseUri = parent.BaseUri;
         _outer = outer ?? parent._outer;
         _services = parent._services;
         _innerFactory = parent._innerFactory;
@@ -54,7 +59,6 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
         _intermediateRoot = newScope ? null : parent.IntermediateRootObject;
         _names = newScope ? new() : parent._names;
         Session = newScope ? new() : parent.Session;
-        BaseUri = parent.BaseUri;
         TargetObject = targetObject;
         TargetProperty = targetProperty;
         NodeKey = newScope ? null : nodeKey ?? parent.NodeKey;
@@ -66,7 +70,7 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
     public object? TargetObject { get; }
     public object? TargetProperty { get; }
     public string? NodeKey { get; }
-    public Uri? BaseUri { get; set; }
+    public Uri? BaseUri { get => _uriOwner._baseUri; set => _uriOwner._baseUri = value; }
     public IContainer? Container => null;
     public object? Instance => _useTypeDescriptorStubs ? null : TargetObject;
     public PropertyDescriptor? PropertyDescriptor => null;
@@ -105,6 +109,13 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
                 if (current._frameObject != null) parents[--count] = current._frameObject;
             return _directParents = parents;
         }
+    }
+
+    public XamlRuntimeContext PushRoot(object value, string key)
+    {
+        _root = value;
+        _intermediateRoot = value;
+        return Push(value, key);
     }
 
     public XamlRuntimeContext Push(object value, string key)

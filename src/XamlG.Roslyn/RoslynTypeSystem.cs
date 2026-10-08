@@ -13,6 +13,7 @@ public sealed class RoslynTypeSystem
     private readonly ConcurrentDictionary<ITypeSymbol, IMethodSymbol?> _markupMethods = new(SymbolEqualityComparer.Default);
     private readonly ConcurrentDictionary<INamedTypeSymbol, ImmutableArray<IPropertySymbol>> _declaredContentProperties = new(SymbolEqualityComparer.Default);
     private readonly ConcurrentDictionary<INamedTypeSymbol, IPropertySymbol?> _contentProperties = new(SymbolEqualityComparer.Default);
+    private readonly ConcurrentDictionary<INamedTypeSymbol, string?> _contentErrors = new(SymbolEqualityComparer.Default);
     private readonly ImmutableArray<IAssemblySymbol> _assemblies;
     public RoslynTypeSystem(CSharpCompilation compilation, XamlTypeSystemConfiguration? configuration = null)
     {
@@ -52,8 +53,8 @@ public sealed class RoslynTypeSystem
         if (XamlNames.IsLanguage(xmlNamespace))
         {
             var special = XamlIntrinsicTypes.GetSpecialType(name);
-            var intrinsic = special == SpecialType.None ? name == "Uri" ? Find(ClrNames.Uri) : name == "Type" ? Find(ClrNames.Type) : name == "TimeSpan" ? Find(ClrNames.TimeSpan) : name == "DateTime" ? Find(ClrNames.DateTime) : name == "Guid" ? Find(ClrNames.Guid) : null : Special(special);
-            return intrinsic != null && intrinsic.Arity == arity ? new(intrinsic, ImmutableArray.Create(intrinsic)) : TypeResolution.Missing;
+            var intrinsic = special == SpecialType.None ? Find("System." + name) : Special(special);
+            return intrinsic != null && intrinsic.Arity == arity && IsAccessible(intrinsic) ? new(intrinsic, ImmutableArray.Create(intrinsic)) : TypeResolution.Missing;
         }
         var mappings = new List<XmlNamespaceMapping>();
         if (xmlNamespace.StartsWith("clr-namespace:", StringComparison.Ordinal))
@@ -89,10 +90,31 @@ public sealed class RoslynTypeSystem
         foreach (var attribute in type.GetAttributes())
         {
             if (attribute.AttributeClass == null || !Configuration.ContentAttributes.Contains(attribute.AttributeClass.MetadataName())) continue;
-            var name = attribute.ConstructorArguments.FirstOrDefault().Value as string ?? attribute.NamedArguments.FirstOrDefault(p => p.Key == Configuration.ContentPropertyAttributeProperty).Value.Value as string;
+            var name = ContentPropertyName(attribute);
             if (name != null && type.Members(name).OfType<IPropertySymbol>().FirstOrDefault() is { } property) result.Add(property);
         }
         return result.ToImmutableArray();
+    }
+    private string? ContentPropertyName(AttributeData attribute) => attribute.ConstructorArguments.FirstOrDefault().Value as string ??
+        attribute.NamedArguments.FirstOrDefault(p => p.Key == Configuration.ContentPropertyAttributeProperty).Value.Value as string;
+    public string? GetContentPropertyError(INamedTypeSymbol type) => _contentErrors.TryGetValue(type, out var error)
+        ? error : _contentErrors.GetOrAdd(type, FindContentPropertyError);
+    private string? FindContentPropertyError(INamedTypeSymbol type)
+    {
+        for (var current = type; current != null; current = current.BaseType)
+        {
+            var properties = GetDeclaredContentProperties(current);
+            if (properties.Length > 1) return $"Type '{current}' declares more than one content property.";
+            foreach (var attribute in current.GetAttributes())
+            {
+                if (attribute.AttributeClass == null || !Configuration.ContentAttributes.Contains(attribute.AttributeClass.MetadataName())) continue;
+                var name = ContentPropertyName(attribute);
+                if (name == null) return $"Content attribute on '{current}' must specify a property name.";
+                if (!current.Members(name).OfType<IPropertySymbol>().Any()) return $"Content property '{current}.{name}' does not exist.";
+            }
+            if (properties.Length != 0) break;
+        }
+        return null;
     }
     public IPropertySymbol? GetContentProperty(INamedTypeSymbol type) => _contentProperties.TryGetValue(type, out var property)
         ? property : _contentProperties.GetOrAdd(type, FindContentProperty);

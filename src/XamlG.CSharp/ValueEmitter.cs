@@ -82,7 +82,7 @@ internal sealed class ValueEmitter
                 return Convert(converter, converter.Converter, converter.ValueType, frame, () => Emit(converter.Value, frame));
             case BoundMarkupExpression markup:
                 var extension = _objects.Emit(markup.Extension, frame, null, null);
-                return extension + "." + CSharpNames.Method(markup.Method) + "(" + (markup.Method.Parameters.Length == 0 ? string.Empty : frame) + ")";
+                return "((" + markup.Method.ContainingType.CSharpName() + ")" + extension + ")." + CSharpNames.Method(markup.Method) + "(" + (markup.Method.Parameters.Length == 0 ? string.Empty : frame) + ")";
             case BoundDeferredExpression deferred: return Deferred(deferred, frame);
             case BoundRawExpression raw: return ExpandTrusted(raw.CSharp, frame, frame + ".TargetObject!");
             default: _context.Error("The backend does not recognize expression '" + value.GetType().Name + "'.", value.Span); return "default!";

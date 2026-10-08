@@ -4,23 +4,25 @@ This review follows the completed transform inventory with a deeper comparison o
 
 For each area, inspect the upstream implementation and integration points, compare executable behavior, correct differences, and retain the relevant regression evidence. Performance changes require measurements before and after the change, with semantic and incremental correctness checks. A source mapping or a passing unrelated corpus is insufficient to close an area.
 
-| Area | Review status and required evidence |
+| Area | Source comparison and executable evidence |
 | --- | --- |
-| Namespace/type resolution | Open: intrinsic names, namespace/assembly mappings, forwarders, generic/nested types, accessibility and ambiguity. |
-| Implicit content and metadata | Open: content discovery/inheritance, property versus direct collection content, whitespace and initialization metadata. |
-| Collection mutation and duck typing | First corrections verified: declared `IAddChild` interfaces, typed/object ordering, ordinary interface `Add` precedence, inaccessible helpers and non-void adders. Continue checking replacement, overload conversion and runtime dispatch alongside these contracts. |
-| Markup providers | Open: duck-typed providers, suffix lookup, parameter/return choices, inheritance, construction and target-service context. |
-| Constructors and initialization | Open: argument inference/conversion, service constructors, root/populate differences, initialization order and failure cleanup. |
-| Properties and events | Open: CLR/attached/registered members, qualified/hidden members, assignment alternatives and event/root-method binding. |
-| Conversions and text | Open: intrinsic and runtime conversions, converters and services, list/numeric/enum grammar, nullable values and evaluation order. |
-| Runtime services | Eager parent-stack protocol corrected and verified against Avalonia; continue reviewing root/intermediate root, target services, namespaces, URI/type-descriptor context and provider composition. |
-| Deferred content and names | Open: template result types, service/parent capture, sharing, namescopes, forward references and disposal. |
-| Avalonia styles and bindings | Open: revisit every corresponding entry in the transform inventory, including implicit scopes, data-type inference, duck-typed methods and framework binding integration. |
-| Resources and project linking | Open: eager/deferred/merged/theme resources, includes, exported factories, source information and invalidation. |
-| Build and markup integration | Open: compiler/build directives, generated fields/initializers, loader adaptation, package settings and application consumers. |
-| Diagnostics and recovery | Open: upstream warnings/errors, location/phase, malformed input, cancellation and recovery after edits. |
-| Performance | Initial generator baseline and metadata-cache improvement measured; see [the harness and results](performance.md). Continue reviewing runtime parent traversal and other demonstrated repeated work without retaining symbols across compilations. |
-| Final validation | Pending the full review: native/upstream suites, original theme construction, MSBuild/package/host consumers and production browser checks at recorded revisions. |
+| Namespace/type resolution | `TypeReferenceResolver`, `NamespaceInfoHelper` and assembly mappings compared with `BindingContext`/`RoslynTypeSystem`. Language types corrected; nested/generic metadata names and forwarded facade types execute through both compilers. Existing intrinsic and generic-constraint suites cover invalid arguments and accessibility. XamlG deliberately diagnoses ambiguous namespace mappings instead of depending on assembly enumeration order. |
+| Implicit content and metadata | `FindContentProperty`, whitespace transforms and initialization metadata compared with symbol discovery and normalization. Invalid/inherited content declarations now diagnose; inherited metadata, string-element whitespace and upstream content/whitespace suites execute both paths. |
+| Collection mutation and duck typing | Declared child interfaces and ordering corrected. `FindPossibleAdders` and assignment lowering checked against shared implicit collection, replacement, overload, getter-timing and runtime-dispatch cases. Non-void adders and explicit implementations remain supported. |
+| Markup providers | `GetMarkupExtensionProvideValueAlternatives`/`TryConvertMarkupExtension` compared with selection and emission. Hidden provider dispatch and invalid extension elements corrected. Shared cases cover suffix preference, method shape, inheritance, virtual dispatch, typed returns, collections and constructor arguments. |
+| Constructors and initialization | `ConstructableObjectTransformer`, constructor service injection and top-down initialization compared with `ConstructorBinder`/`ObjectEmitter`. Constructor dispatch, inherited initialization, build/populate, service-constructor and failure-cleanup suites verify order and lifetime behavior. Document-root activation corrected. |
+| Properties and events | Property resolver and assignment transforms compared with `MemberBinder`, `RootMethodBinder` and assignment emitters. Inherited/qualified members, dynamic setters, delegate/event values and Avalonia registered/attached/routed contracts are exercised. |
+| Conversions and text | Intrinsic, static, Parse and converter selection compared with `ValueBinder`, primitive parsing and Avalonia literal rules. Shared string/enum/primitive/converter cases and Avalonia literal, list, structured and synthetic-converter suites verify grammar, precedence and evaluation order. |
+| Runtime services | Language mappings and generated runtime context compared with native mappings/emission. Eager parents, mutable URI scope, document roots and Avalonia type-descriptor stubs corrected. Portable service-provider tests and Avalonia tree/template/resource probes execute the public contracts. |
+| Deferred content and names | Deferred transformer/factories and root namescope integration compared with deferred binding, runtime adapters and name registration. Deferred-resource, template-owner, scope, forward-name, element-binding and construction-cleanup suites verify repeated instances and ownership. |
+| Avalonia styles and bindings | All 38 document transforms rechecked against the [transform inventory](avalonia-transform-audit.md) and registered native rules. Selector/query, scope/setter, compiled/reflection binding, data-type inference, method-command, option and template-part differential suites cover their observable behavior. |
+| Resources and project linking | Both group transforms and runtime deferred-resource factories compared with project catalog, graph and resource emitters. Include/merge, theme, capacity, source-info, exported-factory and cache-recovery suites cover local/referenced resources and invalidation. |
+| Build and markup integration | Build directives, class/field generation, loader adaptation and package targets reviewed against directive/integration tests and real consumers. Final package and host gates below remain required. |
+| Diagnostics and recovery | Obsolete/experimental and framework warning phases, source spans, malformed syntax, cancellation and edit recovery checked against diagnostic, parser, generator and resource-cache suites. Invalid service/content contracts fail before emission. |
+| Performance | Compilation-owned positive/negative metadata caches and removal of a redundant type system measured before/after; see [the harness and results](performance.md). Parent lists are lazy and shared across target frames. No process-global symbol cache was added. |
+| Final validation | Pending: fresh original-theme, package/host/MSBuild and production-browser gates, with exact source and result provenance. |
+
+The review covers the pinned source/API surface and executable cases, not every possible user program or future framework version. Existing native extensions and upstream exclusions remain listed in the transform inventory and upstream validation. The generated context's CLR identity and retention of mutable state after a provider callback are not an emulated IL contract: XamlG uses persistent target frames and service adapters. Public service contracts are queried through `GetService`.
 
 ## Collection findings
 
@@ -37,3 +39,21 @@ Local investigation and regression artifacts are under `artifacts/tests/compatib
 Avalonia's generated parent-stack service also implements `IAvaloniaXamlIlEagerParentStackProvider`. The original native adapter exposed only its base interface. The adapter now implements the eager contract while retaining the base interface as its service lookup key. Local parents are cached in root-to-nearest order, and the public Avalonia adapter wraps external lazy providers. Target and namespace frames share their owning object's cached list; sibling construction branches retain separate lists.
 
 Nine differential cases compare ordinary trees, templates and deferred resources with absent, lazy and eager external providers. They verify direct parents, full enumeration, provider-chain ordering and stable local lists. All nine failed before the fix and pass after it. Configuration tests reject incompatible implementation interfaces, parent properties and adapter signatures before C# emission. Validation passed 262 core tests, 1,267 Avalonia tests and 452 portable compatibility/parity tests without skips; evidence is under `artifacts/tests/compatibility-review/parent-stack/`.
+
+## Provider and type resolution
+
+Twenty shared cases revealed twelve differences. Seven exercise ordinary public `System` types through the language namespace, including `x:Type`, `x:Static`, conversion and constructor arguments. Resolution now uses metadata for these types instead of a short whitelist. Thirteen provider cases check attribute/element suffix preference, typed versus object and parameterless versus service-taking methods, inherited/virtual dispatch and invalid extension elements. Emission now qualifies the selected provider's declaring type so a hidden derived method cannot replace it. Types resolved with the extension suffix require a valid provider in element syntax too. Both compilers pass all twenty cases; early failures and corrected checks are retained in `provider-resolution/` beneath the review artifacts directory.
+
+Explicit code-behind root types bypass the suffix convention, matching the upstream root-type override. A differential regression covers a normal component class whose CLR name ends in `Extension`; it must not acquire a provider requirement from that name.
+
+## Mutable URI and root services
+
+Three shared cases showed URI changes disappearing between target frames and construction branches. Ordinary frames now share their construction scope's URI state, including explicit null; deferred scopes retain independent state. Three further cases compare built and populated roots with external root services and nested constructor arguments. Explicit root activation prevents an external object or an argument object from becoming the constructed document's root. Existing deferred tests continue to check retained outer roots and parents.
+
+Four Avalonia differential cases additionally verify the root contract and type-descriptor context in ordinary trees, templates and deferred resources. The Avalonia profile now selects the pinned compiler's type-descriptor stubs: null instance/container/property descriptors and unsupported component-change callbacks. The portable native profile retains its configurable behavior. Investigation artifacts are in `uri-context/` and `root-context/`.
+
+## Invalid inherited content metadata
+
+Four shared regressions prevent a malformed class-level content declaration or inherited duplicate declarations from silently falling back to a base property or ordinary adder. Validation is cached per compilation, alongside content discovery. Two native cases cover a missing named property and a valid override hiding invalid base metadata. Evidence is under `content-metadata/`.
+
+Three additional shared type-resolution cases retain forwarded `netstandard` types and public nested/non-generic and nested/generic metadata identities; these are in `LanguageTypeResolutionTests` and `provider-resolution/types-baseline.trx`.
