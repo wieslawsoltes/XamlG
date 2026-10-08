@@ -114,7 +114,7 @@
                 @if (_inspectorTab == "Bound tree") { <div class="tree-scroll">@if (_result != null && XamlInspector.Bound(_result.Analysis.Document) is { } bound) { <InspectionTree Items="@(new[] { bound })" Selected="SelectSyntaxAsync" /> }</div> }
                 @if (_inspectorTab == "Visual tree") { <div class="tree-scroll">@if (_visualTree != null) { <VisualTree Node="_visualTree" Selected="SelectVisual" /> } else { <p class="empty">Run a preview to inspect realized framework visuals.</p> }</div> }
                 @if (_inspectorTab == "Runtime") { <RuntimeWorkbench Execute="ExecuteRuntimeUiAsync" Tools="_automation.Tools" HostBusy="_busy" PreviewRevision="@(Preview.Root == null ? -1 : Preview.Revision)" SourceRevision="SourceRevision" SourceRequested="NavigateRuntimeSourceAsync" /> }
-                @if (_inspectorTab == "Compiler") { <CompilerWorkbench Execute="ExecuteCompilerUiAsync" Tools="_automation.Tools" SourceRevision="SourceRevision" /> }
+                @if (_inspectorTab == "Compiler") { <CompilerWorkbench Execute="ExecuteCompilerUiAsync" Tools="_automation.Tools" SourceRevision="SourceRevision" HostBusy="_busy" /> }
                 @if (_inspectorTab == "Designer") { <DesignerWorkbench Execute="ExecuteRuntimeUiAsync" HostBusy="_busy" DesignerRevision="Preview.DesignRevision" PreviewRevision="@(Preview.Root == null ? -1 : Preview.Revision)" SourceRevision="SourceRevision" SourceRequested="NavigateRuntimeSourceAsync" /> }
                 @if (_inspectorTab == "Properties")
                 {

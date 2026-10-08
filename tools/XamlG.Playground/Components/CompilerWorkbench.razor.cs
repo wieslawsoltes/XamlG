@@ -12,6 +12,7 @@ public partial class CompilerWorkbench : IDisposable
     [Parameter, EditorRequired] public Func<string, JsonElement, CancellationToken, Task<JsonElement>> Execute { get; set; } = default!;
     [Parameter] public IReadOnlyList<AutomationTool> Tools { get; set; } = [];
     [Parameter] public long SourceRevision { get; set; }
+    [Parameter] public bool HostBusy { get; set; }
     private readonly CancellationTokenSource _lifetime = new();
     private App.CompilerOptionsSnapshot? _state;
     private CSharpCompilationSettings? _model;
@@ -20,6 +21,7 @@ public partial class CompilerWorkbench : IDisposable
     private string? _error;
     private long _baseRevision, _observedRevision = -1;
     private bool _dirty, _busy, _disposed, _refreshPending;
+    private bool Busy => _busy || HostBusy;
     private static readonly (string Key, string Title)[] StringOptions =
     [
         ("languageVersion", "Language version"), ("nullable", "Nullable context"), ("optimization", "Optimization"),
@@ -39,13 +41,12 @@ public partial class CompilerWorkbench : IDisposable
     private object? Option(string key) => _model == null ? null : typeof(CSharpCompilationSettings).GetProperty(char.ToUpperInvariant(key[0]) + key[1..])?.GetValue(_model);
     protected override async Task OnParametersSetAsync()
     {
-        if (_observedRevision == SourceRevision) return;
-        _observedRevision = SourceRevision;
+        if (HostBusy || _observedRevision == SourceRevision) return;
         if (_busy) _refreshPending = true; else await Guard(() => RefreshCoreAsync(false));
     }
     private async Task Guard(Func<Task> action)
     {
-        if (_busy || _disposed) return;
+        if (Busy || _disposed) return;
         _busy = true; _error = null;
         try { await action(); }
         catch (OperationCanceledException) when (_disposed) { }
@@ -53,7 +54,11 @@ public partial class CompilerWorkbench : IDisposable
         finally
         {
             _busy = false;
-            if (_refreshPending && !_disposed) { _refreshPending = false; await Guard(() => RefreshCoreAsync(false)); }
+            if (_refreshPending && !_disposed)
+            {
+                _refreshPending = false;
+                if (_observedRevision != SourceRevision) await Guard(() => RefreshCoreAsync(false));
+            }
         }
     }
     private Task<JsonElement> CallAsync(string name, object arguments) => Execute(name,
@@ -64,6 +69,9 @@ public partial class CompilerWorkbench : IDisposable
         if (!_dirty || discardDraft)
         { _text = _baseText = _state.Text; _baseRevision = _state.Revision; _dirty = false; ReadModel(); }
         else if (_baseText == _state.Text) _baseRevision = _state.Revision;
+        // Record only the snapshot actually received. Undo can publish its source
+        // revision while the host is still compiling and temporarily rejects reads.
+        _observedRevision = _state.Revision;
     }
     private void DraftChanged() { _dirty = _text != _baseText; ReadModel(); }
     private void ReadModel()

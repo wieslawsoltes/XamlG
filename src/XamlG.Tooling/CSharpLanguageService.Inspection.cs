@@ -97,7 +97,9 @@ public sealed partial class CSharpLanguageService
             cancellationToken.ThrowIfCancellationRequested();
             var locals = symbols.AddSet(region.Locals.Cast<ISymbol>().ToImmutableArray());
             var functions = symbols.AddSet(region.LocalFunctions.Cast<ISymbol>().ToImmutableArray());
-            return new CSharpFlowRegion(regionIds[region], region.EnclosingRegion == null ? null : regionIds[region.EnclosingRegion],
+            // A nested function's root can point into its parent's graph. Region IDs
+            // belong to this result; ParentBody identifies the enclosing graph.
+            return new CSharpFlowRegion(regionIds[region], region.EnclosingRegion != null && regionIds.TryGetValue(region.EnclosingRegion, out var parentId) ? parentId : null,
                 region.Kind.ToString(), collector.Text.Get(region.ExceptionType?.ToDisplayString()), region.FirstBlockOrdinal,
                 region.LastBlockOrdinal, locals, functions, region.CaptureIds.Length,
                 region.CaptureIds.Take(256).Select(collector.Capture).ToImmutableArray(),

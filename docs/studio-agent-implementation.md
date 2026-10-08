@@ -205,11 +205,28 @@ survive pane reopening within this page; they are not saved in browser storage.
 
 The implementation-first pass has reached validation. On 2026-10-08 the complete
 native solution and integrated Playground build with warnings treated as errors.
-The native suite passes all 1,901 tests:
-266 core, 126 Tooling, 1,332 Avalonia, 69 automation/MCP/agent, 94 language-server
+The native suite passes all 1,944 tests:
+266 core, 169 Tooling, 1,332 Avalonia, 69 automation/MCP/agent, 94 language-server
 and 14 workspace tests. This includes 42 official-SDK provider transport cases.
 The expanded behavioral coverage and browser/package acceptance listed below are
 still required; passing the existing native suite does not complete those checks.
+
+The compiler/Roslyn pass adds 43 native cases. Operation and flow inspection covers
+initializers, calls, conversions, lifted operators, branches/finally regions,
+captures, nested local functions/lambdas, UTF-16 statement ranges, generated
+provenance, serialization, cancellation and truncation. Navigation covers partial
+and generated declarations, outline nesting, aliases, constructed generics,
+metadata bases, explicit implementations, overrides and hidden/reimplemented
+members. Source actions compile and execute the edited source, checking return
+values, nullable types, overload selection, ref/void/throw bodies and comments/CRLF.
+Settings tests exercise conditional compilation and language versions, diagnostic
+policies, unsafe/overflow behavior, entry points, platform and deterministic emission,
+along with validation and immutable collection snapshots.
+
+These tests found nested flow graphs trying to resolve a parent graph's region as a
+local ID, and interface navigation omitting overrides of an inherited implementation.
+Both are fixed. Expression-to-block actions now allow trailing declaration comments
+that lie outside the replaced source span, preserving those comments and line endings.
 
 The coordinated rename validation adds 30 cases covering cross-file XAML/C# edits,
 generated fields/loaders, namespaces, interface/override and record contracts,
@@ -280,19 +297,37 @@ handlers, draft restoration, and C# file move/remove/Undo. The fixtures now enab
 access after example selection retires the old workspace and check version-4
 exports, including consistency between the compiler settings document and options.
 
-The complete browser suite currently contains 53 scenarios. These separate 16- and
-6-case passes do not certify the expanded compiler/navigation/flow coverage or the
-unrun agent, account, isolation and other cases below.
+Eight new C#/compiler browser scenarios also pass at the Pages origin, bringing
+the focused authoring/compiler coverage to 14 cases. Real HTTP MCP calls verify
+conditional code in a running Avalonia control, diagnostic policies, effective
+reference selection (including no references), generated tree identities, atomic
+settings validation/revision conflicts, and version-4 exports. Non-browser output
+emits an actual AMD64 executable while rejecting preview execution. Owner-only
+compiler controls exercise save/Undo/Redo, persisted and older drafts, conflicting
+draft preservation, Roslyn inspection and result export. Undo exposed the compiler
+workbench marking a revision observed before a rejected refresh; it now waits for
+the host to be idle and records only the successfully received snapshot.
+
+MCP C# cases inspect nested control-flow graphs, statement data flow, operation
+trees and generated code, declaration outlines/search, type hierarchies, constructed
+generic type definitions and interface overrides. Owner Monaco type/implementation
+navigation, outline selection and semantic action/Undo work with sharing disabled.
+The rename UI rejects a stale preview, then updates C#/XAML across three files as one
+Undo transaction, preserves unrelated edits, and compiles/runs the renamed project.
+Browser helpers account for virtualized outline rows and read the actual editor
+instead of a cached navigation model for the same document.
+
+The complete browser suite currently contains 61 scenarios in 24 files. The focused
+14-case compiler/authoring coverage and earlier 16-case runtime/designer/automation
+pass do not certify the unrun agent, account, isolation and other cases below.
 
 Remaining completion work:
 
-- Expand acceptance for C# navigation/actions, operation/control/data-flow
-  inspection, compiler settings persistence/exports and rename preview/undo.
 - Expand agent review/compaction/recovery and MCP Tasks/resource/artifact checks,
   including cancellation, ownership, permissions and workspace replacement.
 - Exercise deterministic ChatGPT OAuth, identity rejection, credential storage,
   refresh/sign-out races, account-bound tools and the account workbench UI.
-- Update and run the complete 53-case browser suite with Pages-origin/base-path pairing,
+- Update and run the complete 61-case browser suite with Pages-origin/base-path pairing,
   all 21 package consumers and remaining CI scripts; fix failures and update the PR.
 
 Main remains merged through `46553c8`; fetching upstream at this checkpoint found
@@ -526,11 +561,8 @@ capture and flow sets through a shared symbol table. Counts, depths, metadata an
 locations are bounded with explicit truncation; Roslyn's cyclic graphs are never
 serialized directly. These operations compile/analyze code without executing it.
 
-Targeted tooling and integrated Playground builds pass without warnings or errors
-for compiler settings and flow inspection. Behavioral validation remains pending:
-settings persistence/undo/conflicts, diagnostic policies, selected references,
-non-preview emission, generated bodies, nested functions, control/data-flow
-selection, cancellation and truncation. No full suite was run during this pass.
+Current compiler settings and flow-inspection acceptance is recorded in the local
+evidence section above, including the nested graph and workbench refresh fixes.
 
 ChatGPT account mode is now implemented in the reusable OpenAI package and the
 existing agent workbench. The companion exposes account operations only through
@@ -652,11 +684,8 @@ directives constrain available rewrites. Applying an action still recomputes it 
 the expected revision and uses one project undo transaction. This does not introduce
 the desktop Roslyn workspace's general analyzer/code-fix catalog or broaden rename yet.
 
-Targeted Tooling and integrated Playground builds pass without warnings/errors, and
-the JavaScript syntax check passes. Behavioral acceptance remains part of the final
-validation pass: partial/generated declarations, generic interfaces and overrides,
-outline nesting/bounds, Monaco navigation, comment preservation, nullable/target typing,
-overload and binding stability, and atomic action/undo behavior. No full suite was run.
+Current navigation/action acceptance is recorded in the local evidence section
+above, including native execution of rewritten code and generic-interface dispatch.
 
 Coordinated rename is now implemented in the reusable `XamlProjectRenameService` and
 shared by the existing XAML/C# editor dialog and MCP, including an XAML preview endpoint.

@@ -70,7 +70,7 @@ public sealed partial class CSharpLanguageService
 
         if (node.AncestorsAndSelf().OfType<MethodDeclarationSyntax>().FirstOrDefault() is { } method)
         {
-            if (method.ExpressionBody is { } arrow && !MeaningfulTrivia(arrow) && !MeaningfulTrivia(method.SemicolonToken))
+            if (method.ExpressionBody is { } arrow && !MeaningfulTrivia(arrow) && !MeaningfulLeadingTrivia(method.SemicolonToken))
                 Offer("Use block body", method, current =>
                 {
                     var value = (MethodDeclarationSyntax)current;
@@ -86,7 +86,7 @@ public sealed partial class CSharpLanguageService
         }
         if (node.AncestorsAndSelf().OfType<PropertyDeclarationSyntax>().FirstOrDefault() is { } property)
         {
-            if (property.ExpressionBody is { } arrow && !MeaningfulTrivia(arrow) && !MeaningfulTrivia(property.SemicolonToken))
+            if (property.ExpressionBody is { } arrow && !MeaningfulTrivia(arrow) && !MeaningfulLeadingTrivia(property.SemicolonToken))
                 Offer("Use property block body", property, current =>
                 {
                     var value = (PropertyDeclarationSyntax)current;
@@ -111,7 +111,9 @@ public sealed partial class CSharpLanguageService
         ThrowStatementSyntax { Expression: { } expression } => SyntaxFactory.ThrowExpression(expression), _ => null };
     private static bool MeaningfulTrivia(SyntaxNode node) => node.DescendantTrivia(descendIntoTrivia: true).Any(trivia =>
         !trivia.IsKind(SyntaxKind.WhitespaceTrivia) && !trivia.IsKind(SyntaxKind.EndOfLineTrivia));
-    private static bool MeaningfulTrivia(SyntaxToken token) => token.LeadingTrivia.Concat(token.TrailingTrivia).Any(trivia =>
+    // Trailing trivia after the semicolon lies outside the replaced declaration Span
+    // and is retained by the source edit even when the semicolon becomes a block.
+    private static bool MeaningfulLeadingTrivia(SyntaxToken token) => token.LeadingTrivia.Any(trivia =>
         !trivia.IsKind(SyntaxKind.WhitespaceTrivia) && !trivia.IsKind(SyntaxKind.EndOfLineTrivia));
     private static string TypeDisplay(ITypeSymbol type) => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
         SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions | SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier));

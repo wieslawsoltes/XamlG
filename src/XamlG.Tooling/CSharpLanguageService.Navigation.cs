@@ -134,7 +134,8 @@ public sealed partial class CSharpLanguageService
             {
                 foreach (var implemented in type.AllInterfaces.Where(item => SameSymbol(item, symbol.ContainingType)))
                     foreach (var member in implemented.GetMembers().Where(item => SameSymbol(item, symbol)))
-                        if (type.FindImplementationForInterfaceMember(member) is { } implementation) Add(implementation);
+                        if (type.FindImplementationForInterfaceMember(member) is { } implementation)
+                            Add(DispatchedImplementation(type, implementation, cancellationToken));
             }
             else
                 foreach (var member in type.GetMembers())
@@ -152,6 +153,24 @@ public sealed partial class CSharpLanguageService
 
     internal static ISymbol? Overridden(ISymbol symbol) => symbol switch
     { IMethodSymbol method => method.OverriddenMethod, IPropertySymbol property => property.OverriddenProperty, IEventSymbol ev => ev.OverriddenEvent, _ => null };
+    private static ISymbol DispatchedImplementation(INamedTypeSymbol type, ISymbol implementation, CancellationToken token)
+    {
+        // Roslyn's interface mapping can name the inherited virtual slot. Navigation
+        // also needs the override that executes for this implementing source type.
+        if (!implementation.IsVirtual && !implementation.IsAbstract && !implementation.IsOverride) return implementation;
+        for (var current = type; current != null; current = current.BaseType)
+        {
+            token.ThrowIfCancellationRequested();
+            foreach (var member in current.GetMembers(implementation.Name))
+                for (var overridden = Overridden(member); overridden != null; overridden = Overridden(overridden))
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (SameSymbol(overridden, implementation)) return member;
+                }
+            if (SameSymbol(current, implementation.ContainingType)) break;
+        }
+        return implementation;
+    }
     private static bool DerivesFrom(INamedTypeSymbol type, INamedTypeSymbol target)
     {
         if (type.AllInterfaces.Any(contract => SameSymbol(contract, target))) return true;
