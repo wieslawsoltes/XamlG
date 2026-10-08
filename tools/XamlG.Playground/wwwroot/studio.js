@@ -194,6 +194,9 @@ export function filterDockyardLayout(text, ids) {
     const data = JSON.parse(text), allowed = new Set(ids);
     const visit = node => {
         if (!node || typeof node !== 'object') return node;
+        // Dockyard 0.2.2's browser bundle names these two constructors with an
+        // esbuild prefix, but its layout reader accepts the public type names.
+        if (node.type === '_LayoutAnchorablePaneGroup' || node.type === '_LayoutDocumentPaneGroup') node.type = node.type.slice(1);
         if (node.type === 'LayoutDocument' || node.type === 'LayoutAnchorable') {
             if (!allowed.has(node.props?.ContentId)) return null;
             if (node.props.ContentId === 'preview') { node.props.CanClose = false; node.props.CanHide = false; }
