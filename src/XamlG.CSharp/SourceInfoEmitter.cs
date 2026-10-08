@@ -17,19 +17,14 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
 
     public void EmitConstructed(string target, TextSpan location)
     {
-        if (context.Document.Runtime.SourceInfo is not { } source) return;
-        var metadata = source.CreateValue(context.Document.Syntax, location);
-        var arguments = metadata.Arguments.Cast<BoundConstantExpression>().Select(argument => argument.Value switch
-        {
-            null => "null", string text => CSharpNames.Literal(text),
-            int number => number.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            _ => throw new InvalidOperationException("Unexpected source-information constructor argument.")
-        });
-        context.Writer.Line(source.ObjectSetter.ContainingType.CSharpName() + "." + CSharpNames.Method(source.ObjectSetter) + "(" + target +
-            ", new " + source.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", arguments) + "));");
+        if (context.Document.Runtime.SourceInfo == null) return;
+        var position = context.Document.Syntax.Lines.GetPosition(location.Start);
+        context.Writer.Line(context.SourceInfoSetter() + "(" + target + ", " +
+            (position.Line + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + ", " +
+            (position.Character + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + ");");
     }
 
-    public void Emit(BoundObject value, string frame)
+    public string Get(BoundObject value)
     {
         var syntax = context.Document.Syntax;
         var span = Clamp(value.Syntax.Span, syntax.Text.Length);
@@ -55,7 +50,7 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
         Number(span.Start); Number(span.Length);
         Text(value.Name == null ? null : value.Key); Text(fingerprint); Number(declarations.Count);
         foreach (var pair in declarations.OrderBy(p => p.Key, StringComparer.Ordinal)) { Text(pair.Key); Text(pair.Value); }
-        context.Writer.Line(frame + ".Session.RegisterSource(" + CSharpNames.Literal(value.Key) + ", " + context.SourceInfo(record.ToString()) + ");");
+        return context.SourceInfo(record.ToString());
     }
     private static TextSpan Clamp(TextSpan span, int length)
     {

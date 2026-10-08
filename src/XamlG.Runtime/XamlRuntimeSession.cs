@@ -43,12 +43,14 @@ public sealed class XamlRuntimeSession : IDisposable
         if (TryGet(instance, out var session) && !ReferenceEquals(session, this) && _constructedSessions.Add(session!))
             TrackCleanup(session!.Dispose);
     }
-    public void Register(string key, object instance, string? parentKey)
+    public void Register(string key, object instance, string? parentKey) => Register(key, instance, parentKey, null);
+
+    internal void Register(string key, object instance, string? parentKey, XamlSourceInfo? source)
     {
         CheckThread();
         if (_nodes.TryGetValue(key, out var old) && !ReferenceEquals(old.Instance, instance))
             throw new InvalidOperationException($"Duplicate generated node key '{key}'.");
-        _nodes[key] = new(key, instance, parentKey);
+        _nodes[key] = new(key, instance, parentKey) { Source = source };
         if (!_instances.ContainsKey(instance)) _instances.Add(instance, key);
     }
     public void RegisterSource(string key, XamlSourceInfo source)

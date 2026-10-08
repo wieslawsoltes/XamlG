@@ -9,6 +9,7 @@ internal sealed class EmissionContext : IDisposable
 {
     private readonly System.Security.Cryptography.SHA256 _hash = System.Security.Cryptography.SHA256.Create();
     private int _temporary;
+    private bool _sourceInfoSetter;
     private readonly Dictionary<ISymbol, string> _descriptors = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<IMethodSymbol, string> _initSetters = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<string, int> _sourceRecords = new(StringComparer.Ordinal);
@@ -64,6 +65,11 @@ internal sealed class EmissionContext : IDisposable
         { index = _sourceRecords.Count; _sourceRecords.Add(record, index); }
         return "__source_" + Id + "[" + index + "]";
     }
+    public string SourceInfoSetter()
+    {
+        _sourceInfoSetter = true;
+        return "__SetSourceInfo_" + Id;
+    }
     public string PropertyRegistration(ITypeSymbol value, string get, string set, string arguments)
     {
         var type = value.TypeKind == TypeKind.Dynamic ? "object" : value.CSharpName();
@@ -77,6 +83,15 @@ internal sealed class EmissionContext : IDisposable
     }
     public void EmitMetadataHelpers()
     {
+        if (_sourceInfoSetter)
+        {
+            var source = Document.Runtime.SourceInfo!;
+            Writer.Open("private static void " + SourceInfoSetter() + "(object __target, int __line, int __column)");
+            Writer.Line(source.ObjectSetter.ContainingType.CSharpName() + "." + CSharpNames.Method(source.ObjectSetter) + "(__target, new " +
+                source.Constructor.ContainingType.CSharpName() + "(__line, __column, " +
+                (Document.Syntax.Path.Length == 0 ? "null" : CSharpNames.Literal(Document.Syntax.Path)) + "));");
+            Writer.Close();
+        }
         if (_propertyAccessors.Count != 0)
         {
             var accessors = _propertyAccessors.Values.OrderBy(accessor => accessor.Index).ToArray();

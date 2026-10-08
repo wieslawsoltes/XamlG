@@ -11,6 +11,25 @@ public sealed class RuntimeTests
         Assert.Same(root, frame.RootObject); Assert.Equal(new[] { child, root }, frame.Parents); Assert.Equal("Text", frame.TargetProperty);
     }
     [Fact]
+    public void FramesRetainIndependentSourceMappingsAndLogicalParents()
+    {
+        var root = new object(); var child = new object(); var sibling = new object();
+        var rootSource = new XamlSourceInfo("View.xaml", 0, 30, null, "root");
+        var childSource = new XamlSourceInfo("View.xaml", 6, 10, "named", "child");
+        var context = new XamlRuntimeContext();
+        var parent = context.PushRoot(root, "root", rootSource);
+        var frame = parent.ForTarget(root, "Content").Push(child, "child", childSource);
+        parent.Push(sibling, "sibling");
+        Assert.Same(root, frame.RootObject);
+        Assert.Same(rootSource, context.Session.FindNode(root)!.Source);
+        Assert.Same(childSource, context.Session.FindNode(child)!.Source);
+        Assert.Equal("root", context.Session.FindNode(child)!.ParentKey);
+        Assert.Null(context.Session.FindNode(sibling)!.Source);
+        Assert.Equal("root", context.Session.FindNode(sibling)!.ParentKey);
+        Assert.Throws<InvalidOperationException>(() => parent.Push(new object(), "child", childSource));
+        Assert.Same(childSource, context.Session.FindNode(child)!.Source);
+    }
+    [Fact]
     public void DirectParentStacksAreSharedByTargetFramesAndIsolateBranches()
     {
         var root = new object(); var first = new object(); var second = new object();

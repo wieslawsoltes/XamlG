@@ -56,9 +56,8 @@ internal sealed class ObjectEmitter
         if (existing == null)
             Construct(value, parentContext, variable);
         var frame = _context.Temporary("context");
-        writer.Line("var " + frame + " = " + parentContext + (value.IsRoot ? ".PushRoot(" : ".Push(") + variable + ", " + CSharpNames.Literal(value.Key) + ");");
+        writer.Line("var " + frame + " = " + parentContext + (value.IsRoot ? ".PushRoot(" : ".Push(") + variable + ", " + CSharpNames.Literal(value.Key) + ", " + _source.Get(value) + ");");
         _context.InheritFrameNamespaces(frame, parentContext);
-        _source.Emit(value, frame);
         if (value.Name != null)
         {
             if (!value.Assignments.OfType<BoundSetAssignment>().Any(assignment => assignment.RegisterName))
