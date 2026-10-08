@@ -1,13 +1,9 @@
-#if AVALONIA_REMOTE_PROTOCOL
-namespace Avalonia.Remote.Protocol.Input
-#else
-namespace Avalonia.Input
-#endif
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Defines the keys available on a keyboard.
     /// </summary>
-    public enum Key
+    internal enum Key
     {
         /// <summary>
         /// No key pressed.

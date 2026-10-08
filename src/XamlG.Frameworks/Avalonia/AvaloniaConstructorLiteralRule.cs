@@ -66,10 +66,21 @@ public sealed class AvaloniaConstructorLiteralRule : IXamlTextConversionRule
             BoundExpression? value = field == null ? null : new BoundStaticExpression(field, field.Type, span);
             if (cursorType != null && long.TryParse(text, out var numeric))
                 value = new BoundCastExpression(new BoundConstantExpression(unchecked((int)numeric), context.Types.Special(SpecialType.System_Int32), span), cursorType, span);
+            var intrinsic = value != null;
+            if (!intrinsic && cursorType != null)
+            {
+                try
+                {
+                    var parsed = Parsing.Cursor.Parse(text);
+                    value = new BoundCastExpression(new BoundConstantExpression((int)parsed.Type,
+                        context.Types.Special(SpecialType.System_Int32), span), cursorType, span);
+                }
+                catch (ArgumentException) { return Invalid(context, text, target, span); }
+            }
             if (value == null) return false;
             var constructor = target.InstanceConstructors.FirstOrDefault(method => context.Types.IsAccessible(method) && method.Parameters.Length == 1 &&
                 SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, cursorType));
-            if (constructor != null) expression = Located(context, constructor, span, value);
+            if (constructor != null) expression = Located(context, constructor, span, value) with { SuppressSourceInfo = !intrinsic };
             return true;
         }
         if (target.HasMetadataName("Avalonia.Media.HslColor") || target.HasMetadataName("Avalonia.Media.HsvColor"))

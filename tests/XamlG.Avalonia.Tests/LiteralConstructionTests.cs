@@ -229,6 +229,7 @@ public sealed class LiteralConstructionTests
     [InlineData("Color", "rgb(256,0,0)")]
     [InlineData("Color", "hsl(120%,1,1)")]
     [InlineData("Color", "#12")]
+    [InlineData("Cursor", "unknown-cursor")]
     [InlineData("Uri", "http://")]
     [InlineData("Duration", "NaN")]
     [InlineData("Duration", "Infinity")]
@@ -256,7 +257,6 @@ public sealed class LiteralConstructionTests
     }
 
     [AvaloniaTheory]
-    [InlineData("Cursor", "unknown-cursor")]
     [InlineData("Brush", " Red ")]
     [InlineData("Brush", "rgb(256,0,0)")]
     [InlineData("ConcreteBrush", "not-a-color")]

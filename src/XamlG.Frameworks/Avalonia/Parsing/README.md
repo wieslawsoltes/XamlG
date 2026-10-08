@@ -2,7 +2,7 @@
 
 The original files were imported unchanged from Avalonia commit
 `a9429a328057befa287ffb5e981f58b86a86eda0`: colors in `5e53e44` and animation
-parsers/tokenizer in `5e70673`.
+parsers/tokenizer in `5e70673`, and keyboard/cursor parsers in `74204d1`.
 `upstream.json` records their original paths and SHA-256 hashes.
 The MIT license and original color-conversion notices are retained.
 
@@ -46,3 +46,15 @@ Animation/tokenizer adaptations:
 The generated program contains public typed constructor calls and its existing
 source metadata. It has no dependency on these private parser types. The
 WPF-derived `KeySpline` source link and .NET Foundation license are retained.
+
+Keyboard/cursor adaptations:
+
+- Move the copied enums and parsers into the private compiler namespace. Retain
+  the original key aliases, numeric values and parsing order.
+- Remove keyboard event matching, platform formatting and device interfaces;
+  replace the generic enum parse overload with its .NET Standard equivalent.
+- Keep the cursor enum parser while replacing platform cursor construction with
+  a private parsed-value holder. Generated code creates the public cursor at runtime.
+- Preserve the distinction between XamlX's case-sensitive cursor intrinsic and
+  its parser fallback when attaching source metadata. Text-object conversion
+  receives its original whitespace before content-property normalization.

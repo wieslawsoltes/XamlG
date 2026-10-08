@@ -1,16 +1,13 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Text;
-using Avalonia.Input.Platform;
-using Avalonia.Utilities;
 
-namespace Avalonia.Input
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Defines a keyboard input combination.
     /// </summary>
-    public sealed class KeyGesture : IEquatable<KeyGesture>, IFormattable
+    internal sealed class KeyGesture : IEquatable<KeyGesture>
     {
         private static readonly Dictionary<string, Key> s_keySynonyms = new Dictionary<string, Key>
         {
@@ -91,75 +88,6 @@ namespace Avalonia.Input
             return new KeyGesture(key, keyModifiers);
         }
 
-        public override string ToString() => ToString(null, null);
-
-        /// <summary>
-        /// Returns the current KeyGesture as a string formatted according to the format string and appropriate IFormatProvider
-        /// </summary>
-        /// <param name="format">The format to use. 
-        /// <list type="bullet">
-        /// <item><term>null or "" or "g"</term><description>The Invariant format, uses Enum.ToString() to format Keys.</description></item>
-        /// <item><term>"p"</term><description>Use platform specific formatting as registerd.</description></item>
-        /// </list></param>
-        /// <param name="formatProvider">The IFormatProvider to use.  If null, uses the appropriate provider registered in the Avalonia Locator, or Invariant.</param>
-        /// <returns>The formatted string.</returns>
-        /// <exception cref="FormatException">Thrown if the format string is not null, "", "g", or "p"</exception>
-        public string ToString(string? format, IFormatProvider? formatProvider)
-        {
-            var formatInfo = format switch
-            {
-                null or "" or "g" => KeyGestureFormatInfo.Invariant,
-                "p" => KeyGestureFormatInfo.GetInstance(formatProvider),
-                _ => throw new FormatException("Unknown format specifier")
-            };
-
-            var s = StringBuilderCache.Acquire();
-
-            static void Plus(StringBuilder s)
-            {
-                if (s.Length > 0)
-                {
-                    s.Append("+");
-                }
-            }
-
-            if (KeyModifiers.HasAllFlags(KeyModifiers.Control))
-            {
-                s.Append(formatInfo.Ctrl);
-            }
-
-            if (KeyModifiers.HasAllFlags(KeyModifiers.Shift))
-            {
-                Plus(s);
-                s.Append(formatInfo.Shift);
-            }
-
-            if (KeyModifiers.HasAllFlags(KeyModifiers.Alt))
-            {
-                Plus(s);
-                s.Append(formatInfo.Alt);
-            }
-
-            if (KeyModifiers.HasAllFlags(KeyModifiers.Meta))
-            {
-                Plus(s);
-                s.Append(formatInfo.Meta);
-            }
-
-            if ((Key != Key.None) || (KeyModifiers == KeyModifiers.None))
-            {
-                Plus(s);
-                s.Append(formatInfo.FormatKey(Key));
-            }
-
-            return StringBuilderCache.GetStringAndRelease(s);
-        }
-
-        public bool Matches(KeyEventArgs? keyEvent) =>
-            keyEvent != null &&
-            keyEvent.KeyModifiers == KeyModifiers &&
-            ResolveNumPadOperationKey(keyEvent.Key) == ResolveNumPadOperationKey(Key);
-
         // TODO: Move that to external key parser
         private static bool TryParseKey(string keyStr, out Key key)
         {
@@ -187,22 +115,8 @@ namespace Avalonia.Input
                 return KeyModifiers.Meta;
             }
 
-            return Enum.Parse<KeyModifiers>(modifier.ToString(), true);
+            return (KeyModifiers)Enum.Parse(typeof(KeyModifiers), modifier.ToString(), true);
         }
 
-        private static Key ResolveNumPadOperationKey(Key key)
-        {
-            switch (key)
-            {
-                case Key.Add:
-                    return Key.OemPlus;
-                case Key.Subtract:
-                    return Key.OemMinus;
-                case Key.Decimal:
-                    return Key.OemPeriod;
-                default:
-                    return key;
-            }
-        }
     }
 }

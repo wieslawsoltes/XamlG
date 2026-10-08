@@ -1,12 +1,10 @@
 using System;
-using Avalonia.Media.Imaging;
-using Avalonia.Platform;
 
 #nullable enable
 
-namespace Avalonia.Input
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
-    public enum StandardCursorType
+    internal enum StandardCursorType
     {
         Arrow,
         Ibeam,
@@ -39,30 +37,9 @@ namespace Avalonia.Input
         // SizeNorthEastSouthWest,
     }
 
-    public class Cursor : IDisposable
+    internal sealed class Cursor(StandardCursorType cursorType)
     {
-        public static readonly Cursor Default = new Cursor(StandardCursorType.Arrow);
-        private readonly string _name;
-
-        private Cursor(ICursorImpl platformImpl, string name)
-        {
-            PlatformImpl = platformImpl;
-            _name = name;
-        }
-
-        public Cursor(StandardCursorType cursorType)
-            : this(GetCursorFactory().GetCursor(cursorType), cursorType.ToString())
-        {
-        }
-
-        public Cursor(Bitmap cursor, PixelPoint hotSpot)
-            : this(GetCursorFactory().CreateCursor(cursor, hotSpot), "BitmapCursor")
-        {
-        }
-
-        internal ICursorImpl PlatformImpl { get; }
-
-        public void Dispose() => PlatformImpl.Dispose();
+        public StandardCursorType Type { get; } = cursorType;
 
         public static Cursor Parse(string s)
         {
@@ -71,14 +48,5 @@ namespace Avalonia.Input
                 throw new ArgumentException($"Unrecognized cursor type '{s}'.");
         }
 
-        private static ICursorFactory GetCursorFactory()
-        {
-            return AvaloniaLocator.Current.GetRequiredService<ICursorFactory>();
-        }
-
-        public override string ToString()
-        {
-            return _name;
-        }
     }
 }
