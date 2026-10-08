@@ -13,7 +13,13 @@ const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader', '-
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const messages = [];
 const errors = [];
-page.on('console', message => messages.push(`${message.type()}: ${message.text()}`));
+let completed = 0;
+page.on('console', message => {
+    const text = message.text();
+    messages.push(`${message.type()}: ${text}`);
+    if (text.includes('XAMLG CATALOG ') && (++completed % 100 === 0 || text.includes(' FAIL ')))
+        console.log(text);
+});
 const startupError = new Promise((_, reject) => page.once('pageerror', error => reject(error)));
 page.on('pageerror', error => errors.push(error.stack || error.message || String(error)));
 page.setDefaultTimeout(180_000);
@@ -22,7 +28,9 @@ try {
     await Promise.race([page.waitForFunction(() => typeof globalThis.xamlgValidateCatalog === 'function'), startupError]);
     await page.locator('canvas').first().waitFor({ state: 'visible' });
     await page.screenshot({ path: path.join(output, 'startup.png') });
-    const results = JSON.parse(await page.evaluate(() => globalThis.xamlgValidateCatalog()));
+    const results = JSON.parse(await Promise.race([
+        page.evaluate(() => globalThis.xamlgValidateCatalog()), startupError
+    ]));
     await writeFile(path.join(output, 'results.json'), JSON.stringify(results, null, 2));
     await page.screenshot({ path: path.join(output, 'completed.png') });
     assert.equal(results.length, 1188, 'Every registered page, section and gallery demo must run in all six theme configurations.');
@@ -43,6 +51,9 @@ try {
     assert.deepEqual(results.filter(result => result.Error != null), [], 'Catalog pages failed in the published browser app.');
     assert.deepEqual(errors, [], 'Browser runtime errors');
     console.log(`PASS: ${results.length} published WebAssembly page/theme runs.`);
+} catch (error) {
+    await page.screenshot({ path: path.join(output, 'failed.png') }).catch(() => {});
+    throw error;
 } finally {
     await writeFile(path.join(output, 'console.log'), messages.join('\n'));
     await writeFile(path.join(output, 'errors.json'), JSON.stringify(errors, null, 2));

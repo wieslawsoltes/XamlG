@@ -65,6 +65,7 @@ public static class CatalogValidation
                 results.Add(new(theme.ToString(), dark ? "Dark" : "Light", compact ? "Compact" : "Normal",
                     item.Name, item.Kind, visuals, error));
                 Console.WriteLine($"XAMLG CATALOG {(error is null ? "PASS" : "FAIL")} {theme} {dark} {compact} {item.Name}");
+                if (error != null) Console.WriteLine(error);
             }
         }
         return results;

@@ -63,6 +63,11 @@ jobs:
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
           node scripts/test-controlcatalog-browser.mjs http://127.0.0.1:8943 2>&1 | tee artifacts/controlcatalog-validation/browser-run.log
+      - name: Compare catalog and theme compilation against XamlX
+        working-directory: ${{ env.CATALOG_WORKTREE }}
+        run: |
+          set -o pipefail
+          python3 scripts/benchmark-controlcatalog.py --output artifacts/controlcatalog-validation/benchmark 2>&1 | tee artifacts/controlcatalog-validation/benchmark.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
