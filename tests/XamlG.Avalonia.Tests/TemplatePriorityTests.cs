@@ -171,6 +171,46 @@ public sealed class TemplatePriorityTests
         Assert.Equal(0, control.Writes);
         Assert.Equal(BindingPriority.Template, control.GetDiagnostic(TemplatePriorityProbe.ValueProperty).Priority);
     }
+
+    [AvaloniaFact]
+    public void SharedTemplateBindingDispatchRetainsSourceAndSessionOwnership()
+    {
+        var xaml = "<Button " + Ns + " Width='100'><Button.Template><ControlTemplate>" +
+            "<Border Name='part' Width='{TemplateBinding Width}'/></ControlTemplate></Button.Template></Button>";
+        var root = Assert.IsType<Button>(new ResourceProjectFixture(new[] { ("Template.axaml", xaml) }).Build("Template.axaml"));
+        var window = new Window { Content = root };
+        try
+        {
+            window.Show(); window.UpdateLayout();
+            var part = Assert.Single(root.GetVisualDescendants().OfType<Border>(), child => child.Name == "part");
+            Assert.Equal(100d, part.Width);
+            root.Width = 120d;
+            Assert.Equal(120d, part.Width);
+            Assert.True(XamlRuntimeSession.TryGet(part, out var session));
+            var node = Assert.IsType<XamlRuntimeNode>(session!.FindNode(part));
+            Assert.Contains("Width", node.Source!.Declarations.Keys);
+            session.Dispose();
+            var retiredValue = part.Width;
+            root.Width = 140d;
+            Assert.Equal(retiredValue, part.Width);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(null)]
+    [InlineData("wrong boxed type")]
+    public void SharedTemplateValueDispatchRetainsUnboxingFailures(object? value)
+    {
+        var control = new TemplatePriorityProbe();
+        var context = new XamlRuntimeContext();
+        using var session = context.Session;
+        var error = Record.Exception(() => XamlG.AvaloniaRuntime.AvaloniaRegisteredSetter.AssignTemplateValueOrBinding(
+            control, value, TemplatePriorityProbe.ValueProperty, context));
+        if (value == null) Assert.IsType<NullReferenceException>(error);
+        else Assert.IsType<InvalidCastException>(error);
+        Assert.Equal(0, control.Writes);
+    }
 }
 
 public sealed class TemplatePriorityProbe : Control

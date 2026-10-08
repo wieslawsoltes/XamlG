@@ -11,6 +11,14 @@ internal sealed class AdaptedAssignmentEmitter(EmissionContext context, ValueEmi
         var writer = context.Writer;
         var value = context.Temporary("adapted");
         writer.Line("object? " + value + " = " + values.Emit(assignment.Value, valueFrame) + ";");
+        if (assignment.RuntimeDispatcher is { } dispatcher)
+        {
+            var descriptor = assignment.Member.TargetDescriptor == null
+                ? context.Descriptor(assignment.Member) : values.Emit(assignment.Member.TargetDescriptor, frame);
+            writer.Line(dispatcher.ContainingType.CSharpName() + "." + CSharpNames.Method(dispatcher) +
+                "(" + target + ", " + value + ", " + descriptor + ", " + frame + ");");
+            return;
+        }
         var first = true;
         foreach (var type in assignment.AdaptedTypes)
         {

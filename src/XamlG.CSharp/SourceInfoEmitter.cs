@@ -24,7 +24,9 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
             (position.Character + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + ");");
     }
 
-    public string Get(BoundObject value)
+    public string Get(BoundObject value) => context.SourceInfoTable + "[" + Index(value) + "]";
+
+    public int Index(BoundObject value)
     {
         var syntax = context.Document.Syntax;
         var span = Clamp(value.Syntax.Span, syntax.Text.Length);
@@ -50,7 +52,7 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
         Number(span.Start); Number(span.Length);
         Text(value.Name == null ? null : value.Key); Text(fingerprint); Number(declarations.Count);
         foreach (var pair in declarations.OrderBy(p => p.Key, StringComparer.Ordinal)) { Text(pair.Key); Text(pair.Value); }
-        return context.SourceInfo(record.ToString());
+        return context.SourceInfoIndex(record.ToString());
     }
     private static TextSpan Clamp(TextSpan span, int length)
     {

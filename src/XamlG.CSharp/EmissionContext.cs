@@ -59,11 +59,12 @@ internal sealed class EmissionContext : IDisposable
         if (_initSetters.TryGetValue(method, out var name)) return name;
         name = "__init_" + Id + "_" + _initSetters.Count; _initSetters.Add(method, name); return name;
     }
-    public string SourceInfo(string record)
+    public string SourceInfoTable => "__source_" + Id;
+    public int SourceInfoIndex(string record)
     {
         if (!_sourceRecords.TryGetValue(record, out var index))
         { index = _sourceRecords.Count; _sourceRecords.Add(record, index); }
-        return "__source_" + Id + "[" + index + "]";
+        return index;
     }
     public string SourceInfoSetter()
     {

@@ -12,16 +12,18 @@ internal sealed class ObjectEmitter
     private readonly NamespaceMapEmitter _namespaces;
     private readonly RuntimeContextEmitter _runtime;
     private readonly SourceInfoEmitter _source;
+    private readonly LeafConstructionEmitter _leaves;
     public ObjectEmitter(EmissionContext context)
     {
         _context = context; _namespaces = new(context); _runtime = new(context, _namespaces);
         _values = new(context, this); _assignments = new(context, this, _values); _source = new(context);
+        _leaves = new(context, _values, _source);
     }
     public void EmitContext(string variable, string outer, string root) => _runtime.Create(variable, outer, root);
     public void RegisterName(string frame, string nameExpression, string value) => _runtime.RegisterName(frame, nameExpression, value);
     public void Complete(string frame, string root) => _runtime.Complete(frame, root);
     public void EmitNamespaceMaps() => _namespaces.Emit();
-    public void EmitContextHelpers() => _runtime.EmitHelpers();
+    public void EmitContextHelpers() { _leaves.EmitHelpers(); _runtime.EmitHelpers(); }
     public string ConstructRoot(BoundObject value, string parentContext) =>
         Construct(value, _runtime.Scope(parentContext, value.Scope), _context.RootVariable);
 
@@ -52,6 +54,8 @@ internal sealed class ObjectEmitter
     {
         _context.Cancellation.ThrowIfCancellationRequested(); var writer = _context.Writer;
         parentContext = _runtime.Scope(parentContext, value.Scope);
+        if (existing == null && consume == null && initialize == null && _leaves.CanShare(value))
+            return _leaves.Emit(value, parentContext);
         var variable = existing ?? (value.IsRoot ? _context.RootVariable : _context.Temporary("object"));
         if (existing == null)
             Construct(value, parentContext, variable);

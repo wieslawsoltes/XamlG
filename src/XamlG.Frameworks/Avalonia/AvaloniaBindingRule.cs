@@ -51,7 +51,28 @@ public sealed class AvaloniaBindingRule : IXamlPropertyBindingRule
                 { TargetDescriptor = member.TargetDescriptor });
         else
             target.Assignments.Add(new BoundAdaptedSetAssignment(member, value, alternatives.ToImmutable(), adapter, span)
-                { OwnAdapterResult = true });
+                { OwnAdapterResult = true, RuntimeDispatcher = TemplateDispatcher(context, member, alternatives) });
         return true;
+    }
+
+    private static IMethodSymbol? TemplateDispatcher(BindingContext context, BoundMember member,
+        ImmutableArray<ITypeSymbol>.Builder alternatives)
+    {
+        // Only the exact template-priority contract can share this dispatch. Custom
+        // setters, assigned binding values and other alternatives retain their lowering.
+        if (alternatives.Count != 1 || !alternatives[0].HasMetadataName(AvaloniaMetadata.BindingBase) ||
+            member.StaticSetter is not { Descriptors.Length: 1 } setter ||
+            setter.Method.Name != AvaloniaRegisteredSetterMetadata.AssignTemplate ||
+            !setter.Method.ContainingType.HasMetadataName(AvaloniaRegisteredSetterMetadata.Adapter) ||
+            member.TargetDescriptor is not BoundStaticExpression descriptor ||
+            !SymbolEqualityComparer.Default.Equals(descriptor.Member, setter.Descriptors[0].Member) ||
+            descriptor.GeneratedMemberName != setter.Descriptors[0].GeneratedMemberName) return null;
+        var dispatcher = setter.Method.ContainingType.GetMembers(AvaloniaRegisteredSetterMetadata.AssignTemplateValueOrBinding)
+            .OfType<IMethodSymbol>().SingleOrDefault(method => method.IsStatic && method.ReturnsVoid && method.Arity == 1 &&
+                method.Parameters.Length == 4 && method.Parameters[0].Type.HasMetadataName(AvaloniaMetadata.Object) &&
+                method.Parameters[1].Type.SpecialType == SpecialType.System_Object &&
+                method.Parameters[2].Type.HasMetadataName(AvaloniaRegisteredSetterMetadata.StyledProperty) &&
+                method.Parameters[3].Type.HasMetadataName(ClrNames.IServiceProvider) && context.Types.IsAccessible(method));
+        return dispatcher?.Construct(member.ValueType);
     }
 }
