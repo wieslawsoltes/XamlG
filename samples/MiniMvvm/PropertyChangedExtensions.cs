@@ -24,6 +24,7 @@ namespace MiniMvvm
                 private readonly INotifyPropertyChanged _target;
                 private readonly PropertyInfo _info;
                 private readonly IObserver<T> _observer;
+                private bool _disposed;
 
                 public Subscription(INotifyPropertyChanged target, PropertyInfo info, IObserver<T> observer)
                 {
@@ -42,6 +43,9 @@ namespace MiniMvvm
 
                 public void Dispose()
                 {
+                    if (_disposed)
+                        return;
+                    _disposed = true;
                     _target.PropertyChanged -= OnPropertyChanged;
                     _observer.OnCompleted();
                 }
