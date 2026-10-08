@@ -64,7 +64,9 @@ public partial class App
     private async Task ShowPaneAsync(string id)
     {
         await using var pane = await _dock.FindAsync(id);
-        await _dock.Module!.CallVoidAsync(pane, "Show");
+        // Source is a non-closeable LayoutDocument; only anchorable tool panes
+        // expose Show. Activating the document also restores its editor focus.
+        if (id != "source") await _dock.Module!.CallVoidAsync(pane, "Show");
         await _dock.ActivateAsync(pane);
     }
 }

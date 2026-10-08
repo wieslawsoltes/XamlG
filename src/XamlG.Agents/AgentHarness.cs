@@ -103,7 +103,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 if (message != null)
                 {
                     task.Goal ??= message; task.LatestRequest = message;
-                    task.UserRequests.Add(message); task.Messages.Add(new(AgentMessageKind.User, message));
+                    task.UserRequests.Add(message); task.ActiveRequest = new(AgentMessageKind.User, message); task.Messages.Add(task.ActiveRequest);
                     if (queuedIndex >= 0) { task.FollowUps.RemoveAt(queuedIndex); task.QueueRevision++; }
                 }
                 task.BeforeRun ??= checkpoint;
@@ -120,7 +120,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 {
                     var request = new AgentRequest(task.Model, options.Instructions, task.Messages.ToArray(), tools, options.Limits.OutputTokensPerRequest);
                     task.NativeContextBytes = task.Provider.GetContextBytes(request);
-                    if (NeedsCompaction(task, options) && options.AutomaticCompaction && options.Compaction.AutomaticInputTokens > 0 && task.Messages.Count > 1)
+                    if (NeedsCompaction(task, options) && options.AutomaticCompaction && task.Messages.Count > 1)
                     {
                         if (!await CompactContextAsync(task, options, tools, lease, budget)) return;
                         request = request with { Messages = task.Messages.ToArray() };
@@ -132,6 +132,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                     { Pause(task, "Estimated input plus output reserve exceeds the configured model context window."); return; }
                     var reply = await RequestProviderAsync(task, request, options, lease, budget);
                     if (reply == null) return;
+                    lease.Token.ThrowIfCancellationRequested();
                     // Validate the entire batch before committing it or executing a single operation.
                     if (reply.ToolCalls.Count > 1024 || reply.ToolCalls.Select(t => t.Id).Distinct(StringComparer.Ordinal).Count() != reply.ToolCalls.Count)
                         throw new AutomationException("invalid_response", "Invalid tool batch.");
@@ -146,6 +147,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                     Publish(task, "assistant", reply.Text);
                     if (reply.ToolCalls.Count == 0)
                     {
+                        task.ActiveRequest = null;
                         task.Status = AgentTaskStatus.Completed; Publish(task, "completed", "Task response completed."); return;
                     }
                     task.PendingReply = reply; task.NextTool = 0;

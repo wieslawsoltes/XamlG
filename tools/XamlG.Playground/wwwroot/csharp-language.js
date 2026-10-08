@@ -1,5 +1,6 @@
 // Roslyn runs in this browser. Providers are registered once and resolve their owning
 // editor at invocation time, so docking/disposal cannot transfer a callback to a new file.
+import { SourceBuffer } from './source-buffer.js';
 let installed = false;
 export function installCSharpLanguage(monaco, editors) {
   if (installed) return;
@@ -13,17 +14,21 @@ export function installCSharpLanguage(monaco, editors) {
     const version = model.getVersionId(); pending++;
     try {
       const result = await item.dotnet.invokeMethodAsync('LanguageQuery', {
-        path: item.path, text: model.getValue(), offset: model.getOffsetAt(position), kind, targetPath
+        path: item.path, text: item.source.text, offset: item.source.offsetAt(position), kind, targetPath
       });
       return cancellation?.isCancellationRequested || model.isDisposed() || owner(model) !== item || model.getVersionId() !== version ? null : result;
     } catch { return null; }
     finally { pending--; }
   }
   const range = (model, span) => {
-    const start = model.getPositionAt(span.start), end = model.getPositionAt(span.start + span.length);
+    const source = owner(model)?.source ?? model;
+    const start = source.positionAt ? source.positionAt(span.start) : model.getPositionAt(span.start);
+    const end = source.positionAt ? source.positionAt(span.start + span.length) : model.getPositionAt(span.start + span.length);
     return new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column);
   };
-  const locationRange = item => new monaco.Range(item.startLine + 1, item.startColumn + 1, item.endLine + 1, item.endColumn + 1);
+  const locationRange = (item, source = null) => new monaco.Range(item.startLine + 1,
+    source?.displayColumn(item.startLine + 1, item.startColumn + 1) ?? item.startColumn + 1, item.endLine + 1,
+    source?.displayColumn(item.endLine + 1, item.endColumn + 1) ?? item.endColumn + 1);
   const kinds = monaco.languages.CompletionItemKind;
   const completionKind = { NamedType: kinds.Class, Namespace: kinds.Module, Method: kinds.Method, Property: kinds.Property,
     Field: kinds.Field, Event: kinds.Event, Local: kinds.Variable, Parameter: kinds.Variable, TypeParameter: kinds.TypeParameter, Alias: kinds.Reference };
@@ -52,9 +57,11 @@ export function installCSharpLanguage(monaco, editors) {
       if (cancellation?.isCancellationRequested || model.isDisposed()) break;
       const existing = [...editors.values()].find(editor => editor.path === item.path && editor.model);
       let target = existing?.model;
+      let targetSource = existing?.source;
       if (!target) {
         const source = await query(model, position, 'document', cancellation, item.path);
         if (!source || source.text.length > 1_048_576) continue;
+        targetSource = new SourceBuffer(source.text, true);
         const uri = monaco.Uri.from({ scheme: 'xamlg-source', authority: 'project', path: '/' + item.path });
         target = navigationModels.get(item.path);
         if (target && target.getValue() !== source.text) target.setValue(source.text);
@@ -65,7 +72,7 @@ export function installCSharpLanguage(monaco, editors) {
           navigationModels.delete(path); discarded.dispose();
         }
       }
-      results.push({ uri: target.uri, range: locationRange(item) });
+      results.push({ uri: target.uri, range: locationRange(item, targetSource) });
     }
     return results;
   }
@@ -99,7 +106,7 @@ export function installCSharpLanguage(monaco, editors) {
         const declaration = item.locations.find(location => location.path === owner(model)?.path &&
           location.start >= item.extent.start && location.start + location.length <= item.extent.start + item.extent.length) ?? item.extent;
         const symbol = { name: item.name, detail: item.display, kind: kinds[item.kind] ?? symbols.Variable, tags: [],
-          range: locationRange(item.extent), selectionRange: locationRange(declaration), children: [] };
+          range: locationRange(item.extent, owner(model)?.source), selectionRange: locationRange(declaration, owner(model)?.source), children: [] };
         byId.set(item.id, symbol);
         const parent = byId.get(item.parentId); (parent?.children ?? roots).push(symbol);
       }
@@ -127,10 +134,14 @@ export function installCSharpLanguage(monaco, editors) {
       const target = [...editors.values()].find(item => item.model?.uri.toString() === resource.toString());
       const path = target?.path ?? (resource.scheme === 'xamlg-source' ? resource.path.slice(1) : null);
       if (!editor || !path || !selection) return false;
-      const startLine = (selection.startLineNumber ?? selection.lineNumber) - 1;
-      const startColumn = (selection.startColumn ?? selection.column) - 1;
-      await editor.dotnet.invokeMethodAsync('Navigate', { path, startLine, startColumn,
-        endLine: (selection.endLineNumber ?? startLine + 1) - 1, endColumn: (selection.endColumn ?? startColumn + 1) - 1 });
+      const targetModel = target?.model ?? monaco.editor.getModel(resource);
+      if (!targetModel) return false;
+      const targetSource = target?.source ?? new SourceBuffer(targetModel.getValue(undefined, true), true);
+      const startLine = selection.startLineNumber ?? selection.lineNumber, endLine = selection.endLineNumber ?? startLine;
+      const startColumn = selection.startColumn ?? selection.column, endColumn = selection.endColumn ?? startColumn;
+      await editor.dotnet.invokeMethodAsync('Navigate', { path, startLine: startLine - 1,
+        startColumn: targetSource.sourceColumn(startLine, startColumn) - 1,
+        endLine: endLine - 1, endColumn: targetSource.sourceColumn(endLine, endColumn) - 1 });
       return true;
     }
   });

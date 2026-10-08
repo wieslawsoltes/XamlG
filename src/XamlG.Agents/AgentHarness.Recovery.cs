@@ -34,13 +34,14 @@ public sealed partial class AgentHarness
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(lease.Token);
             timeout.CancelAfter(options.Limits.RequestTimeout);
             long outputBytes = 0;
-            var partial = new StringBuilder(); var completed = false; var partialTruncated = false;
+            var partial = new StringBuilder(); var completed = false; var partialTruncated = false; var usageAccounted = false;
             AgentProviderException failure;
             try
             {
                 Publish(task, "request", $"Request {budget.Requests}; estimated input {inputEstimate:N0} tokens, output allowance {effective.MaxOutputTokens:N0}.");
                 var reply = await task.Provider.GenerateAsync(effective, text =>
                 {
+                    timeout.Token.ThrowIfCancellationRequested();
                     outputBytes = checked(outputBytes + Encoding.UTF8.GetByteCount(text));
                     if (outputBytes > 8_388_608) throw new AgentProviderException("response_too_large", false, canResume: false);
                     if (!checkpoint)
@@ -51,7 +52,10 @@ public sealed partial class AgentHarness
                     }
                     return ValueTask.CompletedTask;
                 }, timeout.Token);
-                AccountUsage(task, reply.Usage);
+                AccountUsage(task, reply.Usage); usageAccounted = true;
+                // A transport can finish concurrently with revocation or ignore its
+                // timeout token. Preserve reported usage, but never commit that reply.
+                timeout.Token.ThrowIfCancellationRequested();
                 if (reply.OutputLimitReached)
                 {
                     if (!checkpoint && partial.Length == 0)
@@ -68,22 +72,23 @@ public sealed partial class AgentHarness
             }
             catch (AgentProviderException error)
             {
-                AccountUsage(task, error.Usage ?? new(inputEstimate, (outputBytes + 3) / 4, true));
+                if (!usageAccounted) AccountUsage(task, error.Usage ?? new(inputEstimate, (outputBytes + 3) / 4, true));
                 failure = error;
             }
             catch (OperationCanceledException)
             {
-                AccountUsage(task, new(inputEstimate, (outputBytes + 3) / 4, true));
+                if (!usageAccounted) AccountUsage(task, new(inputEstimate, (outputBytes + 3) / 4, true));
                 lease.Token.ThrowIfCancellationRequested();
                 failure = new("request_timeout", true);
             }
             catch (Exception error) when (error is not OutOfMemoryException)
-            { AccountUsage(task, new(inputEstimate, (outputBytes + 3) / 4, true)); throw; }
+            { if (!usageAccounted) AccountUsage(task, new(inputEstimate, (outputBytes + 3) / 4, true)); throw; }
             finally
             {
                 if (!completed && partial.Length != 0)
                     Publish(task, "assistant_incomplete", partial.ToString() + (partialTruncated ? "\n[public preview truncated]" : ""));
             }
+            lease.Token.ThrowIfCancellationRequested();
             if (!failure.CanResume) throw failure;
             var delay = failure.RetryAfter ?? TimeSpan.FromMilliseconds(Math.Min(30000, 500 * Math.Pow(2, retry)) + Random.Shared.Next(250));
             if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;

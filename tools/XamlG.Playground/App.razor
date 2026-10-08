@@ -47,8 +47,8 @@
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("source")" Context="pane">
 <section class="source-pane dock-source">
             <div class="tabbar" role="tablist">
-                <button class="@(_editorTab == "xaml" ? "active" : "")" @onclick='() => _editorTab = "xaml"' role="tab" aria-selected="@(_editorTab == "xaml")">◇ &nbsp; View.axaml</button>
-                <button class="@(_editorTab == "code" ? "active" : "")" @onclick='() => _editorTab = "code"' role="tab" aria-selected="@(_editorTab == "code")"># &nbsp; Code.cs</button>
+                <button class="@(_editorTab == "xaml" ? "active" : "")" @onclick='() => _editorTab = "xaml"' role="tab" aria-selected="@(_editorTab == "xaml" ? "true" : "false")">◇ &nbsp; View.axaml</button>
+                <button class="@(_editorTab == "code" ? "active" : "")" @onclick='() => _editorTab = "code"' role="tab" aria-selected="@(_editorTab == "code" ? "true" : "false")"># &nbsp; Code.cs</button>
                 <span class="tab-spacer"></span><div class="authoring-shortcuts">
                     <button @onclick='() => RequestMainCommandAsync("rename")' disabled="@(!_ready || _busy)" title="Rename symbol (F2)">Rename</button>
                     <button @onclick='() => RequestMainCommandAsync("format")' disabled="@(!_ready || _busy)" title="Format source (Shift+Alt+F)">Format</button>
@@ -94,7 +94,7 @@
 <section class="dock-inspector">            <div class="tabbar inspector-tabs" role="tablist">
                 @foreach (var tab in InspectorTabs)
                 {
-                    <button class="@(_inspectorTab == tab ? "active" : "")" @onclick="() => _inspectorTab = tab" role="tab" aria-selected="@(_inspectorTab == tab)">@tab</button>
+                    <button class="@(_inspectorTab == tab ? "active" : "")" @onclick="() => _inspectorTab = tab" role="tab" aria-selected="@(_inspectorTab == tab ? "true" : "false")">@tab</button>
                 }
             </div>
             <div class="inspector-body">

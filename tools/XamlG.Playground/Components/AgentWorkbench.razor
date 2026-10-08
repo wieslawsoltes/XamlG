@@ -116,7 +116,7 @@
                 <label>Request timeout minutes <input type="number" min="1" max="30" @bind="_timeoutMinutes" /></label>
                 <label>Lease minutes <input type="number" min="1" max="60" @bind="_leaseMinutes" /></label>
                 <label><input type="checkbox" @bind="_autoCompact" /> Compact context automatically at complete tool boundaries</label>
-                <label>Automatic compaction input tokens (0 disables) <input type="number" min="0" max="2000000" @bind="Preferences.Numeric.AutomaticInputTokens" /></label>
+                <label>Automatic compaction input tokens (0 disables this threshold) <input type="number" min="0" max="2000000" @bind="Preferences.Numeric.AutomaticInputTokens" /></label>
                 <label>Model context window tokens (0 unspecified) <input type="number" min="0" max="4000000" @bind="Preferences.Numeric.ModelContextWindowTokens" /></label>
                 <label>Recent complete turns to retain <input type="number" min="0" max="16" @bind="Preferences.Numeric.RecentCompleteTurns" /></label>
                 <label>Checkpoint output tokens <input type="number" min="256" max="8192" @bind="Preferences.Numeric.CheckpointOutputTokens" /></label>

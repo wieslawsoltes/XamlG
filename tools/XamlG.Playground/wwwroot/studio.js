@@ -1,4 +1,5 @@
 import { installCSharpLanguage } from './csharp-language.js';
+import { SourceBuffer } from './source-buffer.js';
 let monacoPromise;
 const editors = new Map();
 let sequence = 0;
@@ -35,6 +36,7 @@ export async function createEditor(host, dotnet, text, language, readOnly, path 
     const monaco = await loadMonaco();
     installCSharpLanguage(monaco, editors);
     const model = monaco.editor.createModel(text, language, path ? monaco.Uri.from({ scheme: 'xamlg', authority: 'studio', path: '/' + id + '/' + path }) : undefined);
+    const source = new SourceBuffer(text, true);
     host.dataset.documentPath = path ?? '';
     const editor = monaco.editor.create(host, {
       model, readOnly, automaticLayout: true, theme: document.documentElement.dataset.theme === 'light' ? 'vs' : 'vs-dark',
@@ -44,11 +46,14 @@ export async function createEditor(host, dotnet, text, language, readOnly, path 
     });
     let timer;
     let applying = false;
-    const subscription = editor.onDidChangeModelContent(() => {
+    const subscription = editor.onDidChangeModelContent(event => {
       if (applying || readOnly) return;
+      if (event.isFlush) source.set(model.getValue(undefined, true));
+      else if (event.isEolChange) source.changeEol(event.eol);
+      else source.applyChanges(event.changes);
       clearTimeout(timer);
       timer = setTimeout(() => {
-        if (editors.has(id)) return dotnet.invokeMethodAsync('Changed', editor.getValue());
+        if (editors.has(id)) return dotnet.invokeMethodAsync('Changed', source.text);
       }, 120);
     });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => dotnet.invokeMethodAsync('Run'));
@@ -65,15 +70,16 @@ export async function createEditor(host, dotnet, text, language, readOnly, path 
         run: () => requestAuthoring(id, command)
       });
     }
-    editors.set(id, { editor, model, subscription, path, dotnet, set: value => { applying = true; try { editor.setValue(value); } finally { applying = false; } }, cleanup: () => clearTimeout(timer) });
+    editors.set(id, { editor, model, source, subscription, path, dotnet, set: value => { applying = true; try { source.set(value); editor.setValue(value); } finally { applying = false; } }, cleanup: () => clearTimeout(timer) });
   } catch (error) {
     const textarea = document.createElement('textarea');
     textarea.className = 'editor-fallback'; textarea.value = text; textarea.readOnly = readOnly;
+    const source = new SourceBuffer(text); let displayed = textarea.value;
     textarea.setAttribute('aria-label', language + ' source editor');
-    textarea.oninput = () => dotnet.invokeMethodAsync('Changed', textarea.value);
+    textarea.oninput = () => { source.replaceDisplayed(displayed, textarea.value); displayed = textarea.value; return dotnet.invokeMethodAsync('Changed', source.text); };
     host.replaceChildren(textarea);
     host.dataset.documentPath = path ?? '';
-    editors.set(id, { textarea, path, dotnet });
+    editors.set(id, { textarea, source, path, dotnet, set: value => { source.set(value); textarea.value = value; displayed = textarea.value; } });
     console.warn(error.message);
   }
   return id;
@@ -83,29 +89,32 @@ export function getEditorText(id) {
   const item = editors.get(id);
   if (!item) throw new Error('The source editor has been disposed.');
   item.cleanup?.();
-  return item.editor ? item.editor.getValue() : item.textarea.value;
+  return item.source.text;
 }
 export function setEditorText(id, value) {
   const item = editors.get(id);
   if (!item) return;
   item.cleanup?.();
-  if (item.editor && item.editor.getValue() !== value) item.set(value);
-  if (item.textarea && item.textarea.value !== value) item.textarea.value = value;
+  if (item.source.text !== value) item.set(value);
 }
 export function reveal(id, start, length) {
   const item = editors.get(id);
   if (item?.editor) {
-    const from = item.model.getPositionAt(start), to = item.model.getPositionAt(start + length);
+    const from = item.source.positionAt(start), to = item.source.positionAt(start + length);
     item.editor.setSelection(new self.monaco.Range(from.lineNumber, from.column, to.lineNumber, to.column));
     item.editor.revealPositionInCenter(from); item.editor.focus();
-  } else if (item?.textarea) { item.textarea.focus(); item.textarea.setSelectionRange(start, start + length); }
+  } else if (item?.textarea) {
+    const displayed = new SourceBuffer(item.textarea.value);
+    item.textarea.focus(); item.textarea.setSelectionRange(displayed.offsetAt(item.source.positionAt(start)), displayed.offsetAt(item.source.positionAt(start + length)));
+  }
 }
 export function setMarkers(id, diagnostics) {
   const item = editors.get(id);
   if (!item?.model) return;
   self.monaco.editor.setModelMarkers(item.model, 'xamlg', diagnostics.map(d => ({
     code: d.code, message: d.message, severity: d.severity === 'Error' ? 8 : 4,
-    startLineNumber: d.startLine, startColumn: d.startColumn, endLineNumber: d.endLine, endColumn: d.endLine === d.startLine ? Math.max(d.endColumn, d.startColumn + 1) : d.endColumn
+    startLineNumber: d.startLine, startColumn: item.source.displayColumn(d.startLine, d.startColumn), endLineNumber: d.endLine,
+    endColumn: item.source.displayColumn(d.endLine, d.endLine === d.startLine ? Math.max(d.endColumn, d.startColumn + 1) : d.endColumn)
   })));
 }
 export function disposeEditor(id) {
@@ -145,9 +154,13 @@ export function getAuthoringRequest(id, command) {
   let start = 0, length = 0;
   if (item.editor) {
     const selection = item.editor.getSelection();
-    start = item.model.getOffsetAt(selection.getStartPosition());
-    length = item.model.getOffsetAt(selection.getEndPosition()) - start;
-  } else { start = item.textarea.selectionStart; length = item.textarea.selectionEnd - start; }
+    start = item.source.offsetAt(selection.getStartPosition());
+    length = item.source.offsetAt(selection.getEndPosition()) - start;
+  } else {
+    const displayed = new SourceBuffer(item.textarea.value);
+    start = item.source.offsetAt(displayed.positionAt(item.textarea.selectionStart));
+    length = item.source.offsetAt(displayed.positionAt(item.textarea.selectionEnd)) - start;
+  }
   return { command, path: item.path, text: getEditorText(id), start, length };
 }
 export function requestAuthoring(id, command) {
@@ -304,17 +317,18 @@ export function bindAgentComposer(element, taskId, owner, ownerId) {
     rememberAgentView(ownerId, 'composer', element);
     if (!element || agentComposerBindings.get(element)?.taskId === taskId) return;
     releaseAgentComposer(element);
-    let composing = false, busy = false;
+    let composing = false;
     const start = () => { composing = true; };
     const end = () => { composing = false; };
     const key = event => {
         if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229 || composing) return;
         if (element.dataset.taskId !== taskId || element.dataset.canSubmit !== 'true') return;
         event.preventDefault(); event.stopPropagation();
-        if (busy || event.repeat) return;
-        busy = true;
+        if (event.repeat) return;
+        // The managed review state rejects duplicate submissions. Draft persistence
+        // may still be pending after the user cancels a review and submits again.
         owner.invokeMethodAsync('AgentComposerSubmit', taskId, element.value)
-            .catch(() => {}).finally(() => { busy = false; });
+            .catch(() => {});
     };
     element.addEventListener('compositionstart', start); element.addEventListener('compositionend', end); element.addEventListener('keydown', key);
     agentComposerBindings.set(element, { taskId, start, end, key });

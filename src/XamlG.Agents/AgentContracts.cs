@@ -157,6 +157,7 @@ public sealed class AgentTask
     [JsonIgnore] internal CancellationToken WorkspaceLifetime { get; }
     internal object Sync { get; } = new();
     internal List<AgentMessage> Messages { get; } = [];
+    internal AgentMessage? ActiveRequest;
     internal List<string> UserRequests { get; } = [];
     internal List<AgentEvent> PublicEvents { get; } = [];
     internal List<AgentQueuedMessage> FollowUps { get; } = [];

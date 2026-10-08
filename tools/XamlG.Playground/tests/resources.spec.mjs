@@ -27,7 +27,8 @@ test('project resources compile, capture immediate edits, export and survive dra
   await page.getByRole('button', { name: 'Export', exact: true }).click();
   const download = await downloadPromise;
   const data = JSON.parse(await readFile(await download.path(), 'utf8'));
-  expect(data.version).toBe(3);
+  expect(data.version).toBe(4);
+  expect(data.compilerOptions).toEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('xamlg.draft')).compilerOptions));
   expect(Object.keys(data.resources)).toHaveLength(2);
   expect(Object.keys(data.generatedFiles)).toHaveLength(3);
   expect(data.generated).toContain('XamlResourceServices.Enter');

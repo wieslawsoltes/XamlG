@@ -23,6 +23,7 @@ public sealed record AgentBlockPreview(AgentDiffBlock Block, string Before, stri
 /// preserve original line endings and missing-final-newline state; no fuzzy matching.</summary>
 public static class AgentSourceReview
 {
+    private const int MaximumDisplayCharacters = 1_000_000;
     internal static string ContentIdentity(AgentFileChange file)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -43,23 +44,32 @@ public static class AgentSourceReview
             var excerpt = new List<AgentDiffLine>();
             using var oldReader = new StringReader(file.Before ?? "");
             using var newReader = new StringReader(file.After ?? "");
-            var line = 0;
-            while (excerpt.Count < maximumLines / 2 && oldReader.ReadLine() is { } text)
-                excerpt.Add(new("removed", ++line, null, text.Length <= 2000 ? text : text[..2000] + " [excerpt]"));
-            line = 0;
-            while (excerpt.Count < maximumLines && newReader.ReadLine() is { } text)
-                excerpt.Add(new("added", null, ++line, text.Length <= 2000 ? text : text[..2000] + " [excerpt]"));
+            var excerptCharacters = 0;
+            AddExcerpt(oldReader, "removed", maximumLines / 2, MaximumDisplayCharacters / 2);
+            AddExcerpt(newReader, "added", maximumLines, MaximumDisplayCharacters);
             return new(file.Path, excerpt, true, true);
+
+            void AddExcerpt(StringReader reader, string kind, int rows, int budget)
+            {
+                var line = 0;
+                while (excerpt.Count < rows && reader.ReadLine() is { } source)
+                {
+                    var text = source.Length <= 2000 ? source : source[..2000] + " [excerpt]";
+                    if (excerptCharacters + text.Length > budget) break;
+                    line++; excerptCharacters += text.Length;
+                    excerpt.Add(new(kind, kind == "removed" ? line : null, kind == "added" ? line : null, text));
+                }
+            }
         }
         var total = analysis.Rows.Count;
         if (firstRow > total) throw new ArgumentOutOfRangeException(nameof(firstRow));
         var result = new List<AgentDiffLine>(); var characters = 0; var truncated = firstRow != 0;
         foreach (var row in analysis.Rows.Skip(firstRow).Take(maximumLines))
         {
-            if (characters >= 1_000_000) { truncated = true; break; }
             var ending = row.Text.EndsWith("\r\n", StringComparison.Ordinal) ? "CRLF" : row.Text.EndsWith('\n') ? "LF" : "none";
             var text = ending == "CRLF" ? row.Text[..^2] : ending == "LF" ? row.Text[..^1] : row.Text;
             if (text.Length > 20000) { text = text[..20000] + " [line excerpt]"; truncated = true; }
+            if (characters + text.Length > MaximumDisplayCharacters) { truncated = true; break; }
             result.Add(new(row.Kind, row.BeforeLine, row.AfterLine, text, row.BlockId, ending)); characters += text.Length;
         }
         return new(file.Path, result, analysis.Coarse, truncated || firstRow + result.Count < total)
@@ -170,12 +180,21 @@ public static class AgentSourceReview
         var patch = new StringBuilder();
         foreach (var file in review.Files)
         {
+            if (file.Before == file.After) continue;
             var before = CountLines(file.Before); var after = CountLines(file.After);
-            patch.Append("--- ").AppendLine(file.Before == null ? "/dev/null" : Quote("a/" + file.Path));
-            patch.Append("+++ ").AppendLine(file.After == null ? "/dev/null" : Quote("b/" + file.Path));
-            patch.Append("@@ -").Append(before == 0 ? 0 : 1).Append(',').Append(before)
-                .Append(" +").Append(after == 0 ? 0 : 1).Append(',').Append(after).AppendLine(" @@");
-            Append(file.Before, '-'); Append(file.After, '+');
+            patch.Append("diff --git ").Append(Quote("a/" + file.Path)).Append(' ').Append(Quote("b/" + file.Path)).Append('\n');
+            if (file.Before == null) patch.Append("new file mode 100644\n");
+            if (file.After == null) patch.Append("deleted file mode 100644\n");
+            // Empty document creation/deletion has no hunk. Git's file-mode headers
+            // preserve existence, whereas a zero-to-zero unified hunk is invalid.
+            if (before != 0 || after != 0)
+            {
+                patch.Append("--- ").Append(file.Before == null ? "/dev/null" : Quote("a/" + file.Path)).Append('\n');
+                patch.Append("+++ ").Append(file.After == null ? "/dev/null" : Quote("b/" + file.Path)).Append('\n');
+                patch.Append("@@ -").Append(before == 0 ? 0 : 1).Append(',').Append(before)
+                    .Append(" +").Append(after == 0 ? 0 : 1).Append(',').Append(after).Append(" @@\n");
+                Append(file.Before, '-'); Append(file.After, '+');
+            }
             if (patch.Length > 8_000_000) throw new InvalidOperationException("The review patch exceeds 8 MB. Export individual project documents.");
         }
         return patch.ToString();

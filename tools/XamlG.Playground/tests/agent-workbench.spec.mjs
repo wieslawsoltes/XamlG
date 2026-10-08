@@ -10,10 +10,25 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
   test.setTimeout(90000); page.setDefaultTimeout(15000);
   test.skip(!process.env.XAMLG_TEST_HOST_DLL, 'Build the companion and set XAMLG_TEST_HOST_DLL for the full agent transport test.');
   const requests = [], failures = [];
+  const pageErrors = []; page.on('pageerror', error => pageErrors.push(error.message));
   let releaseFirst;
   const firstResponse = new Promise(resolve => { releaseFirst = resolve; });
   const moveResponse = Promise.withResolvers(), moveArrived = Promise.withResolvers();
+  const composerDraftResponse = Promise.withResolvers();
   const xaml = '<TextBlock xmlns="https://github.com/avaloniaui" Text="Agent changed this" />';
+  const report = 'Updated and compiled the real project.\n\n**Verified locally**\n\n```xml\n' + xaml + '\n```\n\n' +
+    '[Project source](https://example.invalid/source)\n\n' +
+    '<img src="https://example.invalid/embedded" onerror="window.agentMarkdownExecuted=true">\n\n' +
+    '![Embedded image](https://example.invalid/image)\n\n[Unsafe link](javascript:alert(1))';
+  const reviewBaseline = '<StackPanel xmlns="https://github.com/avaloniaui">\r\n' +
+    '  <TextBlock Text="First 🦊 before" />\r\n  <Border Height="8" />\n' +
+    '  <TextBlock Text="Second before" />\r\n</StackPanel>';
+  const reviewAfter = reviewBaseline.replace('First 🦊 before', 'First 🦊 after').replace('Second before', 'Second after');
+  const readSource = () => page.evaluate(() => window.xamlgAutomation.call('xamlg_document_read', { path: 'View.axaml' }));
+  const writeSource = text => page.evaluate(async text => {
+    const project = await window.xamlgAutomation.call('xamlg_project_get', {});
+    return window.xamlgAutomation.call('xamlg_document_write', { path: 'View.axaml', text, expectedRevision: project.revision });
+  }, text);
   const fixture = createServer(async (incoming, response) => {
     try {
       let body = ''; for await (const part of incoming) body += part;
@@ -36,8 +51,12 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
         output = [call('xamlg_document_write', { path: 'View.axaml', text: xaml, expectedRevision: result('call_1').revision })];
       } else if (round === 3) output = [call('xamlg_compiler_compile', {})];
       else {
-        if (!result('call_3').success) throw new Error('The agent edit did not compile.');
-        output = [{ type: 'message', id: 'msg_done', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'Updated and compiled the real project.', annotations: [] }] }];
+        if (round <= 5 && !result('call_3').success) throw new Error('The agent edit did not compile.');
+        if (round > 5) {
+          if (!JSON.stringify(input).includes('Create a concise public context checkpoint')) throw new Error('Expected the reviewed checkpoint request.');
+          if (input.tools?.length) throw new Error('Compaction must not offer tools.');
+        }
+        output = [{ type: 'message', id: 'msg_done', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: round > 5 ? 'The project was changed and compiled. Source restoration was reviewed. Inspect the current workspace before further changes.' : report, annotations: [] }] }];
       }
       response.setHeader('Content-Type', 'text/event-stream');
       response.end(providerEvents(provider, output, round).map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
@@ -56,7 +75,7 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
   environment[`${provider.toUpperCase()}_API_KEY`] = 'test-only-not-a-real-key';
   environment[`${provider.toUpperCase()}_ENDPOINT`] = `http://127.0.0.1:${fixturePort}${provider === 'openai' ? '/v1' : ''}`;
   const originArgs = origin === 'https://wieslawsoltes.github.io' ? [] : [`--origins=${origin}`];
-  const host = spawn(process.env.XAMLG_TEST_DOTNET || 'dotnet', [process.env.XAMLG_TEST_HOST_DLL, `--port=${companionPort}`, ...originArgs], {
+  const host = spawn(process.env.XAMLG_TEST_DOTNET || 'dotnet', [process.env.XAMLG_TEST_HOST_DLL, `--port=${companionPort}`, '--chatgpt=false', ...originArgs], {
     env: environment, stdio: ['ignore', 'pipe', 'pipe']
   });
   let hostLog = ''; host.stdout.on('data', part => { hostLog += part; }); host.stderr.on('data', part => { hostLog += part; });
@@ -85,11 +104,36 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await workbench.getByRole('button', { name: 'Create task', exact: true }).click();
     await workbench.getByText('Run permissions and limits', { exact: true }).click();
     await workbench.getByLabel('Task permission profile').selectOption('autoEdit');
-    await workbench.getByLabel('Message', { exact: true }).fill('Change the TextBlock, compile and report.');
-    await workbench.getByRole('button', { name: 'Run', exact: true }).click();
+    await page.route('**/agent/draft', async route => {
+      const response = await route.fetch();
+      await composerDraftResponse.promise;
+      await route.fulfill({ response });
+    });
+    const composer = workbench.getByLabel('Message', { exact: true });
+    const prompt = 'Change the TextBlock, compile and report.';
     const review = page.getByRole('dialog', { name: 'Review agent run' });
+    await composer.fill(prompt);
+    await expect(composer).toHaveAttribute('data-can-submit', 'true');
+    await composer.press('Shift+Enter');
+    await expect(composer).toHaveValue(prompt + '\n');
+    await expect(review).not.toBeVisible();
+    await composer.fill(prompt);
+    await composer.dispatchEvent('compositionstart', { data: '文字' });
+    await composer.press('Enter');
+    await expect(composer).toHaveValue(prompt + '\n');
+    await expect(review).not.toBeVisible();
+    await composer.dispatchEvent('compositionend', { data: '文字' });
+    await composer.fill(prompt);
+    await composer.press('Control+Enter');
+    await expect(review).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(review).not.toBeVisible();
+    expect(requests).toHaveLength(0);
+    await expect(composer).toHaveAttribute('data-can-submit', 'true');
+    await composer.press('Enter');
     await expect(review).toContainText('Change the TextBlock, compile and report.');
     expect(requests).toHaveLength(0);
+    composerDraftResponse.resolve();
     await review.getByRole('button', { name: 'Confirm run', exact: true }).click();
     await expect.poll(() => requests.length).toBe(1);
     await workbench.getByLabel('Message', { exact: true }).fill('First queued follow-up');
@@ -113,8 +157,16 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     releaseFirst();
     await expect(workbench.getByRole('status')).toContainText('completed', { timeout: 30000 });
     expect(failures).toEqual([]); expect(requests).toHaveLength(4);
+    const rendered = workbench.locator('.agent-assistant .agent-markdown').filter({ hasText: 'Verified locally' });
+    await expect(rendered.locator('strong')).toHaveText('Verified locally');
+    await expect(rendered.locator('.agent-code-block code')).toHaveText(xaml);
+    await expect(rendered.getByRole('link', { name: 'Project source' })).toHaveAttribute('href', 'https://example.invalid/source');
+    await expect(rendered.locator('img, script, iframe, a[href^="javascript:"]')).toHaveCount(0);
+    expect(await page.evaluate(() => window.agentMarkdownExecuted)).toBeUndefined();
     if (provider === 'openai') expect(requests.every(item => item.store === false)).toBe(true);
     expect((await page.evaluate(() => window.xamlgAutomation.call('xamlg_document_read', { path: 'View.axaml' }))).text).toBe(xaml);
+    // The next accepted run captures this manual edit as its own source baseline.
+    await writeSource(reviewBaseline);
     await expect(workbench.locator('.agent-queue summary')).toContainText('2 queued follow-ups');
     await workbench.getByLabel('Message', { exact: true }).fill('Unsent independent composer draft');
     await workbench.getByLabel('Task permission profile').selectOption('fullAccess');
@@ -159,14 +211,50 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     expect(continuation).toContain('Reviewed after concurrent queue edit');
     expect(continuation).not.toContain('Keep this message queued');
     expect(continuation).not.toContain('Unsent independent composer draft');
-    await workbench.getByText('Review 1 changed source files', { exact: true }).click();
+    await writeSource(reviewAfter);
+    await workbench.getByLabel('Source comparison').selectOption('latest');
+    await expect(workbench.getByLabel('Selected change block')).toHaveText('Change 1 of 2');
+    await workbench.getByRole('button', { name: 'Open current document', exact: true }).click();
+    await expect(page.getByRole('tab', { name: /^◇.*View.axaml$/ })).toHaveAttribute('aria-selected', 'true');
+    await workbench.getByRole('button', { name: 'Restore selected change', exact: true }).click();
+    const restore = page.getByRole('dialog', { name: 'Review source restore' });
+    await expect(restore).toContainText('First 🦊 after');
+    await expect(restore).toContainText('First 🦊 before');
+    await expect(restore).not.toContainText('Second after');
+    await restore.getByRole('button', { name: 'Confirm source restore', exact: true }).click();
+    await expect.poll(async () => (await readSource()).text).toBe(reviewAfter.replace('First 🦊 after', 'First 🦊 before'));
+    // Source restore is one ordinary project transaction, including its exact CRLF/LF.
+    await page.evaluate(async () => {
+      const project = await window.xamlgAutomation.call('xamlg_project_get', {});
+      await window.xamlgAutomation.call('xamlg_project_undo', { expectedRevision: project.revision });
+    });
+    await expect.poll(async () => (await readSource()).text).toBe(reviewAfter);
+    await expect(workbench.getByRole('button', { name: 'Restore selected change', exact: true })).toBeDisabled();
+    await workbench.getByRole('button', { name: 'Refresh changes', exact: true }).click();
+    await workbench.getByRole('button', { name: 'Next change', exact: true }).click();
+    await expect(workbench.getByLabel('Selected change block')).toHaveText('Change 2 of 2');
+    await workbench.getByRole('button', { name: 'Restore selected change', exact: true }).click();
+    await expect(restore).toContainText('Second after');
+    await writeSource(reviewAfter.replace('Height="8"', 'Height="9"'));
+    await expect(restore.getByRole('button', { name: 'Confirm source restore', exact: true })).toBeDisabled();
+    await restore.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect((await readSource()).text).toContain('Second after');
+    await workbench.getByLabel('Source comparison').selectOption('task');
+    await workbench.getByRole('button', { name: 'Refresh changes', exact: true }).click();
+    await expect(workbench.locator('details.agent-changes summary')).toHaveText('Review 1 changed source files');
     await workbench.getByLabel(/View.axaml \(/).check();
     await workbench.getByRole('button', { name: 'Show before and after' }).click();
-    await expect(workbench.locator('details.agent-changes')).toContainText(xaml);
+    await expect(workbench.locator('details.agent-changes')).toContainText('Second after');
     await workbench.getByRole('button', { name: 'Restore selected files' }).click();
+    await page.getByRole('dialog', { name: 'Review source restore' }).getByRole('button', { name: 'Confirm source restore', exact: true }).click();
     await expect.poll(async () => (await page.evaluate(() => window.xamlgAutomation.call('xamlg_document_read', { path: 'View.axaml' }))).text).toBe(original.text);
     await workbench.getByRole('button', { name: 'Compact context' }).click();
+    await expect(review).toContainText('Review context compaction');
+    expect(requests).toHaveLength(5);
+    await review.getByRole('checkbox').check();
+    await review.getByRole('button', { name: 'Confirm compaction', exact: true }).click();
     await expect(workbench.getByRole('status')).toContainText('1 checkpoints');
+    expect(failures).toEqual([]); expect(requests).toHaveLength(6);
     const downloadPromise = page.waitForEvent('download');
     await workbench.getByRole('button', { name: 'Export thread' }).click();
     expect((await downloadPromise).suggestedFilename()).toBe('xamlg-agent-thread.json');
@@ -177,11 +265,13 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     });
     await page.getByTestId('agent-workbench').click();
     await expect(workbench.getByRole('status')).toContainText('1 checkpoints');
+    expect(pageErrors).toEqual([]);
     await page.getByTestId('agent-access').click();
     await page.getByRole('button', { name: 'Revoke & disconnect' }).click();
   } finally {
     releaseFirst();
     moveResponse.resolve();
+    composerDraftResponse.resolve();
     if (test.info().status !== test.info().expectedStatus) await test.info().attach('companion.log', { body: hostLog, contentType: 'text/plain' });
     host.kill('SIGTERM');
     await Promise.race([once(host, 'exit'), new Promise(resolve => setTimeout(resolve, 5000))]);

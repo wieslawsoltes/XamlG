@@ -104,6 +104,26 @@ test('Monaco definitions open an unopened C# file through Dockyard', async ({ pa
   })).toBe('Number');
 });
 
+test('Monaco definitions navigate to exact first-line symbols in BOM source files', async ({ page }) => {
+  test.setTimeout(90000);
+  await ready(page);
+  await write(page, 'Models/Alpha.cs', 'namespace Model; public class Alpha {}');
+  const target = '\uFEFFnamespace Model; public class Item { public int Number = 42; }';
+  const code = '\uFEFFnamespace Model; public class Page { public int Local = 3; public int Read(Item item) => item.Number + Local; }';
+  await write(page, 'Models/Zebra.cs', target);
+  await write(page, 'Code.cs', code);
+  for (const [word, path, symbol] of [['Number +', 'Models/Zebra.cs', 'Number'], ['Local;', 'Code.cs', 'Local'], ['Number +', 'Models/Zebra.cs', 'Number']]) {
+    await page.getByRole('tab', { name: /^#.*Code.cs$/ }).click();
+    await command(page, word, 'editor.action.revealDefinition', 2);
+    await expect.poll(() => page.evaluate(path => {
+      const editor = monaco.editor.getEditors().find(e => e.getModel()?.uri.path.endsWith('/' + path));
+      return editor?.getPosition();
+    }, path), { timeout: 15000 }).toEqual({ lineNumber: 1, column: (path === 'Code.cs' ? code : target).slice(1).indexOf(symbol) + 1 });
+  }
+  expect((await call(page, 'xamlg_document_read', { path: 'Code.cs' })).text).toBe(code);
+  expect((await call(page, 'xamlg_document_read', { path: 'Models/Zebra.cs' })).text).toBe(target);
+});
+
 test('C# generated field rename edits its XAML declaration and generated files can be selected', async ({ page }) => {
   await ready(page, false);
   await page.getByLabel('Example', { exact: true }).selectOption('1');

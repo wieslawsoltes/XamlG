@@ -205,11 +205,35 @@ survive pane reopening within this page; they are not saved in browser storage.
 
 The implementation-first pass has reached validation. On 2026-10-08 the complete
 native solution and integrated Playground build with warnings treated as errors.
-The native suite passes all 1,944 tests:
-266 core, 169 Tooling, 1,332 Avalonia, 69 automation/MCP/agent, 94 language-server
+The native suite passes all 1,994 tests:
+266 core, 169 Tooling, 1,332 Avalonia, 119 automation/MCP/agent, 94 language-server
 and 14 workspace tests. This includes 42 official-SDK provider transport cases.
 The expanded behavioral coverage and browser/package acceptance listed below are
 still required; passing the existing native suite does not complete those checks.
+
+Fifty additional native agent cases now cover exact block restoration and complete
+patch application/reversal with Git, empty/added/deleted documents, UTF-16 and mixed
+line endings, bounded/coarse diff display, task-start/latest-run checkpoints,
+comparison/content identities, stale source guards, queue preparation races and
+workspace replacement. Compaction cases preserve requirements, plans and complete
+native turns; reject malformed, oversized, output-limited or unfittable summaries;
+regenerate only unexecuted batches; and share request/token budgets. Lifecycle cases
+exercise scoped run grants, account cancellation during approval/tools, retry
+deadlines, bounded tool results and serialized run/compaction admission.
+
+These tests fixed diff displays exceeding their aggregate budget, invalid empty-file
+patches, unfinished requests displacing retained complete turns, and model-window
+checks missing from checkpoint requests or disabled with the input threshold.
+An unfinished request now remains the final prompt independently of retained turns.
+Late provider success after revocation or request timeout no longer completes a task;
+reported usage is counted once and streamed public text remains incomplete.
+
+Browser restoration exposed editor captures silently normalizing mixed line endings.
+The editor now retains exact source independently of Monaco/textarea display buffers,
+applies user changes to source ranges and translates selections, navigation and Roslyn
+queries to actual source offsets. Explicit EOL changes still convert the document.
+Nine asset tests pass, including six new cases for source-position mapping, Unicode/BOM,
+multiple edits, newline insertion/deletion, fallback input and authoritative replacement.
 
 The compiler/Roslyn pass adds 43 native cases. Operation and flow inspection covers
 initializers, calls, conversions, lifted operators, branches/finally regions,
@@ -317,17 +341,33 @@ Undo transaction, preserves unrelated edits, and compiles/runs the renamed proje
 Browser helpers account for virtualized outline rows and read the actual editor
 instead of a cached navigation model for the same document.
 
-The complete browser suite currently contains 61 scenarios in 24 files. The focused
-14-case compiler/authoring coverage and earlier 16-case runtime/designer/automation
-pass do not certify the unrun agent, account, isolation and other cases below.
+Thirty selected agent, authoring, editor and resource browser scenarios now pass at
+the Pages origin. The three official-provider workbenches exercise Markdown rendering,
+IME/Shift+Enter and reviewed keyboard submission, delayed draft/queue responses,
+task-start/latest-run comparisons, exact block restoration and normal project Undo,
+stale restore rejection, explicit compaction and pane reopening. The source-editor
+cases cover immediate captures, mixed line endings, textarea fallback, document
+retirement, file moves and exact first-line navigation with a byte-order mark.
+Resource exports now check version 4 and the captured compiler options.
+
+These checks fixed keyboard resubmission being ignored while an earlier draft save
+was pending, source navigation calling a tool-pane-only Dockyard method on a document,
+empty Boolean ARIA selection attributes and first-line navigation columns losing the
+hidden byte-order mark at the Monaco/Roslyn boundary. The keyboard regression holds
+draft responses until after cancel/resubmit, so it does not depend on transport speed.
+
+The complete browser suite currently contains 64 scenarios in 24 files. These focused
+passes and the earlier compiler/runtime/designer checks do not certify the remaining
+agent thread/account acceptance or a complete current browser run.
 
 Remaining completion work:
 
-- Expand agent review/compaction/recovery and MCP Tasks/resource/artifact checks,
+- Finish agent review/thread UI acceptance for feedback, task/pane isolation,
+  historical paging and incomplete replies. Expand MCP Tasks/resource/artifact checks,
   including cancellation, ownership, permissions and workspace replacement.
 - Exercise deterministic ChatGPT OAuth, identity rejection, credential storage,
   refresh/sign-out races, account-bound tools and the account workbench UI.
-- Update and run the complete 61-case browser suite with Pages-origin/base-path pairing,
+- Update and run the complete 64-case browser suite with Pages-origin/base-path pairing,
   all 21 package consumers and remaining CI scripts; fix failures and update the PR.
 
 Main remains merged through `46553c8`; fetching upstream at this checkpoint found
