@@ -38,21 +38,25 @@ public sealed class McpTaskLifecycleTests
         Assert.IsType<WorkingTaskResult>(await owner.GetTaskAsync(id, token));
         await owner.UpdateTaskAsync(new() { TaskId = id }, token);
 
+        var ownerAcknowledgements = Channel.CreateUnbounded<JsonRpcNotification>();
+        var otherAcknowledgements = Channel.CreateUnbounded<JsonRpcNotification>();
         var ownerMessages = Channel.CreateUnbounded<JsonRpcNotification>();
         var otherMessages = Channel.CreateUnbounded<JsonRpcNotification>();
-        await using var ownerAck = Observe(owner, NotificationMethods.SubscriptionsAcknowledgedNotification, ownerMessages);
+        // The SDK dispatches different notification handlers concurrently. Their
+        // callbacks cannot certify wire ordering; raw SSE browser cases cover that.
+        await using var ownerAck = Observe(owner, NotificationMethods.SubscriptionsAcknowledgedNotification, ownerAcknowledgements);
         await using var ownerStatus = Observe(owner, TasksProtocol.NotificationTaskStatus, ownerMessages);
-        await using var otherAck = Observe(other, NotificationMethods.SubscriptionsAcknowledgedNotification, otherMessages);
+        await using var otherAck = Observe(other, NotificationMethods.SubscriptionsAcknowledgedNotification, otherAcknowledgements);
         await using var otherStatus = Observe(other, TasksProtocol.NotificationTaskStatus, otherMessages);
         using var listening = CancellationTokenSource.CreateLinkedTokenSource(token);
         var stream = Listen(owner, "owner-stream", [id, "unknown-task"], listening.Token);
         try
         {
-            var acknowledgement = await ownerMessages.Reader.ReadAsync(token);
+            var acknowledgement = await ownerAcknowledgements.Reader.ReadAsync(token);
             Assert.Equal(NotificationMethods.SubscriptionsAcknowledgedNotification, acknowledgement.Method);
             Assert.Equal(new[] { id }, acknowledgement.Params!["notifications"]!["taskIds"]!.AsArray().Select(value => value!.GetValue<string>()));
             await Listen(other, "other-stream", [id], token);
-            Assert.Null((await otherMessages.Reader.ReadAsync(token)).Params!["notifications"]!["taskIds"]);
+            Assert.Null((await otherAcknowledgements.Reader.ReadAsync(token)).Params!["notifications"]!["taskIds"]);
             fixture.Wait("owned").Result.SetResult("observed source revision");
             JsonRpcNotification completed;
             do { completed = await ownerMessages.Reader.ReadAsync(token); }

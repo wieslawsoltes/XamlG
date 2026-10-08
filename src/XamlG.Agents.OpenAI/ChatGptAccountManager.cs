@@ -108,7 +108,11 @@ public sealed class ChatGptAccountManager : IAsyncDisposable
         {
             ThrowIfDisposed(); ownerSession.ThrowIfCancellationRequested();
             Pending? previous; lock (_sync) previous = _pending;
-            if (previous != null && !previous.Loopback.Completion.IsCompleted) throw new ChatGptAccountException("sign_in_already_pending");
+            // A terminal result is already usable by the caller while the callback
+            // listener finishes sending its response. Retire that listener below;
+            // only an unfinished exchange should prevent the next sign-in or retry.
+            if (previous is { Status: "waiting" or "exchanging" } && !previous.Loopback.Completion.IsCompleted)
+                throw new ChatGptAccountException("sign_in_already_pending");
             if (retrySignInId != null && (previous == null || previous.Id != retrySignInId || !previous.Info.CanRetryRegistration || accountId != null))
                 throw new ChatGptAccountException("registration_retry_unavailable");
             var retryClientId = retrySignInId == null ? null : previous!.ClientId;

@@ -133,12 +133,19 @@ test('owner compiler UI supports Undo, Redo, draft restoration and version-4 exp
   expect(project.version).toBe(4);
   expect(project.compilerOptions).toMatchObject({ checkOverflow: true, optimization: 'Debug', preprocessorSymbols: ['FEATURE', 'TRACE'] });
   // Older drafts have no settings document and must restore the defaults.
-  await page.evaluate(() => {
+  const legacyDraft = await page.evaluate(() => {
     const draft = JSON.parse(localStorage.getItem('xamlg.draft'));
     draft.version = 3; delete draft.compilerOptions;
-    localStorage.setItem('xamlg.draft', JSON.stringify(draft));
+    return draft;
   });
+  // Install the old-version draft before startup, as on an upgrade. A live
+  // compiler refresh also captures/saves editors and may overwrite storage.
+  await page.addInitScript(draft => localStorage.setItem('xamlg.draft', JSON.stringify(draft)), legacyDraft);
+  await page.reload();
+  await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
+  await expect(page.locator('.statusbar')).toContainText('Draft restored without executing');
+  pane = await compilerPane(page);
   await expect(overflow()).not.toBeChecked({ timeout: 15000 });
   await expect(pane.getByLabel('Conditional symbols')).toHaveValue('');
   await expect(pane.getByRole('alert')).toHaveCount(0);

@@ -401,6 +401,23 @@ The complete browser suite now contains 73 scenarios in 27 files. These focused
 passes and the earlier compiler/runtime/designer checks do not certify a complete
 current browser run.
 
+The first complete Pages-origin run passed 72 cases. Its legacy-draft fixture now
+installs old storage before startup so a live editor capture cannot overwrite it;
+the corrected case passes. CI also exposed a real sign-in retry race: a completed
+or failed exchange was rejected until its callback listener finished cleanup.
+Terminal sign-ins now retire the listener before admitting the next request.
+The MCP ownership test uses separate acknowledgement/status channels because SDK
+notification handlers run concurrently; raw SSE acceptance still verifies ordering.
+All 27 affected account/task cases pass locally. The complete browser rerun and
+cross-platform CI results remain pending.
+
+The 25 MSBuild input and five fingerprint cases, all 909 pinned upstream assertions
+and parity cases, and CLI process checks pass. Unmodified Simple (81 physical plus
+one linked document) and Fluent (86 documents) themes compile and construct, each
+realizing 34 control/theme cases. All 21 candidate packages build and pass inventory
+inspection; clean external consumer execution is still required. Temporary theme
+and upstream outputs are removed after retaining their result summaries.
+
 Remaining completion work:
 
 - Run the full browser suite with the additional MCP/artifact/account acceptance
