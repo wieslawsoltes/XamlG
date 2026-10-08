@@ -1,7 +1,5 @@
 import { test, expect } from './studio-fixture.mjs';
-import { captureEditorState } from './editor-state.mjs';
-
-const draft = page => page.evaluate(() => JSON.parse(localStorage.getItem('xamlg.draft')));
+import { captureEditorState, savedProject as draft } from './editor-state.mjs';
 
 test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status !== testInfo.expectedStatus) await captureEditorState(page, 'failed: ' + testInfo.title);

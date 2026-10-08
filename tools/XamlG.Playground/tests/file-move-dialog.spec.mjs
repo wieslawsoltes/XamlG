@@ -1,4 +1,5 @@
 import { test, expect } from './studio-fixture.mjs';
+import { savedProject } from './editor-state.mjs';
 
 const mainSource = page => page.evaluate(() => monaco.editor.getModels()
   .find(model => model.getLanguageId() === 'xml' && model.getValue().includes('<StackPanel'))?.getValue());
@@ -13,7 +14,7 @@ const mainSource = page => page.evaluate(() => monaco.editor.getModels()
   const resources = page.getByLabel('Project resource', { exact: true });
   await resources.selectOption('Resources/Palette.axaml');
   const before = await mainSource(page);
-  const originalResources = await page.evaluate(() => JSON.parse(localStorage.getItem('xamlg.draft')).resources);
+  const originalResources = (await savedProject(page)).resources;
 
   await page.getByTestId('rename-resource-file').click();
   const dialog = page.getByRole('dialog', { name: 'Move XAML resource', exact: true });
@@ -28,7 +29,7 @@ const mainSource = page => page.evaluate(() => monaco.editor.getModels()
   await expect(dialog).toBeHidden();
   await expect(resources).toHaveValue('Resources/Palette.axaml');
   expect(await mainSource(page)).toBe(before);
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('xamlg.draft')).resources)).toEqual(originalResources);
+  expect((await savedProject(page)).resources).toEqual(originalResources);
 
   await page.getByTestId('rename-resource-file').click();
   await expect(dialog).toBeVisible();

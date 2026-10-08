@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect } from './studio-fixture.mjs';
 import { call, connectMcp, openStudio, writeDocument } from './live-preview.mjs';
+import { savedProject } from './editor-state.mjs';
 
 async function compilerPane(page) {
   await page.locator('[data-tab-id="compiler"]').click();
@@ -119,14 +120,14 @@ test('owner compiler UI supports Undo, Redo, draft restoration and version-4 exp
   await page.getByRole('button', { name: 'Redo', exact: false }).click();
   await expect(overflow()).toBeChecked({ timeout: 15000 });
   await expect(pane.getByRole('combobox', { name: 'Optimization' })).toHaveValue('Debug');
-  const savedDraft = await page.evaluate(() => localStorage.getItem('xamlg.draft'));
+  const savedDraft = await savedProject(page);
   await page.reload();
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   pane = await compilerPane(page);
-  // The restored tool performs an automatic options read. It must not overwrite
-  // the saved project before the user explicitly restores it.
+  // Startup restores the project before the tool reads its compiler options.
+  // Neither that read nor an explicit restore may replace the saved history.
   await expect(pane.getByRole('button', { name: 'Compile project', exact: true })).toBeEnabled();
-  expect(await page.evaluate(() => localStorage.getItem('xamlg.draft'))).toBe(savedDraft);
+  expect(await savedProject(page)).toEqual(savedDraft);
   await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Draft restored without executing');
@@ -141,15 +142,16 @@ test('owner compiler UI supports Undo, Redo, draft restoration and version-4 exp
   expect(project.version).toBe(4);
   expect(project.compilerOptions).toMatchObject({ checkOverflow: true, optimization: 'Debug', preprocessorSymbols: ['FEATURE', 'TRACE'] });
   // Older drafts have no settings document and must restore the defaults.
-  const legacyDraft = await page.evaluate(() => {
-    const draft = JSON.parse(localStorage.getItem('xamlg.draft'));
-    draft.version = 3; delete draft.compilerOptions;
-    return draft;
-  });
-  // Install the old-version draft before startup, as on an upgrade. A live
-  // compiler refresh also captures/saves editors and may overwrite storage.
-  await page.addInitScript(draft => localStorage.setItem('xamlg.draft', JSON.stringify(draft)), legacyDraft);
-  await page.reload();
+  const legacyDraft = { version: 3, xaml: savedDraft.xaml, code: savedDraft.code, resources: savedDraft.resources, codeFiles: savedDraft.codeFiles };
+  // Install the legacy draft in a quiescent document on the same origin, so no
+  // live compiler refresh can autosave over the upgrade fixture.
+  await page.route('**/?legacy-draft-fixture', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Legacy draft fixture</title>' }));
+  await page.goto('./?legacy-draft-fixture');
+  await page.evaluate(async draft => {
+    await (await import(new URL('studio-storage.js', location.href))).forgetStudioState('project');
+    localStorage.setItem('xamlg.draft', JSON.stringify(draft));
+  }, legacyDraft);
+  await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
@@ -158,6 +160,8 @@ test('owner compiler UI supports Undo, Redo, draft restoration and version-4 exp
   await expect(overflow()).not.toBeChecked({ timeout: 15000 });
   await expect(pane.getByLabel('Conditional symbols')).toHaveValue('');
   await expect(pane.getByRole('alert')).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('xamlg.draft'))).toBeNull();
+  expect((await savedProject(page)).compilerOptions.checkOverflow).toBe(false);
 });
 
 test('compiler UI preserves a conflicting draft and exports live Roslyn results', async ({ page }) => {
