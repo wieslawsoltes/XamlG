@@ -53,7 +53,7 @@ else { <p>@Display(Value)</p> }
         if (value.ValueKind == JsonValueKind.Array)
             return $"{AgentEventCard.Count(value)} items";
         var fields = value.EnumerateObject().ToArray();
-        return $"{fields.Sum(item => Omitted(new(item.Name, item.Value)) ?? 1)} fields";
+        return $"{fields.Sum(item => (long)(Omitted(new(item.Name, item.Value)) ?? 1))} fields";
     }
     private static string Display(JsonElement value)
     {

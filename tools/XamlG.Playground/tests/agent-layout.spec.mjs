@@ -38,6 +38,30 @@ test('tool cards present large results and errors without exposing raw JSON in t
     await page.screenshot({ path: testInfo.outputPath('compact-agent-results.png') });
     const exported = JSON.parse(await api('export', { id }));
     expect(JSON.stringify(exported)).toContain('Source line 249');
+
+    // Tool JSON is data: marker-shaped strings and large counts must not crash
+    // the renderer or prevent reading the rest of the conversation.
+    await page.route('**/agent/state', async route => {
+      const response = await route.fetch();
+      try {
+        const state = await response.json();
+        const task = state.tasks.find(task => task.id === id);
+        const last = task.events.at(-1);
+        task.events.push({ ...last, sequence: last.sequence + 1, kind: 'tool_completed', toolName: 'xamlg_inspect_values',
+          toolCallId: 'render-values', text: JSON.stringify({ values: [42, null, true, { $moreItems: 'ordinary value' },
+            { $moreItems: -1 }, { $moreItems: 2147483647 }, { $moreItems: 2147483647 }] }) });
+        await route.fulfill({ response, json: state });
+      } finally { await response.dispose(); }
+    });
+    const follow = pane.getByRole('button', { name: 'Follow latest', exact: true });
+    if (await follow.isVisible()) await follow.click();
+    await pane.getByRole('button', { name: 'Refresh coding agent', exact: true }).click();
+    const values = pane.getByRole('log').locator('.agent-tool').filter({ hasText: 'Inspect values' });
+    await expect(values).toHaveAttribute('data-status', 'Completed');
+    await values.locator(':scope > summary').click();
+    await values.locator('.agent-result-branch > summary').first().click();
+    await expect(values.locator('.agent-result-fields').first()).toContainText('ordinary value');
+    await expect(values.locator('.agent-result-fields').first()).toContainText('4294967299 items');
   });
 });
 
