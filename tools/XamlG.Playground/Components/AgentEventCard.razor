@@ -72,7 +72,7 @@
         }
         return parts.Count > 0 ? string.Join(" · ", parts) : _error ? "Review the result" : $"{value.EnumerateObject().Count():N0} result fields";
     }
-    private static int Count(JsonElement array) => array.EnumerateArray().Sum(item => item.ValueKind == JsonValueKind.Object && item.EnumerateObject().Count() == 1 && item.TryGetProperty("$moreItems", out var omitted) && omitted.TryGetInt32(out var count) ? count : 1);
+    internal static int Count(JsonElement array) => array.EnumerateArray().Sum(item => item.ValueKind == JsonValueKind.Object && item.EnumerateObject().Count() == 1 && item.TryGetProperty("$moreItems", out var omitted) && omitted.TryGetInt32(out var count) ? count : 1);
     internal static string Humanize(string text)
     {
         text = System.Text.RegularExpressions.Regex.Replace(text.Replace('_', ' '), "([a-z])([A-Z])", "$1 $2");

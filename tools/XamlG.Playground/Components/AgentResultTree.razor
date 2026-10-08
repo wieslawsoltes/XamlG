@@ -51,7 +51,7 @@ else { <p>@Display(Value)</p> }
     private static string Description(JsonElement value)
     {
         if (value.ValueKind == JsonValueKind.Array)
-            return $"{value.EnumerateArray().Sum(item => Omitted(new("$moreItems", item)) ?? 1)} items";
+            return $"{AgentEventCard.Count(value)} items";
         var fields = value.EnumerateObject().ToArray();
         return $"{fields.Sum(item => Omitted(new(item.Name, item.Value)) ?? 1)} fields";
     }
