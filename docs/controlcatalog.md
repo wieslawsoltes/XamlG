@@ -58,6 +58,8 @@ The browser host retains Avalonia's generated OpenGL delegate signatures through
 
 ## Compilation benchmark
 
+Performance work retains direct typed C# generation, including source diagnostics, runtime inspection and trimming analysis.
+
 On a clean committed worktree, run `python3 scripts/benchmark-controlcatalog.py`. The CI catalog job runs the same comparison and uploads its JSON, individual build logs and Markdown table with the validation artifacts.
 
 The harness builds dependencies before measurement, then forces three Release rebuilds of each theme and ControlCatalog with each compiler. XamlX uses the same ported projects with `XamlGEnabled=false`; XamlG uses their normal source integration. Timed builds disable project-reference builds, restore and shared compilation, use one MSBuild worker, and start fresh compiler processes with a warm filesystem/package cache. The script restores the normal XamlG build afterwards.

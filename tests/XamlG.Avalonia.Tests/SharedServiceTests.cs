@@ -15,13 +15,16 @@ public sealed class SharedServiceTests
     private const string Ns = ResourceProjectFixture.Namespace +
         " xmlns:t='clr-namespace:XamlG.Avalonia.Tests;assembly=XamlG.Avalonia.Tests'";
 
-    [AvaloniaFact]
-    public void SharedImplementationKeepsEachDocumentsRootTargetAndNamespaceScope()
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SharedImplementationKeepsEachDocumentsRootTargetAndNamespaceScope(bool differentNamespaces)
     {
+        var secondNamespace = differentNamespaces ? "Second" : "First";
         var fixture = new ResourceProjectFixture(new[]
         {
             ("First.axaml", "<Border " + Ns + " xmlns:a='clr-namespace:First' Tag='{t:SharedServiceCapture}'/>"),
-            ("Second.axaml", "<Border " + Ns + " xmlns:a='clr-namespace:Second' Tag='{t:SharedServiceCapture}'/>")
+            ("Second.axaml", "<Border " + Ns + " xmlns:a='clr-namespace:" + secondNamespace + "' Tag='{t:SharedServiceCapture}'/>")
         });
         var assembly = ResourceProjectFixture.Load(fixture.Emit());
         Border Build(string path)
@@ -32,13 +35,20 @@ public sealed class SharedServiceTests
         }
         var first = Build("First.axaml");
         var second = Build("Second.axaml");
-        foreach (var (root, ns) in new[] { (first, "First"), (second, "Second") })
+        foreach (var (root, ns) in new[] { (first, "First"), (second, secondNamespace) })
         {
             var captured = Assert.IsType<SharedServiceCapture>(root.Tag);
             Assert.Same(root, captured.Root.RootObject);
             Assert.Same(root, captured.Target.TargetObject);
             Assert.Equal(ns, Assert.Single(captured.Namespaces.XmlNamespaces["a"]).ClrNamespace);
         }
+        var firstMap = Assert.IsType<SharedServiceCapture>(first.Tag).Namespaces.XmlNamespaces;
+        var secondMap = Assert.IsType<SharedServiceCapture>(second.Tag).Namespaces.XmlNamespaces;
+        Assert.NotSame(firstMap, secondMap);
+        Assert.NotSame(firstMap["a"], secondMap["a"]);
+        Assert.NotSame(firstMap["a"][0], secondMap["a"][0]);
+        firstMap["a"][0].ClrNamespace = "Changed";
+        Assert.Equal(secondNamespace, secondMap["a"][0].ClrNamespace);
     }
 
     [AvaloniaFact]

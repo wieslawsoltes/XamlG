@@ -1,6 +1,8 @@
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
 using XamlG.Roslyn;
+using XamlG.Syntax;
 
 namespace XamlG.CSharp;
 
@@ -17,22 +19,35 @@ internal sealed class ServiceContractEmitter
 
     public SharedServiceSource CreateShared()
     {
-        // The class contains only service-contract operations and a supplied frame;
-        // document namespaces, roots and target objects remain in that frame.
+        // Share the code for service contracts and namespace maps. Each document
+        // still owns its map instances, roots and target objects.
+        var scopes = new SortedDictionary<string, NamespaceScope>(StringComparer.Ordinal);
+        if (_context.Document.Runtime.Services.Any(service => service.Mapping.Kind == XamlServiceKind.XmlNamespaces))
+        {
+            var visited = new HashSet<NamespaceScope>();
+            foreach (var value in BoundTraversal.Objects(_context.Document.Root!, includeDeferred: true))
+            {
+                _context.Cancellation.ThrowIfCancellationRequested();
+                if (visited.Add(value.Scope)) scopes[NamespaceMapEmitter.ScopeKey(value.Scope)] = value.Scope;
+            }
+        }
+        var factories = scopes.Select((entry, index) => (entry.Key, Name: "CreateNamespaces" + index, Scope: entry.Value)).ToArray();
         var identity = new CSharpWriter();
-        Write(identity, "Services", "internal");
+        Write(identity, "Services", "internal", factories);
         var name = "Services_" + _context.StableId(identity.ToString());
         var ns = _context.Document.Options.GeneratedNamespace + ".Services";
         var writer = new CSharpWriter();
         writer.Line("#nullable enable annotations");
         writer.Line("#nullable disable warnings");
         writer.Open("namespace " + ns);
-        Write(writer, name, "internal");
+        Write(writer, name, "internal", factories);
         writer.Close();
-        return new("global::" + ns + "." + name, writer.ToString());
+        return new("global::" + ns + "." + name, writer.ToString(),
+            factories.ToImmutableDictionary(factory => factory.Key, factory => factory.Name, StringComparer.Ordinal));
     }
 
-    private void Write(CSharpWriter writer, string name, string accessibility)
+    private void Write(CSharpWriter writer, string name, string accessibility,
+        (string Key, string Name, NamespaceScope Scope)[]? factories = null)
     {
         var contracts = _context.Document.Runtime.Services;
         if (contracts.Length == 0) return;
@@ -51,6 +66,11 @@ internal sealed class ServiceContractEmitter
                 var setter = property.SetMethod == null ? string.Empty : "set => _context.BaseUri = value;";
                 writer.Line(property.Type.CSharpName() + " " + property.ContainingType.CSharpName() + "." + CSharpNames.Identifier(property.Name) + " { " + getter + " " + setter + " }");
             }
+        }
+        if (factories != null)
+        {
+            var namespaces = new NamespaceMapEmitter(_context);
+            foreach (var factory in factories) namespaces.EmitFactory(writer, factory.Scope, factory.Name, "public");
         }
         writer.Close();
     }
