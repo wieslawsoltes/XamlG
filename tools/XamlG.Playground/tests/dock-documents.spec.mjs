@@ -44,6 +44,14 @@ test('shell menus, generated documents and individual runtime tool panels work a
   await openStudio(page, false);
   await menu(page, 'Project'); await expect(page.getByLabel('Example', { exact: true })).toBeVisible();
   await page.keyboard.press('Escape'); await expect(page.getByLabel('Example', { exact: true })).not.toBeVisible();
+  await page.keyboard.press('ArrowUp');
+  await expect(page.getByRole('button', { name: 'Manage C# files', exact: true })).toBeFocused();
+  await page.keyboard.press('Escape'); await page.keyboard.press('ArrowDown');
+  const example = page.getByLabel('Example', { exact: true });
+  await expect(example).toBeFocused();
+  // The shell must leave native select navigation to the browser.
+  expect(await example.evaluate(element => element.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })))).toBe(true);
+  await expect(example).toBeFocused(); await page.keyboard.press('Escape');
   await menu(page, 'View'); await page.getByRole('button', { name: 'Generated C#', exact: true }).click();
   const generated = page.locator('.generated-files button').first();
   const path = (await generated.textContent()).replace(/^#\s*/, '').trim(); await generated.click();

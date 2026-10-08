@@ -573,12 +573,15 @@ export function installStudioShell() {
         const target = event.target instanceof Element ? event.target : null;
         const menu = target?.closest('.studio-menu');
         if (!menu) return;
+        // Native selects own their arrow keys, including the example picker.
+        if (target?.tagName === 'SELECT' && event.key !== 'Escape') return;
         if (event.key === 'Escape') { menu.open = false; menu.querySelector('summary')?.focus(); event.preventDefault(); }
         else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             menu.open = true;
             const items = [...menu.querySelectorAll('button:not(:disabled), select:not(:disabled)')];
             const index = items.indexOf(target), direction = event.key === 'ArrowDown' ? 1 : -1;
-            items[(index + direction + items.length) % items.length]?.focus(); event.preventDefault();
+            const next = index < 0 ? (direction > 0 ? 0 : items.length - 1) : (index + direction + items.length) % items.length;
+            items[next]?.focus(); event.preventDefault();
         } else if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && target?.tagName !== 'SELECT') {
             const all = menus(), index = all.indexOf(menu), next = all[(index + (event.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length];
             const opened = menu.open; close(); next.open = opened; next.querySelector('summary')?.focus(); event.preventDefault();
