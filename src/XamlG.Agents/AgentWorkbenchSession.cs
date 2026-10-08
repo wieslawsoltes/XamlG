@@ -15,7 +15,7 @@ public class AgentWorkbenchSession : IDisposable
     private Task? _run;
     private CancellationTokenSource? _runCancellation;
     private string? _runningId;
-    private readonly Queue<AgentEvent> _activity = new();
+    private readonly Queue<AgentEventDisplay> _activity = new();
     private int _activityBytes;
     private bool _disposed;
     public AgentWorkbenchSession(IAutomationHost host, IEnumerable<IAgentProvider> providers, IAgentWorkspace? workspace = null, AgentPermissionConstraints? constraints = null)
@@ -50,7 +50,7 @@ public class AgentWorkbenchSession : IDisposable
                         changes = task.Changes == null ? null : new { task.Changes.ReviewId, task.Changes.ReviewVersion, task.Changes.Revision, files = task.Changes.Files.Select(file => new { file.Path, contentId = task.Changes.FileIdentities[file.Path], beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
                         latestRunChanges = task.LatestRunChanges == null ? null : new { task.LatestRunChanges.ReviewId, task.LatestRunChanges.ReviewVersion, task.LatestRunChanges.Revision, files = task.LatestRunChanges.Files.Select(file => new { file.Path, contentId = task.LatestRunChanges.FileIdentities[file.Path], beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
                         publicEventCount = task.Events.Count(item => item.Kind != "text_delta"),
-                        events = task.Events.Where(item => item.Kind != "text_delta").TakeLast(80).Select(item => item with { Text = item.Text.Length > 8192 ? item.Text[..8192] + "\n[see transcript export]" : item.Text })
+                        events = task.Events.Where(item => item.Kind != "text_delta").TakeLast(80).Select(item => AgentEventDisplay.Create(item, 8192))
                     }),
                     pending = _pending.Values.Select(p => new { p.Id, p.TaskId, p.Kind, content = PublicPending(p) }),
                     operations = OperationState
@@ -68,12 +68,12 @@ public class AgentWorkbenchSession : IDisposable
                 var candidates = all.Where(item => (thread.BeforeSequence == null || item.Sequence < thread.BeforeSequence) &&
                     (thread.AfterSequence == null || item.Sequence > thread.AfterSequence));
                 if (thread.AfterSequence == null) candidates = candidates.Reverse();
-                var page = new List<AgentEvent>(); var characters = 0;
+                var page = new List<AgentEventDisplay>(); var characters = 0;
                 foreach (var item in candidates.Take(thread.MaximumEntries))
                 {
                     var text = item.Text.Length > 8192 ? item.Text[..8192] + "\n[see transcript export]" : item.Text;
                     if (characters + text.Length > 262144) break;
-                    page.Add(item with { Text = text }); characters += text.Length;
+                    page.Add(AgentEventDisplay.Create(item, 8192)); characters += text.Length;
                 }
                 if (thread.AfterSequence == null) page.Reverse();
                 return AutomationJson.Element(new { events = page, hasEarlier = page.Count > 0 && all.Any(item => item.Sequence < page[0].Sequence),
@@ -259,12 +259,12 @@ public class AgentWorkbenchSession : IDisposable
             item.Text.Length <= 2048 ? item.Text : item.Text[..2048] + " [excerpt]";
         lock (_gate)
         {
-            var entry = item with { Text = text };
+            var entry = AgentEventDisplay.Create(item, 2048) with { Text = text };
             _activity.Enqueue(entry); _activityBytes += ActivityBytes(entry);
             while (_activity.Count > 500 || _activityBytes > 524288) _activityBytes -= ActivityBytes(_activity.Dequeue());
         }
     }
-    private static int ActivityBytes(AgentEvent item) => JsonSerializer.SerializeToUtf8Bytes(item, AutomationJson.Options).Length + 1;
+    private static int ActivityBytes(AgentEventDisplay item) => JsonSerializer.SerializeToUtf8Bytes(item, AutomationJson.Options).Length + 1;
 
     protected virtual IAgentProvider Provider(string id, string? accountId = null) =>
         _providers.TryGetValue(id, out var provider) ? provider : throw new ArgumentException("Provider is not configured for this connection.");

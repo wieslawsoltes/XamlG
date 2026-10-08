@@ -112,5 +112,7 @@ public partial class AgentWorkbench
         public long Sequence { get; set; }
         public DateTimeOffset Time { get; set; }
         public string TaskId { get; set; } = ""; public string Kind { get; set; } = ""; public string Text { get; set; } = "";
+        public string? ToolName { get; set; }
+        public JsonElement? ResultPreview { get; set; }
     }
 }

@@ -14,7 +14,10 @@ public sealed record AgentUsage(long InputTokens, long OutputTokens, bool Estima
 {
     public long Total => checked(InputTokens + OutputTokens);
 }
-public sealed record AgentEvent(long Sequence, DateTimeOffset Time, string TaskId, string Kind, string Text, string? ToolCallId = null);
+public sealed record AgentEvent(long Sequence, DateTimeOffset Time, string TaskId, string Kind, string Text, string? ToolCallId = null)
+{
+    public string? ToolName { get; init; }
+}
 public sealed record AgentQuestion(string Question, IReadOnlyList<string>? Options = null);
 public sealed record AgentQueuedMessage(string Id, string Text);
 public sealed record AgentQueueSnapshot(long Revision, IReadOnlyList<AgentQueuedMessage> Messages);

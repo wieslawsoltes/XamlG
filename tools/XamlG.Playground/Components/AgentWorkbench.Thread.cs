@@ -7,6 +7,31 @@ public partial class AgentWorkbench
     private static readonly Dictionary<string, ThreadState> ThreadStates = new(StringComparer.Ordinal);
     private ThreadState Thread => ThreadStates.TryGetValue(_selectedId, out var state) ? state : ThreadStates[_selectedId] = new();
     private EventView[] VisibleEvents => Thread.Page?.Events ?? Selected?.Events ?? [];
+    private IEnumerable<ThreadEntry> VisibleThread
+    {
+        get
+        {
+            var entries = new List<ThreadEntry>();
+            var pending = new Dictionary<string, ThreadEntry>(StringComparer.Ordinal);
+            foreach (var item in VisibleEvents)
+            {
+                // Providers may reuse call IDs in later requests. Never pair across that boundary.
+                if (item.Kind == "request") pending.Clear();
+                if (item.Kind == "tool_completed" && item.ToolCallId is { } completedId && pending.Remove(completedId, out var started))
+                { started.Result = item; continue; }
+                var entry = new ThreadEntry(item);
+                entries.Add(entry);
+                if (item.Kind == "tool_started" && item.ToolCallId is { } id) pending[id] = entry;
+            }
+            return entries;
+        }
+    }
+    private sealed class ThreadEntry(EventView item)
+    {
+        public EventView Item { get; } = item;
+        public EventView? Result { get; set; }
+        public string Sequences => Result == null ? Item.Sequence.ToString() : $"{Item.Sequence},{Result.Sequence}";
+    }
     private string VisibleLiveText => Thread.Page == null ? _liveText : Thread.Page.LiveText ?? "";
     private bool ThreadHasEarlier => Thread.Page?.HasEarlier ?? Selected?.PublicEventCount > VisibleEvents.Length;
     private bool ThreadHasLater => Thread.Page is { } page && (page.HasLater || (Selected?.Events.LastOrDefault()?.Sequence ?? 0) > (page.Events.LastOrDefault()?.Sequence ?? 0));

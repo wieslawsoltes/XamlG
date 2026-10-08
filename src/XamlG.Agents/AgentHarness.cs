@@ -200,7 +200,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                         if (answer == AgentApproval.Deny) throw new AutomationException("permission_denied", "Operation denied by the user.");
                         if (answer == AgentApproval.AllowToolForRun) lease.GrantTool(tool.Name);
                     }
-                    calls++; Publish(task, "tool_started", tool.Name, call.Id);
+                    calls++; Publish(task, "tool_started", tool.Name, call.Id, tool.Name);
                     JsonElement result;
                     try
                     {
@@ -219,7 +219,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                         text = "{\"error\":\"Tool result exceeds the configured byte limit. Request smaller ranges. The operation ran and will not be replayed.\",\"omitted\":true}";
                     // Commit the result and cursor before observers or another provider request.
                     task.Messages.Add(new(AgentMessageKind.ToolResult, text, call.Id)); task.NextTool++;
-                    Publish(task, "tool_completed", text, call.Id);
+                    Publish(task, "tool_completed", text, call.Id, tool.Name);
                 }
                 task.PendingReply = null; task.NextTool = 0;
             }
@@ -296,10 +296,10 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
     private static void EnsureCurrentWorkspace(AgentTask task)
     { if (task.IsPreviousWorkspace) throw new InvalidOperationException("This task belongs to a previous workspace. Create a new task for the current project."); }
     private void Pause(AgentTask task, string reason) { task.Status = AgentTaskStatus.Paused; task.StatusReason = reason; Publish(task, "paused", reason); }
-    private void Publish(AgentTask task, string kind, string text, string? callId = null)
+    private void Publish(AgentTask task, string kind, string text, string? callId = null, string? toolName = null)
     {
         if (text.Length > 262144) text = text[..262144] + "\n[public text truncated]";
-        var item = new AgentEvent(Interlocked.Increment(ref _sequence), DateTimeOffset.UtcNow, task.Id, kind, text, callId);
+        var item = new AgentEvent(Interlocked.Increment(ref _sequence), DateTimeOffset.UtcNow, task.Id, kind, text, callId) { ToolName = toolName };
         lock (task.Sync)
         {
         task.PublicEvents.Add(item);

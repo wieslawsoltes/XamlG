@@ -324,7 +324,16 @@ public partial class AgentWorkbench
         public DateTimeOffset? RetryAfterUtc { get; set; } public int? OutputLimitToExceed { get; set; }
         public QueueView Queue { get; set; } = new(); public PlanView[] Plan { get; set; } = []; public EventView[] Events { get; set; } = []; public ChangeView? Changes { get; set; }
     }
-    public sealed class EventView { public long Sequence { get; set; } public string TaskId { get; set; } = ""; public string Kind { get; set; } = ""; public string Text { get; set; } = ""; }
+    public sealed class EventView
+    {
+        public long Sequence { get; set; }
+        public string TaskId { get; set; } = "";
+        public string Kind { get; set; } = "";
+        public string Text { get; set; } = "";
+        public string? ToolCallId { get; set; }
+        public string? ToolName { get; set; }
+        public JsonElement? ResultPreview { get; set; }
+    }
     public sealed class PlanView { public string Id { get; set; } = ""; public string Text { get; set; } = ""; public string Status { get; set; } = ""; }
     public sealed class PendingView { public string Id { get; set; } = ""; public string TaskId { get; set; } = ""; public string Kind { get; set; } = ""; public JsonElement Content { get; set; } }
     public sealed class ChangeView { public string ReviewId { get; set; } = ""; public long ReviewVersion { get; set; } public long Revision { get; set; } public FileChange[] Files { get; set; } = []; }

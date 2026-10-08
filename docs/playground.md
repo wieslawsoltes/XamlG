@@ -137,6 +137,15 @@ Both hosts bound loaded preview assemblies because collectible browser load cont
 
 ## Coding agents
 
+The workbench uses a single row of section icons with tooltips and accessible
+names; labels expand when the dock has room. Task status and usage expand from
+the task selector, and the compact composer leaves more room for the conversation.
+Started and completed events share one tool card. Each card shows the operation,
+its outcome, and a short result summary. Expand it for structured fields and
+collections; raw data stays in a separate disclosure. Large results show bounded,
+labelled excerpts, while provider context and transcript exports retain the original
+results. History paging and expanded tool cards survive task and dock changes.
+
 Open **Coding agent → Connection** and choose one of three transports:
 
 - **Direct API** runs in the browser with an OpenAI, Anthropic or Gemini API key.

@@ -194,11 +194,12 @@ test('historical pages, expanded tools and reading positions survive late respon
       await expect(pane.getByRole('log')).not.toContainText('History task public request.');
       await pane.getByLabel('Task', { exact: true }).selectOption(first);
       const thread = pane.getByRole('log');
-      const sequences = () => thread.locator('[data-sequence]').evaluateAll(nodes => nodes.map(node => Number(node.dataset.sequence)));
+      // A completed tool shares its card with the start event; both events remain represented.
+      const sequences = () => thread.locator('[data-event-sequences]').evaluateAll(nodes => nodes.flatMap(node => node.dataset.eventSequences.split(',').map(Number)).sort((a, b) => a - b));
       await expect.poll(sequences).toEqual(earlier.events.map(event => event.sequence));
       await expect(thread).toContainText('History task public request.');
       const tool = thread.locator('details.agent-tool').first();
-      await tool.locator('summary').click(); await expect(tool).toHaveAttribute('open', '');
+      await tool.locator(':scope > summary').click(); await expect(tool).toHaveAttribute('open', '');
       await pane.getByLabel('Task', { exact: true }).selectOption(second);
       await pane.getByLabel('Task', { exact: true }).selectOption(first);
       await expect(tool).toHaveAttribute('open', '');

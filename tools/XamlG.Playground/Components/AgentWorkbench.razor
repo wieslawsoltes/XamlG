@@ -13,23 +13,26 @@
     <nav class="agent-navigation" aria-label="Agent sections">
         @foreach (var section in Sections)
         {
-            <button aria-label="@section" aria-pressed='@(PaneVisible(section) ? "true" : "false")' @onclick="() => SelectSectionAsync(section)"><AgentIcon Name="@section" /><span>@section</span>@if (SectionCount(section) is > 0 and var count) { <span class="agent-count" aria-hidden="true">@count</span> }</button>
+            <button aria-label="@section" title="@section" aria-pressed='@(PaneVisible(section) ? "true" : "false")' @onclick="() => SelectSectionAsync(section)"><AgentIcon Name="@section" /><span class="agent-navigation-label">@section</span>@if (SectionCount(section) is > 0 and var count) { <span class="agent-count" aria-hidden="true">@count</span> }</button>
         }
     </nav>
     @if (_connected && _state.Tasks.Length > 0)
     {
         <div class="agent-task-context">
-            <div class="agent-task-picker"><label>Task <select aria-label="Task" value="@_selectedId" @onchange="SelectTaskAsync">@foreach (var task in _state.Tasks) { <option value="@task.Id">@task.Name · @task.Status</option> }</select></label><button class="agent-icon-button" aria-label="New task" title="New task" @onclick='() => SelectSectionAsync("Tasks")'><AgentIcon Name="Plus" /></button></div>
+            <div class="agent-task-picker"><select aria-label="Task" value="@_selectedId" @onchange="SelectTaskAsync">@foreach (var task in _state.Tasks) { <option value="@task.Id">@task.Name</option> }</select><button class="agent-icon-button" aria-label="New task" title="New task" @onclick='() => SelectSectionAsync("Tasks")'><AgentIcon Name="Plus" /></button></div>
             @if (Selected is { } contextTask)
             {
-                <details class="agent-task-status"><summary><span class="agent-status" data-status="@contextTask.Status">@contextTask.Status</span><span>@contextTask.TotalTokens.ToString("N0") tokens</span><span>@contextTask.CheckpointCount checkpoints</span></summary>
+                <details class="agent-task-status"><summary title="Task status and usage" aria-label="Task status and usage"><span class="agent-status" data-status="@contextTask.Status">@contextTask.Status</span></summary>
+                    <div class="agent-task-details">
                     <p role="status">@contextTask.StatusReason</p>
                     <p class="agent-context-model">@contextTask.ProviderId · @contextTask.Model</p>
+                    <p>@contextTask.TotalTokens.ToString("N0") tokens · @contextTask.CheckpointCount checkpoints</p>
                     <dl class="agent-metrics"><div><dt>Reported tokens</dt><dd>@contextTask.ReportedTokens.ToString("N0")</dd></div><div><dt>Estimated tokens</dt><dd>@contextTask.EstimatedTokens.ToString("N0")</dd></div><div><dt>Context</dt><dd>@((contextTask.NativeContextBytes / 1024d).ToString("N1")) KiB</dd></div></dl>
                     @if (contextTask.Account is { } taskAccount) { <p>ChatGPT plan account: @taskAccount.Label. Output allowance is an estimate, not a server cap; one response can exceed the remaining task budget.</p> }
                     @if (contextTask.RetryAfterUtc is { } cooldown && cooldown > DateTimeOffset.UtcNow) { <p>Provider cooldown until @cooldown.ToLocalTime().ToString("T").</p> }
                     @if (contextTask.OutputLimitToExceed is { } outputLimit) { <p>Resume requires an effective output allowance above @outputLimit.ToString("N0") tokens.</p> }
                     @if (contextTask.IsPreviousWorkspace) { <p class="agent-notice">Previous workspace: this task remains available for review and export. Create a new task to work on the current project.</p> }
+                    </div>
                 </details>
             }
         </div>
@@ -163,23 +166,29 @@
             @if (_state.Pending.Any(pending => pending.TaskId == selected.Id) && !PaneVisible("Conversation"))
             { <button class="agent-pending-notice" @onclick='() => SelectSectionAsync("Conversation")'>Your response is needed · open conversation</button> }
             <section class="agent-section agent-section-conversation" hidden="@(!PaneVisible("Conversation"))" aria-label="Agent conversation">
-            <div class="agent-thread-toolbar"><button @onclick="() => PageThreadAsync(true)" disabled="@(Thread.Busy || !ThreadHasEarlier)">Earlier messages</button><button @onclick="() => PageThreadAsync(false)" disabled="@(Thread.Busy || !ThreadHasLater)">Newer messages</button><button @onclick="FollowThreadAsync">Follow latest</button></div>
+            @if (ThreadHasEarlier || Thread.Page != null)
+            {
+                <div class="agent-thread-toolbar"><button @onclick="() => PageThreadAsync(true)" disabled="@(Thread.Busy || !ThreadHasEarlier)">Earlier messages</button><button @onclick="() => PageThreadAsync(false)" disabled="@(Thread.Busy || !ThreadHasLater)">Newer messages</button><button @onclick="FollowThreadAsync">Follow latest</button></div>
+            }
             @if (Thread.Page != null) { <p role="status">Reading an earlier page. Follow latest returns to the current response.</p> }
             <div class="agent-thread" role="log" tabindex="0" aria-label="Agent thread" aria-live="off" data-task-id="@selected.Id" @ref="_threadElement">
                 @if (!VisibleEvents.Any() && VisibleLiveText.Length == 0)
                 {
                     <div class="agent-empty agent-thread-empty"><h3>What would you like to build?</h3><p>Ask about the project, describe a change, or investigate a runtime issue.</p></div>
                 }
-                @foreach (var item in VisibleEvents)
+                @foreach (var entry in VisibleThread)
                 {
-                    @if (item.Kind.StartsWith("tool", StringComparison.Ordinal))
-                    { <details @key="item.Sequence" data-sequence="@item.Sequence" class="agent-message agent-tool"><summary>@item.Kind · @(item.Text.Length > 100 ? item.Text[..100] + "…" : item.Text)</summary><button @onclick="() => CopyTextAsync(item.Text)">Copy</button><pre>@item.Text</pre></details> }
+                    var item = entry.Item;
+                    @if (item.Kind is "user" or "assistant" or "assistant_incomplete" or "question" or "answer")
+                    {
+                        <article @key="item.Sequence" data-sequence="@item.Sequence" data-event-sequences="@entry.Sequences" class="agent-message agent-@item.Kind"><div class="agent-message-heading"><small>@(item.Kind == "assistant_incomplete" ? "assistant · incomplete" : item.Kind == "user" ? "You" : item.Kind == "assistant" ? "Agent" : item.Kind)</small><button @onclick="() => CopyTextAsync(item.Text)">Copy</button></div>
+                            <AgentMarkdown Text="@item.Text" CopyRequested="CopyTextAsync" />
+                        </article>
+                    }
                     else
                     {
-                        <article @key="item.Sequence" data-sequence="@item.Sequence" class="agent-message agent-@item.Kind"><div class="agent-message-heading"><small>@(item.Kind == "assistant_incomplete" ? "assistant · incomplete" : item.Kind)</small><button @onclick="() => CopyTextAsync(item.Text)">Copy</button></div>
-                            @if (item.Kind is "user" or "assistant" or "question" or "answer") { <AgentMarkdown Text="@item.Text" CopyRequested="CopyTextAsync" /> }
-                            else { <pre>@item.Text</pre> }
-                        </article>
+                        var result = entry.Result ?? item;
+                        <AgentEventCard @key="item.Sequence" Sequence="item.Sequence" Sequences="@entry.Sequences" Kind="@result.Kind" Text="@result.Text" ResultPreview="result.ResultPreview" ToolName="@(item.ToolName ?? (item.Kind == "tool_started" ? item.Text : result.ToolName))" Running="@IsRunning(selected)" CopyRequested="CopyTextAsync" />
                     }
                 }
                 @if (VisibleLiveText.Length != 0) { <article class="agent-message"><small>@(Thread.Page == null ? "assistant · streaming" : "assistant · captured partial reply")</small><pre>@VisibleLiveText</pre></article> }
@@ -219,14 +228,13 @@
             }
             </div>
             <div class="agent-composer">
-            <label><span class="agent-composer-label">Message</span><textarea aria-label="Message" @ref="_composerElement" data-task-id="@selected.Id" data-can-submit="@(CanRun ? "true" : "false")" value="@_draft" @oninput="DraftChangedAsync" rows="3" maxlength="262144" placeholder="Describe the change or investigation" /></label>
-            <p class="agent-keyboard-hint"><kbd>Enter</kbd> review run <span>·</span> <kbd>Shift+Enter</kbd> new line</p>
+            <label><textarea aria-label="Message" title="Enter to review a run · Shift+Enter for a new line" @ref="_composerElement" data-task-id="@selected.Id" data-can-submit="@(CanRun ? "true" : "false")" value="@_draft" @oninput="DraftChangedAsync" rows="2" maxlength="262144" placeholder="Message the agent…" /></label>
             <div class="agent-run-actions">
                 <button class="primary" @onclick="RunAsync" disabled="@(!CanRun)">Run <AgentIcon Name="Arrow" /></button>
-                <button @onclick="ResumeAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || selected.Status != "paused" || selected.RetryAfterUtc > DateTimeOffset.UtcNow)">Resume</button>
-                <button @onclick="QueueDraftAsync" disabled="@(selected.IsPreviousWorkspace || _queueBusy || string.IsNullOrWhiteSpace(_draft) || selected.Status is "cancelled" or "failed")">Queue follow-up</button>
-                <button @onclick='() => CommandAsync("stop", new { })' disabled="@(!_state.Tasks.Any(IsRunning))">Stop &amp; revoke</button>
-                <button @onclick="ReviewCompaction" disabled="@(selected.IsPreviousWorkspace || AnyRunning)">Compact context</button>
+                <button title="Resume a paused task" @onclick="ResumeAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || selected.Status != "paused" || selected.RetryAfterUtc > DateTimeOffset.UtcNow)">Resume</button>
+                <button aria-label="Queue follow-up" title="Queue follow-up" @onclick="QueueDraftAsync" disabled="@(selected.IsPreviousWorkspace || _queueBusy || string.IsNullOrWhiteSpace(_draft) || selected.Status is "cancelled" or "failed")"><AgentIcon Name="Queue" /><span class="agent-action-label">Queue</span></button>
+                <button class="agent-danger" aria-label="Stop &amp; revoke" title="Stop and revoke this run's permissions" @onclick='() => CommandAsync("stop", new { })' disabled="@(!_state.Tasks.Any(IsRunning))"><AgentIcon Name="Stop" /><span class="agent-action-label">Stop</span></button>
+                <button aria-label="Compact context" title="Compact context" @onclick="ReviewCompaction" disabled="@(selected.IsPreviousWorkspace || AnyRunning)"><AgentIcon Name="Compact" /><span class="agent-action-label">Compact</span></button>
             </div>
             @if (!ProviderReady) { <button class="agent-composer-notice" @onclick='() => SelectSectionAsync("Connection")'>Complete provider access in Connection to run this task <AgentIcon Name="Arrow" /></button> }
             </div>
@@ -416,7 +424,7 @@
                 </div>
                 <div class="agent-result-summary"><span class="agent-status">@VisibleActivity.Count() events</span><span class="agent-help">Most recent 500 events, up to 512 KiB.</span></div>
                 <div class="agent-activity-list">
-                @foreach (var item in VisibleActivity.Reverse()) { <article class="agent-activity-entry" @key="item.Sequence"><div class="agent-message-heading"><strong>@item.Kind</strong><time datetime="@item.Time.ToString("O")">@item.Time.ToLocalTime().ToString("T")</time></div><pre>@item.Text</pre></article> }
+                @foreach (var item in VisibleActivity.Reverse()) { <article class="agent-activity-entry" @key="item.Sequence"><time datetime="@item.Time.ToString("O")">@item.Time.ToLocalTime().ToString("T")</time><AgentEventCard Kind="@item.Kind" Text="@item.Text" ToolName="@item.ToolName" ResultPreview="item.ResultPreview" Historical="true" CopyRequested="CopyTextAsync" /></article> }
                 </div>
                 @if (!VisibleActivity.Any()) { <div class="agent-empty"><span class="agent-empty-icon"><AgentIcon Name="Activity" /></span><h3>No activity to show</h3><p>Events appear as the agent works. Adjust the filters to include other tasks or event types.</p></div> }
         @if (!IsBrowser) { <details class="agent-operations">
