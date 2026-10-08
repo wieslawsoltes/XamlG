@@ -437,7 +437,7 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
         foreach (var subscription in _ownedBindings.Values) subscription.Dispose();
         _ownedBindings.Clear();
         foreach (var obj in _objects.Values) obj.PropertyChanged -= OnPropertyChanged;
-        _objects.Clear(); _changes.Clear(); RuntimeChanged = null; _disposed = true;
+        _objects.Clear(); _changes.Clear(); _computerFrames.Clear(); RuntimeChanged = null; _disposed = true;
     }
     private sealed record ObjectIdentity(string Id);
 }
