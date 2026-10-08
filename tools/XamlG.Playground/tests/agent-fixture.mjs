@@ -26,13 +26,14 @@ export function agentDelta(text, sequence = 1) {
 
 // A real companion and official OpenAI SDK, with deterministic loopback inference.
 // Every instance excludes real provider keys and disables the developer's account store.
-export async function withAgentWorkbench({ page, request, baseURL }, handle, execute) {
+export async function withAgentWorkbench({ page, request, baseURL }, handle, execute, options = {}) {
   if (!process.env.XAMLG_TEST_HOST_DLL) throw new Error('Run through scripts/test-browser-studio.py.');
   page.setDefaultTimeout(15000);
   const requests = [], failures = [], errors = [];
   page.on('pageerror', error => errors.push(error.message));
   const fixture = createServer(async (incoming, response) => {
     try {
+      if (options.handleHttp && await options.handleHttp(incoming, response, `http://127.0.0.1:${fixture.address().port}`)) return;
       if (incoming.method === 'GET') {
         response.setHeader('Content-Type', 'application/json');
         response.end(JSON.stringify({ object: 'list', data: [{ id: 'test-model', object: 'model', created: 1, owned_by: 'fixture' }] }));
@@ -53,11 +54,13 @@ export async function withAgentWorkbench({ page, request, baseURL }, handle, exe
   const token = randomBytes(32).toString('hex');
   const environment = { ...process.env, XAMLG_STUDIO_OWNER_TOKEN: token, XAMLG_STUDIO_TOKEN: randomBytes(32).toString('hex') };
   for (const name of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY']) delete environment[name];
-  environment.OPENAI_API_KEY = 'test-only-not-a-real-key';
+  if (!options.accountStore) environment.OPENAI_API_KEY = 'test-only-not-a-real-key';
   environment.OPENAI_ENDPOINT = `http://127.0.0.1:${fixture.address().port}/v1`;
   const origin = new URL(baseURL).origin;
   const host = spawn(process.env.XAMLG_TEST_DOTNET || 'dotnet', [process.env.XAMLG_TEST_HOST_DLL,
-    `--port=${port}`, '--chatgpt=false', ...(origin === 'https://wieslawsoltes.github.io' ? [] : [`--origins=${origin}`])],
+    `--port=${port}`, ...(options.accountStore ? [`--chatgpt-store=${options.accountStore}`, `--chatgpt-auth-origin=http://127.0.0.1:${fixture.address().port}/`,
+      `--chatgpt-api-endpoint=http://127.0.0.1:${fixture.address().port}/v1/`] : ['--chatgpt=false']),
+    ...(origin === 'https://wieslawsoltes.github.io' ? [] : [`--origins=${origin}`])],
     { env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = '';
   host.stdout.on('data', data => { log += data; }); host.stderr.on('data', data => { log += data; });
@@ -76,7 +79,7 @@ export async function withAgentWorkbench({ page, request, baseURL }, handle, exe
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await page.getByTestId('agent-workbench').click();
     const pane = page.getByRole('region', { name: 'Coding agent workbench' });
-    await expect(pane.getByLabel('Provider', { exact: true })).toHaveValue('openai');
+    await expect(pane.getByLabel('Provider', { exact: true })).toHaveValue(options.accountStore ? 'openai-chatgpt' : 'openai');
     await execute({ page, pane, requests, api: (action, args) => agentRequest(page, action, args) });
     expect(failures).toEqual([]); expect(errors).toEqual([]);
   } catch (error) {
@@ -92,10 +95,10 @@ export async function withAgentWorkbench({ page, request, baseURL }, handle, exe
   }
 }
 
-export async function createAgentTask(pane, name) {
+export async function createAgentTask(pane, name, model = 'test-model') {
   const create = pane.locator('details.agent-create');
   if (await create.getAttribute('open') === null) await create.locator('summary').click();
-  await create.getByLabel('Model', { exact: true }).fill('test-model');
+  await create.getByLabel('Model', { exact: true }).fill(model);
   await create.getByLabel('Task name', { exact: true }).fill(name);
   await create.getByRole('button', { name: 'Create task', exact: true }).click();
   await expect(pane.getByLabel('Rename task', { exact: true })).toHaveValue(name);

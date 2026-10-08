@@ -376,18 +376,37 @@ when the store declined the request. Task mutation handlers now check ownership
 before invoking the SDK. Completion now carries the transport principal. The companion
 enables sessions for legacy HTTP clients while keeping modern HTTP stateless.
 
-The complete browser suite currently contains 68 scenarios in 25 files. These focused
-passes and the earlier compiler/runtime/designer checks do not certify account
-acceptance or a complete current browser run.
+Three integrated MCP browser scenarios now pass in focused runs. They reconstruct
+and hash actual JSON/ZIP/assembly/PDB snapshots, verify immutable multi-chunk reads,
+local download/release, principal ownership, revisions and workspace retirement.
+They exercise modern background waits alongside source edits, legacy synchronous
+waits, timeout/cancellation, owner operation controls and task subscriptions. Exact
+source/generated/runtime/property resource notifications, encoded paths, completion,
+ReadOnly/Ask policies and revocation use the real companion and Pages browser origin.
+Three native artifact-store cases verify byte isolation, independent expiry, chunk
+bounds, workspace clearing and count/byte-budget eviction.
+
+Twenty-two deterministic account cases pass through real loopback callbacks, signed
+RSA identities, the credential store and the official OpenAI SDK. They cover PKCE,
+identity/callback rejection, registration retry, remembered and memory-only sessions,
+store ownership/permissions, account selection and plan consent, concurrent refresh,
+key rotation and temporary validation failure, sign-out races and terminal failures.
+Account-bound tools continue under the captured account; sign-out during approval
+prevents execution. Two Pages-origin workbench scenarios pass for sign-in without
+API keys, preferences, model discovery, task isolation, consent, retry, cancellation
+and sign-out during a real response stream. All credentials and inference responses
+are synthetic; no production account was signed in or charged.
+
+The complete browser suite now contains 73 scenarios in 27 files. These focused
+passes and the earlier compiler/runtime/designer checks do not certify a complete
+current browser run.
 
 Remaining completion work:
 
-- Finish integrated MCP wait/resource/build-artifact acceptance, including actual
-  browser emission/download, cancellation, ownership, permissions and workspace replacement.
-- Exercise deterministic ChatGPT OAuth, identity rejection, credential storage,
-  refresh/sign-out races, account-bound tools and the account workbench UI.
-- Update and run the complete browser suite with Pages-origin/base-path pairing,
-  all 21 package consumers and remaining CI scripts; fix failures and update the PR.
+- Merge newer main changes, then run the full native and browser suites with the
+  additional MCP/artifact/account acceptance and Pages-origin/base-path pairing.
+- Validate all 21 shipping packages with their external consumers and remaining
+  CI scripts; fix failures, remove obsolete artifacts and update the PR.
 
 Main is merged through `c964d82`; the merged native solution passes its full build
 and test suite. The existing Playground contains the integration. Public Pages
