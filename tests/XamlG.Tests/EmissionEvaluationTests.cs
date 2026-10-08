@@ -43,10 +43,12 @@ public sealed class EmissionEvaluationTests
         Assert.Equal("Evaluation.Item", root.GetType().GetProperty("Value")!.GetValue(root)!.GetType().FullName);
     }
 
-    [Fact]
-    public void ArgumentSpillsPreserveUserConversionsAndSelectedOverloads()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ArgumentSpillsPreserveUserConversionsAndSelectedOverloads(bool narrowConstant)
     {
-        var profile = XamlFrameworkProfile.Portable with { MarkupBindingRules = ImmutableArray.Create<IXamlMarkupBindingRule>(new CallRule()) };
+        var profile = XamlFrameworkProfile.Portable with { MarkupBindingRules = ImmutableArray.Create<IXamlMarkupBindingRule>(new CallRule(narrowConstant)) };
         using var code = CompiledXaml.Create("<View xmlns='clr-namespace:Evaluation' Value='{Call}'/>", Model, profile);
         var root = code.Build();
         Assert.Equal("convert:first,new,call:7,set", root.GetType().GetProperty("Events")!.GetValue(root));
@@ -96,7 +98,7 @@ public sealed class EmissionEvaluationTests
         }
     }
 
-    private sealed class CallRule : IXamlMarkupBindingRule
+    private sealed class CallRule(bool narrowConstant) : IXamlMarkupBindingRule
     {
         public bool TryBind(BindingContext context, MarkupExtensionSyntax syntax, ITypeSymbol targetType, NamespaceScope scope, out BoundExpression? expression)
         {
@@ -106,7 +108,8 @@ public sealed class EmissionEvaluationTests
                 .Single(candidate => candidate.Parameters[2].Type.SpecialType == SpecialType.System_Int32);
             expression = new BoundCallExpression(method, null, ImmutableArray.Create<BoundExpression>(
                 new BoundConstantExpression("first", context.Types.Special(SpecialType.System_String), syntax.Span),
-                Item(context, syntax.Span), new BoundConstantExpression(7, context.Types.Special(SpecialType.System_Int32), syntax.Span)), syntax.Span);
+                Item(context, syntax.Span), new BoundConstantExpression(narrowConstant ? (object)(byte)7 : 7,
+                    context.Types.Special(narrowConstant ? SpecialType.System_Byte : SpecialType.System_Int32), syntax.Span)), syntax.Span);
             return true;
         }
     }

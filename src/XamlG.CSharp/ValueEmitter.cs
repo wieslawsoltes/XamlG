@@ -130,11 +130,28 @@ internal sealed class ValueEmitter
         for (var index = 0; index < arguments.Length; index++)
         {
             var value = Emit(arguments[index], frame);
-            var local = _context.Locals.Declare(method.Parameters[index].Type.CSharpName(), value, "argument");
-            values[index] = local;
+            var parameter = method.Parameters[index].Type;
+            // A scalar literal of exactly the parameter type cannot observe or
+            // reorder another argument's lowering. Everything requiring a
+            // conversion still spills before the next argument is evaluated.
+            values[index] = arguments[index] is BoundConstantExpression constant &&
+                ConstantType(constant.Value) is var type && type != SpecialType.None && type == parameter.SpecialType
+                ? value : _context.Locals.Declare(parameter.CSharpName(), value, "argument");
         }
         return values;
     }
+
+    private static SpecialType ConstantType(object? value) => value switch
+    {
+        bool => SpecialType.System_Boolean, char => SpecialType.System_Char,
+        string => SpecialType.System_String, byte => SpecialType.System_Byte,
+        sbyte => SpecialType.System_SByte, short => SpecialType.System_Int16,
+        ushort => SpecialType.System_UInt16, int => SpecialType.System_Int32,
+        uint => SpecialType.System_UInt32, long => SpecialType.System_Int64,
+        ulong => SpecialType.System_UInt64, float => SpecialType.System_Single,
+        double => SpecialType.System_Double, decimal => SpecialType.System_Decimal,
+        _ => SpecialType.None
+    };
 
     public string EmitInitialized(BoundExpression value, string frame,
         System.Collections.Immutable.ImmutableArray<BoundArgumentInitialization> initializers, IReadOnlyList<string> arguments)
