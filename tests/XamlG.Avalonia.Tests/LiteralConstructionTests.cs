@@ -78,6 +78,44 @@ public sealed class LiteralConstructionTests
         Assert.Equal(expected.Color, actual.Color);
     }
 
+    [AvaloniaFact]
+    public void KnownAndComputedColorsAreCompiledToNumericValues()
+    {
+        var literals = typeof(Colors).GetProperties(BindingFlags.Public | BindingFlags.Static)
+            .Where(property => property.PropertyType == typeof(Color)).Select(property => property.Name.ToLowerInvariant())
+            .Concat(new[]
+            {
+                "#123", "#4123", "#00112233", "#aAbBcC", "# 12345",
+                "rgba(10,20,30,0.5)", "rgb(10%,20%,30%)", "rgba(0%,100%,50%,25%)",
+                "rgb(10%ignored,20,30)", "rgb(10.0,20,30) ", "hsl(120,100%,50%)",
+                "hsla(240,1,0.5,0.25)", "hsv(30,100%,100%)", "hsva(30,1,1,50%)",
+                "hsl(360,150%,-10%)", "hsva(-60,-1,2,2)", "rgba(50%,50%,50%,50%)"
+            }).ToArray();
+        var entries = literals.Select((literal, index) => "<Color x:Key='" + index + "'>" + Escape(literal) + "</Color>");
+        var fixture = new ResourceProjectFixture(new[] { ("Colors.axaml", ResourceProjectFixture.Dictionary(string.Join("", entries))) });
+        var root = Assert.IsType<ResourceDictionary>(fixture.Build("Colors.axaml"));
+        for (var index = 0; index < literals.Length; index++)
+            Assert.Equal(Color.Parse(literals[index]), Assert.IsType<Color>(root[index.ToString(CultureInfo.InvariantCulture)]));
+        Assert.DoesNotContain("global::Avalonia.Media.Color.Parse(", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+    }
+
+    [AvaloniaTheory]
+    [InlineData("HslColor", "hsl(120,100%,50%)")]
+    [InlineData("HslColor", "hsla(240,1,0.5,0.25)")]
+    [InlineData("HslColor", "hsl(360,150%,-10%)")]
+    [InlineData("HsvColor", "hsv(30,100%,100%)")]
+    [InlineData("HsvColor", "hsva(30,1,1,50%)")]
+    [InlineData("HsvColor", "hsva(-60,-1,2,2)")]
+    public void ColorModelsAreCompiledWithoutRuntimeTextParsing(string type, string literal)
+    {
+        var fixture = new ResourceProjectFixture(new[] { ("Model.axaml", ResourceProjectFixture.Dictionary(
+            "<" + type + " x:Key='value'>" + Escape(literal) + "</" + type + ">")) });
+        var root = Assert.IsType<ResourceDictionary>(fixture.Build("Model.axaml"));
+        if (type == "HslColor") Assert.Equal(HslColor.Parse(literal), Assert.IsType<HslColor>(root["value"]));
+        else Assert.Equal(HsvColor.Parse(literal), Assert.IsType<HsvColor>(root["value"]));
+        Assert.DoesNotContain("global::Avalonia.Media." + type + ".Parse(", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+    }
+
     [AvaloniaTheory]
     [InlineData(false)]
     [InlineData(true)]

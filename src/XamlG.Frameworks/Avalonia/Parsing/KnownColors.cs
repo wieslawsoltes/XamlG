@@ -1,9 +1,8 @@
+#define BUILDTASK
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using Avalonia.SourceGenerator;
 
-namespace Avalonia.Media
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     internal static partial class KnownColors
     {
@@ -13,8 +12,13 @@ namespace Avalonia.Media
         private static readonly Dictionary<KnownColor, IImmutableSolidColorBrush> _knownBrushes;
 #endif
 
-        [GenerateEnumValueDictionary()]
-        private static partial Dictionary<string, KnownColor> GetKnownColors();
+        private static Dictionary<string, KnownColor> GetKnownColors()
+        {
+            var colors = new Dictionary<string, KnownColor>();
+            foreach (var name in Enum.GetNames(typeof(KnownColor)))
+                colors.Add(name, (KnownColor)Enum.Parse(typeof(KnownColor), name));
+            return colors;
+        }
 
         static KnownColors()
         {
@@ -100,7 +104,7 @@ namespace Avalonia.Media
             return _knownColors.TryGetValue(rgb, out var name) ? name : null;
         }
 
-        internal static bool TryGetKnownColorName(uint rgb, [NotNullWhen(true)] out string? name)
+        internal static bool TryGetKnownColorName(uint rgb, out string? name)
             => _knownColors.TryGetValue(rgb, out name);
 
         public static Color ToColor(this KnownColor color)

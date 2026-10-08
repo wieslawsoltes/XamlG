@@ -1,4 +1,5 @@
-﻿// Color conversion portions of this source file are adapted from the Windows Community Toolkit project.
+#define BUILDTASK
+// Color conversion portions of this source file are adapted from the Windows Community Toolkit project.
 // (https://github.com/CommunityToolkit/WindowsCommunityToolkit)
 //
 // Licensed to The Avalonia Project under MIT License, courtesy of The .NET Foundation.
@@ -6,9 +7,9 @@
 using System;
 using System.Globalization;
 using System.Text;
-using Avalonia.Utilities;
+using XamlG.Frameworks.Avalonia.Parsing;
 
-namespace Avalonia.Media
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Defines a color using the hue/saturation/lightness (HSL) model.
@@ -273,7 +274,7 @@ namespace Avalonia.Media
         /// <inheritdoc/>
         public override string ToString()
         {
-            var sb = StringBuilderCache.Acquire();
+            var sb = new StringBuilder();
 
             // Use a format similar to CSS. However:
             //   - To ensure precision is never lost, allow decimal places.
@@ -296,7 +297,7 @@ namespace Avalonia.Media
             sb.Append(A.ToString(CultureInfo.InvariantCulture));
             sb.Append(')');
 
-            return StringBuilderCache.GetStringAndRelease(sb);
+            return sb.ToString();
         }
 
         /// <summary>
@@ -349,7 +350,7 @@ namespace Avalonia.Media
 
             if (workingString.Length >= 11 &&
                 workingString.StartsWith("hsla(", StringComparison.OrdinalIgnoreCase) &&
-                workingString.EndsWith(')'))
+                workingString.EndsWith(")", StringComparison.Ordinal))
             {
                 workingString = workingString.Substring(5, workingString.Length - 6);
                 prefixMatched = true;
@@ -358,7 +359,7 @@ namespace Avalonia.Media
             if (prefixMatched == false &&
                 workingString.Length >= 10 &&
                 workingString.StartsWith("hsl(", StringComparison.OrdinalIgnoreCase) &&
-                workingString.EndsWith(')'))
+                workingString.EndsWith(")", StringComparison.Ordinal))
             {
                 workingString = workingString.Substring(4, workingString.Length - 5);
                 prefixMatched = true;

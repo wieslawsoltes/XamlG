@@ -1,8 +1,9 @@
-﻿using System;
+#define BUILDTASK
+using System;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 
-namespace Avalonia.Utilities
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
 #if !BUILDTASK
     public

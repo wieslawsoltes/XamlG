@@ -1,3 +1,4 @@
+#define BUILDTASK
 // Color conversion portions of this source file are adapted from the WinUI project
 // (https://github.com/microsoft/microsoft-ui-xaml)
 // and the Windows Community Toolkit project.
@@ -11,9 +12,9 @@ using System.Globalization;
 #if !BUILDTASK
 using Avalonia.Animation.Animators;
 #endif
-using static Avalonia.Utilities.SpanHelpers;
+using static XamlG.Frameworks.Avalonia.Parsing.SpanHelpers;
 
-namespace Avalonia.Media
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// An ARGB color.
@@ -145,7 +146,7 @@ namespace Avalonia.Media
         {
             color = default;
 
-            if (string.IsNullOrEmpty(s))
+            if (s is null || s.Length == 0)
             {
                 return false;
             }
@@ -346,7 +347,7 @@ namespace Avalonia.Media
 
             if (workingString.Length >= 11 &&
                 workingString.StartsWith("rgba(", StringComparison.OrdinalIgnoreCase) &&
-                workingString.EndsWith(')'))
+                workingString.EndsWith(")", StringComparison.Ordinal))
             {
                 workingString = workingString.Substring(5, workingString.Length - 6);
                 prefixMatched = true;
@@ -355,7 +356,7 @@ namespace Avalonia.Media
             if (prefixMatched == false &&
                 workingString.Length >= 10 &&
                 workingString.StartsWith("rgb(", StringComparison.OrdinalIgnoreCase) &&
-                workingString.EndsWith(')'))
+                workingString.EndsWith(")", StringComparison.Ordinal))
             {
                 workingString = workingString.Substring(4, workingString.Length - 5);
                 prefixMatched = true;
