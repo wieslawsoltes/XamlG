@@ -6,7 +6,7 @@ The catalog contains 219 XAML documents and 218 component classes. Simple contri
 
 ## Build and run
 
-Install the .NET SDK pinned in `global.json`, its `wasm-tools` workload, and the native build prerequisites for Avalonia on your platform (Xcode command-line tools on macOS). Prepare the exact framework revision:
+Install the .NET SDK pinned in `global.json`, its `wasm-tools` workload, and the native build prerequisites for Avalonia on your platform (Xcode command-line tools on macOS; GTK 3 and `mplayer` for the Linux native embedding demos). Prepare the exact framework revision:
 
 ```sh
 python3 scripts/prepare-controlcatalog.py
@@ -48,6 +48,16 @@ python3 scripts/serve-playground.py \
 node scripts/test-controlcatalog-browser.mjs http://127.0.0.1:8943
 ```
 
-Set `XAMLG_CATALOG_RESULTS` to select the headless screenshot/report directory. All 76 registered pages, 11 section pages and nine TextBox gallery demos and 102 nested gallery demos run in six configurations: Simple light/dark and Fluent light/dark at normal/compact density. Each host reports 1,188 page/configuration results. The page drivers use the full catalog shell and check Home's ancestor binding. Headless tests use real Skia rendering and additionally check every imported component factory. They also assert that the application and both theme assemblies have XamlG exports and no XamlX-generated URI loader.
+Set `XAMLG_CATALOG_RESULTS` to select the headless screenshot/report directory. All 76 registered pages, 11 section pages, nine TextBox gallery demos and 102 nested gallery demos run in six configurations: Simple light/dark and Fluent light/dark at normal/compact density. Each host reports 1,188 page/configuration results. The page drivers use the full catalog shell and check Home's ancestor binding, ComboBox's attached item binding and CalendarDatePicker's compiled two-way binding. Headless tests use real Skia rendering and additionally check every imported component factory. They also assert that the application and both theme assemblies have XamlG exports and no XamlX-generated URI loader.
 
 These checks validate construction, layout, realized templates and rendering across the complete catalog registry. Native embedding, GPU support, file dialogs, clipboard and external links depend on the host; rendering their pages does not certify every platform-specific operation. Headless rendering cannot substitute for the real desktop and published WebAssembly runs.
+
+The browser host retains Avalonia's generated OpenGL delegate signatures through trimming. Its function-pointer calls need these declarations when the WebAssembly SDK generates native-call stubs; otherwise the interpreter can abort when the OpenGL lease demo renders.
+
+## Compilation benchmark
+
+On a clean committed worktree, run `python3 scripts/benchmark-controlcatalog.py`. The CI catalog job runs the same comparison and uploads its JSON, individual build logs and Markdown table with the validation artifacts.
+
+The harness builds dependencies before measurement, then forces three Release rebuilds of each theme and ControlCatalog with each compiler. XamlX uses the same ported projects with `XamlGEnabled=false`; XamlG uses their normal source integration. Timed builds disable project-reference builds, restore and shared compilation, use one MSBuild worker, and start fresh compiler processes with a warm filesystem/package cache. The script restores the normal XamlG build afterwards.
+
+Wall time includes project evaluation, resources, C# and XAML compilation and output copying. The compiler-task column combines `Csc` and, for XamlX, `CompileAvaloniaXamlTask`; XamlG executes inside `Csc`. These are project-compilation measurements, not isolated parser timings or application startup measurements. Browser linking and the pinned framework build are excluded. Results record the tested commit, tree, SDK, OS, commands and log checksums.

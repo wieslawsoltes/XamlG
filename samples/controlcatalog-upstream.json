@@ -4126,13 +4126,14 @@
     "samples/Avalonia.Themes.Fluent/Avalonia.Themes.Fluent.csproj": "Target .NET 10, use the pinned framework source dependencies, retain the upstream assembly version and build settings, and add the single XamlG.Avalonia integration reference.",
     "samples/ControlCatalog/ControlCatalog.csproj": "Target .NET 10, reference the pinned framework and copied XamlG-compiled themes, retain resources/property generation, and add a single XamlG.Avalonia integration reference.",
     "samples/ControlCatalog.Desktop/ControlCatalog.Desktop.csproj": "Target .NET 10, reference pinned framework projects/build settings and local catalog, and use copied native helpers and icons.",
-    "samples/ControlCatalog.Browser/ControlCatalog.Browser.csproj": "Target .NET 10 browser and reference pinned browser framework/build assets and the local catalog.",
+    "samples/ControlCatalog.Browser/ControlCatalog.Browser.csproj": "Target .NET 10 browser, reference pinned browser framework/build assets and the local catalog, and preserve the OpenGL delegate signatures needed by the WebAssembly native-call generator.",
     "samples/MiniMvvm/MiniMvvm.csproj": "Use shared .NET 10 sample settings, the pinned Avalonia.Base dependency, and the copied reactive helpers.",
     "samples/ControlCatalog.Desktop/Program.cs": "Add an opt-in --xamlg-validate entry point that uses the actual desktop lifetime, renders every registered page/demo with each theme variant and writes machine-readable results.",
     "samples/ControlCatalog.Browser/wwwroot/main.js": "Expose the managed catalog validation entry point only when the xamlg-validate query parameter is present.",
     "samples/ControlCatalog.Browser/Program.cs": "Report startup and dispatcher exceptions before rethrowing. Configure bundled Inter as the browser default and system font collection, so the font picker uses available assets instead of Skia's unresolvable keyed Cascadia entries.",
     "samples/MiniMvvm/PropertyChangedExtensions.cs": "Make subscription disposal idempotent before notifying completion; upstream CombineLatest reenters disposal and otherwise overflows the stack when a generated ListBox page session is disposed.",
     "samples/ControlCatalog/Pages/TabbedPage/FluidNavBar/FluidNavBar.cs": "Register non-constant styled property defaults at registration time; overriding metadata on the registering type fails with the pinned framework. Keep SelectedIndex generated and preserve style-priority semantics.",
-    "samples/ControlCatalog.Browser/EmbedSample.Browser.cs": "Do not append the asynchronously imported button after navigation has already disposed its JavaScript parent handle."
+    "samples/ControlCatalog.Browser/EmbedSample.Browser.cs": "Do not append the asynchronously imported button after navigation has already disposed its JavaScript parent handle.",
+    "samples/ControlCatalog/Pages/CalendarDatePickerPage.xaml": "Resolve the declared MainWindowViewModel from the catalog shell; the navigation content template otherwise supplies a NavigationPage data context and breaks the compiled validation-date binding."
   }
 }

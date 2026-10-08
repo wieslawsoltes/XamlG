@@ -1,7 +1,9 @@
 <ContentPage Theme="{StaticResource ScrollPage}" xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:ControlCatalog.ViewModels"
+             xmlns:catalog="using:ControlCatalog"
              x:DataType="vm:MainWindowViewModel"
+             DataContext="{Binding $parent[catalog:MainView].DataContext}"
              Header="CalenderDatePicker"
              x:Class="ControlCatalog.Pages.CalendarDatePickerPage">
   <StackPanel Orientation="Vertical" Spacing="4">
@@ -48,7 +50,8 @@
         <CalendarDatePicker IsEnabled="False"/>
 
         <TextBlock Text="Validation Example"/>
-        <CalendarDatePicker SelectedDate="{CompiledBinding ValidatedDateExample, Mode=TwoWay}"/>
+        <CalendarDatePicker x:Name="ValidationDatePicker"
+                            SelectedDate="{CompiledBinding ValidatedDateExample, Mode=TwoWay}"/>
         
         <TextBlock Text="WeekNumbers example"/>
         <CalendarDatePicker IsWeekNumberVisible="True" />

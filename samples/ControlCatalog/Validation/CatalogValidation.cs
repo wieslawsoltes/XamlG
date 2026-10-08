@@ -81,6 +81,22 @@ public static class CatalogValidation
 
     public static void VerifyBindings(Control control)
     {
+        if (control is CalendarDatePickerPage)
+        {
+            if (control.DataContext is not ViewModels.MainWindowViewModel model)
+                throw new InvalidOperationException("CalendarDatePicker requires the shell view model, found " +
+                    (control.DataContext?.GetType().FullName ?? "null") + ".");
+            var picker = control.FindControl<CalendarDatePicker>("ValidationDatePicker") ??
+                throw new InvalidOperationException("The validation date picker must be in the page's name scope.");
+            var date = new DateTime(2030, 5, 4);
+            model.ValidatedDateExample = date;
+            if (picker.SelectedDate != date)
+                throw new InvalidOperationException("The compiled date binding must update from the view model.");
+            picker.SetCurrentValue(CalendarDatePicker.SelectedDateProperty, date.AddDays(1));
+            if (model.ValidatedDateExample != date.AddDays(1))
+                throw new InvalidOperationException("The compiled date binding must update the view model.");
+            model.ValidatedDateExample = null;
+        }
         if (control is HomePage && !control.GetVisualDescendants().OfType<ItemsControl>()
                 .Any(items => items.ItemsSource is IReadOnlyList<HomeSection> { Count: 11 }))
             throw new InvalidOperationException("Home must resolve the full shell's view model and bind all eleven sections.");
