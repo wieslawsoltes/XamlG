@@ -11,12 +11,34 @@ internal sealed class ServiceContractEmitter
 
     public void Emit()
     {
+        if (_context.SharedServices != null) return;
+        Write(_context.Writer, _context.ServicesType, "private");
+    }
+
+    public SharedServiceSource CreateShared()
+    {
+        // The class contains only service-contract operations and a supplied frame;
+        // document namespaces, roots and target objects remain in that frame.
+        var identity = new CSharpWriter();
+        Write(identity, "Services", "internal");
+        var name = "Services_" + _context.StableId(identity.ToString());
+        var ns = _context.Document.Options.GeneratedNamespace + ".Services";
+        var writer = new CSharpWriter();
+        writer.Line("#nullable enable annotations");
+        writer.Line("#nullable disable warnings");
+        writer.Open("namespace " + ns);
+        Write(writer, name, "internal");
+        writer.Close();
+        return new("global::" + ns + "." + name, writer.ToString());
+    }
+
+    private void Write(CSharpWriter writer, string name, string accessibility)
+    {
         var contracts = _context.Document.Runtime.Services;
         if (contracts.Length == 0) return;
-        var writer = _context.Writer;
-        writer.Open("private sealed class " + _context.ServicesType + " : " + string.Join(", ", contracts.Select(s => s.ImplementationType.CSharpName()).Distinct()));
+        writer.Open(accessibility + " sealed class " + name + " : " + string.Join(", ", contracts.Select(s => s.ImplementationType.CSharpName()).Distinct()));
         writer.Line("private readonly " + CSharpNames.Context + " _context;");
-        writer.Line("public " + _context.ServicesType + "(" + CSharpNames.Context + " context) => _context = context;");
+        writer.Line("public " + name + "(" + CSharpNames.Context + " context) => _context = context;");
         var emitted = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
         foreach (var contract in contracts)
         {

@@ -110,12 +110,24 @@ public sealed class XamlProjectCompiler
             { emission = cachedOutput; Interlocked.Increment(ref reusedOutputs); }
             else
             {
-                emission = XamlResourceExports.Add(bound[i], new CSharpEmitter().Emit(bound[i], cancellationToken)); Interlocked.Increment(ref emittedCount);
+                emission = XamlResourceExports.Add(bound[i], new CSharpEmitter().Emit(bound[i], cancellationToken, shareServices: true)); Interlocked.Increment(ref emittedCount);
                 if (ReferenceEquals(bound[i], entries[i].Document)) entries[i].Output = emission;
             }
             emissions[i] = emission;
         });
         XamlResourceGraph.ValidateEmissions(bound, emissions, cancellationToken);
+        // Publish each identical service implementation once, in stable input order.
+        // Keep the cached base output independent of ownership so additions/removals
+        // can move a shared definition without rebinding unaffected documents.
+        var sharedServices = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < emissions.Length; i++)
+        {
+            var emission = emissions[i];
+            if (!emission.Success || emission.SharedServices is not { } services || !sharedServices.Add(services.TypeName)) continue;
+            if (ReferenceEquals(emission, entries[i].Output))
+                emissions[i] = entries[i].OutputWithServices ??= emission with { Source = emission.Source + "\n" + services.Source };
+            else emissions[i] = emission with { Source = emission.Source + "\n" + services.Source };
+        }
         var output = inputs.Select((input, index) => new XamlProjectDocumentResult(input, addresses[index], bound[index], emissions[index])).ToImmutableArray();
         return new(output, catalog) { Statistics = new(boundCount, reusedBindings, emittedCount, reusedOutputs) };
     }

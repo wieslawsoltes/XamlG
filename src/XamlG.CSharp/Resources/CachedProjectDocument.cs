@@ -7,4 +7,5 @@ internal sealed class CachedProjectDocument(XamlProjectDocument input, BoundDocu
     public XamlProjectDocument Input { get; } = input;
     public BoundDocument Document { get; } = document;
     public XamlEmissionResult? Output { get; set; }
+    public XamlEmissionResult? OutputWithServices { get; set; }
 }

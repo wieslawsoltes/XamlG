@@ -7,5 +7,6 @@ public sealed record XamlEmissionResult(string HintName, string Source, string F
     /// FactoryTypeName remains the C# source name for generated typeof expressions.</summary>
     public string FactoryMetadataName { get; init; } = FactoryTypeName;
     public bool IsSkipped { get; init; }
+    internal SharedServiceSource? SharedServices { get; init; }
     public bool Success => !Diagnostics.Any(d => d.Severity == XamlSeverity.Error) && (IsSkipped || Source.Length != 0);
 }

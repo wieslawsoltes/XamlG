@@ -31,7 +31,8 @@ internal sealed class EmissionContext : IDisposable
     public List<XamlDiagnostic> Diagnostics { get; } = new();
     public List<XamlSourceMapping> Mappings { get; } = new();
     public string RootVariable { get; set; } = "__root";
-    public string ServicesType => "__XamlGServices_" + Id;
+    public SharedServiceSource? SharedServices { get; set; }
+    public string ServicesType => SharedServices?.TypeName ?? "__XamlGServices_" + Id;
     public string Temporary(string role) => "__" + role + _temporary++;
     public string StableId(string value) => CSharpNames.StableId(_hash, value);
     public void Dispose() => _hash.Dispose();
