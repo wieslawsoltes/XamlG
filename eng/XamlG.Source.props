@@ -1,0 +1,11 @@
+<Project>
+  <!-- Repository samples compile with the current generator and its shipped build integration. -->
+  <PropertyGroup>
+    <_XamlGUseSourceAssets Condition="'$(_XamlGPropsImported)' != 'true'">true</_XamlGUseSourceAssets>
+    <_XamlGDefaultActivation>false</_XamlGDefaultActivation>
+  </PropertyGroup>
+  <Import Project="../src/XamlG.Generator/buildTransitive/XamlG.Generator.props" Condition="'$(_XamlGUseSourceAssets)' == 'true'" />
+  <PropertyGroup>
+    <_XamlGDefaultActivation />
+  </PropertyGroup>
+</Project>

@@ -16,7 +16,8 @@ public sealed class NamespaceScope
         var bindings = Bindings; var ignored = IgnoredNamespaces; var preserve = PreserveSpace; var declared = DeclaredPrefixes;
         foreach (var a in element.Attributes)
             if (a.IsNamespace) { var prefix = a.Name == "xmlns" ? string.Empty : a.Name.Substring(6); bindings = bindings.SetItem(prefix, a.Value); declared = declared.Add(prefix); }
-        var result = new NamespaceScope(bindings, ignored, preserve, declared);
+        var result = ReferenceEquals(bindings, Bindings) && ReferenceEquals(declared, DeclaredPrefixes)
+            ? this : new NamespaceScope(bindings, ignored, preserve, declared);
         foreach (var a in element.Attributes)
         {
             var name = result.Expand(a.Name, true);
@@ -25,7 +26,8 @@ public sealed class NamespaceScope
                 foreach (var prefix in a.Value.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
                     if (bindings.TryGetValue(prefix, out var ns)) ignored = ignored.Add(ns);
         }
-        return new NamespaceScope(bindings, ignored, preserve, declared);
+        return ReferenceEquals(ignored, result.IgnoredNamespaces) && preserve == result.PreserveSpace
+            ? result : new NamespaceScope(bindings, ignored, preserve, declared);
     }
     public ExpandedName Expand(string name, bool attribute = false)
     {

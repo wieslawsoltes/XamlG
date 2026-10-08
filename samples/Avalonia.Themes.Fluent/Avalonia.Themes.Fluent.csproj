@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <Version>12.2.999</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/packages/Avalonia/Avalonia.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src/Avalonia.Base/Avalonia.Base.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src/Avalonia.Controls/Avalonia.Controls.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src/Avalonia.Dialogs/Avalonia.Dialogs.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src/Markup/Avalonia.Markup.Xaml\Avalonia.Markup.Xaml.csproj" />
+    <AvaloniaResource Include="**/*.xaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/XamlG.Avalonia/XamlG.Avalonia.csproj" />
+  </ItemGroup>
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build/NullableEnable.props" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build/BuildTargets.targets" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build/TrimmingEnable.props" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build/DevAnalyzers.props" />
+</Project>

@@ -10,6 +10,19 @@ internal sealed class ConstructorBinder
     public void Bind(ObjectBindingBuilder target, ImmutableArray<XamlSyntaxNode> arguments, NamespaceScope scope)
     {
         var factoryName = target.Scope.Directive(target.Syntax, "FactoryMethod")?.Value;
+        if (factoryName == null && arguments.IsEmpty)
+        {
+            // An accessible parameterless constructor wins before optional overloads.
+            // Most construction nodes take this path and need no conversion ranking.
+            foreach (var constructor in target.Type.InstanceConstructors)
+                if (constructor.Parameters.IsEmpty && _context.Types.IsAccessible(constructor, _context.RootClass))
+                {
+                    target.Constructor = constructor;
+                    target.Arguments = ImmutableArray<BoundExpression>.Empty;
+                    _context.Symbols.Add(new(target.Syntax.NameSpan, constructor, "constructor"));
+                    return;
+                }
+        }
         IEnumerable<IMethodSymbol> candidates = factoryName == null ? target.Type.InstanceConstructors :
             target.Type.Members(factoryName).OfType<IMethodSymbol>().Where(m => m.IsStatic && _context.Types.Compilation.ClassifyCommonConversion(m.ReturnType, target.Type).IsImplicit);
         var exact = candidates.Where(method => _context.Types.IsAccessible(method, _context.RootClass) && !method.IsGenericMethod && method.Parameters.Length == arguments.Length).ToArray();

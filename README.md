@@ -182,7 +182,7 @@ Monaco XAML/C# editing, generated-code diagnostics, syntax/typed-operation inspe
 
 ## Validation and release
 
-Six PR workflows own native/MSBuild, real-host, upstream, theme, browser and package validation; Pages deployment is separate. Independent jobs use detached worktrees and verify source integrity. Workflow definitions and historical results do not validate a newer revision.
+Seven PR workflows own native/MSBuild, real-host, upstream, theme, browser and package validation; Pages deployment is separate. Independent jobs use detached worktrees and verify source integrity. Workflow definitions and historical results do not validate a newer revision.
 
 The pinned comparison executes **222 original-XamlX baseline cases** separately from **217 XamlG runtime/diagnostic cases**. Five internal AST/IL-specific assertions are outside that source-backend comparison. Additional shared regressions run through both compilers and are counted separately from the original upstream cases. The separate theme gate compiles the original Simple and Fluent documents/code-behind and realizes seventeen controls in Light and Dark variants; compile-only success is insufficient. No production package depends on XamlX.
 

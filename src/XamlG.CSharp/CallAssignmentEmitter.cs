@@ -20,6 +20,7 @@ internal sealed class CallAssignmentEmitter(EmissionContext context, ValueEmitte
             var local = context.Temporary("callTarget");
             writer.Line("var " + local + " = " + frame + ".ForTarget(" + target + ", " +
                 values.Emit(assignment.TargetDescriptor, frame) + ");");
+            context.InheritFrameNamespaces(local, frame);
             frame = local;
         }
         var arguments = new List<string>();
@@ -48,7 +49,7 @@ internal sealed class CallAssignmentEmitter(EmissionContext context, ValueEmitte
             context.Error("An owned method assignment must return IDisposable.", assignment.Span);
         var subscription = context.Temporary("ownedCall");
         writer.Line("global::System.IDisposable? " + subscription + " = " + call + ";");
-        writer.Line(frame + ".Session.TrackCleanup(() => " + subscription + "?.Dispose());");
+        writer.Line(frame + ".Session.TrackDisposable(" + subscription + ");");
         new PostCallEmitter(context, values).Emit(assignment.PostCall, target, arguments, frame, assignment.Span);
     }
 }

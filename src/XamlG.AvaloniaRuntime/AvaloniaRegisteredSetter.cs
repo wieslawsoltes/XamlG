@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Data;
+using XamlG.Runtime;
 
 namespace XamlG.AvaloniaRuntime;
 
@@ -9,6 +10,18 @@ public static class AvaloniaRegisteredSetter
 {
     public static void AssignTemplate<T>(AvaloniaObject target, StyledProperty<T> property, T value) =>
         target.SetValue(property, value, BindingPriority.Template);
+
+    /// <summary>Shares template binding dispatch while preserving template priority and subscription ownership.</summary>
+    public static void AssignTemplateValueOrBinding<T>(AvaloniaObject target, object? value,
+        StyledProperty<T> property, IServiceProvider services)
+    {
+        if (value is BindingBase binding)
+        {
+            var subscription = Assign(target, property, binding);
+            ((XamlRuntimeContext)services.GetService(typeof(XamlRuntimeContext))!).Session.TrackDisposable(subscription);
+        }
+        else AssignTemplate(target, property, (T)value!);
+    }
 
     public static IDisposable? Assign(AvaloniaObject target, AvaloniaProperty property, object? value)
     {

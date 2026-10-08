@@ -21,7 +21,7 @@ internal sealed class AssignmentEmitter
         {
             case BoundSetAssignment set:
             {
-                var valueFrame = ForTarget(set.Member, target, frame);
+                var valueFrame = ForTarget(set.Member, target, frame, ValueEmitter.UsesFrame(set.Value));
                 void Assign(string value)
                 {
                     if (set.RegisterName)
@@ -33,7 +33,14 @@ internal sealed class AssignmentEmitter
                     Set(set.Member, owner.Type, target, value);
                     if (set.RegisterName) _objects.RegisterName(frame, value, target);
                     if (set.Member.Getter != null && set.Member.Setter != null && !set.Member.Setter.IsInitOnly)
-                        writer.Line(frame + ".Session.RegisterProperty<" + set.Member.ValueType.CSharpName() + ">(" + CSharpNames.Literal(owner.Key) + ", " + CSharpNames.Literal(set.Member.Name) + ", () => " + Get(set.Member, owner.Type, target) + ", __value => { " + SetExpression(set.Member, owner.Type, target, "__value") + "; });");
+                    {
+                        if (owner.Type.IsReferenceType)
+                        {
+                            writer.Line(_context.PropertyRegistration(PropertyAccessor.Create(owner.Type, set.Member), frame));
+                        }
+                        else
+                            writer.Line(frame + ".Session.RegisterProperty<" + set.Member.ValueType.CSharpName() + ">(" + CSharpNames.Literal(owner.Key) + ", " + CSharpNames.Literal(set.Member.Name) + ", () => " + Get(set.Member, owner.Type, target) + ", __value => { " + SetExpression(set.Member, owner.Type, target, "__value") + "; });");
+                    }
                 }
                 if (set.Value is BoundObjectExpression child) _objects.Emit(child.Object, valueFrame, null, Assign); else Assign(_values.Emit(set.Value, valueFrame));
                 break;
@@ -118,20 +125,34 @@ internal sealed class AssignmentEmitter
         _context.Writer.Line(helper + "(" + target + ", " + value + ");");
     }
 
-    private string ForTarget(BoundMember member, string target, string parent)
+    private string ForTarget(BoundMember member, string target, string parent, bool required = true)
     {
+        if (!required)
+        {
+            // A framework descriptor may execute user code even when the value does not
+            // consume target services. Retain its evaluation before evaluating the value.
+            if (member.TargetDescriptor is { } expression)
+                _context.Writer.Line("object? " + _context.Temporary("descriptorValue") + " = " + _values.Emit(expression, parent) + ";");
+            return parent;
+        }
         var descriptor = member.TargetDescriptor == null ? _context.Descriptor(member) : _values.Emit(member.TargetDescriptor, parent);
-        var frame = _context.Temporary("target"); _context.Writer.Line("var " + frame + " = " + parent + ".ForTarget(" + target + ", " + descriptor + ");"); return frame;
+        var frame = _context.Temporary("target"); _context.Writer.Line("var " + frame + " = " + parent + ".ForTarget(" + target + ", " + descriptor + ");");
+        _context.InheritFrameNamespaces(frame, parent); return frame;
     }
     internal static string Get(BoundMember member, ITypeSymbol targetType, string target) => member.Kind == BoundMemberKind.AttachedProperty ? member.Getter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Getter) + "(" + target + ")" : CSharpNames.MemberTarget(member.Symbol, targetType, target) + "." + CSharpNames.Identifier(member.Name);
     private string SetExpression(BoundMember member, ITypeSymbol targetType, string target, string value)
     {
+        if (member.StaticSetter == null && member.Setter?.IsInitOnly == true)
+            return _context.InitSetter(member.Setter) + "(" + (member.Setter.ContainingType.IsValueType ? "ref " : string.Empty) + target + ", " + value + ")";
+        return SetNonInit(member, targetType, target, value);
+    }
+    internal static string SetNonInit(BoundMember member, ITypeSymbol targetType, string target, string value)
+    {
         if (member.StaticSetter is { } accessor)
         {
-            var arguments = new[] { target }.Concat(accessor.Descriptors.Select(field => field.ContainingType.CSharpName() + "." + CSharpNames.Identifier(field.Name))).Concat(new[] { value });
+            var arguments = new[] { target }.Concat(accessor.Descriptors.Select(field => field.Member.ContainingType.CSharpName() + "." + CSharpNames.Identifier(field.GeneratedMemberName ?? field.Member.Name))).Concat(new[] { value });
             return accessor.Method.ContainingType.CSharpName() + "." + CSharpNames.Method(accessor.Method) + "(" + string.Join(", ", arguments) + ")";
         }
-        if (member.Setter?.IsInitOnly == true) return _context.InitSetter(member.Setter) + "(" + (member.Setter.ContainingType.IsValueType ? "ref " : string.Empty) + target + ", " + value + ")";
         return member.Kind == BoundMemberKind.AttachedProperty ? member.Setter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Setter) + "(" + target + ", " + value + ")" : CSharpNames.MemberTarget(member.Symbol, targetType, target) + "." + CSharpNames.Identifier(member.Name) + " = " + value;
     }
     private void Set(BoundMember member, ITypeSymbol targetType, string target, string value) => _context.Writer.Line(SetExpression(member, targetType, target, value) + ";");

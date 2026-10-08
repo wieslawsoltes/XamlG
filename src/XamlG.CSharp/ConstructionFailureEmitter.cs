@@ -6,12 +6,7 @@ internal static class ConstructionFailureEmitter
     {
         var writer = context.Writer;
         writer.Open("catch (global::System.Exception __constructionFailure)");
-        writer.Open("try");
-        writer.Line(frame + ".Session.Dispose();");
-        writer.Close();
-        writer.Open("catch (global::System.Exception __cleanupFailure)");
-        writer.Line("throw new global::System.AggregateException(\"XAML construction and cleanup both failed.\", __constructionFailure, __cleanupFailure);");
-        writer.Close();
+        writer.Line(frame + ".Session.DisposeAfterConstructionFailure(__constructionFailure);");
         writer.Line("throw;");
         writer.Close();
     }

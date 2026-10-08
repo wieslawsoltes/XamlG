@@ -8,6 +8,9 @@ internal sealed class RuntimeContextEmitter
 {
     private readonly EmissionContext _context;
     private readonly NamespaceMapEmitter _namespaces;
+    private readonly Dictionary<(bool Deferred, bool HasRoot), string> _factories = new();
+    private bool _complete;
+    private bool _nameScope;
 
     public RuntimeContextEmitter(EmissionContext context, NamespaceMapEmitter namespaces)
     {
@@ -16,6 +19,15 @@ internal sealed class RuntimeContextEmitter
     }
 
     public void Create(string variable, string outer, string root, bool deferred = false)
+    {
+        var key = (deferred, root != "null");
+        if (!_factories.TryGetValue(key, out var factory))
+            _factories.Add(key, factory = "__XamlGCreateContext_" + _context.Id + "_" + _factories.Count);
+        _context.Writer.Line("var " + variable + " = " + factory + "(" + outer + ", " + root + ");");
+        _context.SetFrameNamespaces(variable, _namespaces.GetMap(_context.Document.Root!.Scope));
+    }
+
+    private void CreateCore(string variable, string outer, string root, bool deferred)
     {
         var runtime = _context.Document.Runtime;
         var writer = _context.Writer;
@@ -43,10 +55,18 @@ internal sealed class RuntimeContextEmitter
             ? "static __compiled => " + innerFactory.ContainingType.CSharpName() + "." + CSharpNames.Method(innerFactory) + "(__compiled)" : "null";
         var namespaces = _namespaces.GetMap(_context.Document.Root!.Scope);
         writer.Line("var " + variable + " = new " + CSharpNames.Context + "(" + outer + ", " + root + ", " + baseUri + ", " + services + ", " + inner + ", " + namespaces + ", useTypeDescriptorStubs: " + (_context.Document.Profile.Runtime.UseTypeDescriptorStubs ? "true" : "false") + ");");
+        _context.SetFrameNamespaces(variable, namespaces);
         InitializeNameScope(variable, outer);
     }
 
     public void InitializeNameScope(string frame, string provider)
+    {
+        if (_context.Document.Runtime.NameScope == null) return;
+        _nameScope = true;
+        _context.Writer.Line("__XamlGInitializeNameScope_" + _context.Id + "(" + frame + ", " + provider + ");");
+    }
+
+    private void InitializeNameScopeCore(string frame, string provider)
     {
         if (_context.Document.Runtime.NameScope is not { } scope) return;
         var name = _context.Temporary("nameScope");
@@ -58,9 +78,10 @@ internal sealed class RuntimeContextEmitter
     public string Scope(string parent, NamespaceScope namespaces)
     {
         var map = _namespaces.GetMap(namespaces);
-        if (map == "null") return parent;
+        if (map == "null" || _context.FrameNamespaces(parent) == map) return parent;
         var frame = _context.Temporary("scope");
         _context.Writer.Line("var " + frame + " = " + parent + ".WithNamespaces(" + map + ");");
+        _context.SetFrameNamespaces(frame, map);
         return frame;
     }
 
@@ -73,6 +94,12 @@ internal sealed class RuntimeContextEmitter
 
     public void Complete(string frame, string root)
     {
+        _complete = true;
+        _context.Writer.Line("__XamlGCompleteContext_" + _context.Id + "(" + frame + ", " + root + ");");
+    }
+
+    private void CompleteCore(string frame, string root)
+    {
         _context.Writer.Line(frame + ".Complete(" + root + ");");
         if (_context.Document.Runtime.NameScope is not { } scope) return;
         var name = _context.Temporary("completedScope");
@@ -82,6 +109,30 @@ internal sealed class RuntimeContextEmitter
         {
             var target = _context.Temporary("scopeOwner");
             _context.Writer.Line("if ((object)" + root + " is " + attach.Parameters[0].Type.CSharpName() + " " + target + ") " + attach.ContainingType.CSharpName() + "." + CSharpNames.Method(attach) + "(" + target + ", " + name + ");");
+        }
+    }
+
+    public void EmitHelpers()
+    {
+        var writer = _context.Writer;
+        foreach (var factory in _factories)
+        {
+            writer.Open("private static " + CSharpNames.Context + " " + factory.Value + "(" + CSharpNames.Provider + "? __services, object? __root)");
+            CreateCore("__created", "__services", factory.Key.HasRoot ? "__root" : "null", factory.Key.Deferred);
+            writer.Line("return __created;");
+            writer.Close();
+        }
+        if (_nameScope)
+        {
+            writer.Open("private static void __XamlGInitializeNameScope_" + _context.Id + "(" + CSharpNames.Context + " __frame, " + CSharpNames.Provider + "? __services)");
+            InitializeNameScopeCore("__frame", "__services");
+            writer.Close();
+        }
+        if (_complete)
+        {
+            writer.Open("private static void __XamlGCompleteContext_" + _context.Id + "(" + CSharpNames.Context + " __frame, object? __root)");
+            CompleteCore("__frame", "__root");
+            writer.Close();
         }
     }
 }

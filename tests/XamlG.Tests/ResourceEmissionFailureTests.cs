@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using XamlG.Compiler;
 using XamlG.Compiler.Resources;
 using XamlG.CSharp.Resources;
@@ -14,15 +15,20 @@ public sealed class ResourceEmissionFailureTests
     [Fact]
     public void ABackendFailureSuppressesCallersAndRecoveryReusesTheirRawOutput()
     {
-        var compilation = CompilationFactory.Create("namespace Model { public class Root { public object Child {get;set;} } }");
+        var compilation = CompilationFactory.Create("namespace Model { public class Root { public object Child {get;set;} } public interface ITarget { object TargetObject { get; } object TargetProperty { get; } } }");
         if (!compilation.References.OfType<PortableExecutableReference>().Any(reference => reference.FilePath == typeof(XamlRuntimeContext).Assembly.Location))
             compilation = compilation.AddReferences(MetadataReference.CreateFromFile(typeof(XamlRuntimeContext).Assembly.Location));
-        var profile = XamlFrameworkProfile.Portable with { ObjectExpressionRules = ImmutableArray.Create<IXamlObjectExpressionRule>(new Rule()) };
+        var profile = XamlFrameworkProfile.Portable with
+        {
+            ObjectExpressionRules = ImmutableArray.Create<IXamlObjectExpressionRule>(new Rule()),
+            Runtime = new XamlRuntimeConfiguration
+            { Services = ImmutableArray.Create(new XamlServiceMapping("Model.ITarget", XamlServiceKind.ProvideValueTarget)) }
+        };
         static XamlProjectDocument Document(string path, string body) => new(XamlSyntaxTree.Parse("<Root xmlns='clr-namespace:Model'>" + body + "</Root>", path), path);
         var root = Document("Root.xaml", "<Root.Child><Include Source='Middle.xaml'/></Root.Child>");
         var middle = Document("Middle.xaml", "<Root.Child><Include Source='Leaf.xaml'/></Root.Child>");
         var leaf = Document("Leaf.xaml", "");
-        var independent = Document("Independent.xaml", "");
+        var independent = Document("ZIndependent.xaml", "<Root.Child><Root/></Root.Child>");
         var compiler = new XamlProjectCompiler();
         var success = compiler.Compile(new[] { root, middle, leaf, independent }, compilation, profile);
         Assert.True(success.Success);
@@ -35,7 +41,14 @@ public sealed class ResourceEmissionFailureTests
             Assert.Empty(result.Output.Source);
             Assert.False(result.Document.Success);
         }
-        Assert.True(failure.Documents.Single(document => document.Input.LogicalPath == "Independent.xaml").Output.Success);
+        var survivingOutput = failure.Documents.Single(document => document.Input.LogicalPath == "ZIndependent.xaml").Output;
+        Assert.True(survivingOutput.Success);
+        // Failed documents and their suppressed callers cannot own service or property
+        // helpers that are still required by a valid, independently emitted document.
+        using var image = new MemoryStream();
+        var compiled = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(survivingOutput.Source,
+            new CSharpParseOptions(LanguageVersion.Preview))).Emit(image);
+        Assert.True(compiled.Success, string.Join("\n", compiled.Diagnostics));
         var recovered = compiler.Compile(new[] { root, middle, leaf, independent }, compilation, profile);
         Assert.True(recovered.Success);
         foreach (var path in new[] { "Root.xaml", "Middle.xaml" })

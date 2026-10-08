@@ -124,7 +124,7 @@ internal sealed class AvaloniaSelectorBinder(BindingContext context, NamespaceSc
             var reference = AvaloniaRegisteredPropertyResolver.Resolve(context, target, step.Name.Replace('|', ':'), scope, step.Span);
             if (reference == null) return null;
             property = reference as RegisteredProperty;
-            if (property?.Field.Type is not INamedTypeSymbol fieldType || !fieldType.OriginalDefinition.HasMetadataName(AvaloniaStyleMetadata.AttachedProperty))
+            if (property?.FieldType is not INamedTypeSymbol fieldType || !fieldType.OriginalDefinition.HasMetadataName(AvaloniaStyleMetadata.AttachedProperty))
             { context.Report("XG3103", "An attached-property selector requires an AttachedProperty registration.", step.Span); return null; }
             valueType = property.ValueType;
         }
@@ -132,7 +132,7 @@ internal sealed class AvaloniaSelectorBinder(BindingContext context, NamespaceSc
         {
             var wrapper = target.Members(step.Name).OfType<IPropertySymbol>().FirstOrDefault(p => !p.IsStatic && !p.IsIndexer && context.Types.IsAccessible(p));
             property = wrapper == null ? null : AvaloniaRegisteredPropertyResolver.Find(context, wrapper.ContainingType, wrapper.Name);
-            if (property == null || !SymbolEqualityComparer.Default.Equals(property.Field.ContainingType, wrapper!.ContainingType))
+            if (property == null || !SymbolEqualityComparer.Default.Equals(property.Declaration.ContainingType, wrapper!.ContainingType))
             { context.Report("XG3103", $"Selector property '{step.Name}' requires a CLR property and its declaring registration.", step.Span); return null; }
             context.Symbols.Add(new(step.Span, wrapper!, "property"));
             // This transform uses the CLR value type but no property converter context.

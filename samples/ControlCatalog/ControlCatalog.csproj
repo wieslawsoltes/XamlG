@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IncludeAvaloniaGenerators>true</IncludeAvaloniaGenerators>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Update="**\*.xaml.cs">
+      <DependentUpon>%(Filename)</DependentUpon>
+    </Compile>
+    <AvaloniaXaml Include="**\*.xaml">
+      <SubType>Designer</SubType>
+    </AvaloniaXaml>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="$(SharedAssetsPath)\icon.ico" Link="Assets\icon.ico" />
+    <AvaloniaResource Include="$(SharedAssetsPath)\icon-32.png" Link="Assets\icon-32.png" />
+    <AvaloniaResource Include="Assets\**\*" />
+    <EmbeddedResource Include="Assets\Fonts\*.*" />
+    <EmbeddedResource Include="Pages\teapot.bin" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/packages\Avalonia\Avalonia.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src\Avalonia.Controls.ColorPicker\Avalonia.Controls.ColorPicker.csproj" />
+    <ProjectReference Include="../Avalonia.Themes.Simple/Avalonia.Themes.Simple.csproj" />
+    <ProjectReference Include="../Avalonia.Themes.Fluent/Avalonia.Themes.Fluent.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src\Avalonia.Fonts.Inter\Avalonia.Fonts.Inter.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src\Skia\Avalonia.Skia\Avalonia.Skia.csproj" />
+    <ProjectReference Include="..\MiniMvvm\MiniMvvm.csproj" />
+    <ProjectReference Include="../../src/XamlG.Avalonia/XamlG.Avalonia.csproj" />
+  </ItemGroup>
+
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build\BuildTargets.targets" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build\SourceGenerators.props" />
+  <Import Project="$(ControlCatalogAvaloniaRoot)/build\SkiaSharp.props" />
+</Project>

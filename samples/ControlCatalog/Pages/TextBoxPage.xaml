@@ -1,0 +1,6 @@
+<controls:SampleGalleryPage xmlns="https://github.com/avaloniaui"
+                            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                            xmlns:controls="using:ControlCatalog.Controls"
+                            x:Class="ControlCatalog.Pages.TextBoxPage"
+                            Header="TextBox"
+                            Description="TextBox is the editable text control: a single line, a multi-line editor, a masked field or a password field. Placeholders, inner content, selection, the clipboard and the undo stack are all part of the control." />

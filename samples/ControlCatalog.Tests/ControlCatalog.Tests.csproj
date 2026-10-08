@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Update="components.json" CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="../ControlCatalog/ControlCatalog.csproj" />
+    <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src/Headless/Avalonia.Headless.XUnit/Avalonia.Headless.XUnit.csproj" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,9 @@
+<linker>
+  <assembly fullname="Avalonia.OpenGL">
+    <!-- Avalonia's GetProcAddress generator emits these delegates so the WASM SDK
+         can generate interpreter-to-native call stubs. They have no managed callers,
+         but must survive trimming before ManagedToNativeGenerator scans the assembly. -->
+    <type fullname="Avalonia.OpenGL.GlInterface/__wasmDummy*" preserve="all" />
+    <type fullname="Avalonia.OpenGL.GlBasicInfoInterface/__wasmDummy*" preserve="all" />
+  </assembly>
+</linker>

@@ -1,6 +1,7 @@
 <Project>
   <PropertyGroup>
-    <XamlGEnabled Condition="'$(XamlGEnabled)' == ''">true</XamlGEnabled>
+    <_XamlGPropsImported>true</_XamlGPropsImported>
+    <XamlGEnabled Condition="'$(XamlGEnabled)' == '' and '$(_XamlGDefaultActivation)' != 'false'">true</XamlGEnabled>
     <XamlGFramework Condition="'$(XamlGFramework)' == ''">Auto</XamlGFramework>
     <XamlGEnableDefaultItems Condition="'$(XamlGEnableDefaultItems)' == ''">true</XamlGEnableDefaultItems>
     <XamlGGenerateInitializeComponent Condition="'$(XamlGGenerateInitializeComponent)' == ''">true</XamlGGenerateInitializeComponent>

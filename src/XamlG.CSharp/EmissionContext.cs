@@ -5,13 +5,18 @@ using XamlG.Compiler;
 using XamlG.Roslyn;
 using XamlG.Syntax;
 namespace XamlG.CSharp;
-internal sealed class EmissionContext
+internal sealed class EmissionContext : IDisposable
 {
+    private readonly System.Security.Cryptography.SHA256 _hash = System.Security.Cryptography.SHA256.Create();
     private int _temporary;
+    private bool _sourceInfoSetter;
     private readonly Dictionary<ISymbol, string> _descriptors = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<IMethodSymbol, string> _initSetters = new(SymbolEqualityComparer.Default);
+    private readonly Dictionary<string, int> _sourceRecords = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (int Index, PropertyAccessor Accessor)> _propertyAccessors = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _frameNamespaces = new(StringComparer.Ordinal);
     public EmissionContext(BoundDocument document, CancellationToken cancellation)
-    { Document = document; Cancellation = cancellation; Diagnostics.AddRange(document.Diagnostics); Id = CSharpNames.StableId(document.Options.DocumentId ?? document.Syntax.Path); }
+    { Document = document; Cancellation = cancellation; Diagnostics.AddRange(document.Diagnostics); Id = StableId(document.Options.DocumentId ?? document.Syntax.Path); }
     public BoundDocument Document { get; }
     public string Id { get; }
     private ImmutableArray<NamedObjectField> _namedFields;
@@ -26,8 +31,17 @@ internal sealed class EmissionContext
     public List<XamlDiagnostic> Diagnostics { get; } = new();
     public List<XamlSourceMapping> Mappings { get; } = new();
     public string RootVariable { get; set; } = "__root";
-    public string ServicesType => "__XamlGServices_" + Id;
+    public SharedServiceSource? SharedServices { get; set; }
+    public SharedPropertyTables? SharedProperties { get; set; }
+    public bool UsePropertyAliases { get; set; }
+    public string ServicesType => SharedServices?.TypeName ?? "__XamlGServices_" + Id;
     public string Temporary(string role) => "__" + role + _temporary++;
+    public string StableId(string value) => CSharpNames.StableId(_hash, value);
+    public void Dispose() => _hash.Dispose();
+    public string? FrameNamespaces(string frame) => _frameNamespaces.TryGetValue(frame, out var map) ? map : null;
+    public void SetFrameNamespaces(string frame, string map) => _frameNamespaces[frame] = map;
+    public void InheritFrameNamespaces(string frame, string parent)
+    { if (FrameNamespaces(parent) is { } map) SetFrameNamespaces(frame, map); }
     public void Map(TextSpan span, Action emit)
     {
         Cancellation.ThrowIfCancellationRequested();
@@ -48,8 +62,55 @@ internal sealed class EmissionContext
         if (_initSetters.TryGetValue(method, out var name)) return name;
         name = "__init_" + Id + "_" + _initSetters.Count; _initSetters.Add(method, name); return name;
     }
+    public string SourceInfoTable => "__source_" + Id;
+    public int SourceInfoIndex(string record)
+    {
+        if (!_sourceRecords.TryGetValue(record, out var index))
+        { index = _sourceRecords.Count; _sourceRecords.Add(record, index); }
+        return index;
+    }
+    public string SourceInfoSetter()
+    {
+        _sourceInfoSetter = true;
+        return "__SetSourceInfo_" + Id;
+    }
+    public string PropertyRegistration(PropertyAccessor value, string frame)
+    {
+        var key = value.Key;
+        if (SharedProperties?.Registrations.TryGetValue(key, out var shared) == true)
+            return (UsePropertyAliases ? shared.Alias : shared.Source.TypeName) + ".Table.Register(" + frame + ", " + shared.Index + ");";
+        if (!_propertyAccessors.TryGetValue(key, out var accessor))
+        {
+            accessor = (_propertyAccessors.Count, value);
+            _propertyAccessors.Add(key, accessor);
+        }
+        return "__properties_" + Id + ".Register(" + frame + ", " + accessor.Index + ");";
+    }
     public void EmitMetadataHelpers()
     {
+        if (_sourceInfoSetter)
+        {
+            var source = Document.Runtime.SourceInfo!;
+            Writer.Open("private static void " + SourceInfoSetter() + "(object __target, int __line, int __column)");
+            Writer.Line(source.ObjectSetter.ContainingType.CSharpName() + "." + CSharpNames.Method(source.ObjectSetter) + "(__target, new " +
+                source.Constructor.ContainingType.CSharpName() + "(__line, __column, " +
+                (Document.Syntax.Path.Length == 0 ? "null" : CSharpNames.Literal(Document.Syntax.Path)) + "));");
+            Writer.Close();
+        }
+        if (_propertyAccessors.Count != 0)
+        {
+            var accessors = _propertyAccessors.Values.OrderBy(accessor => accessor.Index).Select(accessor => accessor.Accessor).ToArray();
+            PropertyTableEmitter.Emit(Writer, accessors, "__properties_" + Id, "__GetProperty_" + Id, "__SetProperty_" + Id, "private");
+        }
+        if (_sourceRecords.Count != 0)
+        {
+            var records = new System.Text.StringBuilder();
+            foreach (var pair in _sourceRecords.OrderBy(pair => pair.Value))
+                records.Append(pair.Key.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(':').Append(pair.Key);
+            Writer.Line("private static readonly global::XamlG.Runtime.XamlSourceInfoTable __source_" + Id +
+                " = global::XamlG.Runtime.XamlSourceInfoTable.FromEncoded(" + CSharpNames.Literal(Document.Syntax.Path) + ", " +
+                Document.Syntax.Version.ToString(System.Globalization.CultureInfo.InvariantCulture) + "L, " + CSharpNames.Literal(records.ToString()) + ");");
+        }
         foreach (var pair in _descriptors)
         {
             var type = pair.Key.ContainingType.CSharpName(); var name = CSharpNames.Literal(pair.Key.Name); string expression;

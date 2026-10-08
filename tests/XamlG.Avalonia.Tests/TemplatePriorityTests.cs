@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
 using Avalonia.Diagnostics;
@@ -125,6 +126,35 @@ public sealed class TemplatePriorityTests
         }
     }
 
+    [AvaloniaTheory]
+    [InlineData(false, "ReflectionBinding")]
+    [InlineData(true, "ReflectionBinding")]
+    [InlineData(false, "CompiledBinding")]
+    [InlineData(true, "CompiledBinding")]
+    public void AttachedBindingGetterAttributesRetainBindingObjects(bool inTemplate, string bindingKind)
+    {
+        var content = "<ComboBox x:DataType='x:String' TextSearch.TextBinding='{" + bindingKind + " Length}'/>";
+        var xaml = inTemplate
+            ? "<ControlTemplate " + Ns + " TargetType='Button'>" + content + "</ControlTemplate>"
+            : "<ComboBox " + Ns + " x:DataType='x:String' TextSearch.TextBinding='{" + bindingKind + " Length}'/>";
+        var baseline = AvaloniaUpstreamCompilation.Compile(xaml);
+        Assert.Null(baseline.Error);
+        var actual = new ResourceProjectFixture(new[] { ("Template.axaml", xaml) }).Build("Template.axaml");
+        foreach (var root in new[] { baseline.Root, actual })
+        {
+            var control = Assert.IsType<ComboBox>(root is IControlTemplate template ? template.Build(new Button())!.Result : root);
+            var binding = TextSearch.GetTextBinding(control);
+            Assert.NotNull(binding);
+            Assert.Equal(inTemplate ? BindingPriority.Template : BindingPriority.LocalValue,
+                control.GetDiagnostic(TextSearch.TextBindingProperty).Priority);
+            var target = new TextBlock { DataContext = "hello" };
+            using var subscription = target.Bind(TextBlock.TextProperty, binding);
+            Assert.Equal("5", target.Text);
+            target.DataContext = "new";
+            Assert.Equal("3", target.Text);
+        }
+    }
+
     [AvaloniaFact]
     public void TemplateAssignmentsRetainSourceDeclarationsAndLiveSetters()
     {
@@ -140,6 +170,46 @@ public sealed class TemplatePriorityTests
         Assert.Equal(77d, control.Value);
         Assert.Equal(0, control.Writes);
         Assert.Equal(BindingPriority.Template, control.GetDiagnostic(TemplatePriorityProbe.ValueProperty).Priority);
+    }
+
+    [AvaloniaFact]
+    public void SharedTemplateBindingDispatchRetainsSourceAndSessionOwnership()
+    {
+        var xaml = "<Button " + Ns + " Width='100'><Button.Template><ControlTemplate>" +
+            "<Border Name='part' Width='{TemplateBinding Width}'/></ControlTemplate></Button.Template></Button>";
+        var root = Assert.IsType<Button>(new ResourceProjectFixture(new[] { ("Template.axaml", xaml) }).Build("Template.axaml"));
+        var window = new Window { Content = root };
+        try
+        {
+            window.Show(); window.UpdateLayout();
+            var part = Assert.Single(root.GetVisualDescendants().OfType<Border>(), child => child.Name == "part");
+            Assert.Equal(100d, part.Width);
+            root.Width = 120d;
+            Assert.Equal(120d, part.Width);
+            Assert.True(XamlRuntimeSession.TryGet(part, out var session));
+            var node = Assert.IsType<XamlRuntimeNode>(session!.FindNode(part));
+            Assert.Contains("Width", node.Source!.Declarations.Keys);
+            session.Dispose();
+            var retiredValue = part.Width;
+            root.Width = 140d;
+            Assert.Equal(retiredValue, part.Width);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaTheory]
+    [InlineData(null)]
+    [InlineData("wrong boxed type")]
+    public void SharedTemplateValueDispatchRetainsUnboxingFailures(object? value)
+    {
+        var control = new TemplatePriorityProbe();
+        var context = new XamlRuntimeContext();
+        using var session = context.Session;
+        var error = Record.Exception(() => XamlG.AvaloniaRuntime.AvaloniaRegisteredSetter.AssignTemplateValueOrBinding(
+            control, value, TemplatePriorityProbe.ValueProperty, context));
+        if (value == null) Assert.IsType<NullReferenceException>(error);
+        else Assert.IsType<InvalidCastException>(error);
+        Assert.Equal(0, control.Writes);
     }
 }
 

@@ -8,6 +8,7 @@ internal static class AvaloniaRegisteredSetterMetadata
     public const string AssignBinding = "AssignBinding";
     public const string AssignBindingOrUnset = "AssignBindingOrUnset";
     public const string AssignTemplate = "AssignTemplate";
+    public const string AssignTemplateValueOrBinding = "AssignTemplateValueOrBinding";
     public const string UnsetValueType = "Avalonia.UnsetValueType";
     public const string UnsetValue = "UnsetValue";
     public const string StyledProperty = "Avalonia.StyledProperty`1";
