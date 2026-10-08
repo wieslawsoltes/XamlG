@@ -60,7 +60,8 @@ export function loadStudioState(key) {
             const previous = await read(key + ':previous');
             if (!previous) throw error;
             const value = await decode(previous, key);
-            failure(error, key); // Recover the last complete write, and make the recovery visible.
+            errors.set(key + ':recovery', 'Studio recovered the previous saved version after a damaged write. Review the restored project and agent history before continuing.');
+            publishStatus();
             return value;
         }
     });
@@ -91,7 +92,7 @@ export function forgetStudioState(key) {
         const db = await open(), tx = db.transaction('records', 'readwrite'), complete = done(tx), records = tx.objectStore('records');
         const previous = await request(records.get(key)), revision = (previous?.revision || 0) + 1;
         records.delete(key + ':previous'); records.put({ version: 1, revision }, key);
-        await complete; revisions.set(key, revision); lastValues.delete(key); errors.delete(key); publishStatus();
+        await complete; revisions.set(key, revision); lastValues.delete(key); errors.delete(key); errors.delete(key + ':recovery'); publishStatus();
     });
 }
 export async function studioStorageStatus() {

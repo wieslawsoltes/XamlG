@@ -54,22 +54,27 @@ internal sealed class StudioSessionStore : IDisposable
         using var unzip = new BrotliStream(input, CompressionMode.Decompress);
         using var output = new MemoryStream();
         var buffer = new byte[65536];
-        int count;
-        while ((count = await unzip.ReadAsync(buffer, cancellationToken)) != 0)
+        try
         {
-            if (output.Length + count > 192 * 1024 * 1024) throw new InvalidDataException("Saved companion state exceeds its decompression limit.");
-            output.Write(buffer, 0, count);
+            int count;
+            while ((count = await unzip.ReadAsync(buffer, cancellationToken)) != 0)
+            {
+                if (output.Length + count > 192 * 1024 * 1024) throw new InvalidDataException("Saved companion state exceeds its decompression limit.");
+                output.Write(buffer, 0, count);
+            }
         }
+        catch (InvalidOperationException error) { throw new InvalidDataException("Saved companion state is damaged.", error); }
         return JsonSerializer.Deserialize<T>(output.GetBuffer().AsSpan(0, (int)output.Length), AutomationJson.Options);
     }
     private async Task WriteAsync<T>(string name, T value, bool keepPrevious, CancellationToken cancellationToken)
     {
         await _io.WaitAsync(cancellationToken);
-        string? temporary = null;
+        string? temporary = null, previousTemporary = null;
+        byte[]? plain = null;
         try
         {
             Check(_directory, true);
-            var plain = JsonSerializer.SerializeToUtf8Bytes(value, AutomationJson.Options);
+            plain = JsonSerializer.SerializeToUtf8Bytes(value, AutomationJson.Options);
             if (plain.Length > 192 * 1024 * 1024) throw new InvalidDataException("Companion session exceeds its storage limit.");
             using var compressed = new MemoryStream();
             await using (var zip = new BrotliStream(compressed, CompressionLevel.Fastest, leaveOpen: true)) await zip.WriteAsync(plain, cancellationToken);
@@ -85,13 +90,20 @@ internal sealed class StudioSessionStore : IDisposable
                 {
                     var previous = Path.Combine(_directory, name + ".previous.dat");
                     if (File.Exists(previous)) Check(previous, false);
-                    File.Copy(path, previous, overwrite: true);
+                    previousTemporary = previous + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                    File.Copy(path, previousTemporary);
+                    File.Move(previousTemporary, previous, overwrite: true); previousTemporary = null;
                 }
             }
             File.Move(temporary, path, overwrite: true); temporary = null;
-            CryptographicOperations.ZeroMemory(plain);
         }
-        finally { if (temporary != null) File.Delete(temporary); _io.Release(); }
+        finally
+        {
+            if (plain != null) CryptographicOperations.ZeroMemory(plain);
+            if (temporary != null) File.Delete(temporary);
+            if (previousTemporary != null) File.Delete(previousTemporary);
+            _io.Release();
+        }
     }
     private static FileStream Open(string path, FileMode mode)
     {

@@ -7,8 +7,14 @@ public sealed partial class AgentHarness
 {
     /// <summary>The host atomically stores this private snapshot. Awaited before a tool can have side effects.</summary>
     public Func<AgentSessionSnapshot, CancellationToken, Task>? PersistSession { get; set; }
-    public Task SaveSessionAsync(CancellationToken cancellationToken = default) =>
-        PersistSession is { } save ? save(CaptureSession(), cancellationToken) : Task.CompletedTask;
+    private readonly SemaphoreSlim _persistenceGate = new(1);
+    public async Task SaveSessionAsync(CancellationToken cancellationToken = default)
+    {
+        if (PersistSession is not { } save) return;
+        await _persistenceGate.WaitAsync(cancellationToken);
+        try { await save(CaptureSession(), cancellationToken); }
+        finally { _persistenceGate.Release(); }
+    }
 
     public AgentSessionSnapshot CaptureSession() => new(1, Tasks.Select(task =>
     {
