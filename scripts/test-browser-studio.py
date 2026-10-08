@@ -40,7 +40,9 @@ def main():
         # Exercise the companion's published-site defaults, including in the
         # candidate preview. Custom deployments still require an explicit origin.
         origin_args = [] if origin == 'https://wieslawsoltes.github.io' else [f'--origins={origin}']
-        host = subprocess.Popen([dotnet, str(host_dll), f'--port={port}', *origin_args], cwd=ROOT, env=environment, stdout=log, stderr=log)
+        # Account scenarios start their own isolated OAuth fixture and store. The
+        # shared transport host must not lock or read the developer's account store.
+        host = subprocess.Popen([dotnet, str(host_dll), f'--port={port}', '--chatgpt=false', *origin_args], cwd=ROOT, env=environment, stdout=log, stderr=log)
         try:
             ready = False
             for _ in range(100):

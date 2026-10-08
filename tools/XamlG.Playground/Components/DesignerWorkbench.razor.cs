@@ -13,6 +13,7 @@ public partial class DesignerWorkbench : IDisposable
     [Parameter] public long SourceRevision { get; set; }
     [Parameter] public long PreviewRevision { get; set; }
     [Parameter] public long DesignerRevision { get; set; }
+    [Parameter] public bool HostBusy { get; set; }
     [Parameter] public EventCallback<XamlSourceInfo> SourceRequested { get; set; }
     private readonly CancellationTokenSource _lifetime = new();
     private readonly HashSet<string> _picked = new(StringComparer.Ordinal);
@@ -25,17 +26,22 @@ public partial class DesignerWorkbench : IDisposable
     private double _grid = 8, _x, _y, _width, _height;
     private XamlDesignArrangement _arrangement;
     private bool _busy, _disposed, _refreshPending;
+    private bool Busy => _busy || HostBusy;
     private (long Source, long Preview, long Design)? _observed;
     private IEnumerable<RuntimeNode> SelectedNodes => _nodes.Where(node => _picked.Contains(node.Id));
     private IEnumerable<RuntimeNode> VisibleNodes => _nodes.Where(node => node.Type.Contains(_filter, StringComparison.OrdinalIgnoreCase) ||
         node.Name?.Contains(_filter, StringComparison.OrdinalIgnoreCase) == true || node.Source?.Path.Contains(_filter, StringComparison.OrdinalIgnoreCase) == true);
-    private bool CanPlan => !_busy && _state is { PreviewMatchesSource: true, Isolated: false, GestureActive: false, RuntimeRevision: not null } && _picked.Count != 0;
-    private bool CanApply => !_busy && _plan is { Applied: false, Documents.Count: > 0 } && _plan.SourceRevision == SourceRevision && _plan.RuntimeRevision == _state?.RuntimeRevision;
+    private bool CanPlan => !Busy && _state is { PreviewMatchesSource: true, Isolated: false, GestureActive: false, RuntimeRevision: not null } && _picked.Count != 0;
+    private bool CanApply => !Busy && _plan is { Applied: false, Documents.Count: > 0 } && _plan.SourceRevision == SourceRevision && _plan.RuntimeRevision == _state?.RuntimeRevision;
     private static string Title(RuntimeNode node) => (node.Name == null ? "" : node.Name + " · ") + node.Type.Split('.').Last();
     private static XamlDesignRect Bounds(RuntimeNode node) => node.Bounds is { } bounds ? new(bounds.RootX, bounds.RootY, bounds.Width, bounds.Height) : throw new InvalidOperationException("The selected control has no realized bounds.");
     private static string Pretty(object value) => JsonSerializer.Serialize(value, new JsonSerializerOptions(AutomationJson.Options) { WriteIndented = true });
     protected override async Task OnParametersSetAsync()
     {
+        // Undo/compile can publish the new source revision before the host is
+        // ready to serve it. Do not mark that revision refreshed after a rejected
+        // read; the host's busy-to-idle transition must trigger the pending read.
+        if (HostBusy) return;
         var current = (SourceRevision, PreviewRevision, DesignerRevision);
         if (_observed == current) return;
         _observed = current;
@@ -43,7 +49,7 @@ public partial class DesignerWorkbench : IDisposable
     }
     private async Task Guard(Func<Task> action)
     {
-        if (_busy || _disposed) return;
+        if (Busy || _disposed) return;
         _busy = true; _error = null;
         try { await action(); }
         catch (OperationCanceledException) when (_disposed) { }
@@ -56,7 +62,11 @@ public partial class DesignerWorkbench : IDisposable
     }
     private Task<JsonElement> CallAsync(string name, object arguments) => Execute(name,
         arguments is JsonElement json ? json : AutomationJson.Element(arguments), _lifetime.Token);
-    private Task RefreshAsync() => Guard(RefreshCoreAsync);
+    private Task RefreshAsync() => Guard(async () =>
+    {
+        try { await RefreshCoreAsync(); }
+        catch { _observed = null; throw; }
+    });
     private async Task RefreshCoreAsync()
     {
         var previous = _state;

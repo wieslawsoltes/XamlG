@@ -15,6 +15,7 @@ public partial class RuntimeWorkbench : IDisposable
     [Parameter] public EventCallback<XamlSourceInfo> SourceRequested { get; set; }
     [Parameter] public long PreviewRevision { get; set; }
     [Parameter] public long SourceRevision { get; set; }
+    [Parameter] public bool HostBusy { get; set; }
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Dictionary<string, RuntimeNode> _nodes = new(StringComparer.Ordinal);
     private RuntimeSnapshot? _snapshot;
@@ -34,6 +35,7 @@ public partial class RuntimeWorkbench : IDisposable
     private double _wheelX, _wheelY = -1;
     private long _revision, _observedPreview = long.MinValue, _changeSequence;
     private bool _busy, _disposed, _refreshAfterBusy;
+    private bool Busy => _busy || HostBusy;
     private static readonly string[] Panels = ["Properties", "Objects", "Bindings", "Styles", "Resources", "Events", "Input", "Accessibility", "Tools"];
     private RuntimeNode? Selected => _nodes.GetValueOrDefault(_selectedId);
     private RuntimeProperty? SelectedProperty => _properties.FirstOrDefault(property => property.Key == _propertyKey);
@@ -61,6 +63,7 @@ public partial class RuntimeWorkbench : IDisposable
     }
     protected override async Task OnParametersSetAsync()
     {
+        if (HostBusy) return;
         if (_observedPreview == PreviewRevision) return;
         _observedPreview = PreviewRevision; _snapshot = null; _nodes.Clear(); _selectedId = ""; _properties = []; _details = null; _accessibility = null; _provider = null; _changeSequence = 0;
         _objectHandles = null; _objectInspection = null; _objectId = ""; _objectInterface = "";
@@ -69,7 +72,7 @@ public partial class RuntimeWorkbench : IDisposable
     }
     private async Task Guard(Func<Task> action)
     {
-        if (_busy || _disposed) return;
+        if (Busy || _disposed) return;
         _busy = true; _error = null;
         try { await action(); }
         catch (OperationCanceledException) when (_disposed) { }
@@ -88,7 +91,11 @@ public partial class RuntimeWorkbench : IDisposable
         if (result.ValueKind == JsonValueKind.Object && result.TryGetProperty("revision", out var revision)) _revision = revision.GetInt64();
         return result;
     }
-    private Task RefreshAsync() => Guard(RefreshCoreAsync);
+    private Task RefreshAsync() => Guard(async () =>
+    {
+        try { await RefreshCoreAsync(); }
+        catch { _observedPreview = long.MinValue; throw; }
+    });
     private async Task RefreshCoreAsync()
     {
         _snapshot = (await CallAsync("xamlg_runtime_tree", new { })).Deserialize<RuntimeSnapshot>(AutomationJson.Options)!;

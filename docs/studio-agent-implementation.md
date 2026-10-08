@@ -249,26 +249,51 @@ all horizontal/vertical alignments, Canvas anchors/margins and both StackPanel
 orientations. Validation exposed incorrect margin compensation and opposite-Canvas
 anchor resizing, a zero-size aspect-lock calculation, unreachable resize handles
 outside the selected control, and gestures publishing after runtime layout changed.
-Those cases are fixed and pass. Browser/workbench/MCP acceptance remains pending.
+Those cases are fixed and pass.
+
+The current Pages-origin browser pass succeeds in all 16 selected automation,
+designer and runtime scenarios, including eight new cases. It serves the candidate
+at the production HTTPS origin and `/XamlG/` base path while using real companion
+HTTP/WebSocket traffic. MCP cases cover reviewed geometry, independent revision
+conflicts, constraints, path selection, main/template-resource edits and one-step
+Undo, shared-template rejection, explicit reload and read-only/revoked policies.
+Actual browser gestures cover group drag, resize and cancellation. Runtime cases
+exercise keyboard/pointer/touch input, accessibility providers and returned
+selection arrays, explicit interfaces, reference arguments, typed dictionaries,
+nested structs, observers, retained handles and retirement after preview replacement.
+
+Owner-only UI cases exercise designer plan/review/apply/Undo/conflicts and runtime
+property/input/accessibility/export operations with remote sharing disabled. Reload
+changes the inspected handles, preserves unchanged input declarations and applies
+changed declarations. These cases exposed a refresh rejected while the host was
+compiling but still marked as observed; the workbenches now defer refresh until the
+host is idle and retain failed refreshes for retry. Action fields update while
+typing, and coordinate/dimension fields have independent labels. The Pages fixture
+bounds simultaneous local asset reads, and its transport-only companion disables
+account mode so it cannot access or lock the developer's credential store.
+
+The complete browser suite currently contains 53 scenarios. The 16-case pass does
+not certify the unrun authoring, agent, account, isolation and other cases below.
 
 Remaining completion work:
 
-- Complete browser/MCP acceptance for the runtime input, accessibility,
-  retained-object/interface, typed-dictionary and observer operations validated above.
-- Validate designer group geometry/arrangement, layout constraints, source
-  provenance, cancellation and one-step undo in the real browser.
 - Expand acceptance for C# navigation/actions, operation/control/data-flow
   inspection, compiler settings persistence/exports and rename preview/undo.
 - Expand agent review/compaction/recovery and MCP Tasks/resource/artifact checks,
   including cancellation, ownership, permissions and workspace replacement.
 - Exercise deterministic ChatGPT OAuth, identity rejection, credential storage,
   refresh/sign-out races, account-bound tools and the account workbench UI.
-- Update and run the complete browser suite, Pages-origin/base-path pairing,
+- Update and run the complete 53-case browser suite with Pages-origin/base-path pairing,
   all 21 package consumers and remaining CI scripts; fix failures and update the PR.
 
 Main remains merged through `46553c8`; fetching upstream at this checkpoint found
 no newer commits. The existing Playground contains the integration. Public Pages
 deployment remains dependent on the PR reaching main.
+
+## Implementation details and earlier validation
+
+The notes below retain implementation-checkpoint details. The current evidence and
+remaining completion gates are recorded in the preceding section.
 
 Implemented since that checkpoint: tasks bind to the creating browser workspace
 lifetime; replacement and revocation disconnect that lifetime. A separate preparation
@@ -393,8 +418,9 @@ runtime operations and result export. Owner UI actions use a separate local entr
 point with schema/revision checks; MCP and agent transports retain their normal
 permission gate. Source navigation validates the preview's source version and can
 reveal resource documents as well as the main XAML file. The new runtime APIs and
-browser UI compile. The native behavioral tests recorded above pass; expanded
-browser/MCP acceptance remains pending.
+browser UI compile. Native behavioral tests and the expanded Pages-origin runtime,
+browser and MCP scenarios recorded above pass. The full browser, account,
+protocol-extension and package-consumer pass remains open.
 
 Full reference acceptance remains in progress: account-mode behavioral acceptance,
 expanded recovery coverage, and the corresponding UI, authoring and
@@ -432,7 +458,9 @@ reference error rather than failing or replaying an already-completed method. Th
 Runtime workbench includes retained-object navigation, public-interface selection,
 member paging and release controls. Native acceptance now verifies GC retention and
 release, absolute expiry, origin removal, explicit interfaces, peer arguments and
-returned selection arrays. Browser integration acceptance remains pending.
+returned selection arrays. The current browser/MCP cases also verify explicit
+interfaces, reference arguments, retained selection arrays, release and preview
+replacement through the real companion.
 
 The designer now has path-aware and group selection, independent state revisions,
 grid/mode/cancel controls, source hit testing, target bounds/size constraints, and
@@ -450,10 +478,10 @@ The existing Inspectors pane hosts the Designer workbench, including multi-selec
 source navigation, preview-root geometry, arrangement anchors, plan review, apply
 and reload. The owner callback includes Designer scope without changing the remote
 permission gate. `xamlg://designer` notifies selection, configuration, source and
-runtime changes. Targeted library/browser builds pass; behavioral validation remains
-pending in the browser for group gestures, resource-template provenance, one-step
-undo, source/runtime conflicts, constraints, cancellation and the owner/remote
-permission boundary. Native surface and compiler-backed planner tests now cover
+runtime changes. Library/browser builds and the current Pages-origin designer
+scenarios pass for group gestures, resource-template provenance, one-step Undo,
+source/runtime conflicts, constraints, cancellation and owner/remote permissions.
+Native surface and compiler-backed planner tests also cover
 group movement/nudging, multi-document Undo, stale plans, constraints, cancellation
 and the standard layout-policy cases recorded above. The default policy emits Canvas offsets or
 margins and explicit dimensions; it is not a general layout constraint solver.

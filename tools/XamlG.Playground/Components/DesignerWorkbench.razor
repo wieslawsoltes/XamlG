@@ -1,17 +1,17 @@
 @using XamlG.Runtime.Design
 
 <section class="runtime-workbench designer-workbench" aria-label="XAML visual designer">
-    <header><strong>XAML visual designer</strong><button @onclick="RefreshAsync" disabled="@_busy">Refresh designer</button></header>
+    <header><strong>XAML visual designer</strong><button @onclick="RefreshAsync" disabled="@Busy">Refresh designer</button></header>
     @if (_error != null) { <p role="alert" class="runtime-error">@_error</p> }
     @if (_state is { } state)
     {
         <p>Source @state.SourceRevision · runtime @state.RuntimeRevision · designer @state.DesignerRevision</p>
         <div class="runtime-actions">
-            <button @onclick="() => ConfigureAsync(!state.Enabled)" disabled="@(_busy || state.Isolated)" aria-pressed="@state.Enabled">@(state.Enabled ? "Use interaction mode" : "Use design mode")</button>
-            <button @onclick="ReloadAsync" disabled="@_busy">@(state.PreviewRevision == null ? "Run trusted preview" : "Reload trusted preview")</button>
-            <button @onclick="() => ConfigureAsync(cancelGesture: true)" disabled="@(_busy || !state.GestureActive)">Cancel gesture</button>
+            <button @onclick="() => ConfigureAsync(!state.Enabled)" disabled="@(Busy || state.Isolated)" aria-pressed="@state.Enabled">@(state.Enabled ? "Use interaction mode" : "Use design mode")</button>
+            <button @onclick="ReloadAsync" disabled="@Busy">@(state.PreviewRevision == null ? "Run trusted preview" : "Reload trusted preview")</button>
+            <button @onclick="() => ConfigureAsync(cancelGesture: true)" disabled="@(Busy || !state.GestureActive)">Cancel gesture</button>
         </div>
-        <label>Snapping grid (DIPs; zero disables snapping) <input type="number" min="0" max="10000" step="any" @bind="_grid" /><button @onclick="() => ConfigureAsync()" disabled="@_busy">Set grid</button></label>
+        <label>Snapping grid (DIPs; zero disables snapping) <input type="number" min="0" max="10000" step="any" @bind="_grid" /></label><button @onclick="() => ConfigureAsync()" disabled="@Busy">Set grid</button>
         @if (!state.PreviewMatchesSource) { <p role="status">Run or reload the trusted preview before planning geometry for the current source.</p> }
         @if (state.Isolated) { <p>The visual designer uses the trusted preview. Reloading here switches to trusted execution.</p> }
         <p>Ctrl/⌘ click in the preview selects a group. Drag or use the eight resize handles; Shift locks the aspect ratio and Alt disables snapping.</p>
@@ -19,17 +19,17 @@
         <div class="runtime-property-list" aria-label="Designer controls">
             @foreach (var node in VisibleNodes.Take(500))
             {
-                <label title="@node.Id"><input type="checkbox" checked="@_picked.Contains(node.Id)" @onchange="args => Pick(node.Id, args)" disabled="@(_busy || _picked.Count >= 256 && !_picked.Contains(node.Id))" /><span>@Title(node) <small>@node.Source!.Path:@node.Source.Start</small></span>
-                    <button @onclick="() => SourceRequested.InvokeAsync(node.Source)" disabled="@_busy">Open source</button>
+                <label title="@node.Id"><input type="checkbox" checked="@_picked.Contains(node.Id)" @onchange="args => Pick(node.Id, args)" disabled="@(Busy || _picked.Count >= 256 && !_picked.Contains(node.Id))" /><span>@Title(node) <small>@node.Source!.Path:@node.Source.Start</small></span>
+                    <button @onclick="() => SourceRequested.InvokeAsync(node.Source)" disabled="@Busy">Open source</button>
                 </label>
             }
         </div>
         <small>@VisibleNodes.Count() matching controls · @_picked.Count selected. Refine the filter when more than 500 controls match.</small>
-        <div class="runtime-actions"><button @onclick="() => SelectAsync()" disabled="@(_busy || state.RuntimeRevision == null)">Select in preview</button><button @onclick="() => SelectAsync(true)" disabled="@(_busy || state.RuntimeRevision == null)">Clear selection</button></div>
+        <div class="runtime-actions"><button @onclick="() => SelectAsync()" disabled="@(Busy || state.RuntimeRevision == null)">Select in preview</button><button @onclick="() => SelectAsync(true)" disabled="@(Busy || state.RuntimeRevision == null)">Clear selection</button></div>
         <fieldset disabled="@(!CanPlan)"><legend>Source geometry</legend>
             <p>Coordinates use preview-root DIPs. Positions map to Canvas offsets or margins according to the parent layout. Group dimensions scale the selected controls.</p>
-            <label>X <input type="number" step="any" @bind="_x" @bind:after="ClearPlan" /> Y <input type="number" step="any" @bind="_y" @bind:after="ClearPlan" /></label>
-            <label>Width <input type="number" min="0" step="any" @bind="_width" @bind:after="ClearPlan" /> Height <input type="number" min="0" step="any" @bind="_height" @bind:after="ClearPlan" /></label>
+            <label>X <input type="number" step="any" @bind="_x" @bind:after="ClearPlan" /></label><label>Y <input type="number" step="any" @bind="_y" @bind:after="ClearPlan" /></label>
+            <label>Width <input type="number" min="0" step="any" @bind="_width" @bind:after="ClearPlan" /></label><label>Height <input type="number" min="0" step="any" @bind="_height" @bind:after="ClearPlan" /></label>
             <button @onclick="PlanGeometryAsync">Preview geometry edits</button>
             <label>Arrange <select @bind="_arrangement" @bind:after="ClearPlan">@foreach (var operation in Enum.GetValues<XamlDesignArrangement>()) { <option value="@operation">@operation</option> }</select></label>
             <label>Alignment / size anchor <select @bind="_anchor" @bind:after="ClearPlan">@foreach (var anchorNode in SelectedNodes) { <option value="@anchorNode.Id">@Title(anchorNode)</option> }</select></label>
