@@ -13,6 +13,8 @@ Scenarios cover a fresh Roslyn compilation and driver, a fresh driver over an ex
 
 For the complete ControlCatalog and Simple/Fluent theme comparison against XamlX, use [the project compilation benchmark](controlcatalog.md#compilation-benchmark). Its target includes the cost of compiling generated C#; the microbenchmark in this document excludes that cost.
 
+The [direct C# optimization research](source-generation-optimization.md) records the XamlX/Roslyn structural comparison, current transformation audit and remaining runtime parser inventory.
+
 ## Profiling the complete compiler
 
 `scripts/profile-controlcatalog.py` captures the real Csc invocation for Simple, Fluent and ControlCatalog, runs it in fresh processes with every generator and analyzer retained, and then collects a separate EventPipe trace. Prepare the pinned sources with `scripts/prepare-controlcatalog.py` first. Install `dotnet-trace` 9 or later; the validated version is 9.0.661903.
