@@ -258,10 +258,22 @@ export function disconnectAutomation() {
     agentOwner?.invokeMethodAsync('AgentDisconnected').catch(() => {});
 }
 
-export function installAgentWorkbench(owner, id) { agentOwner = owner; agentOwnerId = id; }
-export function uninstallAgentWorkbench(id) { if (agentOwnerId === id) { agentOwner = null; agentOwnerId = null; } }
+export function installAgentWorkbench(owner, id) { if (agentOwnerId && agentOwnerId !== id) releaseAgentViews(agentOwnerId); agentOwner = owner; agentOwnerId = id; }
+export function uninstallAgentWorkbench(id) { releaseAgentViews(id); if (agentOwnerId === id) { agentOwner = null; agentOwnerId = null; } }
 export function agentConnected() { return !!agentConnection; }
-export async function copyAgentText(text) { await navigator.clipboard.writeText(text); }
+export async function copyAgentText(text) {
+    try { await navigator.clipboard.writeText(text); return; } catch { }
+    const active = document.activeElement, selection = window.getSelection();
+    const ranges = selection ? Array.from({ length: selection.rangeCount }, (_, i) => selection.getRangeAt(i).cloneRange()) : [];
+    const buffer = document.createElement('textarea'); buffer.value = text; buffer.readOnly = true;
+    buffer.setAttribute('aria-label', 'Copy text'); buffer.style.cssText = 'position:fixed;left:-10000px;top:0';
+    document.body.append(buffer); buffer.select();
+    try { if (!document.execCommand('copy')) throw new Error('Copy is unavailable. Select the message and use your browser’s Copy command.'); }
+    finally {
+        buffer.remove(); active?.focus({ preventScroll: true });
+        if (selection) { selection.removeAllRanges(); for (const range of ranges) selection.addRange(range); }
+    }
+}
 export function downloadBytes(name, bytes, mimeType) {
     const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
     const link = document.createElement('a'); link.href = url; link.download = name; link.click();
@@ -269,26 +281,100 @@ export function downloadBytes(name, bytes, mimeType) {
 }
 const agentThreadPositions = new Map();
 const agentThreadBindings = new WeakMap();
-export function bindAgentThread(element, taskId) {
+const agentViewNodes = new Map();
+function rememberAgentView(ownerId, kind, element) {
+    if (!ownerId) return;
+    if (!element) { releaseAgentViewKind(ownerId, kind); return; }
+    const nodes = agentViewNodes.get(ownerId) || {};
+    if (nodes[kind] && nodes[kind] !== element) releaseAgentViewKind(ownerId, kind);
+    nodes[kind] = element; agentViewNodes.set(ownerId, nodes);
+}
+export function releaseAgentViewKind(ownerId, kind) {
+    const nodes = agentViewNodes.get(ownerId), element = nodes?.[kind];
+    if (!element) return;
+    if (kind === 'thread') releaseAgentThread(element);
+    else if (kind === 'composer') releaseAgentComposer(element);
+    else if (kind === 'diff') releaseAgentDiff(element);
+    delete nodes[kind];
+    if (!Object.keys(nodes).length) agentViewNodes.delete(ownerId);
+}
+export function releaseAgentViews(ownerId) { for (const kind of ['thread', 'composer', 'diff']) releaseAgentViewKind(ownerId, kind); }
+const agentComposerBindings = new WeakMap();
+export function bindAgentComposer(element, taskId, owner, ownerId) {
+    rememberAgentView(ownerId, 'composer', element);
+    if (!element || agentComposerBindings.get(element)?.taskId === taskId) return;
+    releaseAgentComposer(element);
+    let composing = false, busy = false;
+    const start = () => { composing = true; };
+    const end = () => { composing = false; };
+    const key = event => {
+        if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229 || composing) return;
+        if (element.dataset.taskId !== taskId || element.dataset.canSubmit !== 'true') return;
+        event.preventDefault(); event.stopPropagation();
+        if (busy || event.repeat) return;
+        busy = true;
+        owner.invokeMethodAsync('AgentComposerSubmit', taskId, element.value)
+            .catch(() => {}).finally(() => { busy = false; });
+    };
+    element.addEventListener('compositionstart', start); element.addEventListener('compositionend', end); element.addEventListener('keydown', key);
+    agentComposerBindings.set(element, { taskId, start, end, key });
+}
+export function releaseAgentComposer(element) {
+    const binding = element && agentComposerBindings.get(element);
+    if (!binding) return;
+    element.removeEventListener('compositionstart', binding.start); element.removeEventListener('compositionend', binding.end); element.removeEventListener('keydown', binding.key);
+    agentComposerBindings.delete(element);
+}
+const agentDiffPositions = new Map();
+const agentDiffBindings = new WeakMap();
+export function bindAgentDiff(element, key, ownerId) {
+    rememberAgentView(ownerId, 'diff', element);
+    if (!element || agentDiffBindings.get(element)?.key === key) return;
+    releaseAgentDiff(element);
+    const remember = () => {
+        if (element.clientHeight && element.dataset.reviewKey === key) agentDiffPositions.set(key, element.scrollTop);
+        while (agentDiffPositions.size > 64) agentDiffPositions.delete(agentDiffPositions.keys().next().value);
+    };
+    const restore = () => { if (element.clientHeight && element.dataset.reviewKey === key) element.scrollTop = agentDiffPositions.get(key) || 0; };
+    const resize = new ResizeObserver(restore); resize.observe(element);
+    element.addEventListener('scroll', remember, { passive: true });
+    agentDiffBindings.set(element, { key, remember, resize }); restore();
+}
+export function releaseAgentDiff(element) {
+    const binding = element && agentDiffBindings.get(element);
+    if (binding) { binding.resize.disconnect(); element.removeEventListener('scroll', binding.remember); agentDiffBindings.delete(element); }
+}
+export function revealAgentBlock(element, id) {
+    [...element?.querySelectorAll('[data-block-id]') || []].find(line => line.dataset.blockId === id)?.scrollIntoView({ block: 'nearest' });
+}
+export function bindAgentThread(element, taskId, ownerId) {
+    rememberAgentView(ownerId, 'thread', element);
     if (!element || agentThreadBindings.get(element)?.taskId === taskId) return;
     releaseAgentThread(element);
     let position = agentThreadPositions.get(taskId);
     if (!position) {
-        position = { follow: true, top: 0, anchor: null, offset: 0 };
+        position = { follow: true, top: 0, anchor: null, offset: 0, expanded: new Set() };
         agentThreadPositions.set(taskId, position);
         while (agentThreadPositions.size > 8) agentThreadPositions.delete(agentThreadPositions.keys().next().value);
     }
     function remember() {
-        if (element.dataset.taskId !== taskId) return;
+        if (element.dataset.taskId !== taskId || !element.clientHeight) return;
+        const following = position.follow;
         position.top = element.scrollTop;
         position.follow = element.scrollHeight - element.scrollTop - element.clientHeight < 32;
         const top = element.getBoundingClientRect().top;
         const first = [...element.querySelectorAll('[data-sequence]')].find(item => item.getBoundingClientRect().bottom >= top);
         position.anchor = first?.dataset.sequence;
         position.offset = first ? first.getBoundingClientRect().top - top : 0;
+        if (position.follow !== following && agentOwnerId === ownerId)
+            agentOwner?.invokeMethodAsync('AgentThreadFollowing', taskId, position.follow).catch(() => {});
     }
     function restore() {
-        if (element.dataset.taskId !== taskId) return;
+        if (element.dataset.taskId !== taskId || !element.clientHeight) return;
+        for (const detail of element.querySelectorAll('details[data-sequence]')) {
+            if (detail.dataset.expansionRestored === taskId) continue;
+            detail.open = position.expanded.has(detail.dataset.sequence); detail.dataset.expansionRestored = taskId;
+        }
         const selection = window.getSelection();
         if (selection && !selection.isCollapsed && element.contains(selection.anchorNode)) return;
         if (position.follow) element.scrollTop = element.scrollHeight;
@@ -299,17 +385,29 @@ export function bindAgentThread(element, taskId) {
     }
     const observer = new MutationObserver(restore);
     observer.observe(element, { childList: true, subtree: true, characterData: true });
+    const resize = new ResizeObserver(restore); resize.observe(element);
+    const toggle = event => {
+        if (!event.target.matches('details[data-sequence]') || element.dataset.taskId !== taskId) return;
+        const sequence = event.target.dataset.sequence;
+        if (event.target.open) position.expanded.add(sequence); else position.expanded.delete(sequence);
+        while (position.expanded.size > 1200) position.expanded.delete(position.expanded.values().next().value);
+    };
+    element.addEventListener('toggle', toggle, true);
     element.addEventListener('scroll', remember, { passive: true });
-    agentThreadBindings.set(element, { taskId, observer, remember, position }); restore();
+    agentThreadBindings.set(element, { taskId, observer, resize, remember, toggle, position }); restore();
 }
 export function releaseAgentThread(element) {
     const binding = agentThreadBindings.get(element);
-    if (binding) { binding.observer.disconnect(); element.removeEventListener('scroll', binding.remember); agentThreadBindings.delete(element); }
+    if (binding) { binding.observer.disconnect(); binding.resize.disconnect(); element.removeEventListener('scroll', binding.remember); element.removeEventListener('toggle', binding.toggle, true); agentThreadBindings.delete(element); }
 }
 export function followAgentThread(element) {
     const binding = agentThreadBindings.get(element);
     if (binding) binding.position.follow = true;
     if (element) element.scrollTop = element.scrollHeight;
+}
+export function holdAgentThread(element) {
+    const binding = element && agentThreadBindings.get(element);
+    if (binding) binding.position.follow = false;
 }
 export function loadAgentNumericPreferences() {
     try { return JSON.parse(localStorage.getItem('xamlg.agent.numeric.v1') || 'null'); } catch { return null; }

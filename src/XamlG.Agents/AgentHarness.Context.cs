@@ -108,24 +108,78 @@ public sealed partial class AgentHarness
         Publish(task, "checkpoint", $"Context checkpoint {task.CheckpointCount}; {Encoding.UTF8.GetByteCount(text)} bytes. Native provider history was released.");
     }
 
-    public async Task<AgentChangeReview> RestoreChangesAsync(string id, IReadOnlyList<string> paths, long expectedRevision, CancellationToken cancellationToken = default, bool latestRun = false)
+    public AgentChangeReview GetChangeReview(string id, bool latestRun = false, string? expectedReviewId = null)
+    {
+        var task = GetTask(id);
+        var review = (latestRun ? task.LatestRunChanges : task.Changes) ?? throw new InvalidOperationException("No workspace checkpoint is available.");
+        if (expectedReviewId != null && review.ReviewId != expectedReviewId)
+            throw new InvalidOperationException("The comparison changed. Refresh and review source again.");
+        return review;
+    }
+
+    public async Task<AgentChangeReview> RefreshChangesAsync(string id, bool latestRun = false, CancellationToken cancellationToken = default)
     {
         var task = GetTask(id); EnsureIdle(task); EnsureCurrentWorkspace(task);
-        var review = latestRun ? task.LatestRunChanges : task.Changes;
-        if (workspace == null || review == null || task.BeforeRun == null) throw new InvalidOperationException("No workspace checkpoint is available.");
+        if (workspace == null || task.BeforeRun == null) throw new InvalidOperationException("No workspace checkpoint is available.");
+        if (!await _runGate.WaitAsync(0, cancellationToken)) throw new InvalidOperationException("Stop the active agent before refreshing source review.");
+        try
+        {
+            using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, task.WorkspaceLifetime);
+            var after = await CaptureWorkspaceAsync(lifetime.Token);
+            lifetime.Token.ThrowIfCancellationRequested(); EnsureCurrentWorkspace(task);
+            UpdateChangeReviews(task, after);
+            return latestRun ? task.LatestRunChanges! : task.Changes!;
+        }
+        finally { _runGate.Release(); }
+    }
+    private static void UpdateChangeReviews(AgentTask task, AgentWorkspaceSnapshot after)
+    {
+        task.Changes = Updated(task.Changes, task.BeforeRun!);
+        if (task.BeforeLatestRun != null) task.LatestRunChanges = Updated(task.LatestRunChanges, task.BeforeLatestRun);
+        AgentChangeReview Updated(AgentChangeReview? previous, AgentWorkspaceSnapshot baseline)
+        {
+            var files = Diff(baseline.Documents, after.Documents);
+            return previous != null && previous.Revision == after.Revision && previous.Files.SequenceEqual(files)
+                ? previous : new(after.Revision, files);
+        }
+    }
+
+    public Task<AgentChangeReview> RestoreChangesAsync(string id, IReadOnlyList<string> paths, long expectedRevision,
+        CancellationToken cancellationToken = default, bool latestRun = false, string? expectedReviewId = null) =>
+        RestoreReviewAsync(id, expectedRevision, latestRun, expectedReviewId, review =>
+        {
+            if (paths == null || paths.Count is < 1 or > 1024 || paths.Distinct(StringComparer.Ordinal).Count() != paths.Count)
+                throw new ArgumentException("Select distinct changed paths.");
+            return paths.Select(path => review.Files.SingleOrDefault(file => file.Path == path)
+                ?? throw new ArgumentException("Unknown change path.")).ToArray();
+        }, cancellationToken);
+
+    public Task<AgentChangeReview> RestoreBlockAsync(string id, string path, string blockId, string expectedReviewId,
+        long expectedRevision, CancellationToken cancellationToken = default, bool latestRun = false)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(expectedReviewId);
+        return RestoreReviewAsync(id, expectedRevision, latestRun, expectedReviewId,
+            review => [AgentSourceReview.RestoreBlock(review.Files.SingleOrDefault(file => file.Path == path)
+                ?? throw new ArgumentException("Unknown change path."), blockId)], cancellationToken);
+    }
+
+    private async Task<AgentChangeReview> RestoreReviewAsync(string id, long expectedRevision, bool latestRun, string? expectedReviewId,
+        Func<AgentChangeReview, AgentFileChange[]> select, CancellationToken cancellationToken)
+    {
+        var task = GetTask(id); EnsureIdle(task); EnsureCurrentWorkspace(task);
+        if (workspace == null || task.BeforeRun == null) throw new InvalidOperationException("No workspace checkpoint is available.");
         if (!await _runGate.WaitAsync(0, cancellationToken)) throw new InvalidOperationException("Stop the active agent before restoring source.");
         try
         {
-            if (paths.Count is < 1 or > 1024 || paths.Distinct(StringComparer.Ordinal).Count() != paths.Count) throw new ArgumentException("Select distinct changed paths.");
+            var review = GetChangeReview(id, latestRun, expectedReviewId);
+            if (review.Revision != expectedRevision) throw new InvalidOperationException("The reviewed revision changed. Refresh the comparison.");
             using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, task.WorkspaceLifetime);
             lifetime.Token.ThrowIfCancellationRequested();
-            var selected = paths.Select(path => review.Files.SingleOrDefault(f => f.Path == path)
-                ?? throw new ArgumentException("Unknown change path.")).ToArray();
+            var selected = select(review);
             var after = await workspace.RestoreAsync(expectedRevision, selected, lifetime.Token);
-            task.Changes = new(after.Revision, Diff(task.BeforeRun.Documents, after.Documents));
-            if (task.BeforeLatestRun != null) task.LatestRunChanges = new(after.Revision, Diff(task.BeforeLatestRun.Documents, after.Documents));
-            Publish(task, "restored", "Restored source: " + string.Join(", ", paths));
-            return latestRun ? task.LatestRunChanges! : task.Changes;
+            UpdateChangeReviews(task, after);
+            Publish(task, "restored", "Restored reviewed source: " + string.Join(", ", selected.Select(file => file.Path)));
+            return latestRun ? task.LatestRunChanges! : task.Changes!;
         }
         finally { _runGate.Release(); }
     }

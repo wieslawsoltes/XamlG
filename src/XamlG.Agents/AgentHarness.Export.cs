@@ -11,7 +11,7 @@ public sealed partial class AgentHarness
         var task = GetTask(id);
         var text = new StringBuilder().Append("# ").AppendLine(task.Name.Replace('\n', ' ')).AppendLine()
             .Append(task.ProviderId).Append(" · ").AppendLine(task.Model).AppendLine();
-        foreach (var item in task.Events.Where(item => item.Kind is "user" or "assistant" or "question" or "answer" or "checkpoint"))
+        foreach (var item in task.Events.Where(item => item.Kind is "user" or "assistant" or "assistant_incomplete" or "question" or "answer" or "checkpoint"))
             text.Append("## ").AppendLine(item.Kind).AppendLine().AppendLine(item.Text).AppendLine();
         return text.ToString();
     }

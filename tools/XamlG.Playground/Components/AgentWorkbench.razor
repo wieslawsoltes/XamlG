@@ -125,13 +125,22 @@
             {
                 <ol class="agent-plan">@foreach (var step in selected.Plan) { <li><strong>@step.Status</strong> @step.Text</li> }</ol>
             }
-            <button @onclick="FollowThreadAsync">Follow latest</button>
-            <div class="agent-thread" aria-label="Agent thread" aria-live="polite" data-task-id="@selected.Id" @ref="_threadElement">
-                @foreach (var item in selected.Events.Where(e => e.Kind is not "text_delta"))
+            <div class="agent-task-actions"><button @onclick="() => PageThreadAsync(true)" disabled="@(Thread.Busy || !ThreadHasEarlier)">Earlier messages</button><button @onclick="() => PageThreadAsync(false)" disabled="@(Thread.Busy || !ThreadHasLater)">Newer messages</button><button @onclick="FollowThreadAsync">Follow latest</button></div>
+            @if (Thread.Page != null) { <p role="status">Reading an earlier page. Follow latest returns to the current response.</p> }
+            <div class="agent-thread" role="log" tabindex="0" aria-label="Agent thread" aria-live="off" data-task-id="@selected.Id" @ref="_threadElement">
+                @foreach (var item in VisibleEvents)
                 {
-                    <article @key="item.Sequence" data-sequence="@item.Sequence" class="agent-message agent-@item.Kind"><small>@item.Kind</small><button @onclick="() => CopyTextAsync(item.Text)">Copy</button><pre>@item.Text</pre></article>
+                    @if (item.Kind.StartsWith("tool", StringComparison.Ordinal))
+                    { <details @key="item.Sequence" data-sequence="@item.Sequence" class="agent-message agent-tool"><summary>@item.Kind · @(item.Text.Length > 100 ? item.Text[..100] + "…" : item.Text)</summary><button @onclick="() => CopyTextAsync(item.Text)">Copy</button><pre>@item.Text</pre></details> }
+                    else
+                    {
+                        <article @key="item.Sequence" data-sequence="@item.Sequence" class="agent-message agent-@item.Kind"><small>@(item.Kind == "assistant_incomplete" ? "assistant · incomplete" : item.Kind)</small><button @onclick="() => CopyTextAsync(item.Text)">Copy</button>
+                            @if (item.Kind is "user" or "assistant" or "question" or "answer") { <AgentMarkdown Text="@item.Text" CopyRequested="CopyTextAsync" /> }
+                            else { <pre>@item.Text</pre> }
+                        </article>
+                    }
                 }
-                @if (_liveText.Length != 0) { <article class="agent-message"><small>assistant · streaming</small><pre>@_liveText</pre></article> }
+                @if (VisibleLiveText.Length != 0) { <article class="agent-message"><small>@(Thread.Page == null ? "assistant · streaming" : "assistant · captured partial reply")</small><pre>@VisibleLiveText</pre></article> }
             </div>
             @foreach (var pending in _state.Pending.Where(p => p.TaskId == selected.Id))
             {
@@ -154,9 +163,10 @@
                     }
                 </section>
             }
-            <label>Message <textarea value="@_draft" @oninput="DraftChangedAsync" rows="4" maxlength="262144" placeholder="Describe the change or investigation" /></label>
+            <label>Message <textarea @ref="_composerElement" data-task-id="@selected.Id" data-can-submit="@(CanRun ? "true" : "false")" value="@_draft" @oninput="DraftChangedAsync" rows="4" maxlength="262144" placeholder="Describe the change or investigation" /></label>
+            <p class="agent-keyboard-hint">Enter or Ctrl+Enter reviews a run. Shift+Enter adds a line. You can keep drafting during a response.</p>
             <div class="agent-run-actions">
-                <button class="primary" @onclick="RunAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || selected.Status is "paused" or "cancelled" or "failed" || string.IsNullOrWhiteSpace(_draft))">Run</button>
+                <button class="primary" @onclick="RunAsync" disabled="@(!CanRun)">Run</button>
                 <button @onclick="ResumeAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || selected.Status != "paused" || selected.RetryAfterUtc > DateTimeOffset.UtcNow)">Resume</button>
                 <button @onclick="QueueDraftAsync" disabled="@(selected.IsPreviousWorkspace || _queueBusy || string.IsNullOrWhiteSpace(_draft) || selected.Status is "cancelled" or "failed")">Queue follow-up</button>
                 <button @onclick='() => CommandAsync("stop", new { })' disabled="@(!_state.Tasks.Any(IsRunning))">Stop &amp; revoke</button>
@@ -180,33 +190,59 @@
                     <button @onclick="ClearQueueAsync" disabled="@_queueBusy">Clear queue</button>
                 </details>
             }
-            <label>Source comparison <select value="@(_latestRun ? "latest" : "task")" @onchange="ChangeBaseline"><option value="task">Since task start</option><option value="latest">Since latest run</option></select></label>
-            @if (SelectedChanges is { Files.Length: > 0 } changes)
+            <label>Source comparison <select value="@(_latestRun ? "latest" : "task")" @onchange="ChangeBaselineAsync" disabled="@Review.Busy"><option value="task">Since task start</option><option value="latest">Since latest run</option></select></label>
+            <button @onclick="RefreshReviewAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || Review.Busy || SelectedChanges == null)">Refresh changes</button>
+            @if (Review.Capture is { } changes)
             {
-                <details class="agent-changes">
+                <details class="agent-changes" open>
                     <summary>Review @changes.Files.Length changed source files</summary>
+                    <p>This includes manual and other-task edits since the checkpoint.</p>
+                    @if (!ReviewIsCurrent) { <p role="status">Source or checkpoint changed. Refresh changes before feedback, navigation or restoration.</p> }
                     @foreach (var file in changes.Files)
                     {
-                        <label><input type="checkbox" checked="@_restorePaths.Contains(file.Path)" @onchange="args => SelectRestore(file.Path, args)" /> @file.Path (@file.BeforeLength → @file.AfterLength characters)</label>
+                        <label><input type="checkbox" checked="@_restorePaths.Contains(file.Path)" @onchange="args => SelectRestore(file.Path, args)" disabled="@(!ReviewIsCurrent)" /> @file.Path (@file.BeforeLength → @file.AfterLength characters)</label>
                     }
-                    <button @onclick="PreviewChangesAsync">Show before and after</button>
-                    <button @onclick="PreviewDiffAsync">Unified diff</button><button @onclick="ExportPatchAsync">Save review patch</button>
-                    <button @onclick="ReviewRestore" disabled="@(selected.IsPreviousWorkspace || AnyRunning || _restorePaths.Count == 0)">Restore selected files</button>
-                    @foreach (var file in _changePreview)
+                    <button @onclick="ReviewRestore" disabled="@(!ReviewIsCurrent || AnyRunning || _restorePaths.Count == 0)">Restore selected files</button>
+                    <button @onclick="ExportPatchAsync" disabled="@Review.Busy">Save review patch</button>
+                    @if (changes.Files.Length > 0)
                     {
-                        <details><summary>@file.Path</summary><h4>Before</h4><pre>@SourceExcerpt(file.Before)</pre><h4>After</h4><pre>@SourceExcerpt(file.After)</pre></details>
+                        <label>Review document <select value="@Review.Path" @onchange="SelectReviewFileAsync" disabled="@Review.Busy">@foreach (var file in changes.Files) { <option>@file.Path</option> }</select></label>
+                        <button @onclick="OpenReviewSourceAsync" disabled="@(!ReviewIsCurrent || changes.Files.FirstOrDefault(file => file.Path == Review.Path)?.AfterLength == null)">Open current document</button>
+                        <button @onclick="PreviewChangesAsync" disabled="@Review.Busy">Show before and after</button>
+                        <button @onclick="PreviewDiffAsync" disabled="@Review.Busy">Unified diff</button>
                     }
-                    @foreach (var file in _diffPreview)
+                    @if (Review.Preview is { } preview)
+                    { <div><h4>Before · @preview.Path</h4><pre>@preview.Before</pre><h4>After</h4><pre>@preview.After</pre></div> }
+                    @if (Review.Diff is { } diff)
                     {
-                        <details open><summary>@file.Path</summary>
-                            @if (file.Coarse) { <p>Large changed region shown as replacement lines.</p> }
-                            @if (file.Truncated) { <p>Display excerpt; the review patch contains the complete captured changes.</p> }
-                            <div class="agent-diff">@foreach (var line in file.Lines) { <button class="diff-@line.Kind" @onclick="() => SelectDiffLine(file.Path, line)"><span>@line.BeforeLine</span><span>@line.AfterLine</span><code>@line.Text</code></button> }</div>
-                        </details>
+                        @if (diff.Coarse) { <p>Large changed region shown as replacement lines.</p> }
+                        @if (diff.Truncated) { <p>Display excerpt; save the review patch for the complete captured changes.</p> }
+                        @if (!diff.SelectiveRestoreAvailable) { <p>Individual block restoration requires an existing document within the interactive line limit. Whole-file restoration remains available.</p> }
+                        <div class="agent-task-actions">
+                            <button @onclick="() => MoveBlockAsync(-1)" disabled="@(Review.Busy || BlockIndex <= 0)">Previous change</button>
+                            <span aria-label="Selected change block">@(BlockIndex < 0 ? "No change block selected" : $"Change {BlockIndex + 1} of {diff.Blocks.Length}")</span>
+                            <button @onclick="() => MoveBlockAsync(1)" disabled="@(Review.Busy || BlockIndex >= diff.Blocks.Length - 1)">Next change</button>
+                            <button @onclick="ReviewBlockRestoreAsync" disabled="@(!ReviewIsCurrent || AnyRunning || Review.Busy || !diff.SelectiveRestoreAvailable || BlockIndex < 0)">Restore selected change</button>
+                        </div>
+                        <div class="agent-diff" data-review-key="@DiffScrollKey" @ref="_diffElement">@foreach (var line in diff.Lines)
+                        {
+                            <button class="diff-@line.Kind @(line.BlockId == Review.BlockId ? "diff-selected" : "")" data-block-id="@line.BlockId" @onclick="() => SelectDiffLine(line)">
+                                <span>@line.BeforeLine</span><span>@line.AfterLine</span><span>@(line.Kind == "added" ? "+" : line.Kind == "removed" ? "−" : " ")</span><code>@line.Text</code>
+                                <small title="Line ending">@(line.Kind == "context" ? "" : line.LineEnding == "none" ? "no final newline" : line.LineEnding)</small>
+                            </button>
+                        }</div>
+                        @if (diff.TotalRows > 0)
+                        {
+                            <p>Rows @(diff.FirstRow + 1)–@(diff.FirstRow + diff.Lines.Length) of @diff.TotalRows</p>
+                            <button @onclick="MoreDiffAsync" disabled="@(Review.Busy || Review.LineLimit >= 10000 || diff.FirstRow + diff.Lines.Length >= diff.TotalRows)">Show more diff lines</button>
+                            <button @onclick="() => PageDiffAsync(-1)" disabled="@(Review.Busy || diff.FirstRow == 0)">Previous diff lines</button>
+                            <button @onclick="() => PageDiffAsync(1)" disabled="@(Review.Busy || diff.FirstRow + diff.Lines.Length >= diff.TotalRows)">Next diff lines</button>
+                        }
                     }
-                    <label>Review feedback <textarea @bind="_reviewFeedback" maxlength="8000" rows="3" /></label>
-                    @if (_feedbackTarget != null) { <p>A selected diff line is attached to this feedback.</p><button @onclick="() => _feedbackTarget = null">Clear line target</button> }
-                    <button @onclick="QueueReviewFeedbackAsync" disabled="@(selected.IsPreviousWorkspace || _queueBusy || string.IsNullOrWhiteSpace(_reviewFeedback))">Queue review feedback</button>
+                    <label>Review feedback <textarea value="@Review.Feedback" @oninput="ReviewFeedbackChanged" maxlength="8000" rows="3" /></label>
+                    @if (Review.FeedbackPath.Length != 0) { <p>Feedback for @Review.FeedbackPath</p> }
+                    @if (Review.FeedbackTarget != null) { <p>A selected diff line is attached to this feedback.</p><button @onclick="() => Review.FeedbackTarget = null">Clear line target</button> }
+                    <button @onclick="QueueReviewFeedbackAsync" disabled="@(!ReviewIsCurrent || _queueBusy || string.IsNullOrWhiteSpace(Review.Feedback))">Queue review feedback</button>
                 </details>
             }
         }
@@ -227,9 +263,17 @@
     @if (_restoreReview is { } restore)
     {
         <div class="authoring-backdrop"><section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="Review source restore">
-            <h2>Restore selected source</h2><p>Restore these files to the @(restore.LatestRun ? "latest-run" : "task-start") checkpoint at reviewed revision @restore.Revision. This comparison includes manual edits made during the task. Restoration creates a normal project undo step.</p>
+            <h2>@(restore.Block == null ? "Restore selected source" : "Restore selected change")</h2>
+            <p>Restore @(restore.Block == null ? "these files" : "this block") to the @(restore.LatestRun ? "latest-run" : "task-start") checkpoint at reviewed revision @restore.Revision. This comparison includes manual edits made during the task. Restoration creates a normal project undo step.</p>
             <ul>@foreach (var path in restore.Paths) { <li>@path</li> }</ul>
-            <footer><button @onclick="() => _restoreReview = null">Cancel</button><button @onclick="ConfirmRestoreAsync">Confirm source restore</button></footer>
+            @if (restore.Block is { } block)
+            {
+                <p>+@block.Block.AddedLines / −@block.Block.RemovedLines lines. Other changes in this document are preserved. The entire current document must still match the reviewed source.</p>
+                @if (block.Coarse) { <p>This block replaces the complete large changed region.</p> }
+                @if (block.Truncated) { <p>Shortened previews; save the review patch to inspect the complete block.</p> }
+                <h4>Current block</h4><pre>@block.After</pre><h4>Checkpoint block</h4><pre>@block.Before</pre>
+            }
+            <footer><button @onclick="() => _restoreReview = null" disabled="@_restoreBusy">Cancel</button><button @onclick="ConfirmRestoreAsync" disabled="@(_restoreBusy || AnyRunning || SourceRevision != restore.Revision)">Confirm source restore</button></footer>
             @if (_error != null) { <p role="alert">@_error</p> }
         </section></div>
     }

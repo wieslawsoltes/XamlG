@@ -153,7 +153,7 @@
             </div>
 </section>
     </BrowserTemplate>
-    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("agent")" Context="pane"><AgentWorkbench /></BrowserTemplate>
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("agent")" Context="pane"><AgentWorkbench SourceRevision="SourceRevision" SourceRequested="NavigateAgentSourceAsync" /></BrowserTemplate>
     <main class="dockyard-workspace" aria-label="Docking workspace">
         <DockingManager @ref="_dock" Theme="@_theme" Ready="InitializeDockyardAsync" Changed="DockyardChangedAsync" Style="height:100%;width:100%" />
     </main>

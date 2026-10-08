@@ -182,6 +182,25 @@ controls alongside a run review showing the captured task, provider, model, requ
 permissions and limits. Every Full Access run requires a fresh acknowledgement.
 Request timeout, retry count and tool-result size are independently editable.
 
+Enter or Ctrl+Enter in the message composer opens the same run review as **Run**;
+Shift+Enter inserts a line and IME composition never submits. Completed messages
+render a bounded Markdown subset with copyable fenced code and HTTP(S) links.
+HTML, images and embeds remain text. **Earlier messages** and **Newer messages**
+page through retained public history; **Follow latest** returns to the current
+response. Scrolling up freezes the reading window. Interrupted public replies
+remain visible as incomplete and do not become native provider continuations.
+
+Choose the task-start or latest-run source comparison and select **Refresh
+changes** to capture the current project. The comparison includes manual and
+other-task edits. Select a document for before/after or unified views; **Open
+current document** navigates to its existing editor. Diff lines can target queued
+feedback. **Previous change**, **Next change** and **Restore selected change**
+operate on consecutive changed lines, with a preview and explicit confirmation.
+Whole-file restoration remains available. Source or checkpoint changes disable
+feedback/navigation/restoration until refreshed. Task-specific drafts, baseline,
+file/block selection, diff display, feedback, queue selection and reading state
+survive pane reopening within this page; they are not saved in browser storage.
+
 ## Local evidence and remaining work
 
 Full validation is deferred until the remaining feature implementation is complete,
@@ -326,9 +345,11 @@ The remaining implementation is concentrated in two areas:
   generated-field route. Existing rename rejects unsupported inheritance/generated
   dependencies. Operation/control/data-flow inspection and compiler settings are
   now implemented as described below.
-- Agent workbench parity: bounded safe Markdown, Enter/IME handling, independent
-  per-task review state, source navigation and selective diff-block restoration,
-  plus the remaining reference provider/recovery edge cases.
+- Remaining reference provider/protocol and recovery edge cases, including exact
+  stop/failure classification and continuation behavior across the three SDKs.
+  The workbench Markdown, Enter/IME, independent review state, source navigation,
+  thread paging and selective block restoration are implemented below; their
+  behavioral acceptance remains pending.
 
 After these features, update the acceptance fixtures and run the full native,
 browser, MCP, provider-transport, Pages-origin and package-consumer validation.
@@ -478,3 +499,43 @@ Temporary reference clones and superseded publishes are removed when no longer
 needed. Package consumer caches are scoped to temporary directories. Large failed
 browser traces should be discarded after diagnosis, while small acceptance logs
 and representative screenshots can be retained for review.
+
+The reusable harness now supplies `RefreshChangesAsync`, comparison identities,
+bounded diff pages and `RestoreBlockAsync`. Blocks are recomputed from the exact
+captured before/after strings; clients supply a block ID, never replacement text
+or offsets. The resulting full-document transaction retains the exact captured
+current source as its guard. It preserves UTF-16 offsets, CRLF/LF and missing-final-
+newline state, rejects stale workspace/revision/comparison identities, and uses
+the existing compiler-validated project transaction and ordinary Undo. Added or
+removed documents and sources over 20,000 lines have no selective block action;
+whole-file restoration and complete replacement-patch export remain available.
+The diff matrix stays capped at 250,000 cells, with a labelled coarse replacement
+for larger middles. UI pages start at 500 rows and grow to 10,000 with further
+page navigation. Block previews show at most 20,000 characters per side and label
+shortened content explicitly.
+
+Review summaries cache exact file-content identities so unchanged refreshes
+preserve targeted feedback. Monotonic comparison versions prevent delayed state
+polls from replacing a newer review summary. Per-task presentation retains one
+document's bounded diff/preview, selected block, feedback draft/target, baseline,
+file selection and scroll position. Source revisions invalidate actions without
+recapturing or recomputing diffs on every streamed token. Navigation opens main,
+resource and auxiliary C# documents in their normal editor; compiler settings
+open the Compiler pane. Current-source navigation verifies the captured revision.
+
+The thread renders a text-only Markdown subset with a budget of 500 formatting steps,
+literal fallback and an absolute HTTP(S) link allowlist. Copying messages/code
+uses a clipboard fallback that restores focus and selection. Tool events are
+collapsible. Bounded public history can be paged in either direction; historical
+page responses cap entries at 100 and text at 262,144 characters. Frozen reading
+windows, captured partial text, per-task tool expansion and scroll anchors survive
+updates and pane reopening. Closing the pane releases DOM listeners and observers.
+Failed, cancelled, timed-out or output-limited requests publish bounded incomplete
+public text while preserving the existing native continuation and accounting rules.
+
+Targeted companion and integrated Playground builds pass without warnings/errors,
+and the JavaScript syntax check passes. Behavioral validation remains deferred:
+exact block reconstruction and Undo, stale/project/checkpoint races, unchanged
+feedback targets, task/pane isolation, late responses, source navigation, inert
+Markdown, keyboard/IME, scrolling/selection, thread paging and incomplete replies.
+No full suite or provider inference was run during this implementation pass.

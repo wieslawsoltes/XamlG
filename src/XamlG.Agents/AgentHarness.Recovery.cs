@@ -34,6 +34,7 @@ public sealed partial class AgentHarness
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(lease.Token);
             timeout.CancelAfter(options.Limits.RequestTimeout);
             long outputBytes = 0;
+            var partial = new StringBuilder(); var completed = false; var partialTruncated = false;
             AgentProviderException failure;
             try
             {
@@ -42,17 +43,26 @@ public sealed partial class AgentHarness
                 {
                     outputBytes = checked(outputBytes + Encoding.UTF8.GetByteCount(text));
                     if (outputBytes > 8_388_608) throw new AgentProviderException("response_too_large", false, canResume: false);
-                    if (!checkpoint) Publish(task, "text_delta", text); return ValueTask.CompletedTask;
+                    if (!checkpoint)
+                    {
+                        var take = Math.Min(text.Length, 262000 - partial.Length);
+                        partial.Append(text, 0, take); partialTruncated |= take != text.Length;
+                        Publish(task, "text_delta", text);
+                    }
+                    return ValueTask.CompletedTask;
                 }, timeout.Token);
                 AccountUsage(task, reply.Usage);
                 if (reply.OutputLimitReached)
                 {
+                    if (!checkpoint && partial.Length == 0)
+                    { partial.Append(reply.Text.AsSpan(0, Math.Min(reply.Text.Length, 262000))); partialTruncated |= reply.Text.Length > 262000; }
                     if (!checkpoint) task.OutputLimitToExceed = effective.MaxOutputTokens;
                     Pause(task, checkpoint ? "The checkpoint reached its output limit. Existing context was preserved." :
                         $"Provider output limit reached. Raise the effective output allowance above {effective.MaxOutputTokens:N0} and resume; incomplete output was not committed.");
                     return null;
                 }
                 if (!checkpoint) task.OutputLimitToExceed = null;
+                completed = true;
                 return reply;
             }
             catch (AgentProviderException error)
@@ -68,6 +78,11 @@ public sealed partial class AgentHarness
             }
             catch (Exception error) when (error is not OutOfMemoryException)
             { AccountUsage(task, new(inputEstimate, (outputBytes + 3) / 4, true)); throw; }
+            finally
+            {
+                if (!completed && partial.Length != 0)
+                    Publish(task, "assistant_incomplete", partial.ToString() + (partialTruncated ? "\n[public preview truncated]" : ""));
+            }
             if (!failure.CanResume) throw failure;
             var delay = failure.RetryAfter ?? TimeSpan.FromMilliseconds(Math.Min(30000, 500 * Math.Pow(2, retry)) + Random.Shared.Next(250));
             if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;

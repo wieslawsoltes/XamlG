@@ -40,13 +40,32 @@ public sealed class AgentWorkbench : IDisposable
                         account = task.Provider is ChatGptAccountAgentProvider account ? new { id = account.AccountId, label = account.AccountLabel + " · " + account.AccountId[..8] } : null,
                         task.TotalTokens, task.ReportedTokens, task.EstimatedTokens, task.CheckpointCount, task.Plan, task.PlanRevision, task.Queue,
                         task.LastUsage, task.NativeContextBytes, task.RetryAfterUtc, task.OutputLimitToExceed,
-                        changes = task.Changes == null ? null : new { task.Changes.Revision, files = task.Changes.Files.Select(file => new { file.Path, beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
-                        latestRunChanges = task.LatestRunChanges == null ? null : new { task.LatestRunChanges.Revision, files = task.LatestRunChanges.Files.Select(file => new { file.Path, beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
-                        events = task.Events.TakeLast(80).Select(item => item with { Text = item.Text.Length > 8192 ? item.Text[..8192] + "\n[see transcript export]" : item.Text })
+                        changes = task.Changes == null ? null : new { task.Changes.ReviewId, task.Changes.ReviewVersion, task.Changes.Revision, files = task.Changes.Files.Select(file => new { file.Path, contentId = task.Changes.FileIdentities[file.Path], beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
+                        latestRunChanges = task.LatestRunChanges == null ? null : new { task.LatestRunChanges.ReviewId, task.LatestRunChanges.ReviewVersion, task.LatestRunChanges.Revision, files = task.LatestRunChanges.Files.Select(file => new { file.Path, contentId = task.LatestRunChanges.FileIdentities[file.Path], beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
+                        publicEventCount = task.Events.Count(item => item.Kind != "text_delta"),
+                        events = task.Events.Where(item => item.Kind != "text_delta").TakeLast(80).Select(item => item with { Text = item.Text.Length > 8192 ? item.Text[..8192] + "\n[see transcript export]" : item.Text })
                     }),
                     pending = _pending.Values.Select(p => new { p.Id, p.TaskId, p.Kind, p.Content }),
                     operations = _mcpTasks?.LocalInventory.Select(task => new { task.TaskId, status = task.Status.ToString(), task.CreatedAt, task.LastUpdatedAt })
                 });
+            case "thread":
+                var thread = Read<ThreadArgs>(arguments);
+                if (thread.MaximumEntries is < 1 or > 100 || thread.BeforeSequence is <= 0 || thread.AfterSequence is <= 0 || thread.BeforeSequence != null && thread.AfterSequence != null)
+                    throw new ArgumentException("Select a bounded thread page in one direction.");
+                var all = _harness.GetTask(thread.Id).Events.Where(item => item.Kind != "text_delta").ToArray();
+                var candidates = all.Where(item => (thread.BeforeSequence == null || item.Sequence < thread.BeforeSequence) &&
+                    (thread.AfterSequence == null || item.Sequence > thread.AfterSequence));
+                if (thread.AfterSequence == null) candidates = candidates.Reverse();
+                var page = new List<AgentEvent>(); var characters = 0;
+                foreach (var item in candidates.Take(thread.MaximumEntries))
+                {
+                    var text = item.Text.Length > 8192 ? item.Text[..8192] + "\n[see transcript export]" : item.Text;
+                    if (characters + text.Length > 262144) break;
+                    page.Add(item with { Text = text }); characters += text.Length;
+                }
+                if (thread.AfterSequence == null) page.Reverse();
+                return AutomationJson.Element(new { events = page, hasEarlier = page.Count > 0 && all.Any(item => item.Sequence < page[0].Sequence),
+                    hasLater = page.Count > 0 && all.Any(item => item.Sequence > page[^1].Sequence) });
             case "models":
                 var modelRequest = Read<ProviderArgs>(arguments);
                 return AutomationJson.Element(await Provider(modelRequest.Provider, modelRequest.AccountId).ListModelsAsync(cancellationToken));
@@ -135,22 +154,48 @@ public sealed class AgentWorkbench : IDisposable
             case "export": return AutomationJson.Element(_harness.ExportTranscript(Read<IdArgs>(arguments).Id));
             case "export_markdown": return AutomationJson.Element(_harness.ExportMarkdown(Read<IdArgs>(arguments).Id));
             case "handoff": return AutomationJson.Element(_harness.CreateContextHandoff(Read<IdArgs>(arguments).Id));
+            case "changes_refresh":
+                var refresh = Read<ChangesArgs>(arguments);
+                var refreshed = await _harness.RefreshChangesAsync(refresh.Id, refresh.LatestRun, cancellationToken);
+                return AutomationJson.Element(new { refreshed.ReviewId, refreshed.ReviewVersion, refreshed.Revision,
+                    files = refreshed.Files.Select(file => new { file.Path, contentId = refreshed.FileIdentities[file.Path], beforeLength = file.Before?.Length, afterLength = file.After?.Length }) });
+            case "diff_file":
+                var fileDiff = Read<FileReviewArgs>(arguments); var fileReview = Review(fileDiff);
+                return AutomationJson.Element(new { fileReview.ReviewId, fileReview.Revision,
+                    file = AgentSourceReview.Diff(ReviewFile(fileReview, fileDiff.Path), fileDiff.MaximumLines, fileDiff.FirstRow) });
+            case "change_file":
+                var filePreview = Read<FileReviewArgs>(arguments); var previewReview = Review(filePreview); var previewFile = ReviewFile(previewReview, filePreview.Path);
+                return AutomationJson.Element(new { previewReview.ReviewId, previewReview.Revision, previewFile.Path,
+                    before = Excerpt(previewFile.Before), after = Excerpt(previewFile.After) });
+            case "block_preview":
+                var blockPreview = Read<BlockReviewArgs>(arguments);
+                var blockReview = _harness.GetChangeReview(blockPreview.Id, blockPreview.LatestRun, blockPreview.ReviewId);
+                return AutomationJson.Element(AgentSourceReview.PreviewBlock(ReviewFile(blockReview, blockPreview.Path), blockPreview.BlockId));
             case "diff":
-                var diff = Read<ChangesArgs>(arguments); var diffTask = _harness.GetTask(diff.Id);
-                return AutomationJson.Element((diff.LatestRun ? diffTask.LatestRunChanges : diffTask.Changes)?.Files.Select(file => AgentSourceReview.Diff(file)).ToArray());
+                var diff = Read<ChangesArgs>(arguments);
+                return AutomationJson.Element(_harness.GetChangeReview(diff.Id, diff.LatestRun, diff.ReviewId).Files.Select(file => AgentSourceReview.Diff(file)).ToArray());
             case "patch":
-                var patch = Read<ChangesArgs>(arguments); var patchTask = _harness.GetTask(patch.Id);
-                return AutomationJson.Element(AgentSourceReview.Patch((patch.LatestRun ? patchTask.LatestRunChanges : patchTask.Changes) ?? throw new InvalidOperationException("No source review is available.")));
+                var patch = Read<ChangesArgs>(arguments);
+                return AutomationJson.Element(AgentSourceReview.Patch(_harness.GetChangeReview(patch.Id, patch.LatestRun, patch.ReviewId)));
             case "changes":
-                var changes = Read<ChangesArgs>(arguments); var changedTask = _harness.GetTask(changes.Id);
-                return AutomationJson.Element(changes.LatestRun ? changedTask.LatestRunChanges : changedTask.Changes);
+                var changes = Read<ChangesArgs>(arguments);
+                return AutomationJson.Element(_harness.GetChangeReview(changes.Id, changes.LatestRun, changes.ReviewId));
             case "restore":
                 var restore = Read<RestoreArgs>(arguments);
-                return AutomationJson.Element(await _harness.RestoreChangesAsync(restore.Id, restore.Paths, restore.ExpectedRevision, cancellationToken, restore.LatestRun));
+                return AutomationJson.Element(await _harness.RestoreChangesAsync(restore.Id, restore.Paths, restore.ExpectedRevision, cancellationToken, restore.LatestRun, restore.ReviewId));
+            case "restore_block":
+                var block = Read<BlockRestoreArgs>(arguments);
+                return AutomationJson.Element(await _harness.RestoreBlockAsync(block.Id, block.Path, block.BlockId, block.ReviewId,
+                    block.ExpectedRevision, cancellationToken, block.LatestRun));
             default: throw new ArgumentException("Unknown agent action.");
         }
         return AutomationJson.Element(new { accepted = true });
     }
+
+    private AgentChangeReview Review(FileReviewArgs args) => _harness.GetChangeReview(args.Id, args.LatestRun, args.ReviewId);
+    private static AgentFileChange ReviewFile(AgentChangeReview review, string path) => review.Files.SingleOrDefault(file => file.Path == path)
+        ?? throw new ArgumentException("Select a document from this source comparison.");
+    private static string? Excerpt(string? text) => text is { Length: > 20000 } ? text[..20000] + "\n[display excerpt; export the patch for complete source]" : text;
 
     private async Task RunAsync(RunArgs args, CancellationToken cancellationToken)
     {
@@ -201,9 +246,13 @@ public sealed class AgentWorkbench : IDisposable
     public sealed record QueueEditArgs(string Id, string MessageId, string Text, long ExpectedRevision);
     public sealed record QueueMoveArgs(string Id, string MessageId, int Index, long ExpectedRevision);
     public sealed record ResponseArgs(string Id, JsonElement Value);
-    public sealed record ChangesArgs(string Id, bool LatestRun = false);
+    public sealed record ThreadArgs(string Id, long? BeforeSequence = null, long? AfterSequence = null, int MaximumEntries = 80);
+    public sealed record ChangesArgs(string Id, bool LatestRun = false, string? ReviewId = null);
+    public sealed record FileReviewArgs(string Id, string Path, string ReviewId, bool LatestRun = false, int MaximumLines = 1000, int FirstRow = 0);
+    public sealed record BlockReviewArgs(string Id, string Path, string BlockId, string ReviewId, bool LatestRun = false);
+    public sealed record BlockRestoreArgs(string Id, string Path, string BlockId, string ReviewId, long ExpectedRevision, bool LatestRun = false);
     public sealed record CompactArgs(string Id, AgentRunOptions Options, bool Confirmed = false);
-    public sealed record RestoreArgs(string Id, string[] Paths, long ExpectedRevision, bool LatestRun = false);
+    public sealed record RestoreArgs(string Id, string[] Paths, long ExpectedRevision, bool LatestRun = false, string? ReviewId = null);
 }
 
 public sealed class BrowserAgentWorkspace(IAutomationHost host) : IAgentWorkspace

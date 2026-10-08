@@ -20,12 +20,22 @@ public sealed record AgentQueuedMessage(string Id, string Text);
 public sealed record AgentQueueSnapshot(long Revision, IReadOnlyList<AgentQueuedMessage> Messages);
 public sealed record AgentWorkspaceSnapshot(long Revision, IReadOnlyDictionary<string, string> Documents);
 public sealed record AgentFileChange(string Path, string? Before, string? After);
-public sealed record AgentChangeReview(long Revision, IReadOnlyList<AgentFileChange> Files);
+public sealed record AgentChangeReview(long Revision, IReadOnlyList<AgentFileChange> Files)
+{
+    private static long _version;
+    // A new checkpoint can change a comparison even when source has the same revision.
+    public string ReviewId { get; init; } = Guid.NewGuid().ToString("N");
+    public long ReviewVersion { get; init; } = Interlocked.Increment(ref _version);
+    public IReadOnlyDictionary<string, string> FileIdentities { get; } = Files.ToDictionary(file => file.Path, AgentSourceReview.ContentIdentity, StringComparer.Ordinal);
+}
 
 /// <summary>Optional source checkpoint support supplied by the embedding IDE.</summary>
 public interface IAgentWorkspace
 {
     Task<AgentWorkspaceSnapshot> CaptureAsync(CancellationToken cancellationToken);
+    /// <summary>Atomically replace each current After with Before only if both the
+    /// workspace revision and every complete current document still match. A null
+    /// value denotes absence; the operation must preserve ordinary workspace Undo.</summary>
     Task<AgentWorkspaceSnapshot> RestoreAsync(long expectedRevision, IReadOnlyList<AgentFileChange> files, CancellationToken cancellationToken);
 }
 
