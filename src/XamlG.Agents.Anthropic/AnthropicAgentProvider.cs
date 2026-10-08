@@ -180,7 +180,14 @@ public sealed class AnthropicAgentProvider(AnthropicClient client) : IAgentProvi
         {
             if (message.Kind == AgentMessageKind.ToolResult)
             {
-                results.Add(new ToolResultBlockParam { ToolUseID = message.ToolCallId!, Content = message.Text });
+                if (XamlG.Automation.AutomationMedia.TryRead(message.Text, out var media))
+                {
+                    var content = new List<object> { new { type = "text", text = media.Metadata.GetRawText() } };
+                    content.AddRange(media.Images.Select(image => (object)new { type = "image", source = new { type = "base64", media_type = image.MimeType, data = image.Data } }));
+                    results.Add(ToolResultBlockParam.FromRawUnchecked(new Dictionary<string, JsonElement>
+                    { ["type"] = JsonSerializer.SerializeToElement("tool_result"), ["tool_use_id"] = JsonSerializer.SerializeToElement(message.ToolCallId), ["content"] = JsonSerializer.SerializeToElement(content) }));
+                }
+                else results.Add(new ToolResultBlockParam { ToolUseID = message.ToolCallId!, Content = message.Text });
                 continue;
             }
             FlushResults();

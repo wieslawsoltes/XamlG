@@ -17,6 +17,7 @@ public sealed record AgentUsage(long InputTokens, long OutputTokens, bool Estima
 public sealed record AgentEvent(long Sequence, DateTimeOffset Time, string TaskId, string Kind, string Text, string? ToolCallId = null)
 {
     public string? ToolName { get; init; }
+    public IReadOnlyList<AutomationImage>? Images { get; init; }
 }
 public sealed record AgentQuestion(string Question, IReadOnlyList<string>? Options = null);
 public sealed record AgentQueuedMessage(string Id, string Text);

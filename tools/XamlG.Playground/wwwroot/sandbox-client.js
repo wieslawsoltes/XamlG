@@ -92,7 +92,7 @@ export function create(host, url) {
 
 export async function request(id, method, params) {
   const client = clients.get(id);
-  if (!client || !['execute', 'inspect'].includes(method)) throw new Error('Invalid isolated-runtime request.');
+  if (!client || !['execute', 'inspect', 'computer_observe', 'computer_actions'].includes(method)) throw new Error('Invalid isolated-runtime request.');
   // Count requests waiting for startup too, not just messages already sent.
   if (client.requests >= 4) throw new Error('Too many pending isolated-runtime requests.');
   client.requests++;

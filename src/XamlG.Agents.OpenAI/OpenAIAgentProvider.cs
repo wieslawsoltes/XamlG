@@ -157,7 +157,14 @@ public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelCl
             {
                 case AgentMessageKind.User: items.Add(ResponseItem.CreateUserMessageItem(message.Text)); break;
                 case AgentMessageKind.ToolResult:
-                    items.Add(new FunctionCallOutputResponseItem(message.ToolCallId!, message.Text)); break;
+                    if (XamlG.Automation.AutomationMedia.TryRead(message.Text, out var media))
+                    {
+                        var output = new List<object> { new { type = "input_text", text = media.Metadata.GetRawText() } };
+                        output.AddRange(media.Images.Select(image => (object)new { type = "input_image", image_url = "data:" + image.MimeType + ";base64," + image.Data }));
+                        items.Add(ModelReaderWriter.Read<ResponseItem>(BinaryData.FromObjectAsJson(new { type = "function_call_output", call_id = message.ToolCallId, output }))!);
+                    }
+                    else items.Add(new FunctionCallOutputResponseItem(message.ToolCallId!, message.Text));
+                    break;
                 case AgentMessageKind.Assistant when message.Native is ResponseItem[] native:
                     items.AddRange(native); break;
                 case AgentMessageKind.Assistant:

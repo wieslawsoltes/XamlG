@@ -153,9 +153,13 @@ public sealed class GeminiAgentProvider(Client client) : IAgentProvider, IAgentP
                 if (message.ToolCallId == null || !nativeCalls.TryGetValue(message.ToolCallId, out var call))
                     throw new InvalidOperationException("Tool result does not match a native function call.");
                 using var value = JsonDocument.Parse(message.Text);
-                var response = value.RootElement.ValueKind == JsonValueKind.Object ? value.RootElement.EnumerateObject().ToDictionary(item => item.Name, item => (object)item.Value.Clone()) :
-                    new Dictionary<string, object> { ["output"] = value.RootElement.Clone() };
+                var hasMedia = XamlG.Automation.AutomationMedia.TryRead(value.RootElement, out var media);
+                var result = hasMedia ? media.Metadata : value.RootElement;
+                var response = result.ValueKind == JsonValueKind.Object ? result.EnumerateObject().ToDictionary(item => item.Name, item => (object)item.Value.Clone()) :
+                    new Dictionary<string, object> { ["output"] = result.Clone() };
                 results.Add(new() { FunctionResponse = new() { Name = call.Name, Id = call.Id, Response = response } });
+                if (hasMedia) foreach (var image in media.Images)
+                    results.Add(new() { InlineData = new() { MimeType = image.MimeType, Data = Convert.FromBase64String(image.Data) } });
                 continue;
             }
             FlushResults();

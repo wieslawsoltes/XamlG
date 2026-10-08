@@ -189,7 +189,7 @@
                     else
                     {
                         var result = entry.Result ?? item;
-                        <AgentEventCard @key="item.Sequence" Sequence="item.Sequence" Sequences="@entry.Sequences" Kind="@result.Kind" Text="@result.Text" ResultPreview="result.ResultPreview" ToolName="@(item.ToolName ?? (item.Kind == "tool_started" ? item.Text : result.ToolName))" Running="@IsRunning(selected)" CopyRequested="CopyTextAsync" />
+                        <AgentEventCard @key="item.Sequence" Sequence="item.Sequence" Sequences="@entry.Sequences" Kind="@result.Kind" Text="@result.Text" ResultPreview="result.ResultPreview" Images="result.Images" ToolName="@(item.ToolName ?? (item.Kind == "tool_started" ? item.Text : result.ToolName))" Running="@IsRunning(selected)" CopyRequested="CopyTextAsync" />
                     }
                 }
                 @if (VisibleLiveText.Length != 0) { <article class="agent-message"><small>@(Thread.Page == null ? "assistant · streaming" : "assistant · captured partial reply")</small><pre>@VisibleLiveText</pre></article> }

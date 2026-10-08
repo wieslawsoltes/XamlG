@@ -99,6 +99,9 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
             try
             {
                 var result = await host.CallAsync(Definition.Name, AutomationJson.Element(request.Params.Arguments ?? new Dictionary<string, JsonElement>()), new("mcp", cancellationToken, Principal(request)));
+                if (AutomationMedia.TryRead(result, out var media))
+                    return new() { StructuredContent = media.Metadata, Content = new ContentBlock[] { new TextContentBlock { Text = media.Metadata.GetRawText() } }
+                        .Concat(media.Images.Select(image => ImageContentBlock.FromBytes(Convert.FromBase64String(image.Data), image.MimeType))).ToArray() };
                 return new() { StructuredContent = result, Content = [new TextContentBlock { Text = result.GetRawText() }] };
             }
             catch (AutomationException error) { return Error(error.Code, error.Message); }

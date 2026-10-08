@@ -7,6 +7,7 @@ public partial class App
 {
     private void AddRuntimeInputAutomation()
     {
+        AddComputerAutomation();
         AddAutomation<RuntimeKeyArguments>("runtime_input_key", "Dispatch a typed keyboard press/down/up through the running Avalonia input pipeline. Focuses the target first; leave visual design mode before dispatching input.", AutomationScope.Runtime, AutomationEffect.Execute,
             (args, _) => InputInspector().SendKey(args.ObjectId, args.Key, args.Action, args.ExpectedRevision, args.Modifiers, args.PhysicalKey, args.Symbol));
         AddAutomation<RuntimeTextArguments>("runtime_input_text", "Send typed text to a focused live control through Avalonia's text-input pipeline. Does not directly replace a Text property.", AutomationScope.Runtime, AutomationEffect.Execute,

@@ -14,7 +14,22 @@ public partial class AgentWorkbench
     private IJSObjectReference? _module;
     private DotNetObjectReference<AgentWorkbench>? _reference;
     private WorkbenchState _state = new();
-    private string _provider = "", _model = "", _name = "New task", _taskName = "", _selectedId = "", _answer = "", _liveText = "";
+    private string _provider = "", _model = "", _name = "New task", _taskName = "", _selectedId = "", _answer = "", _renderedLiveText = "";
+    private readonly System.Text.StringBuilder _liveBuffer = new();
+    private string _liveText { get => _renderedLiveText; set { _renderedLiveText = value; _liveBuffer.Clear().Append(value); } }
+    private bool _streamRenderPending;
+    private async Task RenderStreamAsync()
+    {
+        if (_streamRenderPending) return;
+        _streamRenderPending = true;
+        try
+        {
+            await Task.Delay(33, _lifetime.Token);
+            await InvokeAsync(() => { _renderedLiveText = _liveBuffer.ToString(); if (!_disposed) StateHasChanged(); });
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        finally { _streamRenderPending = false; }
+    }
     private static readonly Dictionary<string, string> ComposerDrafts = new(StringComparer.Ordinal);
     private string _lastSelectedTask { get => LastSelectedTasks.GetValueOrDefault(BackendId, ""); set => LastSelectedTasks[BackendId] = value; }
     private string _draft { get => ComposerDrafts.GetValueOrDefault(_selectedId, Selected?.Draft ?? ""); set => ComposerDrafts[_selectedId] = value; }
@@ -90,12 +105,12 @@ public partial class AgentWorkbench
     {
         if (item.TaskId == _selectedId && item.Kind == "text_delta")
         {
-            if (_liveText.Length == 0) _liveTextTruncated = false;
+            if (_liveBuffer.Length == 0) _liveTextTruncated = false;
             if (!_liveTextTruncated)
             {
-                _liveText += item.Text;
-                if (_liveText.Length > 262144) { _liveTextTruncated = true; _liveText = _liveText[..262000] + "\n[streaming display shortened; use the retained transcript after the request finishes]"; }
-                StateHasChanged();
+                _liveBuffer.Append(item.Text);
+                if (_liveBuffer.Length > 262144) { _liveTextTruncated = true; _liveBuffer.Length = 262000; _liveBuffer.Append("\n[streaming display shortened; use the retained transcript after the request finishes]"); }
+                _ = RenderStreamAsync();
             }
         }
         else
@@ -338,6 +353,7 @@ public partial class AgentWorkbench
         public string? ToolCallId { get; set; }
         public string? ToolName { get; set; }
         public JsonElement? ResultPreview { get; set; }
+        public XamlG.Automation.AutomationImage[]? Images { get; set; }
     }
     public sealed class PlanView { public string Id { get; set; } = ""; public string Text { get; set; } = ""; public string Status { get; set; } = ""; }
     public sealed class PendingView { public string Id { get; set; } = ""; public string TaskId { get; set; } = ""; public string Kind { get; set; } = ""; public JsonElement Content { get; set; } }

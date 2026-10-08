@@ -226,7 +226,8 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                         text = "{\"error\":\"Tool result exceeds the configured byte limit. Request smaller ranges. The operation ran and will not be replayed.\",\"omitted\":true}";
                     // Commit the result and cursor before observers or another provider request.
                     lock (task.Sync) { task.Messages.Add(new(AgentMessageKind.ToolResult, text, call.Id)); task.NextTool++; task.ExecutingToolId = null; }
-                    Publish(task, "tool_completed", text, call.Id, tool.Name);
+                    if (AutomationMedia.TryRead(text, out var media)) Publish(task, "tool_completed", media.Metadata.GetRawText(), call.Id, tool.Name, media.Images);
+                    else Publish(task, "tool_completed", text, call.Id, tool.Name);
                     if (tool.Effect != AutomationEffect.Read) await SaveSessionAsync(lease.Token);
                 }
                 task.PendingReply = null; task.NextTool = 0;
@@ -308,14 +309,14 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
     private static void EnsureCurrentWorkspace(AgentTask task)
     { if (task.IsPreviousWorkspace) throw new InvalidOperationException("This task belongs to a previous workspace. Create a new task for the current project."); }
     private void Pause(AgentTask task, string reason) { task.Status = AgentTaskStatus.Paused; task.StatusReason = reason; Publish(task, "paused", reason); }
-    private void Publish(AgentTask task, string kind, string text, string? callId = null, string? toolName = null)
+    private void Publish(AgentTask task, string kind, string text, string? callId = null, string? toolName = null, IReadOnlyList<AutomationImage>? images = null)
     {
         if (text.Length > 262144) text = text[..262144] + "\n[public text truncated]";
-        var item = new AgentEvent(Interlocked.Increment(ref _sequence), DateTimeOffset.UtcNow, task.Id, kind, text, callId) { ToolName = toolName };
-        lock (task.Sync)
+        var item = new AgentEvent(Interlocked.Increment(ref _sequence), DateTimeOffset.UtcNow, task.Id, kind, text, callId) { ToolName = toolName, Images = images };
+        if (kind != "text_delta") lock (task.Sync)
         {
         task.PublicEvents.Add(item);
-        while (task.PublicEvents.Count > 1200 || task.PublicEvents.Sum(e => (long)e.Text.Length) > 4_000_000)
+        while (task.PublicEvents.Count > 1200 || task.PublicEvents.Sum(e => (long)e.Text.Length + (e.Images?.Sum(image => (long)image.Data.Length) ?? 0)) > 4_000_000)
             task.PublicEvents.RemoveAt(0);
         }
         // UI/transport observers cannot interrupt a committed tool operation or strand a run.

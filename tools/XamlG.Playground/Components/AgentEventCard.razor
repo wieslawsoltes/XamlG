@@ -9,6 +9,10 @@
     </summary>
     <div class="agent-event-body">
         @if (ToolName != null) { <code class="agent-tool-name">@ToolName</code> }
+        @foreach (var image in Images ?? [])
+        {
+            <figure class="agent-preview-image"><img src="@("data:" + image.MimeType + ";base64," + image.Data)" alt="Preview screenshot" loading="lazy" /><figcaption>Preview · @image.Width × @image.Height</figcaption></figure>
+        }
         @if (_value is { } value)
         {
             @if (ResultPreview != null) { <p class="agent-help">Structured excerpt. Export the thread for the complete result.</p> }
@@ -27,6 +31,7 @@
     [Parameter] public string Text { get; set; } = "";
     [Parameter] public string? ToolName { get; set; }
     [Parameter] public JsonElement? ResultPreview { get; set; }
+    [Parameter] public IReadOnlyList<XamlG.Automation.AutomationImage>? Images { get; set; }
     [Parameter] public bool Running { get; set; }
     [Parameter] public bool Historical { get; set; }
     [Parameter] public EventCallback<string> CopyRequested { get; set; }

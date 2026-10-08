@@ -17,11 +17,12 @@ public partial class App
         try
         {
             if (!_ready || _busy || _disposed) throw new AutomationException("unavailable", "Wait for the current IDE operation.");
-            await CaptureEditorsAsync();
+            var needsSource = tool.Scope != AutomationScope.Runtime || name == "xamlg_runtime_run";
+            if (needsSource) await CaptureEditorsAsync();
             context.CancellationToken.ThrowIfCancellationRequested();
             if (!_ready || _busy || _disposed) throw new AutomationException("unavailable", "The IDE changed while capturing source.");
             var result = await _automation.CallLocalAsync(name, arguments, context with { Caller = "Coding agent", PrincipalId = "browser-agent" });
-            if (tool.Effect != AutomationEffect.Read) await SaveDraftAsync();
+            if (needsSource && tool.Effect != AutomationEffect.Read) await SaveDraftAsync();
             return result;
         }
         finally { _automationGate.Release(); if (!_disposed) StateHasChanged(); }

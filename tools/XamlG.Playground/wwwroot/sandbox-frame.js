@@ -26,6 +26,8 @@ export function connect(dotnet) {
               typeof request.factoryType !== 'string' || typeof request.populateMethod !== 'string') throw new Error('Invalid execution payload.');
           result = await dotnet.invokeMethodAsync('Execute', request);
         } else if (value.method === 'inspect') result = await dotnet.invokeMethodAsync('Inspect');
+        else if (value.method === 'computer_observe') result = await dotnet.invokeMethodAsync('ComputerObserve', value.params);
+        else if (value.method === 'computer_actions') result = await dotnet.invokeMethodAsync('ComputerActions', value.params);
         else throw new Error('Unsupported isolated-runtime request.');
         port.postMessage({ id: value.id, result });
       } catch (error) {
