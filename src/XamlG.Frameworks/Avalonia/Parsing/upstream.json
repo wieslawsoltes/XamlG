@@ -31,6 +31,31 @@
       "source": "src/Avalonia.Base/Utilities/MathUtilities.cs",
       "destination": "src/XamlG.Frameworks/Avalonia/Parsing/MathUtilities.cs",
       "sha256": "63e171f3d8e7ee634b0e36e4fd66fa3a23c1ccebb08413ee73ece4107026d570"
+    },
+    {
+      "source": "src/Avalonia.Base/Animation/Cue.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Cue.cs",
+      "sha256": "795f7262d620cd9996fb5dd96b29b44b608f91baa584a995e5a753e1bba685c2"
+    },
+    {
+      "source": "src/Avalonia.Base/Animation/IterationCount.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/IterationCount.cs",
+      "sha256": "4890b65a03c883b6686b6699678e51b512450fb1c930191a1da24723544621cc"
+    },
+    {
+      "source": "src/Avalonia.Base/Animation/KeySpline.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/KeySpline.cs",
+      "sha256": "388c66ab78a2ba7be356db04a3d3b3dc7b88b350db15f75bee919df1c4d90fd2"
+    },
+    {
+      "source": "src/Avalonia.Base/Animation/Easings/Easing.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Easing.cs",
+      "sha256": "9c84306f715c8358df9fb9776991ec40de22179543e00fcef0bc840291c003df"
+    },
+    {
+      "source": "src/Avalonia.Base/Utilities/SpanStringTokenizer.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/SpanStringTokenizer.cs",
+      "sha256": "c41378ae61f26a74a8d9039f32781447d4e1f1b73ceb8ced2a9f8f57b748d2b3"
     }
   ]
 }
