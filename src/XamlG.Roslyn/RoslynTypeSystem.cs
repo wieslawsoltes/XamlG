@@ -16,11 +16,14 @@ public sealed class RoslynTypeSystem
     private readonly ConcurrentDictionary<INamedTypeSymbol, IPropertySymbol?> _contentProperties = new(SymbolEqualityComparer.Default);
     private readonly ConcurrentDictionary<INamedTypeSymbol, string?> _contentErrors = new(SymbolEqualityComparer.Default);
     private readonly ConcurrentDictionary<ITypeSymbol, bool> _usableDuringInitialization = new(SymbolEqualityComparer.Default);
+    private readonly ConcurrentDictionary<string, ImmutableArray<(string Prefix, IAssemblySymbol Assembly)>> _namespaceTargets = new(StringComparer.Ordinal);
     private readonly ImmutableArray<IAssemblySymbol> _assemblies;
+    private readonly ILookup<string, IAssemblySymbol> _assembliesByName;
     public RoslynTypeSystem(CSharpCompilation compilation, XamlTypeSystemConfiguration? configuration = null)
     {
         Compilation = compilation ?? throw new ArgumentNullException(nameof(compilation)); Configuration = configuration ?? new();
         _assemblies = ImmutableArray.Create(compilation.Assembly).AddRange(compilation.SourceModule.ReferencedAssemblySymbols);
+        _assembliesByName = _assemblies.ToLookup(assembly => assembly.Identity.Name, StringComparer.Ordinal);
         var mappings = Configuration.NamespaceMappings.ToBuilder();
         foreach (var assembly in _assemblies)
             foreach (var attribute in assembly.GetAttributes())
@@ -60,6 +63,26 @@ public sealed class RoslynTypeSystem
             var intrinsic = special == SpecialType.None ? Find("System." + name) : Special(special);
             return intrinsic != null && intrinsic.Arity == arity && IsAccessible(intrinsic) ? new(intrinsic, ImmutableArray.Create(intrinsic)) : TypeResolution.Missing;
         }
+        var targets = _namespaceTargets.TryGetValue(xmlNamespace, out var cached)
+            ? cached : _namespaceTargets.GetOrAdd(xmlNamespace, ResolveNamespaceTargets);
+        var candidates = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var metadata = name + (arity == 0 ? string.Empty : "`" + arity);
+        foreach (var target in targets)
+        {
+            var qualified = target.Prefix + metadata;
+            // Facades such as netstandard carry forwarders rather than definitions.
+            // Preserve the resolved destination symbol's actual assembly identity.
+            var type = target.Assembly.GetTypeByMetadataName(qualified) ?? target.Assembly.ResolveForwardedType(qualified);
+            if (type != null && IsAccessible(type)) candidates.Add(type);
+        }
+        var result = candidates.OrderBy(c => c.ContainingAssembly.Identity.ToString(), StringComparer.Ordinal).ThenBy(c => c.MetadataName(), StringComparer.Ordinal).ToImmutableArray();
+        return new(result.Length == 1 ? result[0] : null, result);
+    }
+    private ImmutableArray<(string Prefix, IAssemblySymbol Assembly)> ResolveNamespaceTargets(string xmlNamespace)
+    {
+        // Namespace and assembly selection is independent of the requested type.
+        // Normalize assembly names once, instead of splitting one for every pair
+        // of mapping and reference on each type's first lookup.
         var mappings = new List<XmlNamespaceMapping>();
         if (xmlNamespace.StartsWith("clr-namespace:", StringComparison.Ordinal))
         {
@@ -69,20 +92,19 @@ public sealed class RoslynTypeSystem
         }
         else if (xmlNamespace.StartsWith("using:", StringComparison.Ordinal)) mappings.Add(new(xmlNamespace, xmlNamespace.Substring(6)));
         else mappings.AddRange(NamespaceMappings.Where(m => m.XmlNamespace == xmlNamespace));
-        var candidates = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
-        var metadata = name + (arity == 0 ? string.Empty : "`" + arity);
+        var targets = ImmutableArray.CreateBuilder<(string Prefix, IAssemblySymbol Assembly)>();
         foreach (var mapping in mappings)
-            foreach (var assembly in _assemblies)
+        {
+            var prefix = string.IsNullOrEmpty(mapping.ClrNamespace) ? string.Empty : mapping.ClrNamespace + ".";
+            IEnumerable<IAssemblySymbol> assemblies = _assemblies;
+            if (mapping.AssemblyName is { } assemblyName)
             {
-                if (mapping.AssemblyName != null && !string.Equals(mapping.AssemblyName.Split(',')[0].Trim(), assembly.Identity.Name, StringComparison.Ordinal)) continue;
-                var qualified = string.IsNullOrEmpty(mapping.ClrNamespace) ? metadata : mapping.ClrNamespace + "." + metadata;
-                // Facades such as netstandard carry forwarders rather than definitions.
-                // Preserve the resolved destination symbol's actual assembly identity.
-                var type = assembly.GetTypeByMetadataName(qualified) ?? assembly.ResolveForwardedType(qualified);
-                if (type != null && IsAccessible(type)) candidates.Add(type);
+                var comma = assemblyName.IndexOf(',');
+                assemblies = _assembliesByName[(comma < 0 ? assemblyName : assemblyName.Substring(0, comma)).Trim()];
             }
-        var result = candidates.OrderBy(c => c.ContainingAssembly.Identity.ToString(), StringComparer.Ordinal).ThenBy(c => c.MetadataName(), StringComparer.Ordinal).ToImmutableArray();
-        return new(result.Length == 1 ? result[0] : null, result);
+            foreach (var assembly in assemblies) targets.Add((prefix, assembly));
+        }
+        return targets.ToImmutable();
     }
     public ImmutableArray<IPropertySymbol> GetDeclaredContentProperties(INamedTypeSymbol type) =>
         _declaredContentProperties.TryGetValue(type, out var properties) ? properties : _declaredContentProperties.GetOrAdd(type, FindDeclaredContentProperties);
