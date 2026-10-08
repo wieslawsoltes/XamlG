@@ -13,9 +13,11 @@ public sealed class CSharpEmitter
     public XamlEmissionResult Emit(BoundDocument document, CancellationToken cancellationToken = default)
         => Emit(document, cancellationToken, shareServices: false);
 
-    internal XamlEmissionResult Emit(BoundDocument document, CancellationToken cancellationToken, bool shareServices)
+    internal XamlEmissionResult Emit(BoundDocument document, CancellationToken cancellationToken, bool shareServices,
+        SharedPropertyTables? sharedProperties = null)
     {
         using var context = new EmissionContext(document, cancellationToken);
+        context.SharedProperties = sharedProperties;
         if (document.IsSkipped)
             return new(context.Id + ".xaml.g.cs", string.Empty, string.Empty, null, string.Empty,
                 context.Diagnostics.ToImmutableArray(), ImmutableArray<XamlSourceMapping>.Empty) { IsSkipped = true };
@@ -39,6 +41,9 @@ public sealed class CSharpEmitter
         var namespaceName = augment ? document.ClassSymbol!.ContainingNamespace is { IsGlobalNamespace: false } ns
             ? ns.ToDisplayString() : string.Empty : document.Options.GeneratedNamespace;
         if (namespaceName.Length != 0) writer.Open("namespace " + namespaceName);
+        context.UsePropertyAliases = namespaceName.Length != 0;
+        if (context.UsePropertyAliases && sharedProperties != null)
+            foreach (var (alias, source) in sharedProperties.Sources) writer.Line("using " + alias + " = " + source.TypeName + ";");
         var containers = new Stack<INamedTypeSymbol>();
         for (var type = augment ? document.ClassSymbol : null; type != null; type = type.ContainingType) containers.Push(type);
         var nesting = containers.Count;
@@ -104,6 +109,13 @@ public sealed class CSharpEmitter
         if (namespaceName.Length != 0) writer.Close();
         return new(context.Id + ".xaml.g.cs", writer.ToString(), typeName, build, populate,
             context.Diagnostics.ToImmutableArray(), context.Mappings.ToImmutableArray())
-            { FactoryMetadataName = metadataName, SharedServices = context.SharedServices };
+            {
+                FactoryMetadataName = metadataName,
+                PropertyLayout = sharedProperties?.Identity ?? string.Empty,
+                SharedSources = (context.SharedServices is { } services
+                    ? ImmutableArray.Create(new SharedGeneratedSource(services.TypeName, services.Source))
+                    : ImmutableArray<SharedGeneratedSource>.Empty)
+                    .AddRange(sharedProperties?.Sources.Select(entry => entry.Source) ?? Enumerable.Empty<SharedGeneratedSource>())
+            };
     }
 }

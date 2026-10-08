@@ -28,7 +28,7 @@ public sealed class ResourceEmissionFailureTests
         var root = Document("Root.xaml", "<Root.Child><Include Source='Middle.xaml'/></Root.Child>");
         var middle = Document("Middle.xaml", "<Root.Child><Include Source='Leaf.xaml'/></Root.Child>");
         var leaf = Document("Leaf.xaml", "");
-        var independent = Document("ZIndependent.xaml", "");
+        var independent = Document("ZIndependent.xaml", "<Root.Child><Root/></Root.Child>");
         var compiler = new XamlProjectCompiler();
         var success = compiler.Compile(new[] { root, middle, leaf, independent }, compilation, profile);
         Assert.True(success.Success);
@@ -43,8 +43,8 @@ public sealed class ResourceEmissionFailureTests
         }
         var survivingOutput = failure.Documents.Single(document => document.Input.LogicalPath == "ZIndependent.xaml").Output;
         Assert.True(survivingOutput.Success);
-        // Failed documents and their suppressed callers cannot own a service class
-        // that is still required by a valid, independently emitted document.
+        // Failed documents and their suppressed callers cannot own service or property
+        // helpers that are still required by a valid, independently emitted document.
         using var image = new MemoryStream();
         var compiled = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(survivingOutput.Source,
             new CSharpParseOptions(LanguageVersion.Preview))).Emit(image);

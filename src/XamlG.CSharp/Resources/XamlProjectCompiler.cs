@@ -101,32 +101,56 @@ public sealed class XamlProjectCompiler
         foreach (var group in bound.Select((d, i) => (Document: d, Index: i)).Where(p => !p.Document.IsSkipped && p.Document.ClassName != null).GroupBy(p => p.Document.ClassName, StringComparer.Ordinal).Where(g => g.Count() > 1))
             foreach (var item in group) bound[item.Index] = AddError(item.Document, "XG2002", "More than one XAML document declares x:Class '" + group.Key + "'.");
         XamlResourceGraph.Validate(bound, cancellationToken);
+        // Regenerate only outputs whose shared accessor layout changed; their bound
+        // documents remain reusable. Keep successful builds independent of edit history.
+        var properties = entries.Where((entry, index) => !ReferenceEquals(bound[index], entry.Document) || entry.Output == null).Any()
+            ? SharedPropertyTables.Create(bound, types, options.GeneratedNamespace, cancellationToken)
+            : null;
+        // During binding failures cached survivors keep their complete, valid helpers.
+        var checkPropertyLayouts = properties != null && bound.All(document => document.Success);
         var emissions = new XamlEmissionResult[inputs.Length]; var emittedCount = 0; var reusedOutputs = 0;
         ForEachDocument(inputs.Length, options, cancellationToken, i =>
         {
             cancellationToken.ThrowIfCancellationRequested();
             XamlEmissionResult emission;
-            if (ReferenceEquals(bound[i], entries[i].Document) && entries[i].Output is { } cachedOutput)
+            if (ReferenceEquals(bound[i], entries[i].Document) && entries[i].Output is { } cachedOutput &&
+                (!checkPropertyLayouts || cachedOutput.PropertyLayout == (properties![i]?.Identity ?? string.Empty)))
             { emission = cachedOutput; Interlocked.Increment(ref reusedOutputs); }
             else
             {
-                emission = XamlResourceExports.Add(bound[i], new CSharpEmitter().Emit(bound[i], cancellationToken, shareServices: true)); Interlocked.Increment(ref emittedCount);
-                if (ReferenceEquals(bound[i], entries[i].Document)) entries[i].Output = emission;
+                emission = XamlResourceExports.Add(bound[i], new CSharpEmitter().Emit(bound[i], cancellationToken, shareServices: true, properties?[i])); Interlocked.Increment(ref emittedCount);
+                if (ReferenceEquals(bound[i], entries[i].Document))
+                {
+                    entries[i].Output = emission;
+                    entries[i].OutputWithHelpers = null;
+                    entries[i].PublishedHelpers = null;
+                }
             }
             emissions[i] = emission;
         });
         XamlResourceGraph.ValidateEmissions(bound, emissions, cancellationToken);
-        // Publish each identical service implementation once, in stable input order.
+        // Publish each identical helper implementation once, in stable input order.
         // Keep the cached base output independent of ownership so additions/removals
         // can move a shared definition without rebinding unaffected documents.
-        var sharedServices = new HashSet<string>(StringComparer.Ordinal);
+        var published = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < emissions.Length; i++)
         {
             var emission = emissions[i];
-            if (!emission.Success || emission.SharedServices is not { } services || !sharedServices.Add(services.TypeName)) continue;
+            if (!emission.Success) continue;
+            var owned = emission.SharedSources.Where(source => published.Add(source.TypeName)).ToArray();
+            if (owned.Length == 0) continue;
+            var identity = string.Join("\n", owned.Select(source => source.TypeName));
             if (ReferenceEquals(emission, entries[i].Output))
-                emissions[i] = entries[i].OutputWithServices ??= emission with { Source = emission.Source + "\n" + services.Source };
-            else emissions[i] = emission with { Source = emission.Source + "\n" + services.Source };
+            {
+                var entry = entries[i];
+                if (entry.PublishedHelpers != identity)
+                {
+                    entry.PublishedHelpers = identity;
+                    entry.OutputWithHelpers = emission with { Source = emission.Source + "\n" + string.Join("\n", owned.Select(source => source.Source)) };
+                }
+                emissions[i] = entry.OutputWithHelpers!;
+            }
+            else emissions[i] = emission with { Source = emission.Source + "\n" + string.Join("\n", owned.Select(source => source.Source)) };
         }
         var output = inputs.Select((input, index) => new XamlProjectDocumentResult(input, addresses[index], bound[index], emissions[index])).ToImmutableArray();
         return new(output, catalog) { Statistics = new(boundCount, reusedBindings, emittedCount, reusedOutputs) };

@@ -13,7 +13,7 @@ internal sealed class EmissionContext : IDisposable
     private readonly Dictionary<ISymbol, string> _descriptors = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<IMethodSymbol, string> _initSetters = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<string, int> _sourceRecords = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, (int Index, string Type, string Name, string Get, string Set)> _propertyAccessors = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (int Index, PropertyAccessor Accessor)> _propertyAccessors = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _frameNamespaces = new(StringComparer.Ordinal);
     public EmissionContext(BoundDocument document, CancellationToken cancellation)
     { Document = document; Cancellation = cancellation; Diagnostics.AddRange(document.Diagnostics); Id = StableId(document.Options.DocumentId ?? document.Syntax.Path); }
@@ -32,6 +32,8 @@ internal sealed class EmissionContext : IDisposable
     public List<XamlSourceMapping> Mappings { get; } = new();
     public string RootVariable { get; set; } = "__root";
     public SharedServiceSource? SharedServices { get; set; }
+    public SharedPropertyTables? SharedProperties { get; set; }
+    public bool UsePropertyAliases { get; set; }
     public string ServicesType => SharedServices?.TypeName ?? "__XamlGServices_" + Id;
     public string Temporary(string role) => "__" + role + _temporary++;
     public string StableId(string value) => CSharpNames.StableId(_hash, value);
@@ -72,13 +74,14 @@ internal sealed class EmissionContext : IDisposable
         _sourceInfoSetter = true;
         return "__SetSourceInfo_" + Id;
     }
-    public string PropertyRegistration(ITypeSymbol value, string name, string get, string set, string frame)
+    public string PropertyRegistration(PropertyAccessor value, string frame)
     {
-        var type = value.TypeKind == TypeKind.Dynamic ? "object" : value.CSharpName();
-        var key = type + "\0" + name + "\0" + get + "\0" + set;
+        var key = value.Key;
+        if (SharedProperties?.Registrations.TryGetValue(key, out var shared) == true)
+            return (UsePropertyAliases ? shared.Alias : shared.Source.TypeName) + ".Table.Register(" + frame + ", " + shared.Index + ");";
         if (!_propertyAccessors.TryGetValue(key, out var accessor))
         {
-            accessor = (_propertyAccessors.Count, type, name, get, set);
+            accessor = (_propertyAccessors.Count, value);
             _propertyAccessors.Add(key, accessor);
         }
         return "__properties_" + Id + ".Register(" + frame + ", " + accessor.Index + ");";
@@ -96,20 +99,8 @@ internal sealed class EmissionContext : IDisposable
         }
         if (_propertyAccessors.Count != 0)
         {
-            var accessors = _propertyAccessors.Values.OrderBy(accessor => accessor.Index).ToArray();
-            Writer.Line("private static readonly global::XamlG.Runtime.XamlPropertyTable __properties_" + Id + " = new(new global::System.Type[] { " +
-                string.Join(", ", accessors.Select(accessor => "typeof(" + accessor.Type + ")")) + " }, new string[] { " +
-                string.Join(", ", accessors.Select(accessor => CSharpNames.Literal(accessor.Name))) + " }, __GetProperty_" + Id + ", __SetProperty_" + Id + ");");
-            Writer.Open("private static object? __GetProperty_" + Id + "(object __target, int __index)");
-            Writer.Open("switch (__index)");
-            foreach (var accessor in accessors) Writer.Line("case " + accessor.Index + ": return " + accessor.Get + ";");
-            Writer.Line("default: throw new global::System.ArgumentOutOfRangeException(nameof(__index));");
-            Writer.Close(); Writer.Close();
-            Writer.Open("private static void __SetProperty_" + Id + "(object __target, int __index, object? __value)");
-            Writer.Open("switch (__index)");
-            foreach (var accessor in accessors) Writer.Line("case " + accessor.Index + ": " + accessor.Set + "; return;");
-            Writer.Line("default: throw new global::System.ArgumentOutOfRangeException(nameof(__index));");
-            Writer.Close(); Writer.Close();
+            var accessors = _propertyAccessors.Values.OrderBy(accessor => accessor.Index).Select(accessor => accessor.Accessor).ToArray();
+            PropertyTableEmitter.Emit(Writer, accessors, "__properties_" + Id, "__GetProperty_" + Id, "__SetProperty_" + Id, "private");
         }
         if (_sourceRecords.Count != 0)
         {
