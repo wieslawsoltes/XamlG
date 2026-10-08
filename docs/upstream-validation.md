@@ -14,7 +14,7 @@ The suites do not cover every custom transformer used by every XAML framework. I
 
 ## Implementation audit beyond the pinned tests
 
-Compare behavior against the pinned source as well as its tests. Native compiler regressions cover implementation details. The two upstream harnesses also link 222 additional cases from `tests/XamlG.XamlX.ParityCases` to execute identical assertions through both compilers. These authored differential tests use the `ParityRegression` category and separate TRX files; they do not increase the count of unmodified upstream assertions.
+Compare behavior against the pinned source as well as its tests. Native compiler regressions cover implementation details. The two upstream harnesses also link 235 additional cases from `tests/XamlG.XamlX.ParityCases` to execute identical assertions through both compilers. These authored differential tests use the `ParityRegression` category and separate TRX files; they do not increase the count of unmodified upstream assertions.
 
 | Upstream behavior | XamlG implementation and evidence |
 | --- | --- |

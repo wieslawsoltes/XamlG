@@ -52,3 +52,5 @@ The build-task directives (`x:Precompile`, `x:ClassModifier`) and named-field mo
 The completion boundary is the pinned compiler's supported source surface, with XamlG's existing documented extensions retained. Those include logical relative-source trees, typed/property CanExecute predicates, native field/indexer conveniences, intrinsic references/arrays, struct objects and property-element namespace declarations. Upstream IL implementation details and unsupported upstream programs are not new implementation requirements. Explicitly tested upstream phase behavior includes detached compiled TemplatedParent rejection, non-shared handling of either x:Shared Boolean, and decimal parsing at runtime.
 
 Full checkpoint counts and clean-worktree theme provenance are recorded in [upstream validation](upstream-validation.md).
+
+The subsequent [compatibility and performance review](compatibility-review.md) checks implicit conventions and runtime integration beneath these transforms and records newly discovered differences. The inventory is a source map, not a substitute for those behavioral comparisons.

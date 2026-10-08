@@ -119,9 +119,8 @@ public sealed class RoslynTypeSystem
             if (!method.IsStatic && !method.IsGenericMethod && method.Parameters.Length is 1 or 2 && IsAccessible(method)) Add(method);
         foreach (var contract in type.AllInterfaces)
         {
-            var addChild = Configuration.AddChildInterfaces.Contains(contract.OriginalDefinition.MetadataName());
-            foreach (var method in contract.GetMembers(addChild ? Configuration.AddChildMethod : Configuration.CollectionAddMethod).OfType<IMethodSymbol>())
-                if (method.Parameters.Length is 1 or 2 && !method.IsStatic && !method.IsGenericMethod && IsAccessible(contract)) Add(method);
+            foreach (var method in contract.GetMembers(Configuration.CollectionAddMethod).OfType<IMethodSymbol>())
+                if (method.Parameters.Length is 1 or 2 && !method.IsStatic && !method.IsGenericMethod && IsAccessible(contract) && IsAccessible(method)) Add(method);
         }
         if (methods.Count == 0 && type is INamedTypeSymbol declared)
         {
@@ -136,8 +135,19 @@ public sealed class RoslynTypeSystem
                         Add(method);
             }
         }
-        return methods.OrderBy(method => SymbolEqualityComparer.Default.Equals(method.ContainingType, type) ? 0 : 1)
-            .ThenBy(method => method.ContainingType.TypeKind == TypeKind.Interface ? 1 : 0).ToImmutableArray();
+        methods = methods.OrderBy(method => SymbolEqualityComparer.Default.Equals(method.ContainingType, type) ? 0 : 1)
+            .ThenBy(method => method.ContainingType.TypeKind == TypeKind.Interface ? 1 : 0).ToList();
+        // Ordinary Add methods precede child protocols. Include the declared interface
+        // itself, then prefer typed child contracts over their object-valued fallback.
+        if (!Configuration.AddChildInterfaces.IsDefaultOrEmpty)
+        {
+            var childContracts = type is INamedTypeSymbol named ? type.AllInterfaces.Insert(0, named) : type.AllInterfaces;
+            foreach (var contract in childContracts.Where(contract => Configuration.AddChildInterfaces.Contains(contract.OriginalDefinition.MetadataName()))
+                         .OrderByDescending(contract => contract.Arity != 0))
+                foreach (var method in contract.GetMembers(Configuration.AddChildMethod).OfType<IMethodSymbol>())
+                    if (method.Parameters.Length is 1 or 2 && !method.IsStatic && !method.IsGenericMethod && IsAccessible(contract) && IsAccessible(method)) Add(method);
+        }
+        return methods.ToImmutableArray();
     }
     public IEnumerable<INamedTypeSymbol> EnumerateTypes(string xmlNamespace)
     {
