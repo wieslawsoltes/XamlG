@@ -931,6 +931,19 @@ observed image by default; keys/text without a selector use current focus. Actio
 require a current frame and revision, stop at the first failure, report completed
 indices and return a fresh observation. Never retry a partial batch blindly.
 
+For live clocks or unrelated progress updates, opt into `refreshTargets: true`.
+Keep the original frame ID/revision and give every action except wait/reset an
+explicit selector from that frame's element page. Before any input, the inspector
+checks the viewport, tree topology, target and visual ancestor identities,
+DataContext references, names, text, enabled/visible state, hit-test visibility,
+focusability and opacity. It pins each resolved control for the batch and checks
+current pointer/touch hits, so a covering sibling cannot receive its input.
+Coordinates, drag paths, unobserved controls and implicit keyboard focus require
+a fresh strict frame. Release held input first or start the refreshed batch with
+reset. This option tolerates unrelated property updates; it does not freeze the
+application or deep-copy mutable business data. Earlier actions may deliberately
+change later targets within the same batch.
+
 `xamlg_computer_viewport` sets a 128–4096 DIP viewport for responsive testing;
 omitting both dimensions returns to automatic dock sizing. Observe again after a
 resize or application change. Runtime edits and input remain subject to the active

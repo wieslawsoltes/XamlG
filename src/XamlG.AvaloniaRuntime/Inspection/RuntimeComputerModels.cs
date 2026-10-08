@@ -10,7 +10,7 @@ public sealed record ComputerAction(ComputerActionKind Kind, ComputerTarget? Tar
     long ContactId = 0, RuntimeTouchAction TouchAction = RuntimeTouchAction.Begin, bool? Enabled = null, bool? Visible = null);
 public sealed record ComputerObserveOptions(bool Screenshot = true, int MaximumWidth = 1280, int MaximumHeight = 1024, int Offset = 0, int Count = 100);
 public sealed record ComputerActionsRequest(string FrameId, long ExpectedRevision, ComputerAction[] Actions,
-    ComputerCoordinateSpace CoordinateSpace = ComputerCoordinateSpace.Image, bool Screenshot = true);
+    ComputerCoordinateSpace CoordinateSpace = ComputerCoordinateSpace.Image, bool Screenshot = true, bool RefreshTargets = false);
 public sealed record ComputerElement(string ObjectId, string Type, string? Name, string? AutomationId, string? Text,
     double X, double Y, double Width, double Height, bool Enabled, bool Visible, bool Focused);
 public sealed record ComputerObservation(string SessionId, string FrameId, long Revision, string RootId,

@@ -67,7 +67,10 @@ public sealed partial class AvaloniaRuntimeInspector
 
     public RuntimeInputResult SendPointer(string objectId, RuntimePointerAction action, long expectedRevision,
         double? x = null, double? y = null, string button = "Left", IReadOnlyList<string>? modifiers = null,
-        double deltaX = 0, double deltaY = 0)
+        double deltaX = 0, double deltaY = 0) => SendPointer(objectId, action, expectedRevision, x, y, button, modifiers, deltaX, deltaY, requireTargetHit: false);
+
+    private RuntimeInputResult SendPointer(string objectId, RuntimePointerAction action, long expectedRevision,
+        double? x, double? y, string button, IReadOnlyList<string>? modifiers, double deltaX, double deltaY, bool requireTargetHit)
     {
         if (!Enum.IsDefined(action) || !double.IsFinite(deltaX) || !double.IsFinite(deltaY) || Math.Abs(deltaX) > 10000 || Math.Abs(deltaY) > 10000)
             throw new ArgumentException("Invalid pointer action or wheel delta.");
@@ -92,6 +95,7 @@ public sealed partial class AvaloniaRuntimeInspector
                 (_inputPointer.Captured is Visual capture && !WithinRoot(capture)) ||
                 (_inputPointer.Captured == null && InputRootElement(root).InputHitTest(point) is Visual hit && !WithinRoot(hit)))
             { DisposeInput(); throw new InvalidOperationException("The pointer target detached or moved outside the inspected tree."); }
+            if (requireTargetHit) RequireInputTargetHit(target, root, point, _inputPointer.Captured);
             RawPointerEventArgs args = type == RawPointerEventType.Wheel
                 ? new RawMouseWheelEventArgs(_inputMouse, InputTimestamp(), root, point, new(deltaX, deltaY), flags | _inputButtons)
                 : new RawPointerEventArgs(_inputMouse, InputTimestamp(), root, type, point, flags | _inputButtons);
@@ -121,7 +125,10 @@ public sealed partial class AvaloniaRuntimeInspector
     }
 
     public RuntimeInputResult SendTouch(string objectId, long contactId, RuntimeTouchAction action, double x, double y,
-        long expectedRevision, IReadOnlyList<string>? modifiers = null)
+        long expectedRevision, IReadOnlyList<string>? modifiers = null) => SendTouch(objectId, contactId, action, x, y, expectedRevision, modifiers, requireTargetHit: false);
+
+    private RuntimeInputResult SendTouch(string objectId, long contactId, RuntimeTouchAction action, double x, double y,
+        long expectedRevision, IReadOnlyList<string>? modifiers, bool requireTargetHit)
     {
         if (contactId is < 1 or > 1000000 || !Enum.IsDefined(action)) throw new ArgumentException("Invalid touch contact or action.");
         if (action == RuntimeTouchAction.Begin ? _touchContacts.Contains(contactId) || _touchContacts.Count >= 16 : !_touchContacts.Contains(contactId))
@@ -134,6 +141,7 @@ public sealed partial class AvaloniaRuntimeInspector
         // Capture belongs to this contact. Mouse capture must not authorize a new
         // touch outside the preview, and captured touches may cross its bounds.
         args.Position = InputPoint(target, root, x, y, _inputTouch.TryGetPointer(args)?.Captured);
+        if (requireTargetHit) RequireInputTargetHit(target, root, args.Position, _inputTouch.TryGetPointer(args)?.Captured);
         if (action == RuntimeTouchAction.Begin) _touchContacts.Add(contactId);
         if (action is RuntimeTouchAction.End or RuntimeTouchAction.Cancel) _touchContacts.Remove(contactId);
         try { send(args); }
@@ -185,6 +193,12 @@ public sealed partial class AvaloniaRuntimeInspector
     private bool WithinRoot(Visual visual) => ReferenceEquals(visual, _root) ||
         (_objects.TryGetValue(Id(visual), out var owned) && ReferenceEquals(visual, owned)) ||
         visual.GetVisualAncestors().Any(parent => ReferenceEquals(parent, _root));
+    private static void RequireInputTargetHit(Control target, IInputRoot root, Point point, IInputElement? captured)
+    {
+        var hit = captured ?? InputRootElement(root).InputHitTest(point);
+        if (hit is not Visual visual || (!ReferenceEquals(visual, target) && !visual.GetVisualAncestors().Any(parent => ReferenceEquals(parent, target))))
+            throw new InvalidOperationException("The target is covered, misses hit testing or input is captured elsewhere. Observe again before acting.");
+    }
     [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicProperties | DynamicallyAccessedMemberTypes.PublicProperties, typeof(IInputRoot))]
     private static InputElement InputRootElement(IInputRoot root) =>
         typeof(IInputRoot).GetProperty("RootElement", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)?.GetValue(root) as InputElement

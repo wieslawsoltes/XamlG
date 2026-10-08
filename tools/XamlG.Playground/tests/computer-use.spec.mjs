@@ -9,11 +9,17 @@ const xaml = `<StackPanel xmlns="https://github.com/avaloniaui" xmlns:x="http://
   <ComboBox x:Name="choices" Width="230" HorizontalAlignment="Left"><ComboBoxItem Content="Alpha" /><ComboBoxItem Content="Beta" /></ComboBox>
   <Slider x:Name="slider" Width="230" HorizontalAlignment="Left" Minimum="0" Maximum="100" />
   <ScrollViewer x:Name="scroll" Height="70"><StackPanel><TextBlock Text="Top" /><Border Height="240" /><TextBlock Text="Bottom" /></StackPanel></ScrollViewer>
+  <Button x:Name="startClock" Content="Start clock" Click="StartClock" />
+  <TextBlock x:Name="clock" Text="Clock stopped" />
 </StackPanel>`;
-const code = `using Avalonia.Controls; using Avalonia.Interactivity; namespace Playground;
+const code = `using System; using Avalonia.Controls; using Avalonia.Interactivity; using Avalonia.Threading; namespace Playground;
 public partial class ComputerView : StackPanel {
   public ComputerView() => InitializeComponent();
   private void Submit(object? sender, RoutedEventArgs args) => result.Text = first.Text + " / " + second.Text;
+  private void StartClock(object? sender, RoutedEventArgs args) {
+    var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) }; var ticks = 0;
+    timer.Tick += (_, _) => { clock.Text = "Clock tick " + ++ticks; if (ticks == 100) timer.Stop(); }; timer.Start();
+  }
 }`;
 
 for (const isolated of [false, true]) test(`MCP computer workflow returns real images and operates the ${isolated ? 'isolated' : 'trusted'} app`, async ({ page, request }) => {
@@ -67,5 +73,35 @@ for (const isolated of [false, true]) test(`MCP computer workflow returns real i
     ] });
     expect(partial.failedIndex).toBe(1); expect(partial.completed).toHaveLength(1);
     expect(partial.observation.elements.find(item => item.name === 'first').text).toBe('One');
+
+    frame = (await mcp.call('xamlg_computer_observe', { screenshot: false, count: 200 })).observation;
+    const ticking = await mcp.call('xamlg_computer_actions', { frameId: frame.frameId, expectedRevision: frame.revision, screenshot: false,
+      actions: [{ kind: 'click', target: { name: 'startClock' } }] });
+    expect(ticking.error).toBeNull();
+    frame = ticking.observation;
+    // Give the app's real dispatcher clock multiple ticks between observation and input.
+    await page.waitForTimeout(500);
+    const expired = await mcp.rpc('tools/call', { name: 'xamlg_computer_actions', arguments: {
+      frameId: frame.frameId, expectedRevision: frame.revision, screenshot: false,
+      actions: [{ kind: 'click', target: { name: 'submit' } }]
+    } });
+    expect(expired.isError).toBe(true);
+    const refreshed = await mcp.call('xamlg_computer_actions', {
+      frameId: frame.frameId, expectedRevision: frame.revision, screenshot: false, refreshTargets: true, actions: [
+        { kind: 'key', target: { name: 'first' }, key: 'End' },
+        { kind: 'text', target: { name: 'first' }, text: ' live' },
+        { kind: 'click', target: { name: 'submit' } },
+        { kind: 'assert', target: { name: 'result' }, text: 'One live / Two' }
+      ]
+    });
+    expect(refreshed.error).toBeNull(); expect(refreshed.completed).toHaveLength(4);
+    const changedTarget = await mcp.rpc('tools/call', { name: 'xamlg_computer_actions', arguments: {
+      frameId: frame.frameId, expectedRevision: frame.revision, screenshot: false, refreshTargets: true,
+      actions: [{ kind: 'text', target: { name: 'first' }, text: 'MUST NOT RUN' }]
+    } });
+    expect(changedTarget.isError).toBe(true);
+    const current = (await mcp.call('xamlg_computer_observe', { screenshot: false, count: 200 })).observation;
+    expect(current.elements.find(item => item.name === 'first').text).toBe('One live');
+    expect(current.elements.find(item => item.name === 'clock').text).toMatch(/^Clock tick [1-9]/);
   } finally { await mcp.close(); }
 });

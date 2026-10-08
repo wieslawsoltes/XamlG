@@ -10,7 +10,15 @@ namespace XamlG.AvaloniaRuntime.Inspection;
 
 public sealed partial class AvaloniaRuntimeInspector
 {
-    private readonly Dictionary<string, ComputerObservation> _computerFrames = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ComputerFrame> _computerFrames = new(StringComparer.Ordinal);
+    private sealed record ComputerFrame(ComputerObservation Observation, string Topology, Dictionary<string, ComputerTargetState[]> Targets);
+    private sealed record ComputerTargetState(Control Control, object? DataContext, string? Name, string? AutomationId, string? Text,
+        bool Enabled, bool Visible, bool HitTestVisible, bool Focusable, double Opacity)
+    {
+        public bool Matches(ComputerTargetState other) => ReferenceEquals(Control, other.Control) && ReferenceEquals(DataContext, other.DataContext) &&
+            Name == other.Name && AutomationId == other.AutomationId && Text == other.Text && Enabled == other.Enabled && Visible == other.Visible &&
+            HitTestVisible == other.HitTestVisible && Focusable == other.Focusable && Opacity == other.Opacity;
+    }
     private TopLevel ComputerTopLevel => _root is Control root ? TopLevel.GetTopLevel(root) ?? throw new InvalidOperationException("The preview is detached.")
         : throw new InvalidOperationException("Computer interaction requires a control root.");
 
@@ -27,7 +35,8 @@ public sealed partial class AvaloniaRuntimeInspector
         var imageWidth = Math.Max(1, (int)Math.Ceiling(width * scale)); var imageHeight = Math.Max(1, (int)Math.Ceiling(height * scale));
         var focused = top.FocusManager.GetFocusedElement() as Control;
         var controls = _objects.Values.OfType<Control>().ToArray();
-        var elements = controls.Skip(options.Offset).Take(options.Count).Select(control =>
+        var page = controls.Skip(options.Offset).Take(options.Count).ToArray();
+        var elements = page.Select(control =>
         {
             var point = control.TranslatePoint(default, top) ?? default;
             var text = ComputerText(control);
@@ -46,22 +55,26 @@ public sealed partial class AvaloniaRuntimeInspector
         var frame = new ComputerObservation(SessionId, Guid.NewGuid().ToString("N"), Revision, tree.RootId, width, height, imageWidth, imageHeight, scale,
             focused != null && WithinRoot(focused) ? Id(focused) : null, controls.Length, options.Offset, options.Offset + elements.Length < controls.Length, elements);
         while (_computerFrames.Count >= 4) _computerFrames.Remove(_computerFrames.Keys.First());
-        _computerFrames.Add(frame.FrameId, frame);
+        _computerFrames.Add(frame.FrameId, new(frame, _topology, page.ToDictionary(Id, ComputerTargetStates, StringComparer.Ordinal)));
         return new(frame, png);
     }
 
     public async Task<ComputerActionsResult> ComputerActionsAsync(ComputerActionsRequest request, CancellationToken cancellationToken = default)
     {
         VerifyAccess();
-        if (!_computerFrames.TryGetValue(request.FrameId, out var frame) || frame.SessionId != SessionId)
+        if (!_computerFrames.TryGetValue(request.FrameId, out var stored) || stored.Observation.SessionId != SessionId)
             throw new InvalidOperationException("The observed frame expired. Observe the current preview first.");
+        var frame = stored.Observation;
         Capture();
-        if (Revision != request.ExpectedRevision || frame.Revision != request.ExpectedRevision || ComputerTopLevel.Bounds.Width != frame.Width || ComputerTopLevel.Bounds.Height != frame.Height)
+        if ((!request.RefreshTargets && Revision != request.ExpectedRevision) || frame.Revision != request.ExpectedRevision || ComputerTopLevel.Bounds.Width != frame.Width || ComputerTopLevel.Bounds.Height != frame.Height)
             throw new InvalidOperationException("The preview changed since observation. Observe again before acting.");
         if (request.Actions.Length is < 1 or > 32 || !Enum.IsDefined(request.CoordinateSpace) ||
             request.Actions.Any(action => !Enum.IsDefined(action.Kind) || action.Milliseconds is < 0 or > 1000 || action.Path?.Length > 64 || action.Text?.Length > 16384) ||
             request.Actions.Sum(action => action.Milliseconds) > 10000)
             throw new ArgumentException("Use 1–32 actions, at most 64 drag points and bounded waits totaling at most 10 seconds.");
+        // Resolve and validate the entire batch before input. Keep those identities
+        // even if an earlier action replaces a later named control.
+        var refreshedTargets = request.RefreshTargets ? RefreshComputerTargets(stored, request.Actions) : null;
         var completed = new List<ComputerActionResult>(); string? error = null; int? failed = null;
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); lifetime.CancelAfter(TimeSpan.FromSeconds(20));
         for (var index = 0; index < request.Actions.Length; index++)
@@ -74,7 +87,8 @@ public sealed partial class AvaloniaRuntimeInspector
                 { await Task.Delay(action.Milliseconds, lifetime.Token); completed.Add(new(index, action.Kind, Revision, null)); continue; }
                 if (action.Kind == ComputerActionKind.Reset)
                 { ResetInput(Revision); completed.Add(new(index, action.Kind, Revision, null)); continue; }
-                var target = ComputerTargetControl(action.Target, action.Kind is ComputerActionKind.Key or ComputerActionKind.Text);
+                var target = refreshedTargets == null ? ComputerTargetControl(action.Target, action.Kind is ComputerActionKind.Key or ComputerActionKind.Text)
+                    : Resolve(Id(refreshedTargets[index]!)) as Control ?? throw new InvalidOperationException("The observed target detached. Observe again before acting.");
                 var id = Id(target);
                 var point = PointFor(action.X, action.Y, target);
                 switch (action.Kind)
@@ -86,7 +100,7 @@ public sealed partial class AvaloniaRuntimeInspector
                     case ComputerActionKind.Focus: if (!Focus(id, Revision)) throw new InvalidOperationException("The control rejected focus."); break;
                     case ComputerActionKind.Text: SendText(id, action.Text ?? throw new ArgumentException("Text is required."), Revision); break;
                     case ComputerActionKind.Key: SendKey(id, action.Key ?? throw new ArgumentException("Key is required."), action.KeyAction, Revision, action.Modifiers); break;
-                    case ComputerActionKind.Touch: SendTouch(id, action.ContactId, action.TouchAction, point.X, point.Y, Revision, action.Modifiers); break;
+                    case ComputerActionKind.Touch: SendTouch(id, action.ContactId, action.TouchAction, point.X, point.Y, Revision, action.Modifiers, requireTargetHit: request.RefreshTargets); break;
                     case ComputerActionKind.Drag:
                         if (action.Path is not { Length: > 0 } path) throw new ArgumentException("A drag needs at least one path point.");
                         SendPointer(id, RuntimePointerAction.Down, Revision, point.X, point.Y, action.Button, action.Modifiers);
@@ -109,7 +123,7 @@ public sealed partial class AvaloniaRuntimeInspector
                             ComputerActionKind.Up => RuntimePointerAction.Up, ComputerActionKind.Scroll => RuntimePointerAction.Wheel,
                             _ => throw new ArgumentException("Unknown computer action.")
                         };
-                        SendPointer(id, pointerAction, Revision, point.X, point.Y, action.Button, action.Modifiers, action.DeltaX, action.DeltaY); break;
+                        SendPointer(id, pointerAction, Revision, point.X, point.Y, action.Button, action.Modifiers, action.DeltaX, action.DeltaY, requireTargetHit: request.RefreshTargets); break;
                 }
                 await Dispatcher.UIThread.InvokeAsync(() => ComputerTopLevel.UpdateLayout(), DispatcherPriority.Loaded, lifetime.Token);
                 completed.Add(new(index, action.Kind, Revision, id));
@@ -133,6 +147,35 @@ public sealed partial class AvaloniaRuntimeInspector
             return ComputerTopLevel.TranslatePoint(point, target) ?? throw new InvalidOperationException("Target detached from the observed viewport.");
         }
     }
+
+    private Control?[] RefreshComputerTargets(ComputerFrame frame, ComputerAction[] actions)
+    {
+        if (frame.Topology != _topology) throw new InvalidOperationException("The preview tree changed. Observe again before refreshing targets.");
+        if (actions[0].Kind != ComputerActionKind.Reset && (_inputPointer?.Captured != null || _inputButtons != 0 || _touchContacts.Count != 0))
+            throw new InvalidOperationException("Reset held input before refreshing targets, or start the batch with reset.");
+        var targets = new Control?[actions.Length];
+        for (var index = 0; index < actions.Length; index++)
+        {
+            var action = actions[index];
+            if (action.X != null || action.Y != null || action.Path != null || action.Kind == ComputerActionKind.Drag)
+                throw new ArgumentException("Refreshing targets requires selectors without coordinates or drag paths. Observe a fresh frame for coordinates.");
+            if (action.Kind is ComputerActionKind.Wait or ComputerActionKind.Reset) continue;
+            if (action.Target is not { } selector || (selector.ObjectId == null && selector.Name == null && selector.AutomationId == null && selector.Text == null))
+                throw new ArgumentException("Refreshing targets requires an explicit selector for every input, focus and assertion action.");
+            var target = ComputerTargetControl(selector, keyboard: false);
+            if (!frame.Targets.TryGetValue(Id(target), out var observed))
+                throw new InvalidOperationException("The target was not in the observed element page. Observe its page before acting.");
+            var current = ComputerTargetStates(target);
+            if (observed.Length != current.Length || observed.Where((state, i) => !state.Matches(current[i])).Any())
+                throw new InvalidOperationException("The observed target or its ancestors changed. Observe again before acting.");
+            targets[index] = target;
+        }
+        return targets;
+    }
+
+    private static ComputerTargetState[] ComputerTargetStates(Control target) => target.GetVisualAncestors().OfType<Control>().Prepend(target)
+        .Select(control => new ComputerTargetState(control, control.DataContext, control.Name, AutomationProperties.GetAutomationId(control), ComputerText(control),
+            control.IsEffectivelyEnabled, control.IsEffectivelyVisible, control.IsHitTestVisible, control.Focusable, control.Opacity)).ToArray();
 
     private Control ComputerTargetControl(ComputerTarget? selector, bool keyboard)
     {
