@@ -43,15 +43,17 @@ capabilities to Avalonia XAML and Roslyn C#; it does not introduce a VB6 runtime
 
 ## Acceptance evidence
 
-The expanded parity implementation is undergoing acceptance. Candidate `6fd67a3` passed the historical checks below,
+The expanded parity implementation requires the acceptance described here. Candidate `6fd67a3` passed the historical checks below,
 but those checks did not cover VB6's direct browser API-key agent mode, independent
 agent permissions and complete workbench controls. The user also requires separate
 Dockyard inspector/access tool panes and source-file document tabs. The corrected
-[feature parity audit](studio-agent-parity.md) tracks these requirements. PR #9 is
-back in draft and must not merge until the expanded implementation passes acceptance.
-The current native solution passes 2,071 tests. Direct browser SDK and local relay
-tests pass for all three providers; 17 document, runtime and editor regressions also
-pass. Full browser, package and current-head CI acceptance remain pending.
+[feature parity audit](studio-agent-parity.md) tracks these requirements.
+[PR #9](https://github.com/wieslawsoltes/XamlG/pull/9) records the current acceptance,
+merge and deployment evidence; merge requires the expanded checks to pass.
+The expanded native solution passes 2,071 tests, and all 21 shipping packages pass
+inventory and clean consumer checks. Direct browser SDK and local relay tests pass
+for all three providers; 17 document, runtime and editor regressions also pass.
+Full browser and current-head CI evidence is recorded in the PR.
 Provider tests use deterministic transports through the official SDKs; production
 account sign-in and paid inference have not been exercised.
 

@@ -7,8 +7,9 @@ and acceptance tests. This concerns the coding-agent workflows, adapted to XAML,
 C# and Avalonia; it does not request a VB6 language/runtime implementation.
 
 The preceding companion-mode test pass did **not** establish full parity. The
-expanded implementation below is now in place; PR #9 remains in draft until its
-full native, browser, package and CI acceptance finishes. The paired companion
+expanded implementation below requires native, browser, package and current-head
+CI acceptance before merge. [PR #9](https://github.com/wieslawsoltes/XamlG/pull/9)
+records the current acceptance, merge and deployment evidence. The paired companion
 continues to enforce its browser sharing policy; direct and provider-relay runs
 have independent browser-owned authority.
 
@@ -40,16 +41,19 @@ have independent browser-owned authority.
 | Source-file Dockyard documents | Implemented | Separate main XAML/C#, auxiliary C# and resource documents; navigation activates the correct file, moves/splits preserve edits, closing preserves project source. |
 | Application shell | Implemented | Compact Project/Edit/Run/View/Tools menus, keyboard dismissal/navigation, responsive controls and theme support; Run opens the preview pane. |
 | Workspace/layout lifecycle | Implemented | Migrate obsolete saved layouts; reconcile added, removed and renamed documents; restore tool/document identities without serializing credentials or source into layout. |
-| Local Release preview | Running accepted companion candidate | Replace the local publish with the expanded implementation after validation and leave it running for user testing. |
-| CI and merge | Expanded acceptance pending; PR draft | Run the expanded acceptance, wait for current-head CI to pass, then merge as authorized and verify deployment. |
+| Local Release preview | Release publish and companion host | Validate the expanded local publish and leave it running for user testing. |
+| CI and merge | Existing PR and main-only Pages workflow | Run expanded acceptance, require passing current-head CI before merge, then verify deployment. |
 
 Full validation follows the feature implementation. Targeted builds and checks may
 be used during implementation to resolve integration failures. Do not infer parity
 from a tool count or from the earlier 73-case browser pass.
 
-Current targeted evidence: 2,071 native tests, including 158 agent/automation tests;
+Recorded local evidence on 2026-10-08: 2,071 native tests, including 158 agent/automation tests;
 17 document, runtime and editor browser regressions; three browser direct SDK
 scenarios with source approval, compilation and native tool continuation; three
 local provider-relay scenarios with model discovery, streamed responses, origin
 and owner-token checks, and no MCP pairing. All pass with synthetic credentials.
-Full UI regression and current-head CI acceptance remain pending.
+All 21 shipping packages also pass inventory and clean consumer acceptance, including
+CLI/LSP/companion installation and standalone automation/MCP/agent use. Package and
+native evidence uses `b602ab3`; the following layout fix changes browser JavaScript
+only. Full UI and current-head CI results are recorded in the PR.
