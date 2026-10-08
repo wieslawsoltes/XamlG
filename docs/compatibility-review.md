@@ -44,6 +44,8 @@ Nine differential cases compare ordinary trees, templates and deferred resources
 
 Twenty shared cases revealed twelve differences. Seven exercise ordinary public `System` types through the language namespace, including `x:Type`, `x:Static`, conversion and constructor arguments. Resolution now uses metadata for these types instead of a short whitelist. Thirteen provider cases check attribute/element suffix preference, typed versus object and parameterless versus service-taking methods, inherited/virtual dispatch and invalid extension elements. Emission now qualifies the selected provider's declaring type so a hidden derived method cannot replace it. Types resolved with the extension suffix require a valid provider in element syntax too. Both compilers pass all twenty cases; early failures and corrected checks are retained in `provider-resolution/` beneath the review artifacts directory.
 
+Explicit code-behind root types bypass the suffix convention, matching the upstream root-type override. A differential regression covers a normal component class whose CLR name ends in `Extension`; it must not acquire a provider requirement from that name.
+
 ## Mutable URI and root services
 
 Three shared cases showed URI changes disappearing between target frames and construction branches. Ordinary frames now share their construction scope's URI state, including explicit null; deferred scopes retain independent state. Three further cases compare built and populated roots with external root services and nested constructor arguments. Explicit root activation prevents an external object or an argument object from becoming the constructed document's root. Existing deferred tests continue to check retained outer roots and parents.

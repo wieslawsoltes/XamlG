@@ -49,7 +49,20 @@ public sealed class RuntimeServiceContractTests
         var root = (Border)fixture.Build("Root.axaml", new FrameworkOuterRoot());
         Assert.Same(root, root.Tag);
     }
+
+    [AvaloniaFact]
+    public void CodeBehindClassNamesDoNotImplicitlyRequireMarkupProviders()
+    {
+        var xaml = "<Border " + Ns + " x:Class='XamlG.Avalonia.Tests.PlainComponentExtension' Tag='value'/>";
+        var baseline = AvaloniaUpstreamCompilation.Compile(xaml, rootInstance: new PlainComponentExtension());
+        Assert.Null(baseline.Error);
+        Assert.Equal("value", Assert.IsType<PlainComponentExtension>(baseline.Root).Tag);
+        var fixture = new ResourceProjectFixture(new[] { ("Component.axaml", xaml) });
+        Assert.Equal("value", Assert.IsType<PlainComponentExtension>(fixture.Build("Component.axaml")).Tag);
+    }
 }
+
+public sealed class PlainComponentExtension : Border { }
 
 public sealed class DescriptorProtocolProbe
 {

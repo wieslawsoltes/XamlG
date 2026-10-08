@@ -17,7 +17,8 @@ public sealed class ObjectBinder
         var scope = parentScope.Push(syntax);
         var type = overrideType ?? _context.ResolveType(syntax.Name, scope, syntax.NameSpan, scope.Directive(syntax, "TypeArguments")?.Value);
         if (type == null) return null;
-        if (_context.Types.Configuration.MarkupExtensionSuffix is { Length: > 0 } suffix && type.Name.EndsWith(suffix, StringComparison.Ordinal) &&
+        if (!(isRoot && _context.RootClass != null) &&
+            _context.Types.Configuration.MarkupExtensionSuffix is { Length: > 0 } suffix && type.Name.EndsWith(suffix, StringComparison.Ordinal) &&
             _context.Types.MarkupExtensionMethod(type) == null)
         { _context.Report("XG1009", $"'{type}' was resolved as a markup extension but has no supported provider method.", syntax.NameSpan); return null; }
         if (type.IsAbstract && !isRoot) { _context.Report("XG1006", $"Cannot instantiate abstract type '{type}'.", syntax.NameSpan); return null; }
