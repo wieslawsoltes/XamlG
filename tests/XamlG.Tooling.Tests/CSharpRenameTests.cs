@@ -61,4 +61,56 @@ public sealed class CSharpRenameTests
         Assert.Throws<ArgumentException>(() => service.Rename("Code.cs", position, "a.b"));
         Assert.Throws<ArgumentException>(() => service.Rename("Code.cs", position, "@@class"));
     }
+
+    [Fact]
+    public void Generic_interface_override_and_explicit_implementation_contracts_follow_one_rename()
+    {
+        const string contracts = "public interface IState<T> { T Read(T value); } public abstract class Base<T> : IState<T> { public abstract T Read(T value); }";
+        const string implementations = "public class State : Base<int> { public override int Read(int value) => value; } public class Explicit : IState<int> { int IState<int>.Read(int value) => value; }";
+        const string uses = "class Use { int Get(IState<int> contract, State concrete) => contract.Read(1) + concrete.Read(2); }";
+        var plan = Service(("Contracts.cs", contracts), ("State.cs", implementations), ("Use.cs", uses))
+            .Rename("State.cs", implementations.IndexOf("Read", StringComparison.Ordinal), "Evaluate");
+        Assert.Equal(3, plan.Documents.Length);
+        Assert.Equal(6, plan.Documents.Sum(document => document.Changes.Length));
+        Assert.All(plan.Documents.SelectMany(document => document.Changes), change => Assert.Equal("Evaluate", change.NewText));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Record_parameter_and_property_rename_updates_construction_with_and_deconstruction(bool parameter)
+    {
+        const string record = "public record State(int Value, string Label);";
+        const string use = "class Use { int Read(State state) { var (value, label) = state; return state.Value + (state with { Value = 2 }).Value + new State(Value: 3, Label: label).Value; } }";
+        var plan = Service(("State.cs", record), ("Use.cs", use)).Rename(parameter ? "State.cs" : "Use.cs",
+            parameter ? record.IndexOf("Value", StringComparison.Ordinal) : use.IndexOf("Value", StringComparison.Ordinal), "Number");
+        Assert.Equal(2, plan.Documents.Length);
+        Assert.Single(plan.Documents.Single(document => document.Path == "State.cs").Changes);
+        Assert.Equal(5, plan.Documents.Single(document => document.Path == "Use.cs").Changes.Length);
+        Assert.All(plan.Documents.SelectMany(document => document.Changes), change => Assert.Equal("Number", change.NewText));
+    }
+
+    [Fact]
+    public void Alias_rename_does_not_change_the_aliased_type()
+    {
+        const string code = "using Alias = Model.State; namespace Model { public class State { } } class Use { Alias Read() => new Alias(); }";
+        var plan = Service(("Code.cs", code)).Rename("Code.cs", code.IndexOf("Alias", StringComparison.Ordinal), "ViewModel");
+        var edits = Assert.Single(plan.Documents).Changes;
+        Assert.Equal(3, edits.Length);
+        Assert.All(edits, change => Assert.Equal("Alias", code.Substring(change.Span.Start, change.Span.Length)));
+    }
+
+    [Fact]
+    public void Metadata_contract_rename_is_rejected_instead_of_breaking_implementation()
+    {
+        const string code = "public class Resource : System.IDisposable { public void Dispose() {} }";
+        Assert.Throws<InvalidOperationException>(() => Service(("Code.cs", code)).Rename("Code.cs", code.IndexOf("Dispose()", StringComparison.Ordinal), "Close"));
+    }
+
+    [Fact]
+    public void Type_parameter_rename_must_not_capture_an_outer_parameter_with_the_same_ordinal()
+    {
+        const string code = "class Outer<U> { public class Inner<T> { public U Read() => default; } }";
+        Assert.Throws<InvalidOperationException>(() => Service(("Code.cs", code)).Rename("Code.cs", code.IndexOf("<T>", StringComparison.Ordinal) + 1, "U"));
+    }
 }

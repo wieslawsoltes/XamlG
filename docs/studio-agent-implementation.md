@@ -203,10 +203,42 @@ survive pane reopening within this page; they are not saved in browser storage.
 
 ## Local evidence and remaining work
 
-The implementation-first pass has reached validation. The provider recovery pass
-below passes 42 focused SDK-transport tests; the other evidence in this section
-records earlier checkpoints. The latest feature additions and compiler merges
-have not yet undergone a full validation run.
+The implementation-first pass has reached validation. On 2026-10-08 the complete
+native solution and integrated Playground build with warnings treated as errors.
+The native suite passes all 1,829 tests:
+251 core, 126 Tooling, 1,275 Avalonia, 69 automation/MCP/agent, 94 language-server
+and 14 workspace tests. This includes 42 official-SDK provider transport cases.
+The expanded behavioral coverage and browser/package acceptance listed below are
+still required; passing the existing native suite does not complete those checks.
+
+The coordinated rename validation adds 30 cases covering cross-file XAML/C# edits,
+generated fields/loaders, namespaces, interface/override and record contracts,
+registered/attached properties, routed events, compiled bindings and XML entities.
+The Avalonia cases compile and execute the renamed project and verify live values
+and event delivery. Validation found and fixed source-assembly identity mapping,
+silent capture of an outer generic parameter, and source ranges for generic type
+arguments, markup names/values and compiled paths. Encoded names/values and quoted
+arguments retain complete raw XML ranges. The source-restore fixture now checks
+both stale comparison and stale workspace guards and refreshes before restoration.
+
+Remaining completion work:
+
+- Validate the newer runtime input, accessibility, retained-object/interface,
+  typed-dictionary and observer operations, including handle lifetime changes.
+- Validate designer group geometry/arrangement, layout constraints, source
+  provenance, cancellation and one-step undo in the real browser.
+- Expand acceptance for C# navigation/actions, operation/control/data-flow
+  inspection, compiler settings persistence/exports and rename preview/undo.
+- Expand agent review/compaction/recovery and MCP Tasks/resource/artifact checks,
+  including cancellation, ownership, permissions and workspace replacement.
+- Exercise deterministic ChatGPT OAuth, identity rejection, credential storage,
+  refresh/sign-out races, account-bound tools and the account workbench UI.
+- Update and run the complete browser suite, Pages-origin/base-path pairing,
+  all 21 package consumers and remaining CI scripts; fix failures and update the PR.
+
+Main remains merged through `46553c8`; fetching upstream at this checkpoint found
+no newer commits. The existing Playground contains the integration. Public Pages
+deployment remains dependent on the PR reaching main.
 
 Implemented since that checkpoint: tasks bind to the creating browser workspace
 lifetime; replacement and revocation disconnect that lifetime. A separate preparation

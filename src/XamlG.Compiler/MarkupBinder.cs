@@ -18,8 +18,10 @@ internal sealed class MarkupBinder
         var genericArguments = syntax.Arguments.FirstOrDefault(a => a.Name != null && scope.Expand(a.Name, true).LocalName == "TypeArguments" && scope.Expand(a.Name, true).Namespace is string ns && XamlNames.IsLanguage(ns));
         var typeSymbol = _context.ResolveTypeAtSource(syntax.Name, scope, syntax.NameSpan ?? syntax.Span, genericArguments?.Value, extension: true, typeArgumentSpan: genericArguments?.ValueSpan ?? genericArguments?.Span);
         if (typeSymbol == null) return null;
-        var attributes = syntax.Arguments.Where(a => a.Name != null).Select(a => new XamlAttributeSyntax(a.Name!, a.Value, a.Span, a.Span, a.Span, '"')).ToImmutableArray();
-        var positional = syntax.Arguments.Where(a => a.Name == null).Select(a => (XamlSyntaxNode)new XamlTextSyntax(a.Value, false, a.Span)).ToImmutableArray();
+        var attributes = syntax.Arguments.Where(a => a.Name != null).Select(a =>
+            new XamlAttributeSyntax(a.Name!, a.Value, a.NameSpan ?? a.Span, a.ValueSpan ?? a.Span, a.Span, '"')).ToImmutableArray();
+        var positional = syntax.Arguments.Where(a => a.Name == null).Select(a =>
+            (XamlSyntaxNode)new XamlTextSyntax(a.Value, false, a.ValueSpan ?? a.Span)).ToImmutableArray();
         var element = new XamlElementSyntax(syntax.Name, syntax.NameSpan ?? syntax.Span, syntax.Span, new(syntax.Span.End, 0), attributes,
             ImmutableArray<XamlSyntaxNode>.Empty, true, syntax.Span);
         var obj = _context.Objects.Bind(element, scope, typeSymbol, false, _context.Ancestors.Count == 0 ? 0 : _context.Ancestors.Peek().NameScopeId, positional);

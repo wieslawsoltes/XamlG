@@ -48,7 +48,8 @@ public sealed class XamlCompiler
                 }
             }
             modifier = profile.Directives.BindClassModifier(context, scope.Directive(root, "ClassModifier"));
-            var declared = context.ResolveType(root.Name, scope, root.NameSpan, scope.Directive(root, "TypeArguments")?.Value);
+            var typeArguments = scope.Directive(root, "TypeArguments");
+            var declared = context.ResolveTypeAtSource(root.Name, scope, root.NameSpan, typeArguments?.Value, typeArgumentSpan: typeArguments?.ValueSpan);
             if (declared != null)
             {
                 if (context.RootClass != null && !types.Compilation.ClassifyCommonConversion(context.RootClass, declared).IsImplicit)

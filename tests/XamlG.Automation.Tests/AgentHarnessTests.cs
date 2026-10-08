@@ -15,7 +15,7 @@ public sealed class AgentHarnessTests
             new("", [new("one", "edit", AutomationJson.Element(new Edit(0)))], new(10, 10), new object()),
             new("Done", [], new(12, 5), new object()));
         using var harness = new AgentHarness(host);
-        var task = harness.CreateTask("Repair", provider, "test-model");
+        var task = harness.CreateTask("Repair", provider, "test-model", TestContext.Current.CancellationToken);
         var options = new AgentRunOptions { Limits = new() { RequestsPerRun = 1 }, Policy = new() { Profile = PermissionProfile.AutoEdit } };
         await harness.RunAsync(task.Id, "Make the change", options, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(AgentTaskStatus.Paused, task.Status); Assert.Equal(1, writes);
@@ -35,7 +35,7 @@ public sealed class AgentHarnessTests
             new("one", "edit", AutomationJson.Element(new Edit(0))),
             new("two", "edit", AutomationJson.Element(new { wrong = 1 }))], new(1, 1), new object()));
         using var harness = new AgentHarness(Host(() => ++writes));
-        var task = harness.CreateTask("Invalid", provider, "test-model");
+        var task = harness.CreateTask("Invalid", provider, "test-model", TestContext.Current.CancellationToken);
         await Assert.ThrowsAsync<AutomationException>(() => harness.RunAsync(task.Id, "Change", new() { Policy = new() { Profile = PermissionProfile.FullAccess } }, cancellationToken: TestContext.Current.CancellationToken));
         Assert.Equal(0, writes); Assert.Equal(AgentTaskStatus.Failed, task.Status);
     }
@@ -48,7 +48,7 @@ public sealed class AgentHarnessTests
             new("one", "edit", AutomationJson.Element(new Edit(0))),
             new("two", "edit", AutomationJson.Element(new Edit(1)))], new(1, 1), new object()), new("Done", [], new(1, 1), new object()));
         using var harness = new AgentHarness(Host(() => ++writes));
-        var task = harness.CreateTask("Batch", provider, "test-model");
+        var task = harness.CreateTask("Batch", provider, "test-model", TestContext.Current.CancellationToken);
         var options = new AgentRunOptions { Limits = new() { ToolsPerRun = 1 }, Policy = new() { Profile = PermissionProfile.AutoEdit } };
         await harness.RunAsync(task.Id, "Change twice", options, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(AgentTaskStatus.Paused, task.Status); Assert.Equal(0, writes);
@@ -63,7 +63,7 @@ public sealed class AgentHarnessTests
         var writes = 0;
         var provider = new ScriptedProvider(new AgentReply("", [new("one", "edit", AutomationJson.Element(new Edit(0)))], new(1, 1), new object()));
         using var harness = new AgentHarness(Host(() => ++writes));
-        var task = harness.CreateTask("Review", provider, "test-model");
+        var task = harness.CreateTask("Review", provider, "test-model", TestContext.Current.CancellationToken);
         var reviewing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var run = harness.RunAsync(task.Id, "Change", new(), async (_, token) =>
         { reviewing.SetResult(); await Task.Delay(Timeout.Infinite, token); return AgentApproval.AllowOnce; }, cancellationToken: TestContext.Current.CancellationToken);
@@ -85,7 +85,7 @@ public sealed class AgentHarnessTests
         var provider = new ScriptedProvider(new("First", [], new(1, 1), "native-secret-one"),
             new("Second", [], new(1, 1), "native-secret-two"), new("Third", [], new(1, 1), "native-secret-three"));
         using var harness = new AgentHarness(Host(() => 0));
-        var task = harness.CreateTask("Checkpoint", provider, "test-model");
+        var task = harness.CreateTask("Checkpoint", provider, "test-model", TestContext.Current.CancellationToken);
         await harness.RunAsync(task.Id, "Keep keyboard navigation", new(), cancellationToken: TestContext.Current.CancellationToken);
         await harness.RunAsync(task.Id, "Preserve the dark theme", new(), cancellationToken: TestContext.Current.CancellationToken);
         harness.Compact(task.Id);
@@ -107,7 +107,7 @@ public sealed class AgentHarnessTests
         var provider = new WaitingProvider(entered, release);
         using var harness = new AgentHarness(Host(() => 0));
         harness.EventPublished += _ => throw new InvalidOperationException("A broken UI observer");
-        var task = harness.CreateTask("Follow-up", provider, "test-model");
+        var task = harness.CreateTask("Follow-up", provider, "test-model", TestContext.Current.CancellationToken);
         var run = harness.RunAsync(task.Id, "First requirement", new(), cancellationToken: TestContext.Current.CancellationToken);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         harness.QueueMessage(task.Id, "Second requirement");
@@ -126,7 +126,7 @@ public sealed class AgentHarnessTests
     public async Task Stale_queue_reviews_and_invalid_run_preflight_preserve_queued_messages_and_history()
     {
         var provider = new ScriptedProvider(new AgentReply("Done", [], new(1, 1), new object()));
-        using var harness = new AgentHarness(Host(() => 0)); var task = harness.CreateTask("Queue", provider, "test-model");
+        using var harness = new AgentHarness(Host(() => 0)); var task = harness.CreateTask("Queue", provider, "test-model", TestContext.Current.CancellationToken);
         task.Draft = "Unrelated draft";
         harness.QueueMessage(task.Id, "Original queued request"); var before = task.Queue;
         harness.EditQueuedMessage(task.Id, before.Messages[0].Id, "Reviewed replacement", before.Revision);
@@ -144,7 +144,7 @@ public sealed class AgentHarnessTests
     [Fact]
     public void Queue_edits_are_atomic_bounded_and_can_select_any_message()
     {
-        using var harness = new AgentHarness(Host(() => 0)); var task = harness.CreateTask("Queue", new ScriptedProvider(), "test-model");
+        using var harness = new AgentHarness(Host(() => 0)); var task = harness.CreateTask("Queue", new ScriptedProvider(), "test-model", TestContext.Current.CancellationToken);
         harness.QueueMessage(task.Id, new string('a', 100000)); harness.QueueMessage(task.Id, new string('b', 100000));
         var queue = task.Queue;
         Assert.Throws<InvalidOperationException>(() => harness.QueueMessage(task.Id, "overflow"));
@@ -163,7 +163,7 @@ public sealed class AgentHarnessTests
     {
         var provider = new ScriptedProvider(new("", [new("one", "edit", AutomationJson.Element(new Edit(0)))], new(1, 1), new object()),
             new("Done", [], new(1, 1), new object()), new("Follow-up done", [], new(1, 1), new object()));
-        using var harness = new AgentHarness(Host(() => 1)); var task = harness.CreateTask("Paused", provider, "test-model");
+        using var harness = new AgentHarness(Host(() => 1)); var task = harness.CreateTask("Paused", provider, "test-model", TestContext.Current.CancellationToken);
         var options = new AgentRunOptions { Limits = new() { RequestsPerRun = 1 }, Policy = new() { Profile = PermissionProfile.AutoEdit } };
         await harness.RunAsync(task.Id, "Initial turn", options, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(AgentTaskStatus.Paused, task.Status);
@@ -183,14 +183,16 @@ public sealed class AgentHarnessTests
         var workspace = new MemoryWorkspace();
         var provider = new ScriptedProvider(new("", [new("one", "edit", AutomationJson.Element(new Edit(0)))], new(1, 1), new object()), new("Done", [], new(1, 1), new object()));
         using var harness = new AgentHarness(Host(() => { workspace.Text = "agent edit"; return ++workspace.Revision; }), workspace);
-        var task = harness.CreateTask("Changes", provider, "test-model");
+        var task = harness.CreateTask("Changes", provider, "test-model", TestContext.Current.CancellationToken);
         await harness.RunAsync(task.Id, "Change", new() { Policy = new() { Profile = PermissionProfile.AutoEdit } }, cancellationToken: TestContext.Current.CancellationToken);
         var change = Assert.Single(task.Changes!.Files);
         Assert.Equal("before", change.Before); Assert.Equal("agent edit", change.After);
         workspace.Text = "user edit"; workspace.Revision++;
-        await Assert.ThrowsAsync<AutomationException>(() => harness.RestoreChangesAsync(task.Id, ["View.axaml"], workspace.Revision, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.RestoreChangesAsync(task.Id, ["View.axaml"], workspace.Revision, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<AutomationException>(() => harness.RestoreChangesAsync(task.Id, ["View.axaml"], task.Changes!.Revision, TestContext.Current.CancellationToken));
         Assert.Equal("user edit", workspace.Text);
         workspace.Text = "agent edit"; workspace.Revision++;
+        await harness.RefreshChangesAsync(task.Id, cancellationToken: TestContext.Current.CancellationToken);
         var restored = await harness.RestoreChangesAsync(task.Id, ["View.axaml"], workspace.Revision, TestContext.Current.CancellationToken);
         Assert.Empty(restored.Files); Assert.Equal("before", workspace.Text);
     }

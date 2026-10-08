@@ -29,7 +29,7 @@ public sealed class ProviderContinuationTests
         catalog.Add<EditArguments, object>("edit", "Edit source", AutomationScope.Source, AutomationEffect.Edit,
             (args, _) => { writes++; return ValueTask.FromResult<object>(new { text = args.Text, revision = writes }); });
         using var harness = new AgentHarness(catalog);
-        var task = harness.CreateTask("provider continuation", provider, "fixture-model");
+        var task = harness.CreateTask("provider continuation", provider, "fixture-model", TestContext.Current.CancellationToken);
         var deltas = new StringBuilder();
         harness.EventPublished += item => { if (item.Kind == "text_delta") deltas.Append(item.Text); };
         await harness.RunAsync(task.Id, "Edit and verify", new() { Policy = new() { Profile = PermissionProfile.AutoEdit } }, cancellationToken: TestContext.Current.CancellationToken);
@@ -83,7 +83,7 @@ public sealed class ProviderContinuationTests
         catalog.Add<EditArguments, object>("edit", "Edit source", AutomationScope.Source, AutomationEffect.Edit,
             (_, _) => { writes++; return ValueTask.FromResult<object>(new { changed = true }); });
         using var harness = new AgentHarness(catalog);
-        var task = harness.CreateTask("incomplete response", provider, "fixture-model");
+        var task = harness.CreateTask("incomplete response", provider, "fixture-model", TestContext.Current.CancellationToken);
         var options = new AgentRunOptions { Policy = new() { Profile = PermissionProfile.FullAccess }, Limits = new() { AutomaticRetries = 0 } };
         if (expected == AgentTaskStatus.Failed)
             await Assert.ThrowsAsync<AgentProviderException>(() => harness.RunAsync(task.Id, "Edit", options, cancellationToken: TestContext.Current.CancellationToken));

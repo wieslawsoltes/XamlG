@@ -27,7 +27,7 @@ internal sealed class CSharpRenameVerification(CSharpCompilation original, CShar
     }
     private ISymbol? MapCore(ISymbol symbol)
     {
-        if (symbol is IAssemblySymbol) return candidate.Assembly;
+        if (symbol is IAssemblySymbol assembly) return assembly.Identity.Equals(original.Assembly.Identity) ? candidate.Assembly : assembly;
         if (symbol is IMethodSymbol { AssociatedSymbol: { } associated } accessor)
             return Map(associated) switch
             {
@@ -67,7 +67,10 @@ internal sealed class CSharpRenameVerification(CSharpCompilation original, CShar
             };
         // External definitions retain their assembly identity. Constructed member identities
         // are compared by their original definitions, as in Roslyn's reference navigation.
-        if (symbol.ContainingAssembly != null && !SymbolEqualityComparer.Default.Equals(symbol.ContainingAssembly, original.Assembly)) return symbol;
+        // XAML binds against the source compilation before generated trees are added.
+        // Its implicit members have no editable declaration token, but still belong to
+        // this source assembly even though their Roslyn assembly instance is different.
+        if (symbol.ContainingAssembly != null && !symbol.ContainingAssembly.Identity.Equals(original.Assembly.Identity)) return symbol;
         if (symbol is INamedTypeSymbol named)
         {
             var parent = named.ContainingType == null ? Map(named.ContainingNamespace) : Map(named.ContainingType);
@@ -105,7 +108,8 @@ internal sealed class CSharpRenameVerification(CSharpCompilation original, CShar
     {
         if (before.TypeKind != after.TypeKind || before.NullableAnnotation != after.NullableAnnotation) return false;
         if (before is ITypeParameterSymbol leftParameter && after is ITypeParameterSymbol rightParameter)
-            return leftParameter.TypeParameterKind == rightParameter.TypeParameterKind && leftParameter.Ordinal == rightParameter.Ordinal;
+            return leftParameter.TypeParameterKind == rightParameter.TypeParameterKind && leftParameter.Ordinal == rightParameter.Ordinal &&
+                MatchesDeclaration(leftParameter.ContainingSymbol, rightParameter.ContainingSymbol);
         if (before is IArrayTypeSymbol leftArray && after is IArrayTypeSymbol rightArray) return leftArray.Rank == rightArray.Rank && Type(leftArray.ElementType, rightArray.ElementType);
         if (before is IPointerTypeSymbol leftPointer && after is IPointerTypeSymbol rightPointer) return Type(leftPointer.PointedAtType, rightPointer.PointedAtType);
         if (before is INamedTypeSymbol left && after is INamedTypeSymbol right)

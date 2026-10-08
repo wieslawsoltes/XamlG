@@ -29,7 +29,7 @@ public sealed class OpenAIProviderTests
         catalog.Add<EditArguments, object>("edit", "Edit source", AutomationScope.Source, AutomationEffect.Edit,
             (args, _) => { writes++; return ValueTask.FromResult<object>(new { revision = 1, text = args.Text }); });
         using var harness = new AgentHarness(catalog);
-        var task = harness.CreateTask("SDK test", provider, "test-model");
+        var task = harness.CreateTask("SDK test", provider, "test-model", TestContext.Current.CancellationToken);
         await harness.RunAsync(task.Id, "Update the source", new() { Policy = new() { Profile = PermissionProfile.AutoEdit } }, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(AgentTaskStatus.Completed, task.Status); Assert.Equal(1, writes);
         Assert.Equal(2, handler.Requests.Count);

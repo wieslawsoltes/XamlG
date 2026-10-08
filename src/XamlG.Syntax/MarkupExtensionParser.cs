@@ -19,6 +19,7 @@ public static class MarkupExtensionParser
             Arguments = parsed.Arguments.Select(argument => argument with
             {
                 Span = map.ToSource(argument.Span),
+                NameSpan = argument.NameSpan is { } argumentName ? map.ToSource(argumentName) : null,
                 ValueSpan = argument.ValueSpan is { } value ? map.ToSource(value) : null
             }).ToImmutableArray()
         };
@@ -75,7 +76,11 @@ public static class MarkupExtensionParser
             { value = Unquote(value); valueStart++; valueEnd--; }
             if (key != null) { sawNamed = true; if (key.Length == 0 || !names.Add(key)) report(new("XG0010", "A named markup argument is empty or duplicated.", argumentSpan)); }
             else if (sawNamed) report(new("XG0010", "Positional arguments must precede named arguments.", argumentSpan));
-            if (value.Length != 0 || key != null) arguments.Add(new(key, value, argumentSpan) { ValueSpan = TextSpan.FromBounds(span.Start + valueStart, span.Start + valueEnd) });
+            if (value.Length != 0 || key != null) arguments.Add(new(key, value, argumentSpan)
+            {
+                NameSpan = key == null ? null : new(span.Start + start, key.Length),
+                ValueSpan = TextSpan.FromBounds(span.Start + valueStart, span.Start + valueEnd)
+            });
             if (position < end && text[position] == ',') position++;
         }
         return new(name, arguments.ToImmutable(), span) { NameSpan = new(span.Start + nameStart, name.Length) };

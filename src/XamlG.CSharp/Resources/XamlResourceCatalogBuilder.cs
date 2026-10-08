@@ -28,7 +28,8 @@ public static class XamlResourceCatalogBuilder
             try { uri = Address(input, types, profile); }
             catch (ArgumentException) { continue; }
             var context = new BindingContext(input.Syntax, types, profile, options, cancellationToken);
-            var type = context.ResolveType(root.Name, scope, root.NameSpan, scope.Directive(root, "TypeArguments")?.Value, report: false);
+            var typeArguments = scope.Directive(root, "TypeArguments");
+            var type = context.ResolveTypeAtSource(root.Name, scope, root.NameSpan, typeArguments?.Value, report: false, typeArgumentSpan: typeArguments?.ValueSpan);
             if (type != null)
             {
                 var localClass = classType != null && XamlClassAugmentation.IsAvailable(classType, cancellationToken) ? classType : null;
