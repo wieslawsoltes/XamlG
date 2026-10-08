@@ -5,11 +5,13 @@ namespace XamlG.Tests;
 
 public sealed class SourceInfoTableTests
 {
-    [Fact]
-    public void RecordsPreserveMetadataAndCacheImmutableValuesAcrossThreads()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RecordsPreserveMetadataAndCacheImmutableValuesAcrossThreads(bool encoded)
     {
         var records = new[] { "12:30:6:名:😀\n:4:hash2:4:Text5:a:b:c0:0:", "0:0:-1:0:0:" };
-        var table = new XamlSourceInfoTable("😀:View.xaml", 42, records);
+        var table = encoded ? XamlSourceInfoTable.FromEncoded("😀:View.xaml", 42, Encode(records)) : new XamlSourceInfoTable("😀:View.xaml", 42, records);
         records[0] = "mutated";
         var values = new XamlSourceInfo[64];
         Parallel.For(0, values.Length, i => values[i] = table[0]);
@@ -37,8 +39,37 @@ public sealed class SourceInfoTableTests
     [InlineData("0:0:-1:0:0:trailing")]
     public void MalformedRecordsFailOnlyWhenAccessed(string record)
     {
-        var table = new XamlSourceInfoTable("View.xaml", 0, new[] { "0:0:-1:0:0:", record });
-        Assert.NotNull(table[0]);
-        Assert.Throws<FormatException>(() => table[1]);
+        var records = new[] { "0:0:-1:0:0:", record };
+        foreach (var table in new[] { new XamlSourceInfoTable("View.xaml", 0, records), XamlSourceInfoTable.FromEncoded("View.xaml", 0, Encode(records)) })
+        {
+            Assert.NotNull(table[0]);
+            Assert.Throws<FormatException>(() => table[1]);
+        }
     }
+
+    [Theory]
+    [InlineData("x")]
+    [InlineData(":")]
+    [InlineData("-1:")]
+    [InlineData("+1:x")]
+    [InlineData(" 1:x")]
+    [InlineData("2:x")]
+    [InlineData("2147483648:")]
+    [InlineData("0:trailing")]
+    public void MalformedRecordBoundariesAreRejected(string records) =>
+        Assert.Throws<FormatException>(() => XamlSourceInfoTable.FromEncoded("View.xaml", 0, records));
+
+    [Fact]
+    public void DecodingCannotReadPastItsOwnRecordBoundary()
+    {
+        var table = XamlSourceInfoTable.FromEncoded("View.xaml", 0, Encode(new[] { "0:", "0:0:-1:0:0:" }));
+        Assert.Throws<FormatException>(() => table[0]);
+        Assert.NotNull(table[1]);
+        Assert.Throws<IndexOutOfRangeException>(() => table[-1]);
+        Assert.Throws<IndexOutOfRangeException>(() => table[2]);
+        Assert.Throws<IndexOutOfRangeException>(() => XamlSourceInfoTable.FromEncoded("View.xaml", 0, "")[0]);
+    }
+
+    private static string Encode(string[] records) => string.Concat(records.Select(record =>
+        record.Length.ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + record));
 }

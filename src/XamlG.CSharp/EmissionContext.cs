@@ -110,11 +110,12 @@ internal sealed class EmissionContext : IDisposable
         }
         if (_sourceRecords.Count != 0)
         {
-            Writer.Line("private static readonly global::XamlG.Runtime.XamlSourceInfoTable __source_" + Id + " = new(" +
-                CSharpNames.Literal(Document.Syntax.Path) + ", " + Document.Syntax.Version.ToString(System.Globalization.CultureInfo.InvariantCulture) + "L, new string[]");
-            Writer.Open("");
-            foreach (var pair in _sourceRecords.OrderBy(pair => pair.Value)) Writer.Line(CSharpNames.Literal(pair.Key) + ",");
-            Writer.Close(");");
+            var records = new System.Text.StringBuilder();
+            foreach (var pair in _sourceRecords.OrderBy(pair => pair.Value))
+                records.Append(pair.Key.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(':').Append(pair.Key);
+            Writer.Line("private static readonly global::XamlG.Runtime.XamlSourceInfoTable __source_" + Id +
+                " = global::XamlG.Runtime.XamlSourceInfoTable.FromEncoded(" + CSharpNames.Literal(Document.Syntax.Path) + ", " +
+                Document.Syntax.Version.ToString(System.Globalization.CultureInfo.InvariantCulture) + "L, " + CSharpNames.Literal(records.ToString()) + ");");
         }
         foreach (var pair in _descriptors)
         {
