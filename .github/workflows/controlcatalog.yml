@@ -33,7 +33,7 @@ jobs:
         run: |
           python3 scripts/prepare-controlcatalog.py
           dotnet workload install wasm-tools --skip-manifest-update
-          npm install --prefix tools/XamlG.Playground --ignore-scripts --no-audit --no-fund
+          npm install --prefix tools/XamlG.Playground --ignore-scripts --no-audit --no-fund --package-lock=false
           npx --prefix tools/XamlG.Playground playwright install --with-deps chromium
           mkdir -p artifacts/controlcatalog-validation
           git rev-parse HEAD > artifacts/controlcatalog-validation/commit.txt
@@ -64,6 +64,7 @@ jobs:
           trap 'kill "$server_pid"' EXIT
           node scripts/test-controlcatalog-browser.mjs http://127.0.0.1:8943 2>&1 | tee artifacts/controlcatalog-validation/browser-run.log
       - name: Compare catalog and theme compilation against XamlX
+        if: ${{ !cancelled() }}
         working-directory: ${{ env.CATALOG_WORKTREE }}
         run: |
           set -o pipefail
