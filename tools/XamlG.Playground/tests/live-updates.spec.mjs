@@ -31,6 +31,9 @@ test('automatic compile and preview default on, debounce source edits and retain
   await expect(page.getByLabel('Auto compile', { exact: true })).toBeChecked();
   await expect(page.getByLabel('Auto preview', { exact: true })).toBeChecked();
   await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: 'Coding agent', exact: true }).click();
+  const agentTab = page.locator('[data-tab-id="agent"]');
+  await expect(agentTab).toHaveAttribute('aria-selected', 'true');
   await page.evaluate(text => {
     const model = monaco.editor.getModels().find(model => model.getLanguageId() === 'xml');
     const editor = monaco.editor.getEditors().find(editor => editor.getModel() === model);
@@ -41,6 +44,7 @@ test('automatic compile and preview default on, debounce source edits and retain
   await expect(page.locator('.statusbar')).toContainText('Source changed');
   await updated(page);
   expect(await textInPreview(page)).toBe('Final edit');
+  await expect(agentTab).toHaveAttribute('aria-selected', 'true');
   expect(await page.evaluate(() => monaco.editor.getEditors().some(editor => editor.hasTextFocus()))).toBe(true);
   await edit(page, 'View.axaml', `<TextBlock ${ns} UnknownMember="invalid" />`);
   await expect(page.locator('.statusbar')).toContainText('Compilation has errors');
@@ -93,8 +97,12 @@ test('automatic C# edits report errors and refresh in the selected isolated prev
   await expect(page.locator('.statusbar')).toContainText('Compilation has errors');
   const iframe = page.locator('iframe[title="XamlG isolated preview"]');
   await expect(iframe).toBeVisible();
+  await page.getByRole('button', { name: 'Coding agent', exact: true }).click();
   await edit(page, 'Code.cs', 'public class Repaired { public const int Value = 42; }');
   await expect(page.locator('.statusbar')).toContainText('isolated preview updated automatically');
+  await expect(page.locator('[data-tab-id="agent"]')).toHaveAttribute('aria-selected', 'true');
+  await page.locator('[data-tab-id="preview"]').click();
+  await expect(iframe).toBeVisible();
   await expect(iframe).toHaveAttribute('sandbox', 'allow-scripts');
   await expect(page.locator('#avalonia-preview')).not.toBeVisible();
 });

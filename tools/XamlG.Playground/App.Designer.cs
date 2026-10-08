@@ -122,9 +122,9 @@ public partial class App
         var analysis = Compiler.Analyze(XamlSyntaxTree.Parse(documents["View.axaml"], "View.axaml"), documents["Code.cs"], resourceDocuments: resources, settings: ParseCompilerSettings(documents[CompilerSettingsPath]));
         if (!analysis.Success) throw new InvalidOperationException(string.Join("; ", analysis.Diagnostics.Where(diagnostic => diagnostic.Severity == "Error").Select(diagnostic => diagnostic.Message)));
     }
-    private async Task<AvaloniaVisualNode> ShowTrustedCompilationAsync(BrowserCompilation result)
+    private async Task<AvaloniaVisualNode> ShowTrustedCompilationAsync(BrowserCompilation result, bool activatePane = true)
     {
-        await ShowPaneAsync("preview", focus: false);
+        if (activatePane) await ShowPaneAsync("preview", focus: false);
         if (!IsCompilationCurrent(result))
             throw new InvalidOperationException("Source changed after compilation. Run the current source again.");
         var revision = SourceRevision;

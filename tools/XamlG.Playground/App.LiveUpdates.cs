@@ -85,10 +85,12 @@ public partial class App
         _busy = true;
         try
         {
-            if (_isolationVisible) await ShowIsolatedCompilationAsync();
+            // The preview remains mounted while another tool is selected. A
+            // background update must preserve that selection and editor focus.
+            if (_isolationVisible) await ShowIsolatedCompilationAsync(activatePane: false);
             else
             {
-                _visualTree = await ShowTrustedCompilationAsync(_result);
+                _visualTree = await ShowTrustedCompilationAsync(_result, activatePane: false);
                 _previewShown = true;
                 _automation.NotifyResourceChanged("xamlg://runtime");
             }

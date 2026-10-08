@@ -27,9 +27,9 @@ public partial class App
         catch (Exception) when (generation != _isolationGeneration) { /* Reset owns the new UI state. */ }
         finally { if (generation == _isolationGeneration) _busy = false; }
     }
-    private async Task ShowIsolatedCompilationAsync()
+    private async Task ShowIsolatedCompilationAsync(bool activatePane = true)
     {
-        await ShowPaneAsync("preview", focus: false);
+        if (activatePane) await ShowPaneAsync("preview", focus: false);
         if (_result?.Success != true || _isolatedPreview == null) throw new InvalidOperationException("No valid isolated compilation is available.");
         if (!IsCompilationCurrent(_result)) throw new InvalidOperationException("The isolated compilation was superseded by project changes. Compile again before running.");
         BrowserCompilerService.EnsureBrowserRunnable(_result);

@@ -10,7 +10,8 @@ export const test = base.extend({
   liveUpdates: [false, { option: true }],
   context: async ({ context, baseURL, liveUpdates }, use) => {
     if (!liveUpdates) await context.addInitScript(() => {
-      localStorage.setItem('xamlg.live-updates', JSON.stringify({ compile: false, preview: false }));
+      // Init scripts also run in about:blank and opaque sandbox documents.
+      try { localStorage.setItem('xamlg.live-updates', JSON.stringify({ compile: false, preview: false })); } catch { }
     });
     const origin = new URL(baseURL).origin;
     if (process.env.XAMLG_TEST_MCP_URL && origin.startsWith('https:'))
