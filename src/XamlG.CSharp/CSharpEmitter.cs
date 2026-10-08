@@ -52,6 +52,10 @@ public sealed class CSharpEmitter
             }
         }
         var flow = new ObjectEmitter(context);
+        // Classless resources expose both Build and Populate. Share their graph body so
+        // Roslyn only binds, analyzes and compiles each template and property assignment once.
+        var sharePopulation = !classFactory && build != null && root.Type.IsReferenceType;
+        var populateCore = "__XamlGPopulateCore_" + context.Id;
         if (augment && document.Options.GenerateNamedFields)
             foreach (var field in context.NamedFields)
                 if (!document.ClassSymbol!.GetMembers(field.Name).Any())
@@ -66,7 +70,8 @@ public sealed class CSharpEmitter
             writer.Open("public static " + root.Type.CSharpName() + " Build(" + CSharpNames.Provider + "? __services = null)");
             flow.EmitContext("__context", "__services", "null");
             writer.Open("try");
-            var value = flow.Emit(root, "__context", null, null);
+            var value = sharePopulation ? flow.ConstructRoot(root, "__context") : flow.Emit(root, "__context", null, null);
+            if (sharePopulation) writer.Line(populateCore + "(" + value + ", __context);");
             flow.Complete("__context", value);
             writer.Line("return " + value + ";");
             writer.Close(); ConstructionFailureEmitter.Emit(context, "__context"); writer.Close();
@@ -75,9 +80,16 @@ public sealed class CSharpEmitter
         if (root.Type.IsReferenceType) writer.Line("if (__root is null) throw new global::System.ArgumentNullException(nameof(__root));");
         flow.EmitContext("__context", "__services", "__root");
         writer.Open("try");
-        flow.Emit(root, "__context", "__root", null);
+        if (sharePopulation) writer.Line(populateCore + "(__root, __context);");
+        else flow.Emit(root, "__context", "__root", null);
         flow.Complete("__context", "__root");
         writer.Close(); ConstructionFailureEmitter.Emit(context, "__context"); writer.Close();
+        if (sharePopulation)
+        {
+            writer.Open("private static void " + populateCore + "(" + root.Type.CSharpName() + " __root, " + CSharpNames.Context + " __context)");
+            flow.Emit(root, "__context", "__root", null);
+            writer.Close();
+        }
         if (document.ClassSymbol != null && document.Options.GenerateInitializeComponent)
             ComponentInitializationEmitter.Emit(context, populate);
         flow.EmitNamespaceMaps();

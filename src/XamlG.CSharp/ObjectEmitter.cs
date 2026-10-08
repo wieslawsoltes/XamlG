@@ -21,6 +21,22 @@ internal sealed class ObjectEmitter
     public void RegisterName(string frame, string nameExpression, string value) => _runtime.RegisterName(frame, nameExpression, value);
     public void Complete(string frame, string root) => _runtime.Complete(frame, root);
     public void EmitNamespaceMaps() => _namespaces.Emit();
+    public string ConstructRoot(BoundObject value, string parentContext) =>
+        Construct(value, _runtime.Scope(parentContext, value.Scope), _context.RootVariable);
+
+    private string Construct(BoundObject value, string parentContext, string variable)
+    {
+        var arguments = value.Arguments.IsDefaultOrEmpty ? Array.Empty<string>() :
+            _values.EmitArguments(value.FactoryMethod ?? value.Constructor!, value.Arguments, parentContext);
+        var creation = value.FactoryMethod != null
+            ? value.FactoryMethod.ContainingType.CSharpName() + "." + CSharpNames.Method(value.FactoryMethod) + "(" + string.Join(", ", arguments) + ")"
+            : "new " + value.Type.CSharpName() + "(" + string.Join(", ", arguments) + ")";
+        _context.Writer.Line("var " + variable + " = " + creation + ";");
+        _context.Writer.Line(parentContext + ".Session.TrackConstruction(" + variable + ");");
+        _source.EmitConstructed(value, variable);
+        return variable;
+    }
+
     public void EmitDeferredContext(string variable, string parent, string incoming, bool functionPointer)
     {
         if (functionPointer) _runtime.Create(variable, incoming, "null", deferred: true);
@@ -36,16 +52,7 @@ internal sealed class ObjectEmitter
         parentContext = _runtime.Scope(parentContext, value.Scope);
         var variable = existing ?? (value.IsRoot ? _context.RootVariable : _context.Temporary("object"));
         if (existing == null)
-        {
-            var arguments = value.Arguments.IsDefaultOrEmpty ? Array.Empty<string>() :
-                _values.EmitArguments(value.FactoryMethod ?? value.Constructor!, value.Arguments, parentContext);
-            var creation = value.FactoryMethod != null
-                ? value.FactoryMethod.ContainingType.CSharpName() + "." + CSharpNames.Method(value.FactoryMethod) + "(" + string.Join(", ", arguments) + ")"
-                : "new " + value.Type.CSharpName() + "(" + string.Join(", ", arguments) + ")";
-            writer.Line("var " + variable + " = " + creation + ";");
-            writer.Line(parentContext + ".Session.TrackConstruction(" + variable + ");");
-            _source.EmitConstructed(value, variable);
-        }
+            Construct(value, parentContext, variable);
         var frame = _context.Temporary("context");
         writer.Line("var " + frame + " = " + parentContext + (value.IsRoot ? ".PushRoot(" : ".Push(") + variable + ", " + CSharpNames.Literal(value.Key) + ");");
         _source.Emit(value, frame);

@@ -88,6 +88,38 @@ public sealed class EmissionTests
         using var code = CompiledXaml.Create("<Factory " + Namespaces + " x:FactoryMethod='Create'><x:Arguments><x:Int32>31</x:Int32></x:Arguments></Factory>", Model); Assert.Equal(31, Property(code.Build(), "Value"));
     }
     [Fact]
+    public void BuildAndPopulatePreserveConstructionAndDeferredRootOwnership()
+    {
+        const string extra = """
+            namespace Fixture {
+              public static class Arguments { public static int Reads; public static int Next => ++Reads; }
+              public class SeededPanel : Panel { public SeededPanel(int seed) { Seed=seed; } public int Seed {get;} }
+            }
+            """;
+        using var code = CompiledXaml.Create("<SeededPanel " + Namespaces + " Title='before' Value='{Root}'>" +
+            "<x:Arguments><x:Static Member='Arguments.Next'/></x:Arguments>" +
+            "<Template><Panel Value='{Root}'/></Template></SeededPanel>", Model + extra);
+        var built = code.Build();
+        var existing = Activator.CreateInstance(code.Assembly.GetType("Fixture.SeededPanel")!, new object[] { 99 })!;
+        code.Assembly.GetType(code.Emission.FactoryMetadataName)!.GetMethod(code.Emission.PopulateMethodName)!
+            .Invoke(null, new object?[] { existing, null });
+        Assert.Equal(1, code.Assembly.GetType("Fixture.Arguments")!.GetField("Reads")!.GetValue(null));
+        Assert.Equal(1, Property(built, "Seed"));
+        Assert.Equal(99, Property(existing, "Seed"));
+        foreach (var root in new[] { built, existing })
+        {
+            Assert.Same(root, Property(root, "Value"));
+            var template = ((IList)Property(root, "Children")!)[0]!;
+            var factory = (Delegate)Property(template, "Content")!;
+            Assert.Same(root, Property(factory.DynamicInvoke(new object?[] { null })!, "Value"));
+            Assert.True(XamlRuntimeSession.TryGet(root, out var session));
+            var node = session!.FindNode(root)!;
+            Assert.NotNull(node.Source);
+            Assert.True(session.Apply(0, new[] { new XamlPropertyUpdate(node.Key, "Title", "after") }).Applied);
+            Assert.Equal("after", Property(root, "Title"));
+        }
+    }
+    [Fact]
     public void GeneratedPropertySettersSupportLiveTransactions()
     {
         using var code = CompiledXaml.Create("<Panel " + Namespaces + " Title='before'/>", Model); var root = code.Build();
