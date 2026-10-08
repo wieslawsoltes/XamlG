@@ -1,23 +1,20 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
 using System.Text;
-using Avalonia;
-using Avalonia.Utilities;
 
 // Ported from WPF open-source code.
 // https://github.com/dotnet/wpf/blob/ae1790531c3b993b56eba8b1f0dd395a3ed7de75/src/Microsoft.DotNet.Wpf/src/PresentationCore/System/Windows/Media/Animation/KeySpline.cs
 
-namespace Avalonia.Animation
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Determines how an animation is used based on a cubic bezier curve.
     /// X1 and X2 must be between 0.0 and 1.0, inclusive.
     /// See https://docs.microsoft.com/en-us/dotnet/api/system.windows.media.animation.keyspline
     /// </summary>
-    [TypeConverter(typeof(KeySplineTypeConverter))]
-    public sealed class KeySpline : AvaloniaObject
+    internal sealed class KeySpline
     {
         // Control points
         private double _controlPointX1;

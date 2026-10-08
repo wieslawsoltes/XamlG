@@ -2,12 +2,12 @@ using System;
 using System.ComponentModel;
 using System.Globalization;
 
-namespace Avalonia.Animation
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Defines the valid modes for a <see cref="IterationCount"/>.
     /// </summary>
-    public enum IterationType
+    internal enum IterationType
     {
         Many,
         Infinite
@@ -17,8 +17,7 @@ namespace Avalonia.Animation
     /// Determines the number of iterations of an animation.
     /// Also defines its repeat behavior. 
     /// </summary>
-    [TypeConverter(typeof(IterationCountTypeConverter))]
-    public struct IterationCount : IEquatable<IterationCount>
+    internal struct IterationCount : IEquatable<IterationCount>
     {
         private readonly IterationType _type;
         private readonly ulong _value;

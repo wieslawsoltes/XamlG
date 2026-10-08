@@ -1,14 +1,13 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.Globalization;
 
-namespace Avalonia.Animation
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Determines the time index for a <see cref="KeyFrame"/>. 
     /// </summary>
-    [TypeConverter(typeof(CueTypeConverter))]
-    public readonly record struct Cue : IEquatable<Cue>, IEquatable<double>
+    internal readonly record struct Cue : IEquatable<Cue>, IEquatable<double>
     {
         /// <summary>
         /// The normalized percent value, ranging from 0.0 to 1.0
@@ -34,7 +33,7 @@ namespace Avalonia.Animation
         {
             string v = value;
 
-            if (value.EndsWith('%'))
+            if (value.EndsWith("%", StringComparison.Ordinal))
             {
                 v = v.TrimEnd('%');
             }
@@ -61,16 +60,4 @@ namespace Avalonia.Animation
         }
     }
 
-    public class CueTypeConverter : TypeConverter
-    {
-        public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
-        {
-            return sourceType == typeof(string);
-        }
-
-        public override object ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object value)
-        {
-            return Cue.Parse((string)value, culture);
-        }
-    }
 }

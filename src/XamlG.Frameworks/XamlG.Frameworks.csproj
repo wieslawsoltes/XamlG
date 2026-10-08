@@ -5,7 +5,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../XamlG.Compiler/XamlG.Compiler.csproj" />
-    <Compile Remove="Avalonia/Parsing/Cue.cs;Avalonia/Parsing/IterationCount.cs;Avalonia/Parsing/KeySpline.cs;Avalonia/Parsing/Easing.cs;Avalonia/Parsing/SpanStringTokenizer.cs" />
     <None Update="Avalonia/Parsing/LICENSE.md" Pack="true" PackagePath="licenses/Avalonia/" />
   </ItemGroup>
 </Project>

@@ -68,7 +68,7 @@ public static class AvaloniaFrameworkProfile
             },
             BindingRules = ImmutableArray.Create<IXamlBindingRule>(directives, bindings, new AvaloniaStyleDirectiveRule(), classes, deferredResources),
             TextConversionRules = ImmutableArray.Create<IXamlTextConversionRule>(new AvaloniaPropertyReferenceTextRule(),
-                new AvaloniaFontFamilyTextRule(), new AvaloniaConstructorLiteralRule(), new AvaloniaNumericLiteralRule(), new AvaloniaStaticLiteralRule(),
+                new AvaloniaFontFamilyTextRule(), new AvaloniaConstructorLiteralRule(), new AvaloniaNumericLiteralRule(), new AvaloniaAnimationLiteralRule(), new AvaloniaStaticLiteralRule(),
                 new AvaloniaTextConversionRule(), new AvaloniaListLiteralRule()),
             TypeConverterProviders = ImmutableArray.Create<IXamlTypeConverterProvider>(new AvaloniaTypeConverterProvider()),
             ObjectBindingRules = ImmutableArray.Create<IXamlObjectBindingRule>(names, new AvaloniaStyleObjectRule(), new AvaloniaTemplatePartsRule(), styleWarnings, bindings, classes, resources, deferredResources, new AvaloniaResourceSourceInfoRule(), new AvaloniaResourceCapacityRule()),

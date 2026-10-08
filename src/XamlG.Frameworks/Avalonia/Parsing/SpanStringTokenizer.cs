@@ -1,9 +1,8 @@
-﻿using System;
-using System.Diagnostics.CodeAnalysis;
+using System;
 using System.Globalization;
 using static System.Char;
 
-namespace Avalonia.Utilities
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     internal ref struct SpanStringTokenizer
     {
@@ -114,7 +113,7 @@ namespace Avalonia.Utilities
             return result;
         }
 
-        public bool TryReadString([NotNull] out string result, char? separator = null)
+        public bool TryReadString(out string result, char? separator = null)
         {
             var success = TryReadToken(separator ?? _separator);
             result = CurrentTokenSpan.ToString();
