@@ -6,7 +6,8 @@
     "theme-corpus.yml",
     "playground.yml",
     "release.yml",
-    "controlcatalog.yml"
+    "controlcatalog.yml",
+    "compiler-profile.yml"
   ],
   "deployment": [
     "pages.yml"
