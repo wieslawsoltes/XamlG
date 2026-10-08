@@ -117,6 +117,14 @@ public sealed class XamlRuntimeSession : IDisposable
         _cleanup.Clear(); _constructedSessions.Clear(); _properties.Clear(); _instances.Clear(); _nodes.Clear();
         if (errors.Count != 0) throw new AggregateException("Generated event cleanup failed.", errors);
     }
+    /// <summary>Retires a failed construction while retaining both failures if cleanup also throws.</summary>
+    public void DisposeAfterConstructionFailure(Exception constructionFailure)
+    {
+        if (constructionFailure == null) throw new ArgumentNullException(nameof(constructionFailure));
+        try { Dispose(); }
+        catch (Exception cleanupFailure)
+        { throw new AggregateException("XAML construction and cleanup both failed.", constructionFailure, cleanupFailure); }
+    }
     private void CheckThread()
     {
         if (_disposed) throw new ObjectDisposedException(nameof(XamlRuntimeSession));

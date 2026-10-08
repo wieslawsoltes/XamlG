@@ -92,7 +92,7 @@ public sealed class CSharpEmitter
         }
         if (document.ClassSymbol != null && document.Options.GenerateInitializeComponent)
             ComponentInitializationEmitter.Emit(context, populate);
-        flow.EmitNamespaceMaps();
+        flow.EmitContextHelpers(); flow.EmitNamespaceMaps();
         new ServiceContractEmitter(context).Emit();
         context.DynamicSetters.Emit(); context.DynamicAdds.Emit(); context.EmitMetadataHelpers();
         if (nesting == 0) writer.Close(); else for (var i = 0; i < nesting; i++) writer.Close();
