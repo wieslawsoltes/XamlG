@@ -34,7 +34,14 @@ export const test = base.extend({
         }
       });
     }
-    await use(context);
+    try { await use(context); }
+    finally {
+      // Startup-failure tests can finish while other WASM assets are still being
+      // fetched. Finish our route callbacks, including response disposal, before
+      // Playwright tears down their browser context.
+      if (process.env.PLAYGROUND_PAGES_PREVIEW === '1')
+        await context.unrouteAll({ behavior: 'wait' });
+    }
   }
 });
 export { expect };
