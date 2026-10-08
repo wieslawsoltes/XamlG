@@ -108,10 +108,10 @@ public sealed partial class AgentHarness
         task.LastUsage = usage;
     }
 
-    private bool ReserveToolResults(AgentTask task, AgentRunOptions options, IReadOnlyList<AutomationTool> tools)
+    private bool ReserveToolResults(AgentTask task, AgentRunOptions options, IReadOnlyList<AutomationTool> tools, int? contextBytes = null)
     {
         var request = new AgentRequest(task.Model, RunInstructions(options), task.Messages.ToArray(), tools, options.Limits.OutputTokensPerRequest);
-        task.NativeContextBytes = task.Provider.GetContextBytes(request);
+        task.NativeContextBytes = contextBytes ?? task.Provider.GetContextBytes(request);
         var otherTasks = _tasks.Values.Where(other => other != task).Sum(other => (long)other.NativeContextBytes);
         var available = Math.Min(options.Limits.ContextBytes, 64_000_000 - otherTasks) - task.NativeContextBytes;
         var count = task.PendingReply!.ToolCalls.Count - task.NextTool;

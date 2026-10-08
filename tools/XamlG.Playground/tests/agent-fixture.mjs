@@ -2,6 +2,9 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test, expect as baseExpect } from './studio-fixture.mjs';
 import { openStudio } from './live-preview.mjs';
 
@@ -57,8 +60,9 @@ export async function withAgentWorkbench({ page, request, baseURL }, handle, exe
   if (!options.accountStore) environment.OPENAI_API_KEY = 'test-only-not-a-real-key';
   environment.OPENAI_ENDPOINT = `http://127.0.0.1:${fixture.address().port}/v1`;
   const origin = new URL(baseURL).origin;
+  const stateDirectory = await mkdtemp(join(tmpdir(), 'xamlg-agent-state-'));
   const host = spawn(process.env.XAMLG_TEST_DOTNET || 'dotnet', [process.env.XAMLG_TEST_HOST_DLL,
-    `--port=${port}`, ...(options.accountStore ? [`--chatgpt-store=${options.accountStore}`, `--chatgpt-auth-origin=http://127.0.0.1:${fixture.address().port}/`,
+    `--port=${port}`, `--agent-store=${stateDirectory}`, ...(options.accountStore ? [`--chatgpt-store=${options.accountStore}`, `--chatgpt-auth-origin=http://127.0.0.1:${fixture.address().port}/`,
       `--chatgpt-api-endpoint=http://127.0.0.1:${fixture.address().port}/v1/`] : ['--chatgpt=false']),
     ...(origin === 'https://wieslawsoltes.github.io' ? [] : [`--origins=${origin}`])],
     { env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -97,6 +101,7 @@ export async function withAgentWorkbench({ page, request, baseURL }, handle, exe
       await Promise.race([once(host, 'exit'), new Promise(resolve => setTimeout(resolve, 5000))]);
       if (host.exitCode === null) { host.kill('SIGKILL'); await once(host, 'exit'); }
       fixture.closeAllConnections(); await new Promise(resolve => fixture.close(resolve));
+      await rm(stateDirectory, { recursive: true, force: true });
     }
   }
 }

@@ -16,6 +16,7 @@ public sealed record AgentTaskSnapshot
     public AgentTaskStatus Status { get; init; }
     public string? StatusReason { get; init; }
     public bool PreviousWorkspace { get; init; }
+    public string? WorkspaceIdentity { get; init; }
     public long ReportedTokens { get; init; }
     public long EstimatedTokens { get; init; }
     public AgentUsage? LastUsage { get; init; }

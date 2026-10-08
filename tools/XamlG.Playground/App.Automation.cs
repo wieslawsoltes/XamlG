@@ -367,7 +367,7 @@ public partial class App
         return _runtimeInspector!;
     }
     [JSInvokable]
-    public JsonElement AutomationCatalog() => AutomationJson.Element(new { tools = _automation.Tools, resources = _automation.Resources, prompts = _automation.Prompts });
+    public JsonElement AutomationCatalog() => AutomationJson.Element(new { tools = _automation.Tools, resources = _automation.Resources, prompts = _automation.Prompts, workspaceIdentity = _browserAgents.WorkspaceIdentity });
     [JSInvokable]
     public async Task<JsonElement> AutomationInvoke(string id, string method, string name, JsonElement arguments, string caller, string principalId)
     {

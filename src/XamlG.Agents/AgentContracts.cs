@@ -51,7 +51,13 @@ public interface IAgentOperationPreview
 
 /// <summary>Native provider content is intentionally excluded from public JSON/transcript exports.</summary>
 public sealed record AgentMessage(AgentMessageKind Kind, string Text, string? ToolCallId = null,
-    [property: JsonIgnore] object? Native = null);
+    [property: JsonIgnore] object? Native = null)
+{
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AgentMessage, MediaCache> Media = new();
+    private sealed record MediaCache(AutomationMediaResult? Value);
+    [JsonIgnore] public AutomationMediaResult? ToolMedia => Media.GetValue(this, static message =>
+        new(message.Kind == AgentMessageKind.ToolResult && AutomationMedia.TryRead(message.Text, out var media) ? media : null)).Value;
+}
 public sealed record AgentReply(string Text, IReadOnlyList<AgentToolCall> ToolCalls, AgentUsage Usage,
     [property: JsonIgnore] object Native, bool OutputLimitReached = false)
 {
@@ -148,8 +154,8 @@ public sealed record AgentCompactionOptions
 
 public sealed class AgentTask
 {
-    internal AgentTask(string id, string name, IAgentProvider provider, string model, CancellationToken workspaceLifetime)
-    { Id = id; Name = name; Provider = provider; Model = model; WorkspaceLifetime = workspaceLifetime; }
+    internal AgentTask(string id, string name, IAgentProvider provider, string model, CancellationToken workspaceLifetime, string? workspaceIdentity = null)
+    { Id = id; Name = name; Provider = provider; Model = model; WorkspaceLifetime = workspaceLifetime; WorkspaceIdentity = workspaceIdentity; }
     public string Id { get; }
     public string Name { get; internal set; }
     [JsonIgnore] public IAgentProvider Provider { get; }
@@ -174,7 +180,8 @@ public sealed class AgentTask
     public AgentQueueSnapshot Queue { get { lock (Sync) return new(QueueRevision, FollowUps.ToArray()); } }
     public AgentChangeReview? Changes { get; internal set; }
     public AgentChangeReview? LatestRunChanges { get; internal set; }
-    [JsonIgnore] internal CancellationToken WorkspaceLifetime { get; }
+    [JsonIgnore] internal CancellationToken WorkspaceLifetime { get; set; }
+    internal string? WorkspaceIdentity { get; }
     internal object Sync { get; } = new();
     internal List<AgentMessage> Messages { get; } = [];
     internal AgentMessage? ActiveRequest;

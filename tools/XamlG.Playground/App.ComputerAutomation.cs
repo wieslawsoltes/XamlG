@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.JSInterop;
 using XamlG.Automation;
 using XamlG.AvaloniaRuntime.Inspection;
 
@@ -8,6 +9,16 @@ public partial class App
 {
     private void AddComputerAutomation()
     {
+        _automation.Add<ComputerViewportArguments, object>("xamlg_computer_viewport", "Resize the trusted or isolated preview viewport to 128–4096 DIPs for responsive testing. Omit both dimensions to follow the dock size. Observe a fresh frame after resizing.",
+            AutomationScope.Runtime, AutomationEffect.Execute, async (args, context) =>
+            {
+                if ((args.Width == null) != (args.Height == null) || args.Width is < 128 or > 4096 || args.Height is < 128 or > 4096)
+                    throw new ArgumentException("Supply both dimensions in 128–4096 DIPs, or omit both for automatic sizing.");
+                _previewWidth = args.Width; _previewHeight = args.Height; StateHasChanged();
+                if (_module != null) await _module.InvokeVoidAsync("resizePreviewViewport", context.CancellationToken, args.Width, args.Height);
+                await SaveShellStateAsync();
+                return new { width = _previewWidth, height = _previewHeight, auto = _previewWidth == null };
+            });
         _automation.Add<ComputerObserveOptions, JsonElement>("xamlg_computer_observe",
             "Observe the visible running preview: PNG screenshot, viewport/image coordinate mapping, revision, focus and bounded semantic control targets. Works in trusted and isolated preview. Re-observe after UI changes; use frameId and revision for actions.",
             AutomationScope.Runtime, AutomationEffect.Read, async (args, context) =>
@@ -35,4 +46,5 @@ public partial class App
         var metadata = new { observation = capture.Observation, completed, error, failedIndex, designMode };
         return capture.Png == null ? AutomationJson.Element(metadata) : AutomationMedia.Image(metadata, capture.Png, capture.Observation.ImageWidth, capture.Observation.ImageHeight);
     }
+    public sealed record ComputerViewportArguments(int? Width = null, int? Height = null);
 }

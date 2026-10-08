@@ -23,6 +23,7 @@ public sealed class BrowserAutomationBridge : IAutomationHost, IAutomationCatalo
     public event Action? CatalogChanged;
     public event Action<string>? ResourceChanged;
     public CancellationToken CurrentSessionLifetime { get { lock (_gate) return _session is { Closing: false } session ? session.Lifetime.Token : new CancellationToken(true); } }
+    public string? WorkspaceIdentity { get { lock (_gate) return _session?.Catalog.WorkspaceIdentity; } }
 
     /// <summary>Checks the private lease delivered only to the paired browser. Owner HTTP
     /// requests must also authenticate separately; the lease alone is not a credential.</summary>
@@ -40,7 +41,7 @@ public sealed class BrowserAutomationBridge : IAutomationHost, IAutomationCatalo
 
     public async Task RunAsync(WebSocket socket, BrowserCatalog catalog, CancellationToken cancellationToken)
     {
-        if (catalog.Tools == null || catalog.Resources == null || catalog.Prompts == null ||
+        if (catalog.Tools == null || catalog.Resources == null || catalog.Prompts == null || catalog.WorkspaceIdentity?.Length > 128 ||
             catalog.Tools.Count is < 1 or > 1024 || catalog.Resources.Count > 1024 || catalog.Prompts.Count > 128 ||
             catalog.Tools.Any(t => t == null || string.IsNullOrWhiteSpace(t.Name) || t.Name.Length > 64 ||
                 !Enum.IsDefined(t.Scope) || !Enum.IsDefined(t.Effect) || t.InputSchema.ValueKind != JsonValueKind.Object) ||
@@ -223,4 +224,4 @@ public sealed class BrowserAutomationBridge : IAutomationHost, IAutomationCatalo
 }
 
 public sealed record BrowserCatalog(IReadOnlyList<AutomationTool> Tools,
-    IReadOnlyList<AutomationResource> Resources, IReadOnlyList<AutomationPrompt> Prompts);
+    IReadOnlyList<AutomationResource> Resources, IReadOnlyList<AutomationPrompt> Prompts, string? WorkspaceIdentity = null);

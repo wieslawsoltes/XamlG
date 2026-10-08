@@ -157,11 +157,17 @@ public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelCl
             {
                 case AgentMessageKind.User: items.Add(ResponseItem.CreateUserMessageItem(message.Text)); break;
                 case AgentMessageKind.ToolResult:
-                    if (XamlG.Automation.AutomationMedia.TryRead(message.Text, out var media))
+                    if (message.ToolMedia is { } media)
                     {
                         var output = new List<object> { new { type = "input_text", text = media.Metadata.GetRawText() } };
                         output.AddRange(media.Images.Select(image => (object)new { type = "input_image", image_url = "data:" + image.MimeType + ";base64," + image.Data }));
-                        items.Add(ModelReaderWriter.Read<ResponseItem>(BinaryData.FromObjectAsJson(new { type = "function_call_output", call_id = message.ToolCallId, output }))!);
+                        // The API accepts image parts here; the pinned SDK still models
+                        // output as a string. Its wire patch preserves the native array.
+                        var item = new FunctionCallOutputResponseItem(message.ToolCallId!, "");
+#pragma warning disable SCME0001
+                        item.Patch.Set("$.output"u8, BinaryData.FromObjectAsJson(output));
+#pragma warning restore SCME0001
+                        items.Add(item);
                     }
                     else items.Add(new FunctionCallOutputResponseItem(message.ToolCallId!, message.Text));
                     break;

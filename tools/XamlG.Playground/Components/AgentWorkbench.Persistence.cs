@@ -7,7 +7,7 @@ public partial class AgentWorkbench
 {
     private static readonly JsonSerializerOptions SavedJson = new(ViewJson) { IncludeFields = true };
     private Dictionary<string, SavedConnection> _savedConnections = new(StringComparer.Ordinal);
-    private string? _credentialProfileKey, _lastSavedUi;
+    private string? _credentialProfileKey, _lastSavedUi, _failedSavedUi;
     private bool _preferencesLoaded, _saveScheduled;
     private string? _storageError;
 
@@ -53,6 +53,12 @@ public partial class AgentWorkbench
                 _toolFilter = saved.ToolFilter; _toolScope = saved.ToolScope;
                 _agentActivityFilter = saved.ActivityFilter; _activityCurrentTask = saved.ActivityCurrentTask;
                 _rememberNewAccount = saved.RememberNewAccount;
+                foreach (var (id, review) in saved.Reviews ?? []) ReviewStates[id] = new()
+                {
+                    LatestRun = review.LatestRun, Unified = review.Unified, Path = review.Path,
+                    Feedback = review.Feedback, FeedbackPath = review.FeedbackPath,
+                    LineLimit = Math.Clamp(review.LineLimit, 1, 10000)
+                };
             }
             SelectConnectionProfile(); _preferencesLoaded = true;
         }
@@ -75,19 +81,23 @@ public partial class AgentWorkbench
         RememberConnection();
         var saved = new SavedWorkbench(1, _connectionMode, _provider, _model, _name, _section, _savedConnections,
             _taskPreferences, ComposerDrafts, LastSelectedTasks, TaskConnections, _queueEditors,
-            _toolFilter, _toolScope, _agentActivityFilter, _activityCurrentTask, _rememberNewAccount);
+            _toolFilter, _toolScope, _agentActivityFilter, _activityCurrentTask, _rememberNewAccount,
+            ReviewStates.ToDictionary(pair => pair.Key, pair => new SavedReview(pair.Value.LatestRun, pair.Value.Unified,
+                pair.Value.Path, pair.Value.Feedback, pair.Value.FeedbackPath, pair.Value.LineLimit)));
         var text = JsonSerializer.Serialize(saved, SavedJson);
-        if (text == _lastSavedUi) return;
+        if (text == _lastSavedUi || text == _failedSavedUi) return;
         try
         {
             await _module.InvokeVoidAsync("saveStudioState", "agent-ui", JsonSerializer.Deserialize<JsonElement>(text));
-            _lastSavedUi = text; _storageError = null;
+            _lastSavedUi = text; _failedSavedUi = null; _storageError = null;
         }
-        catch (JSException error) { _storageError = error.Message; StateHasChanged(); }
+        catch (JSException error) { _failedSavedUi = text; _storageError = error.Message; StateHasChanged(); }
     }
     private sealed record SavedConnection(string ApiKey, string RelayUrl, string RelayToken, bool AcceptBrowserExposure);
+    private sealed record SavedReview(bool LatestRun, bool Unified, string Path, string Feedback, string FeedbackPath, int LineLimit);
     private sealed record SavedWorkbench(int Version, string Mode, string Provider, string Model, string Name, string Section,
         Dictionary<string, SavedConnection> Connections, Dictionary<string, TaskPreferences> Preferences,
         Dictionary<string, string> Drafts, Dictionary<string, string> Selected, Dictionary<string, string> TaskConnections,
-        Dictionary<string, QueueEditor> QueueEditors, string ToolFilter, string ToolScope, string ActivityFilter, bool ActivityCurrentTask, bool RememberNewAccount);
+        Dictionary<string, QueueEditor> QueueEditors, string ToolFilter, string ToolScope, string ActivityFilter, bool ActivityCurrentTask, bool RememberNewAccount,
+        Dictionary<string, SavedReview>? Reviews = null);
 }

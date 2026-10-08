@@ -16,9 +16,10 @@ namespace XamlG.Automation.Tests;
 public sealed class OpenAIProviderTests
 {
     [Theory]
-    [InlineData("\n")]
-    [InlineData("\r\n")]
-    public async Task Official_sdk_streaming_preserves_encrypted_reasoning_and_tool_ids_without_public_export(string lineEnding)
+    [InlineData("\n", false)]
+    [InlineData("\r\n", false)]
+    [InlineData("\n", true)]
+    public async Task Official_sdk_streaming_preserves_encrypted_reasoning_and_tool_ids_without_public_export(string lineEnding, bool image)
     {
         using var handler = new NativeResponsesHandler(lineEnding);
         using var http = new HttpClient(new AgentHttpHandler(handler));
@@ -27,7 +28,7 @@ public sealed class OpenAIProviderTests
         var provider = new OpenAIAgentProvider(client);
         var catalog = new AutomationCatalog(); var writes = 0;
         catalog.Add<EditArguments, object>("edit", "Edit source", AutomationScope.Source, AutomationEffect.Edit,
-            (args, _) => { writes++; return ValueTask.FromResult<object>(new { revision = 1, text = args.Text }); });
+            (args, _) => { writes++; return ValueTask.FromResult<object>(image ? AutomationMedia.Image(new { revision = 1, text = args.Text }, [137, 80, 78, 71], 1, 1) : new { revision = 1, text = args.Text }); });
         using var harness = new AgentHarness(catalog);
         var task = harness.CreateTask("SDK test", provider, "test-model", TestContext.Current.CancellationToken);
         await harness.RunAsync(task.Id, "Update the source", new() { Policy = new() { Profile = PermissionProfile.AutoEdit } }, cancellationToken: TestContext.Current.CancellationToken);
@@ -36,10 +37,23 @@ public sealed class OpenAIProviderTests
         var continuation = handler.Requests[1].GetProperty("input").EnumerateArray().ToArray();
         Assert.Contains(continuation, i => i.GetProperty("type").GetString() == "reasoning" && i.GetProperty("encrypted_content").GetString() == "opaque-private-signature");
         Assert.Contains(continuation, i => i.GetProperty("type").GetString() == "function_call_output" && i.GetProperty("call_id").GetString() == "call_1");
+        if (image)
+        {
+            var output = continuation.Single(item => item.GetProperty("type").GetString() == "function_call_output").GetProperty("output");
+            Assert.Equal("input_image", output[1].GetProperty("type").GetString());
+            Assert.Equal("data:image/png;base64,iVBORw==", output[1].GetProperty("image_url").GetString());
+        }
         Assert.DoesNotContain("opaque-private-signature", harness.ExportTranscript(task.Id));
         Assert.DoesNotContain("test-only-not-a-secret", harness.ExportTranscript(task.Id));
         Assert.False(handler.Requests[0].GetProperty("store").GetBoolean());
         Assert.Equal(30, task.ReportedTokens);
+        using var restored = new AgentHarness(catalog);
+        var saved = JsonSerializer.Deserialize<AgentSessionSnapshot>(JsonSerializer.Serialize(harness.CaptureSession(), AutomationJson.Options), AutomationJson.Options)!;
+        restored.RestoreSession(saved, (_, _) => provider);
+        await restored.RunAsync(task.Id, "Continue after restart", new(), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Contains("opaque-private-signature", handler.Requests[2].GetRawText());
+        Assert.DoesNotContain("opaque-private-signature", restored.ExportTranscript(task.Id));
+        Assert.Equal(1, writes);
     }
 
     public sealed record EditArguments(string Text);

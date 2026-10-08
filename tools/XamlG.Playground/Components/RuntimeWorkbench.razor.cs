@@ -8,7 +8,7 @@ using XamlG.Runtime;
 
 namespace XamlG.Playground.Components;
 
-public partial class RuntimeWorkbench : IDisposable
+public partial class RuntimeWorkbench : IAsyncDisposable
 {
     [Parameter, EditorRequired] public Func<string, JsonElement, CancellationToken, Task<JsonElement>> Execute { get; set; } = default!;
     [Parameter] public IReadOnlyList<AutomationTool> Tools { get; set; } = [];
@@ -241,5 +241,11 @@ public partial class RuntimeWorkbench : IDisposable
         await using var module = await JavaScript.InvokeAsync<IJSObjectReference>("xamlgBoot.importModule", "studio.js");
         await module.InvokeVoidAsync("download", "xamlg-runtime-inspection.json", Pretty(_details), "application/json");
     }
-    public void Dispose() { _disposed = true; _lifetime.Cancel(); _lifetime.Dispose(); }
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true; _lifetime.Cancel();
+        await SavePreferencesAsync();
+        if (_preferencesModule != null) await _preferencesModule.DisposeAsync();
+        _lifetime.Dispose();
+    }
 }

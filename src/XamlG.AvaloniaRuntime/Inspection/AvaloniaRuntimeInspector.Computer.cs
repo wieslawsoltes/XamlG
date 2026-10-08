@@ -56,7 +56,7 @@ public sealed partial class AvaloniaRuntimeInspector
         if (!_computerFrames.TryGetValue(request.FrameId, out var frame) || frame.SessionId != SessionId)
             throw new InvalidOperationException("The observed frame expired. Observe the current preview first.");
         Capture();
-        if (Revision != request.ExpectedRevision || frame.Revision != request.ExpectedRevision)
+        if (Revision != request.ExpectedRevision || frame.Revision != request.ExpectedRevision || ComputerTopLevel.Bounds.Width != frame.Width || ComputerTopLevel.Bounds.Height != frame.Height)
             throw new InvalidOperationException("The preview changed since observation. Observe again before acting.");
         if (request.Actions.Length is < 1 or > 32 || !Enum.IsDefined(request.CoordinateSpace) ||
             request.Actions.Any(action => !Enum.IsDefined(action.Kind) || action.Milliseconds is < 0 or > 1000 || action.Path?.Length > 64 || action.Text?.Length > 16384) ||

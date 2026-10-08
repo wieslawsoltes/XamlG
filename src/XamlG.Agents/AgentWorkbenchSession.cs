@@ -9,6 +9,7 @@ public class AgentWorkbenchSession : IDisposable
 {
     private readonly IReadOnlyDictionary<string, IAgentProvider> _providers;
     private readonly AgentHarness _harness;
+    private readonly Func<string?>? _workspaceIdentity;
     private readonly ConcurrentDictionary<string, Pending> _pending = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _gate = new();
@@ -19,6 +20,8 @@ public class AgentWorkbenchSession : IDisposable
     private int _activityBytes;
     private bool _disposed;
     private long _stateRevision = 1, _cachedRevision;
+    private readonly string _sessionId = Guid.NewGuid().ToString("N");
+    private string? _externalState;
     private JsonElement _cachedState;
     private readonly object _stateGate = new();
     private readonly System.Runtime.CompilerServices.ConditionalWeakTable<AgentEvent, AgentEventDisplay> _eventViews = new();
@@ -26,8 +29,8 @@ public class AgentWorkbenchSession : IDisposable
     private AgentEventDisplay DisplayEvent(AgentEvent item) => _eventViews.GetValue(item, value => AgentEventDisplay.Create(value, 8192));
     private static readonly HashSet<string> ReadActions = new(StringComparer.Ordinal)
     { "state", "tools", "activity", "thread", "models", "model_choices", "pending_export", "export", "export_markdown", "handoff", "diff_file", "change_file", "block_preview", "diff", "patch", "changes" };
-    public AgentWorkbenchSession(IAutomationHost host, IEnumerable<IAgentProvider> providers, IAgentWorkspace? workspace = null, AgentPermissionConstraints? constraints = null)
-    { _providers = providers.ToDictionary(p => p.Id, StringComparer.Ordinal); _harness = new(host, workspace, constraints); _harness.EventPublished += RecordActivity; }
+    public AgentWorkbenchSession(IAutomationHost host, IEnumerable<IAgentProvider> providers, IAgentWorkspace? workspace = null, AgentPermissionConstraints? constraints = null, Func<string?>? workspaceIdentity = null)
+    { _providers = providers.ToDictionary(p => p.Id, StringComparer.Ordinal); _harness = new(host, workspace, constraints); _harness.EventPublished += RecordActivity; _workspaceIdentity = workspaceIdentity; }
     protected virtual IEnumerable<string> ProviderIds => _providers.Keys;
     protected virtual object? AccountState => null;
     protected virtual string? AccountError => null;
@@ -47,12 +50,15 @@ public class AgentWorkbenchSession : IDisposable
             try { return Provider(id, account); }
             catch (Exception error) when (error is InvalidOperationException or ArgumentException or KeyNotFoundException)
             { return new UnavailableProvider(id, account); }
-        }, workspaceLifetime);
+        }, workspaceLifetime, _workspaceIdentity?.Invoke());
+        foreach (var item in _harness.Tasks.SelectMany(task => task.Events).OrderBy(item => item.Sequence).TakeLast(500)) RecordActivity(item);
         Interlocked.Increment(ref _stateRevision);
     }
 
     public async Task<JsonElement> ExecuteAsync(string action, JsonElement arguments, CancellationToken cancellationToken, CancellationToken ownerSession = default)
     {
+        if (_workspaceIdentity?.Invoke() is { Length: > 0 } identity && !ownerSession.IsCancellationRequested && _harness.ReconnectWorkspace(identity, ownerSession))
+        { Interlocked.Increment(ref _stateRevision); await _harness.SaveSessionAsync(cancellationToken); }
         try { return await ExecuteCoreAsync(action, arguments, cancellationToken, ownerSession); }
         finally
         {
@@ -72,18 +78,22 @@ public class AgentWorkbenchSession : IDisposable
             case "state":
                 lock (_stateGate)
                 {
+                var accounts = AccountState; var accountError = AccountError; var operations = OperationState;
+                var external = JsonSerializer.Serialize(new { accounts, accountError, operations, toolCount = _harness.ToolCatalog.Count,
+                    retired = _harness.Tasks.OrderBy(task => task.Id, StringComparer.Ordinal).Select(task => new { task.Id, task.IsPreviousWorkspace }) }, AutomationJson.Options);
+                if (_externalState != external) { _externalState = external; Interlocked.Increment(ref _stateRevision); }
                 if (_cachedPermissionExpiry <= DateTimeOffset.UtcNow) { _cachedPermissionExpiry = null; Interlocked.Increment(ref _stateRevision); }
                 var stateRevision = Volatile.Read(ref _stateRevision);
-                if (arguments.TryGetProperty("revision", out var known) && known.ValueKind == JsonValueKind.Number && known.GetInt64() == stateRevision)
-                    return AutomationJson.Element(new { revision = stateRevision, unchanged = true });
+                if (arguments.TryGetProperty("sessionId", out var sessionId) && sessionId.ValueKind == JsonValueKind.String && sessionId.GetString() == _sessionId &&
+                    arguments.TryGetProperty("revision", out var known) && known.ValueKind == JsonValueKind.Number && known.GetInt64() == stateRevision)
+                    return AutomationJson.Element(new { sessionId = _sessionId, revision = stateRevision, unchanged = true });
                 if (_cachedRevision == stateRevision) return _cachedState;
-                _cachedRevision = stateRevision;
                 _cachedPermissionExpiry = _harness.ActivePermissions?.ExpiresAt;
-                return _cachedState = AutomationJson.Element(new
+                _cachedState = AutomationJson.Element(new
                 {
-                    revision = stateRevision,
+                    sessionId = _sessionId, revision = stateRevision,
                     providers = ProviderIds.Order(StringComparer.Ordinal), toolCount = _harness.ToolCatalog.Count, constraints = _harness.Constraints, activePermissions = _harness.ActivePermissions,
-                    chatGpt = AccountState, chatGptError = AccountError, tasks = _harness.Tasks.Select(task => new
+                    chatGpt = accounts, chatGptError = accountError, tasks = _harness.Tasks.Select(task => new
                     {
                         task.Id, task.Name, task.ProviderId, task.Model, task.Status, task.StatusReason, task.Draft, task.IsPreviousWorkspace,
                         account = DescribeAccount(task.Provider),
@@ -95,8 +105,10 @@ public class AgentWorkbenchSession : IDisposable
                         events = task.Events.Where(item => item.Kind != "text_delta").TakeLast(80).Select(DisplayEvent)
                     }),
                     pending = _pending.Values.Select(p => new { p.Id, p.TaskId, p.Kind, content = PublicPending(p) }),
-                    operations = OperationState
+                    operations
                 });
+                _cachedRevision = stateRevision;
+                return _cachedState;
                 }
             case "tools": return AutomationJson.Element(_harness.ToolCatalog);
             case "revoke_grant":
@@ -128,7 +140,7 @@ public class AgentWorkbenchSession : IDisposable
                 return AutomationJson.Element(await ModelChoicesAsync(Read<ProviderArgs>(arguments), cancellationToken));
             case "create":
                 var create = Read<CreateArgs>(arguments);
-                return AutomationJson.Element(_harness.CreateTask(create.Name, Provider(create.Provider, create.AccountId), create.Model, ownerSession));
+                return AutomationJson.Element(_harness.CreateTask(create.Name, Provider(create.Provider, create.AccountId), create.Model, ownerSession, _workspaceIdentity?.Invoke()));
             case "rename":
                 var rename = Read<TextArgs>(arguments); _harness.RenameTask(rename.Id, rename.Text); break;
             case "draft":
@@ -137,7 +149,7 @@ public class AgentWorkbenchSession : IDisposable
                 _harness.GetTask(draft.Id).Draft = draft.Text; break;
             case "delete":
                 var deleted = _harness.GetTask(Read<IdArgs>(arguments).Id); _harness.DeleteTask(deleted.Id);
-                if (_harness.Tasks.Count == 0) _harness.CreateTask("New task", deleted.Provider, deleted.Model, ownerSession);
+                if (_harness.Tasks.Count == 0) _harness.CreateTask("New task", deleted.Provider, deleted.Model, ownerSession, _workspaceIdentity?.Invoke());
                 break;
             case "queue":
                 var queue = Read<TextArgs>(arguments); _harness.QueueMessage(queue.Id, queue.Text);

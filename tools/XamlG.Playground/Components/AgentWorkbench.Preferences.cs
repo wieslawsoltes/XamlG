@@ -54,7 +54,7 @@ public partial class AgentWorkbench
         public NumericPreferences Numeric = new();
         public Dictionary<string, string> Scopes { get; set; } = new(StringComparer.Ordinal);
         public string Profile = "ask", ToolRules = "{}";
-        public bool NeverAsk, AutoCompact = true;
+        public bool NeverAsk, AutoCompact = true, FullToolCatalog;
     }
 
     public sealed record NumericPreferences

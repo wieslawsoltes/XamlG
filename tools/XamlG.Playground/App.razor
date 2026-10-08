@@ -120,9 +120,9 @@
                 <DesignerCommands Enabled="_designMode" Disabled="@(_busy || _isolationVisible || Preview.Root == null)" Toggle="ToggleDesignMode" />
                 <button @onclick="RefreshCurrentVisualsAsync" disabled="@(!_previewShown)" title="Refresh the realized visual tree">↻ Inspect</button>
             </div>
-            <div class="preview-surface">
-                <div id="avalonia-preview" class="avalonia-preview" style="visibility:@(_isolationVisible ? "hidden" : "visible")"></div>
-                <div class="isolated-container @(_isolationVisible ? "visible" : "")"><IsolatedPreview @ref="_isolatedPreview" /></div>
+            <div class="preview-surface" style="overflow:auto">
+                <div id="avalonia-preview" class="avalonia-preview" style="@(PreviewViewportStyle)visibility:@(_isolationVisible ? "hidden" : "visible")"></div>
+                <div class="isolated-container @(_isolationVisible ? "visible" : "")" style="@PreviewViewportStyle"><IsolatedPreview @ref="_isolatedPreview" /></div>
                 @if (!_previewShown && !_isolationVisible) { <div class="preview-placeholder"><span>◇</span><strong>From source to pixels.</strong><p>Run the compiled document to see its actual Avalonia controls.</p></div> }
             </div>
         </section>
@@ -252,6 +252,7 @@
         <DockingManager @ref="_dock" Theme="@_theme" Ready="InitializeDockyardAsync" Changed="DockyardChangedAsync" Style="height:100%;width:100%" />
     </main>
     <footer class="statusbar">
+        <span id="studio-storage-error" role="alert" hidden></span>
         <span><i class="@(_error == null ? "success-dot" : "error-dot")"></i><span class="status-message" title="@_status">@_status</span></span>
         @if (_startupFailed)
         {

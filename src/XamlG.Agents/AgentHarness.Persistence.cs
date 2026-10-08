@@ -19,7 +19,7 @@ public sealed partial class AgentHarness
             return new AgentTaskSnapshot
             {
                 Id = task.Id, Name = task.Name, Provider = task.ProviderId, Account = codec?.AccountIdentity, Model = task.Model,
-                Status = task.Status, StatusReason = task.StatusReason, PreviousWorkspace = task.IsPreviousWorkspace,
+                Status = task.Status, StatusReason = task.StatusReason, PreviousWorkspace = task.IsPreviousWorkspace, WorkspaceIdentity = task.WorkspaceIdentity,
                 ReportedTokens = task.ReportedTokens, EstimatedTokens = task.EstimatedTokens, LastUsage = task.LastUsage,
                 RetryAfterUtc = task.RetryAfterUtc, OutputLimitToExceed = task.OutputLimitToExceed, NativeContextBytes = task.NativeContextBytes,
                 PlanRevision = task.PlanRevision, CheckpointCount = task.CheckpointCount, Draft = task.Draft, Plan = task.Plan.ToArray(),
@@ -34,7 +34,7 @@ public sealed partial class AgentHarness
     }).ToArray());
 
     /// <summary>Restores into an empty harness, never restores leases or approval grants, and never runs automatically.</summary>
-    public void RestoreSession(AgentSessionSnapshot snapshot, Func<string, string?, IAgentProvider> provider, CancellationToken workspaceLifetime = default)
+    public void RestoreSession(AgentSessionSnapshot snapshot, Func<string, string?, IAgentProvider> provider, CancellationToken workspaceLifetime = default, string? workspaceIdentity = null)
     {
         lock (_taskGate)
         {
@@ -50,7 +50,8 @@ public sealed partial class AgentHarness
                     throw new ArgumentException("Invalid saved task.");
                 var selected = provider(saved.Provider, saved.Account);
                 var codec = selected as IAgentProviderState;
-                var task = new AgentTask(saved.Id, saved.Name, selected, saved.Model, saved.PreviousWorkspace ? new CancellationToken(true) : workspaceLifetime)
+                var task = new AgentTask(saved.Id, saved.Name, selected, saved.Model,
+                    saved.PreviousWorkspace || saved.WorkspaceIdentity != null && saved.WorkspaceIdentity != workspaceIdentity ? new CancellationToken(true) : workspaceLifetime, saved.WorkspaceIdentity)
                 {
                     Status = saved.Status, StatusReason = saved.StatusReason, ReportedTokens = saved.ReportedTokens, EstimatedTokens = saved.EstimatedTokens,
                     LastUsage = saved.LastUsage, RetryAfterUtc = saved.RetryAfterUtc, OutputLimitToExceed = saved.OutputLimitToExceed,
@@ -72,7 +73,7 @@ public sealed partial class AgentHarness
                     foreach (var call in pending.ToolCalls.Skip(saved.NextTool))
                         task.Messages.Add(new(AgentMessageKind.ToolResult, AutomationJson.Element(new { error = call.Id == saved.ExecutingToolId
                             ? "Session interrupted during this operation; effects may have occurred. Inspect current state before proceeding."
-                            : "Session restored; this operation was not executed. Inspect current source and runtime before issuing a fresh call." }).GetRawText(), call.Id));
+                            : "Session restored; this operation was not resumed. Changes may have occurred after the saved checkpoint. Inspect current source and runtime before issuing a fresh call." }).GetRawText(), call.Id));
                 }
                 if (saved.PendingReply != null || task.Status is AgentTaskStatus.Preparing or AgentTaskStatus.Running or AgentTaskStatus.AwaitingApproval or AgentTaskStatus.AwaitingAnswer)
                 {
@@ -87,4 +88,25 @@ public sealed partial class AgentHarness
     }
 
     private static AgentChangeReview? RebaseReview(AgentChangeReview? review) => review == null ? null : new(review.Revision, review.Files);
+
+    /// <summary>Rebind only tasks belonging to the same saved project, after the owner reconnects.</summary>
+    public bool ReconnectWorkspace(string identity, CancellationToken lifetime)
+    {
+        lifetime.ThrowIfCancellationRequested(); var changed = false;
+        foreach (var task in Tasks.Where(task => task.WorkspaceIdentity == identity && task.WorkspaceLifetime != lifetime))
+        {
+            lock (task.Sync)
+            {
+                if (task.Status is AgentTaskStatus.Running or AgentTaskStatus.Preparing or AgentTaskStatus.AwaitingApproval or AgentTaskStatus.AwaitingAnswer) continue;
+                if (task.PendingReply is { } reply)
+                {
+                    foreach (var call in reply.ToolCalls.Skip(task.NextTool)) task.Messages.Add(new(AgentMessageKind.ToolResult,
+                        "{\"error\":\"Preview connection changed. This pending operation was not resumed. Inspect current source and runtime before issuing a fresh operation.\"}", call.Id));
+                    task.PendingReply = null; task.NextTool = 0; task.ExecutingToolId = null;
+                }
+                task.WorkspaceLifetime = lifetime; changed = true;
+            }
+        }
+        return changed;
+    }
 }

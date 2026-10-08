@@ -43,7 +43,7 @@ public sealed partial class AvaloniaRuntimeInspector
             try { Dispatch(RawKeyEventType.KeyDown); }
             finally
             {
-                if (ReferenceEquals(_inputTopLevel?.FocusManager.GetFocusedElement(), target) && ReferenceEquals(TopLevel.GetTopLevel(target), _inputTopLevel)) Dispatch(RawKeyEventType.KeyUp);
+                if (_inputTopLevel?.FocusManager.GetFocusedElement() is Visual focus && WithinRoot(focus) && ReferenceEquals(TopLevel.GetTopLevel(target), _inputTopLevel)) Dispatch(RawKeyEventType.KeyUp);
             }
         }
         else Dispatch(action == RuntimeKeyAction.Down ? RawKeyEventType.KeyDown : RawKeyEventType.KeyUp);

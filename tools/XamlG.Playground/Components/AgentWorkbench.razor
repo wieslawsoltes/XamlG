@@ -288,6 +288,8 @@
                 </fieldset>
                 <fieldset class="agent-fieldset"><legend>Context &amp; compaction</legend>
                 <label><input type="checkbox" @bind="_autoCompact" /> Compact context automatically at complete tool boundaries</label>
+                <label><input type="checkbox" @bind="Preferences.FullToolCatalog" /> Send every tool schema with every request</label>
+                <p class="agent-help">By default, the agent discovers tools as needed to reduce request size. Every IDE tool remains available.</p>
                 <div class="agent-form-grid">
                 <label>Automatic compaction input tokens (0 disables this threshold) <input type="number" min="0" max="2000000" @bind="Preferences.Numeric.AutomaticInputTokens" /></label>
                 <label>Model context window tokens (0 unspecified) <input type="number" min="0" max="4000000" @bind="Preferences.Numeric.ModelContextWindowTokens" /></label>

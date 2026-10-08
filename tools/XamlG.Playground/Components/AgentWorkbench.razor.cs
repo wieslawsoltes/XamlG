@@ -132,12 +132,12 @@ public partial class AgentWorkbench
         var version = _connectionVersion;
         try
         {
-            var connected = IsBrowser ? BrowserRuntime != null : await _module.InvokeAsync<bool>("agentConnected");
+            var connected = IsBrowser ? BrowserRuntime?.IsStateLoaded == true : await _module.InvokeAsync<bool>("agentConnected");
             if (_disposed || version != _connectionVersion) return;
             _connected = connected;
             if (_connected)
             {
-                var next = await RequestAsync<WorkbenchState>("state", new { revision = _state.Revision });
+                var next = await RequestAsync<WorkbenchState>("state", new { sessionId = _state.SessionId, revision = _state.Revision });
                 if (_disposed || version != _connectionVersion) return;
                 if (next.Unchanged) { changed = false; return; }
                 foreach (var task in next.Tasks)
@@ -213,7 +213,7 @@ public partial class AgentWorkbench
         policy = new { profile = _profile, scopes = _scopes, tools = JsonSerializer.Deserialize<Dictionary<string, string>>(_toolRules), neverAsk = _neverAsk },
         limits = new { requestsPerRun = _requests, toolsPerRun = _tools, outputTokensPerRequest = _outputTokens, totalTaskTokens = _taskTokens,
             contextBytes = _contextBytes, toolResultBytes = _toolResultBytes, automaticRetries = _retries, requestTimeout = TimeSpan.FromMinutes(_timeoutMinutes) },
-        leaseDuration = TimeSpan.FromMinutes(_leaseMinutes), automaticCompaction = _autoCompact,
+        leaseDuration = TimeSpan.FromMinutes(_leaseMinutes), automaticCompaction = _autoCompact, fullToolCatalog = Preferences.FullToolCatalog,
         compaction = new { automaticInputTokens = Preferences.Numeric.AutomaticInputTokens, modelContextWindowTokens = Preferences.Numeric.ModelContextWindowTokens,
             recentCompleteTurns = Preferences.Numeric.RecentCompleteTurns, checkpointOutputTokens = Preferences.Numeric.CheckpointOutputTokens }
     };
@@ -324,7 +324,7 @@ public partial class AgentWorkbench
         }
         _reference?.Dispose(); _lifetime.Dispose();
     }
-    public sealed class WorkbenchState { public long Revision { get; set; } public bool Unchanged { get; set; } public int ToolCount { get; set; } public ConstraintView Constraints { get; set; } = new(); public ActivePermissionView? ActivePermissions { get; set; } public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; public AccountStateView? ChatGpt { get; set; } public string? ChatGptError { get; set; } }
+    public sealed class WorkbenchState { public string? SessionId { get; set; } public long Revision { get; set; } public bool Unchanged { get; set; } public int ToolCount { get; set; } public ConstraintView Constraints { get; set; } = new(); public ActivePermissionView? ActivePermissions { get; set; } public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; public AccountStateView? ChatGpt { get; set; } public string? ChatGptError { get; set; } }
     public sealed class OperationView
     {
         public string TaskId { get; set; } = "";

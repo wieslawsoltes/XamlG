@@ -2,6 +2,7 @@
 // enter localStorage, public transcripts, project downloads or diagnostics.
 const databaseName = 'xamlg.studio.state.v1';
 const revisions = new Map(), lastValues = new Map();
+const errors = new Map();
 let database, queue = Promise.resolve(), lastError = null;
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 function request(value) { return new Promise((resolve, reject) => { value.onsuccess = () => resolve(value.result); value.onerror = () => reject(value.error); }); }
@@ -26,26 +27,32 @@ async function encryptionKey() {
     if (!current) records.put(generated, '$key');
     await complete; return current || generated;
 }
-function failure(error) {
-    lastError = error?.name === 'QuotaExceededError' ? 'Browser storage is full. Free space or export your project before closing Studio.' :
+function failure(error, key) {
+    const message = error?.name === 'QuotaExceededError' ? 'Browser storage is full. Free space or export your project before closing Studio.' :
         error?.message === 'state_conflict' ? 'Another Studio tab changed saved state. Reload this tab before saving further changes.' :
         'Studio could not save or restore local state. Keep this tab open and export your project.';
-    globalThis.dispatchEvent?.(new CustomEvent('xamlg-storage-status', { detail: { error: lastError } }));
-    return new Error(lastError);
+    errors.set(key, message); publishStatus();
+    return new Error(message);
 }
-function serial(action) {
+function publishStatus() {
+    lastError = errors.values().next().value ?? null;
+    globalThis.dispatchEvent?.(new CustomEvent('xamlg-storage-status', { detail: { error: lastError } }));
+}
+function serial(key, action) {
     const operation = queue.catch(() => {}).then(action);
     queue = operation;
-    return operation.catch(error => { throw failure(error); });
+    return operation.catch(error => { throw failure(error, key); });
 }
 async function decode(record, key) {
     if (!record?.data) return null;
     if (record.version !== 1) throw new Error('Unsupported saved state version.');
-    const bytes = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: record.iv, additionalData: encoder.encode(key) }, await encryptionKey(), record.data);
+    let bytes = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: record.iv, additionalData: encoder.encode(key) }, await encryptionKey(), record.data);
+    if (record.compression === 'gzip') bytes = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+    if (bytes.byteLength > 192 * 1024 * 1024) throw new Error('Saved state is too large.');
     return JSON.parse(decoder.decode(bytes));
 }
 export function loadStudioState(key) {
-    return serial(async () => {
+    return serial(key, async () => {
         const record = await read(key);
         revisions.set(key, record?.revision || 0);
         try { const value = await decode(record, key); lastValues.set(key, JSON.stringify(value)); return value; }
@@ -53,17 +60,19 @@ export function loadStudioState(key) {
             const previous = await read(key + ':previous');
             if (!previous) throw error;
             const value = await decode(previous, key);
-            failure(error); // Recover the last complete write, and make the recovery visible.
+            failure(error, key); // Recover the last complete write, and make the recovery visible.
             return value;
         }
     });
 }
 export function saveStudioState(key, value) {
-    return serial(async () => {
+    return serial(key, async () => {
         const text = JSON.stringify(value);
         if (lastValues.get(key) === text) return;
-        const bytes = encoder.encode(text);
-        if (bytes.length > 96 * 1024 * 1024) throw new Error('Saved state is too large.');
+        let bytes = encoder.encode(text);
+        if (bytes.length > 192 * 1024 * 1024) throw new Error('Saved state is too large.');
+        const compression = bytes.length > 4096 && typeof CompressionStream === 'function' ? 'gzip' : null;
+        if (compression) bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
         const iv = crypto.getRandomValues(new Uint8Array(12));
         const data = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(key) }, await encryptionKey(), bytes);
         const db = await open(), tx = db.transaction('records', 'readwrite'), complete = done(tx), records = tx.objectStore('records');
@@ -72,18 +81,17 @@ export function saveStudioState(key, value) {
         // A first write without a load must not overwrite another tab's state.
         if (!revisions.has(key) && previous?.data) { tx.abort(); await complete.catch(() => {}); throw new Error('state_conflict'); }
         if (previous?.data) records.put(previous, key + ':previous');
-        records.put({ version: 1, revision: revision + 1, iv, data }, key);
+        records.put({ version: 1, revision: revision + 1, iv, data, compression }, key);
         await complete;
-        revisions.set(key, revision + 1); lastValues.set(key, text); lastError = null;
-        globalThis.dispatchEvent?.(new CustomEvent('xamlg-storage-status', { detail: { error: null } }));
+        revisions.set(key, revision + 1); lastValues.set(key, text); errors.delete(key); publishStatus();
     });
 }
 export function forgetStudioState(key) {
-    return serial(async () => {
+    return serial(key, async () => {
         const db = await open(), tx = db.transaction('records', 'readwrite'), complete = done(tx), records = tx.objectStore('records');
         const previous = await request(records.get(key)), revision = (previous?.revision || 0) + 1;
         records.delete(key + ':previous'); records.put({ version: 1, revision }, key);
-        await complete; revisions.set(key, revision); lastValues.delete(key);
+        await complete; revisions.set(key, revision); lastValues.delete(key); errors.delete(key); publishStatus();
     });
 }
 export async function studioStorageStatus() {

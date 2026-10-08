@@ -39,7 +39,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
     public IReadOnlyList<AgentTask> Tasks => _tasks.Values.ToArray();
     public event Action<AgentEvent>? EventPublished;
 
-    public AgentTask CreateTask(string name, IAgentProvider provider, string model, CancellationToken workspaceLifetime = default)
+    public AgentTask CreateTask(string name, IAgentProvider provider, string model, CancellationToken workspaceLifetime = default, string? workspaceIdentity = null)
     {
         lock (_taskGate)
         {
@@ -48,7 +48,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
         if (string.IsNullOrWhiteSpace(name) || name.Length > 200 || string.IsNullOrWhiteSpace(model) || model.Length > 200)
             throw new ArgumentException("A task name and model ID of at most 200 characters are required.");
         workspaceLifetime.ThrowIfCancellationRequested();
-        var task = new AgentTask(Guid.NewGuid().ToString("N"), name, provider, model, workspaceLifetime);
+        var task = new AgentTask(Guid.NewGuid().ToString("N"), name, provider, model, workspaceLifetime, workspaceIdentity);
         _tasks.TryAdd(task.Id, task); return task;
         }
     }
@@ -134,6 +134,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
             if (message != null) Publish(task, "user", message);
             await SaveSessionAsync(lease.Token);
             var budget = new RunBudget(); var calls = 0;
+            int? pendingContextBytes = null;
             while (true)
             {
                 lease.Token.ThrowIfCancellationRequested();
@@ -167,6 +168,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                     }
                     lock (task.Sync) task.Messages.Add(new(AgentMessageKind.Assistant, reply.Text, Native: reply.Native));
                     task.NativeContextBytes = task.Provider.GetContextBytes(request with { Messages = task.Messages.ToArray() });
+                    pendingContextBytes = task.NativeContextBytes;
                     Publish(task, "assistant", reply.Text);
                     if (reply.ToolCalls.Count == 0)
                     {
@@ -180,7 +182,8 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 var pending = task.PendingReply;
                 if (pending.ToolCalls.Count - task.NextTool > options.Limits.ToolsPerRun - calls)
                 { Pause(task, "Tool-call budget cannot fit the pending batch. Review the limit and resume."); return; }
-                if (!ReserveToolResults(task, options, tools)) return;
+                if (!ReserveToolResults(task, options, tools, pendingContextBytes)) return;
+                pendingContextBytes = null;
                 while (task.NextTool < pending.ToolCalls.Count)
                 {
                     lease.Token.ThrowIfCancellationRequested();
@@ -234,7 +237,12 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 await SaveSessionAsync(lease.Token);
             }
         }
-        catch (OperationCanceledException) when (started) { task.Status = AgentTaskStatus.Cancelled; task.StatusReason = "Stopped, revoked or lease expired."; Publish(task, "cancelled", task.StatusReason); }
+        catch (OperationCanceledException) when (started)
+        {
+            task.Status = task.WorkspaceLifetime.IsCancellationRequested && task.WorkspaceIdentity != null ? AgentTaskStatus.Paused : AgentTaskStatus.Cancelled;
+            task.StatusReason = task.Status == AgentTaskStatus.Paused ? "Workspace disconnected. Reconnect the same project and review before resuming." : "Stopped, revoked or lease expired.";
+            Publish(task, task.Status == AgentTaskStatus.Paused ? "paused" : "cancelled", task.StatusReason);
+        }
         catch (Exception error) when (started)
         { task.Status = AgentTaskStatus.Failed; task.StatusReason = error.Message; Publish(task, "failed", error.Message); throw; }
         catch (Exception error)

@@ -21,9 +21,11 @@ public sealed class BrowserAgentRuntime : IDisposable
     {
         _providers = new[] { "openai", "anthropic", "gemini" }.ToDictionary(id => id, id => new BrowserProvider(id), StringComparer.Ordinal);
         Session = new(host, _providers.Values, new AutomationAgentWorkspace(host),
-            new AgentPermissionConstraints(deniedTools: ["xamlg_layout_set", "xamlg_layout_reset"]));
+            new AgentPermissionConstraints(deniedTools: ["xamlg_layout_set", "xamlg_layout_reset"]), () => WorkspaceIdentity);
     }
     public AgentWorkbenchSession Session { get; }
+    public bool IsStateLoaded { get; internal set; }
+    public string WorkspaceIdentity { get; internal set; } = Guid.NewGuid().ToString("N");
     public CancellationToken WorkspaceLifetime => _workspace.Token;
     public void Configure(string provider, string key, bool browserExposureAccepted)
     {
@@ -55,7 +57,7 @@ public sealed class BrowserAgentRuntime : IDisposable
     }
     public void RetireWorkspace()
     {
-        _workspace.Cancel(); ClearCredentials(); _workspace.Dispose(); _workspace = new();
+        _workspace.Cancel(); ClearCredentials(); _workspace.Dispose(); _workspace = new(); WorkspaceIdentity = Guid.NewGuid().ToString("N");
     }
     public async Task<JsonElement> ExecuteAsync(string action, JsonElement arguments, CancellationToken cancellationToken)
     {
