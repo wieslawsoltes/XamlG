@@ -43,7 +43,12 @@ public interface IAgentWorkspace
 public sealed record AgentMessage(AgentMessageKind Kind, string Text, string? ToolCallId = null,
     [property: JsonIgnore] object? Native = null);
 public sealed record AgentReply(string Text, IReadOnlyList<AgentToolCall> ToolCalls, AgentUsage Usage,
-    [property: JsonIgnore] object Native, bool OutputLimitReached = false);
+    [property: JsonIgnore] object Native, bool OutputLimitReached = false)
+{
+    /// <summary>False when the route does not accept a caller-specified output limit.
+    /// An output stop still pauses, but explicit resume need not raise an unsupported cap.</summary>
+    public bool OutputLimitCanBeIncreased { get; init; } = true;
+}
 public sealed record AgentRequest(string Model, string Instructions, IReadOnlyList<AgentMessage> Messages,
     IReadOnlyList<AutomationTool> Tools, int MaxOutputTokens);
 

@@ -38,7 +38,7 @@ public sealed class ProviderDiscoveryTests
         using var google = new Client(enterprise: false, apiKey: "test-key", clientOptions: new() { HttpClientFactory = () => http });
         IAgentProvider provider = id == "anthropic" ? new AnthropicAgentProvider(anthropic) : new GeminiAgentProvider(google);
         var error = await Assert.ThrowsAsync<AgentProviderException>(() => provider.ListModelsAsync(TestContext.Current.CancellationToken));
-        Assert.Equal("http_503", error.Code); Assert.True(error.Retryable); Assert.Single(new int[handler.Calls]);
+        Assert.Equal("provider_unavailable", error.Code); Assert.True(error.Retryable); Assert.Single(new int[handler.Calls]);
         Assert.DoesNotContain("private-upstream-body", error.ToString());
     }
 

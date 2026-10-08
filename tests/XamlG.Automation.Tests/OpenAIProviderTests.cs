@@ -21,7 +21,7 @@ public sealed class OpenAIProviderTests
     public async Task Official_sdk_streaming_preserves_encrypted_reasoning_and_tool_ids_without_public_export(string lineEnding)
     {
         using var handler = new NativeResponsesHandler(lineEnding);
-        using var http = new HttpClient(handler);
+        using var http = new HttpClient(new AgentHttpHandler(handler));
         var client = new ResponsesClient(new ApiKeyCredential("test-only-not-a-secret"), new ResponsesClientOptions
         { Transport = new HttpClientPipelineTransport(http), RetryPolicy = new ClientRetryPolicy(0) });
         var provider = new OpenAIAgentProvider(client);

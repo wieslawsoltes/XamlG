@@ -56,9 +56,10 @@ public sealed partial class AgentHarness
                 {
                     if (!checkpoint && partial.Length == 0)
                     { partial.Append(reply.Text.AsSpan(0, Math.Min(reply.Text.Length, 262000))); partialTruncated |= reply.Text.Length > 262000; }
-                    if (!checkpoint) task.OutputLimitToExceed = effective.MaxOutputTokens;
+                    if (!checkpoint) task.OutputLimitToExceed = reply.OutputLimitCanBeIncreased ? effective.MaxOutputTokens : null;
                     Pause(task, checkpoint ? "The checkpoint reached its output limit. Existing context was preserved." :
-                        $"Provider output limit reached. Raise the effective output allowance above {effective.MaxOutputTokens:N0} and resume; incomplete output was not committed.");
+                        reply.OutputLimitCanBeIncreased ? $"Provider output limit reached. Raise the effective output allowance above {effective.MaxOutputTokens:N0} and resume; incomplete output was not committed." :
+                        "Provider output limit reached. This route does not accept an output cap. Review and resume the pending request; incomplete output was not committed.");
                     return null;
                 }
                 if (!checkpoint) task.OutputLimitToExceed = null;

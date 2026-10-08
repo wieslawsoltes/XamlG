@@ -203,9 +203,10 @@ survive pane reopening within this page; they are not saved in browser storage.
 
 ## Local evidence and remaining work
 
-Full validation is deferred until the remaining feature implementation is complete,
-as requested. The evidence below records earlier checkpoints; the latest feature
-additions and compiler merges have not yet undergone a full validation run.
+The implementation-first pass has reached validation. The provider recovery pass
+below passes 42 focused SDK-transport tests; the other evidence in this section
+records earlier checkpoints. The latest feature additions and compiler merges
+have not yet undergone a full validation run.
 
 Implemented since that checkpoint: tasks bind to the creating browser workspace
 lifetime; replacement and revocation disconnect that lifetime. A separate preparation
@@ -216,10 +217,11 @@ position, bounded unified diffs, complete replacement patch export, line-targete
 queued review feedback and explicit source-restore confirmation.
 
 Recovery now retains full provider Retry-After deadlines, requires increased effective
-output allowance after output stops, counts unknown failed-attempt usage separately,
+output allowance after output stops on routes that accept a cap, counts unknown failed-attempt usage separately,
 reserves bounded results before tool execution and bounds aggregate retained request
-context. Optional `AgentHttpHandler` carries canonical HTTP/retry advice through the
-official SDK transports. `CompactAsync` creates a paid tool-free public checkpoint,
+context. `AgentHttpHandler` carries canonical HTTP/stream error and retry advice through
+the official SDK transports. Use it with injected SDK clients to retain complete
+failure classification and Retry-After headers. `CompactAsync` creates a paid tool-free public checkpoint,
 stages and validates replacement context, retains complete recent native turns, and
 preserves original history on failure. Manual compaction is reviewed, and `/compact`
 is handled locally. Automatic triggers, model-window estimates, retained turns and
@@ -332,20 +334,19 @@ reveal resource documents as well as the main XAML file. The new runtime APIs an
 browser UI compile; their native/browser acceptance tests remain deferred until
 feature implementation is complete.
 
-Full reference parity remains in progress: remaining provider protocol/recovery
-details, account-mode behavioral acceptance, and the corresponding UI, authoring and
+Full reference acceptance remains in progress: account-mode behavioral acceptance,
+expanded recovery coverage, and the corresponding UI, authoring and
 protocol acceptance coverage. This ledger does not infer behavioral acceptance from a
 build or from the existence of a tool name.
 
-The remaining feature implementation is the reference provider/protocol recovery
-pass, including exact stop/failure classification and continuation behavior across
-the three SDKs. Coordinated XAML/C# rename, broader semantic source actions and symbol
+The reference provider/protocol recovery pass is now implemented, including stop/failure
+classification and continuation behavior across the three SDKs. Coordinated XAML/C# rename, broader semantic source actions and symbol
 navigation are now implemented below, alongside operation/control/data-flow inspection
 and compiler settings. The workbench Markdown, Enter/IME, independent review state,
 source navigation, thread paging and selective block restoration are also implemented;
 their behavioral acceptance remains pending.
 
-After these features, update the acceptance fixtures and run the full native,
+Next, update and expand the acceptance fixtures and run the full native,
 browser, MCP, provider-transport, Pages-origin and package-consumer validation.
 Close failures, document exact boundaries and update the draft PR. Earlier test
 counts in this ledger do not certify the current feature additions. The published Pages
@@ -589,3 +590,33 @@ edits; behavioral suites remain deferred. Final acceptance must cover cross-file
 cross-language renames, contracts/generics/records, registered and attached members,
 namespace/class changes, XML entities and markup/type arguments, generated adapters,
 implicit content/accessors, binding capture, stale previews and one-step undo.
+
+The provider recovery pass adds shared exact-code classification for account access,
+safety, context, quota, authentication, request, rate and temporary server failures.
+Quota and repairable configuration errors pause without automatic retries; safety
+rejections terminate the task. Provider messages never become exception text or
+transcript diagnostics. Bounded HTTP error reads retain Retry-After deadlines.
+Reported usage survives failed generations, malformed continuations and rejected
+stops. OpenAI distinguishes actual max-output stops from filtered or failed responses,
+rejects contradictory terminal events and skips truncated function JSON. Anthropic
+checks block/message ordering and maps its typed streaming errors. Gemini preserves
+reported cumulative usage and distinguishes safety, invalid calls and tool-call stops.
+
+The shared HTTP handler also checks SSE error frames with .NET's streaming parser
+before an SDK converter can discard them. Normal frames still go through the official
+SDK and retain native reasoning/signature content. The stream is bounded to 16 MiB;
+one frame is delivered at a time so a later error cannot hide earlier usage. This
+addresses a reproduced error-frame omission in Google.GenAI 1.24.0. Without this
+handler, the Gemini adapter rejects an empty converted error frame before tools run,
+but cannot recover error fields the SDK erased. Embedders should use the shared
+handler, as the companion does, for complete classification.
+
+ChatGPT account-mode output stops pause for explicit reviewed resume without requiring
+an unsupported higher output cap. API-key routes still require a larger effective
+allowance. In both cases the original native context is retained and partial tools
+are discarded. Forty-two provider discovery, continuation and recovery tests now pass
+through the pinned official SDKs, including quota priority, typed stream failures,
+failed-attempt usage, encrypted/signed continuation preservation, late-error rejection,
+and output-limit resume with and without a supported cap. These fixtures do not sign
+into a real account or request production inference. Full native/browser/MCP/OAuth,
+Pages-origin, package-consumer and CI acceptance remains pending.

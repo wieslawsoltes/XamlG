@@ -55,18 +55,19 @@ internal sealed class ChatGptInferenceHandler : DelegatingHandler
         if (response.IsSuccessStatusCode) return response;
         using (response)
         {
-            var status = (int)response.StatusCode; var code = "http_" + status; AgentProviderFailure? details = null;
-            var retryAfter = AgentHttpHandler.ParseRetryAfter(response.Headers.TryGetValues("Retry-After", out var values) ? values.FirstOrDefault() : null);
+            var status = (int)response.StatusCode; AgentProviderFailure? details = null;
+            var retryAfter = AgentHttpHandler.ParseRetryAfter(response.Headers.TryGetValues("Retry-After", out var values) ? values.FirstOrDefault() : null,
+                response.Headers.TryGetValues("retry-after-ms", out var milliseconds) ? milliseconds.FirstOrDefault() : null);
+            var classified = AgentProviderErrors.FromCode(null, status, retryAfter: retryAfter);
             try
             {
-                var failure = ChatGptOAuthProtocol.Failure(response, await ChatGptOAuthProtocol.ReadBoundedAsync(response.Content, 65536, cancellationToken));
-                code = failure.Code; details = failure.Details;
+                var bytes = await ChatGptOAuthProtocol.ReadBoundedAsync(response.Content, 65536, cancellationToken);
+                details = ChatGptOAuthProtocol.Failure(response, bytes).Details;
+                using var body = JsonDocument.Parse(bytes, new() { MaxDepth = 32 });
+                classified = AgentProviderErrors.FromJson(body.RootElement, status, retryAfter);
             }
-            catch (Exception error) when (error is JsonException or ChatGptAccountException) { }
-            var retryable = status is 408 or 429 or >= 500;
-            if (code is "subscription_sharing_usage_limit_exceeded" or "subscription_sharing_user_not_eligible" or "subscription_sharing_unsupported_capability" or
-                "subscription_sharing_route_not_supported" or "subscription_sharing_invalid_user" or "chatpass_v2_scope_not_authorized" or "chatpass_v2_invalid_authorization_context") retryable = false;
-            throw new AgentProviderException(code, retryable, retryAfter, canResume: true) { Details = details };
+            catch (Exception error) when (error is JsonException or ChatGptAccountException or IOException or HttpRequestException) { }
+            throw new AgentProviderException(classified.Code, classified.Retryable, retryAfter, classified.CanResume) { Details = details };
         }
     }
 }

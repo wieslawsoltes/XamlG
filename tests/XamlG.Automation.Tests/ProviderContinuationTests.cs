@@ -21,7 +21,7 @@ public sealed class ProviderContinuationTests
     public async Task Official_sdk_native_continuations_preserve_private_content_and_match_tool_results(string id, bool nativeId)
     {
         using var handler = new ProviderHandler(id, nativeId);
-        using var http = new HttpClient(handler);
+        using var http = new HttpClient(new AgentHttpHandler(handler));
         using var google = Google(http);
         using var anthropic = new AnthropicClient { ApiKey = "test-provider-key", HttpClient = http, MaxRetries = 0 };
         IAgentProvider provider = id == "anthropic" ? new AnthropicAgentProvider(anthropic) : new GeminiAgentProvider(google);
@@ -75,7 +75,7 @@ public sealed class ProviderContinuationTests
     public async Task Incomplete_or_invalid_streams_never_execute_partial_tools(string id, string mode, AgentTaskStatus expected)
     {
         using var handler = new ProviderHandler(id, true, mode);
-        using var http = new HttpClient(handler);
+        using var http = new HttpClient(new AgentHttpHandler(handler));
         using var google = Google(http);
         using var anthropic = new AnthropicClient { ApiKey = "test-provider-key", HttpClient = http, MaxRetries = 0 };
         IAgentProvider provider = id == "anthropic" ? new AnthropicAgentProvider(anthropic) : new GeminiAgentProvider(google);
@@ -91,6 +91,8 @@ public sealed class ProviderContinuationTests
         Assert.Equal(expected, task.Status); Assert.Equal(0, writes); Assert.Single(handler.Requests);
         if (expected == AgentTaskStatus.Paused)
         {
+            if (mode == "output_limit") options = options with { Limits = options.Limits with { OutputTokensPerRequest = options.Limits.OutputTokensPerRequest + 1024 } };
+            if (task.RetryAfterUtc is { } deadline && deadline > DateTimeOffset.UtcNow) await Task.Delay(deadline - DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(10), TestContext.Current.CancellationToken);
             await harness.RunAsync(task.Id, null, options, cancellationToken: TestContext.Current.CancellationToken);
             Assert.Equal(AgentTaskStatus.Completed, task.Status); Assert.Equal(0, writes);
             var history = handler.Requests[1].GetProperty(id == "anthropic" ? "messages" : "contents");

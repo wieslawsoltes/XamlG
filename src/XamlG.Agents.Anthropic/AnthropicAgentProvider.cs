@@ -39,8 +39,10 @@ public sealed class AnthropicAgentProvider(AnthropicClient client) : IAgentProvi
     public async Task<AgentReply> GenerateAsync(AgentRequest request, Func<string, ValueTask> textDelta, CancellationToken cancellationToken)
     {
         var blocks = new List<Block>();
-        var started = false; var stopped = false; string? stopReason = null;
+        var started = false; var stopped = false; var messageDelta = false; string? stopReason = null;
         long? inputTokens = null, outputTokens = null;
+        AgentUsage? ReportedUsage() => inputTokens.HasValue && outputTokens.HasValue && inputTokens.Value <= long.MaxValue - outputTokens.Value
+            ? new(inputTokens.Value, outputTokens.Value) : null;
         var streamBytes = 0;
         try
         {
@@ -59,17 +61,20 @@ public sealed class AnthropicAgentProvider(AnthropicClient client) : IAgentProvi
                     if (message.GetProperty("role").GetString() != "assistant" || message.GetProperty("content").GetArrayLength() != 0) throw ProtocolError();
                     if (message.TryGetProperty("usage", out var usage))
                     {
-                        inputTokens = Count(usage, "input_tokens") + (Count(usage, "cache_creation_input_tokens") ?? 0) + (Count(usage, "cache_read_input_tokens") ?? 0);
+                        inputTokens = checked(Count(usage, "input_tokens") + (Count(usage, "cache_creation_input_tokens") ?? 0) + (Count(usage, "cache_read_input_tokens") ?? 0));
                         outputTokens = Count(usage, "output_tokens");
                     }
                     continue;
                 }
                 if (!started) throw ProtocolError();
+                if (messageDelta && type is "content_block_start" or "content_block_delta" or "content_block_stop") throw ProtocolError();
                 switch (type)
                 {
                     case "content_block_start":
-                        if (blocks.Count >= 10000 || data.GetProperty("index").GetInt32() != blocks.Count) throw ProtocolError();
+                        if (blocks.Count >= 10000 || data.GetProperty("index").GetInt32() != blocks.Count || blocks.Any(item => !item.Closed)) throw ProtocolError();
                         var block = new Block(JsonNode.Parse(data.GetProperty("content_block").GetRawText())!.AsObject());
+                        if (block.Type is not ("text" or "thinking" or "redacted_thinking" or "tool_use"))
+                            throw new AgentProviderException("unsupported_content_block", false, canResume: false);
                         blocks.Add(block);
                         if (block.Type == "text" && block.Value["text"]?.GetValue<string>() is { Length: > 0 } initialText) await textDelta(initialText);
                         break;
@@ -97,12 +102,19 @@ public sealed class AnthropicAgentProvider(AnthropicClient client) : IAgentProvi
                     case "content_block_stop":
                         OpenBlock(blocks, data).Close(); break;
                     case "message_delta":
+                        if (blocks.Any(item => !item.Closed)) throw ProtocolError();
+                        messageDelta = true;
                         if (data.GetProperty("delta").TryGetProperty("stop_reason", out var reason) && reason.ValueKind != JsonValueKind.Null)
                         {
                             if (stopReason != null) throw ProtocolError();
                             stopReason = reason.GetString();
                         }
-                        if (data.TryGetProperty("usage", out var nextUsage)) outputTokens = Count(nextUsage, "output_tokens") ?? outputTokens;
+                        if (data.TryGetProperty("usage", out var nextUsage))
+                        {
+                            var next = Count(nextUsage, "output_tokens");
+                            if (next < outputTokens) throw ProtocolError();
+                            outputTokens = next ?? outputTokens;
+                        }
                         break;
                     case "message_stop":
                         if (blocks.Any(item => !item.Closed) || stopReason == null) throw ProtocolError();
@@ -110,41 +122,44 @@ public sealed class AnthropicAgentProvider(AnthropicClient client) : IAgentProvi
                     default: throw ProtocolError();
                 }
             }
-        }
-        catch (AnthropicApiException error) { throw HttpError(error); }
-        catch (AnthropicIOException) { throw new AgentProviderException("connection_error", true); }
-        catch (HttpRequestException) { throw new AgentProviderException("connection_error", true); }
-        catch (AnthropicSseException) { throw new AgentProviderException("provider_stream_error", false); }
-        catch (Exception error) when (error is JsonException or AnthropicInvalidDataException or KeyNotFoundException or InvalidOperationException or FormatException)
-        { throw ProtocolError(); }
-        if (!stopped) throw new AgentProviderException("stream_ended_without_terminal_event", true);
-        if (stopReason == "refusal") throw new AgentProviderException("safety_rejected", false, canResume: false);
-        if (stopReason == "model_context_window_exceeded") throw new AgentProviderException("context_limit", false);
-        if (stopReason is not ("end_turn" or "stop_sequence" or "tool_use" or "max_tokens")) throw new AgentProviderException("unsupported_stop_reason", false, canResume: false);
-        var calls = new List<AgentToolCall>();
-        if (stopReason != "max_tokens")
-        {
-            try
+            if (!stopped) throw new AgentProviderException("stream_ended_without_terminal_event", true);
+            if (stopReason == "refusal") throw new AgentProviderException("safety_rejected", false, canResume: false);
+            if (stopReason == "model_context_window_exceeded") throw new AgentProviderException("context_limit", false);
+            if (stopReason is not ("end_turn" or "stop_sequence" or "tool_use" or "max_tokens")) throw new AgentProviderException("unsupported_stop_reason", false, canResume: false);
+            var calls = new List<AgentToolCall>(); var ids = new HashSet<string>(StringComparer.Ordinal);
+            if (stopReason != "max_tokens")
             {
-                foreach (var block in blocks.Where(block => block.Type == "tool_use"))
+                try
                 {
-                    if (block.Input.Length != 0) block.Value["input"] = JsonNode.Parse(block.Input.ToString());
-                    var id = block.Value["id"]?.GetValue<string>(); var name = block.Value["name"]?.GetValue<string>();
-                    if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name)) throw ProtocolError();
-                    calls.Add(new(id, name, JsonSerializer.SerializeToElement(block.Value["input"])));
+                    foreach (var block in blocks.Where(block => block.Type == "tool_use"))
+                    {
+                        if (block.Input.Length != 0) block.Value["input"] = JsonNode.Parse(block.Input.ToString());
+                        var id = block.Value["id"]?.GetValue<string>(); var name = block.Value["name"]?.GetValue<string>();
+                        if (calls.Count >= 1024 || string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(name) || !ids.Add(id)) throw ProtocolError();
+                        if (block.Value["input"] is not JsonObject) throw new AgentProviderException("invalid_tool_arguments", false);
+                        calls.Add(new(id, name, JsonSerializer.SerializeToElement(block.Value["input"])));
+                    }
                 }
+                catch (Exception error) when (error is JsonException or InvalidOperationException) { throw ProtocolError(); }
             }
-            catch (Exception error) when (error is JsonException or InvalidOperationException) { throw ProtocolError(); }
+            if (stopReason != "max_tokens" && ((stopReason == "tool_use") != (calls.Count > 0))) throw ProtocolError();
+            var content = JsonSerializer.SerializeToElement(blocks.Select(block => block.Value).ToArray());
+            if (Encoding.UTF8.GetByteCount(content.GetRawText()) > 8 * 1024 * 1024) throw new AgentProviderException("response_too_large", false);
+            var native = MessageParam.FromRawUnchecked(new Dictionary<string, JsonElement>
+            { ["role"] = JsonSerializer.SerializeToElement("assistant"), ["content"] = content });
+            var publicText = string.Concat(blocks.Where(block => block.Type == "text").Select(block => block.Value["text"]?.GetValue<string>()));
+            var usageResult = ReportedUsage() ??
+                new AgentUsage((GetContextBytes(request) + 3L) / 4, (Encoding.UTF8.GetByteCount(content.GetRawText()) + 3L) / 4, true);
+            return new(publicText, calls, usageResult, new NativeMessage(native), stopReason == "max_tokens");
         }
-        if (stopReason != "max_tokens" && ((stopReason == "tool_use") != (calls.Count > 0))) throw ProtocolError();
-        var content = JsonSerializer.SerializeToElement(blocks.Select(block => block.Value).ToArray());
-        if (Encoding.UTF8.GetByteCount(content.GetRawText()) > 8 * 1024 * 1024) throw new AgentProviderException("response_too_large", false);
-        var native = MessageParam.FromRawUnchecked(new Dictionary<string, JsonElement>
-        { ["role"] = JsonSerializer.SerializeToElement("assistant"), ["content"] = content });
-        var publicText = string.Concat(blocks.Where(block => block.Type == "text").Select(block => block.Value["text"]?.GetValue<string>()));
-        var usageResult = inputTokens.HasValue && outputTokens.HasValue ? new AgentUsage(inputTokens.Value, outputTokens.Value) :
-            new AgentUsage((GetContextBytes(request) + 3L) / 4, (Encoding.UTF8.GetByteCount(content.GetRawText()) + 3L) / 4, true);
-        return new(publicText, calls, usageResult, new NativeMessage(native), stopReason == "max_tokens");
+        catch (AgentProviderException error) { throw AgentProviderErrors.WithUsage(error, ReportedUsage()); }
+        catch (AnthropicApiException error) { throw AgentProviderErrors.WithUsage(HttpError(error), ReportedUsage()); }
+        catch (Exception error) when (error is AnthropicIOException or HttpRequestException)
+        { throw AgentProviderErrors.WithUsage(new("connection_error", true), ReportedUsage()); }
+        catch (AnthropicSseException error)
+        { throw AgentProviderErrors.WithUsage(AgentProviderErrors.FromCode(ErrorCode(error.ErrorType), message: error.Message), ReportedUsage()); }
+        catch (Exception error) when (error is JsonException or AnthropicInvalidDataException or KeyNotFoundException or InvalidOperationException or FormatException or OverflowException)
+        { throw AgentProviderErrors.WithUsage(ProtocolError(), ReportedUsage()); }
     }
 
     private static MessageCreateParams Options(AgentRequest request)
@@ -190,7 +205,20 @@ public sealed class AnthropicAgentProvider(AnthropicClient client) : IAgentProvi
         return index >= 0 && index < blocks.Count && !blocks[index].Closed ? blocks[index] : throw ProtocolError();
     }
     private static AgentProviderException ProtocolError() => new("invalid_response_protocol", false);
-    private static AgentProviderException HttpError(AnthropicApiException error) => new("http_" + (int)error.StatusCode, (int)error.StatusCode is 408 or 429 or >= 500);
+    private static AgentProviderException HttpError(AnthropicApiException error) => AgentProviderErrors.FromJson(error.ResponseBody, (int)error.StatusCode);
+    private static string? ErrorCode(global::Anthropic.Models.ErrorType? type) => type switch
+    {
+        global::Anthropic.Models.ErrorType.InvalidRequestError => "invalid_request_error",
+        global::Anthropic.Models.ErrorType.AuthenticationError => "authentication_error",
+        global::Anthropic.Models.ErrorType.PermissionError => "permission_error",
+        global::Anthropic.Models.ErrorType.NotFoundError => "not_found_error",
+        global::Anthropic.Models.ErrorType.RateLimitError => "rate_limit_error",
+        global::Anthropic.Models.ErrorType.TimeoutError => "timeout_error",
+        global::Anthropic.Models.ErrorType.OverloadedError => "overloaded_error",
+        global::Anthropic.Models.ErrorType.ApiError => "api_error",
+        global::Anthropic.Models.ErrorType.BillingError => "billing_error",
+        _ => null
+    };
     private sealed record NativeMessage(MessageParam Message);
     private sealed class Block(JsonObject value)
     {

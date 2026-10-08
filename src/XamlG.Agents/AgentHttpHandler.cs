@@ -3,20 +3,22 @@ using System.Globalization;
 namespace XamlG.Agents;
 
 /// <summary>Optional transport for official SDK clients. Carries only canonical status
-/// and Retry-After advice into the harness, without provider bodies or request IDs.
+/// failure codes and Retry-After advice into the harness, without provider bodies or request IDs.
 /// SDK retries must be disabled; the harness owns the request budget and cooldown.</summary>
 public sealed class AgentHttpHandler(HttpMessageHandler innerHandler) : DelegatingHandler(innerHandler)
 {
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var response = await base.SendAsync(request, cancellationToken);
-        if (response.IsSuccessStatusCode) return response;
+        if (response.IsSuccessStatusCode)
+        {
+            if (response.Content.Headers.ContentType?.MediaType?.Equals("text/event-stream", StringComparison.OrdinalIgnoreCase) == true)
+                response.Content = new AgentEventStreamContent(response.Content);
+            return response;
+        }
         using (response)
         {
-            var status = (int)response.StatusCode;
-            var delay = ParseRetryAfter(response.Headers.TryGetValues("Retry-After", out var values) ? values.FirstOrDefault() : null,
-                response.Headers.TryGetValues("retry-after-ms", out var milliseconds) ? milliseconds.FirstOrDefault() : null);
-            throw new AgentProviderException("http_" + status, status is 408 or 429 or >= 500, delay);
+            throw await AgentProviderErrors.FromHttpResponseAsync(response, cancellationToken);
         }
     }
 
