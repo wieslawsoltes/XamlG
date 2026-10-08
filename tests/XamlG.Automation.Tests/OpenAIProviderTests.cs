@@ -49,7 +49,7 @@ public sealed class OpenAIProviderTests
         Assert.Equal(30, task.ReportedTokens);
         using var restored = new AgentHarness(catalog);
         var saved = JsonSerializer.Deserialize<AgentSessionSnapshot>(JsonSerializer.Serialize(harness.CaptureSession(), AutomationJson.Options), AutomationJson.Options)!;
-        restored.RestoreSession(saved, (_, _) => provider);
+        restored.RestoreSession(saved, (_, _) => provider, TestContext.Current.CancellationToken);
         await restored.RunAsync(task.Id, "Continue after restart", new(), cancellationToken: TestContext.Current.CancellationToken);
         Assert.Contains("opaque-private-signature", handler.Requests[2].GetRawText());
         Assert.DoesNotContain("opaque-private-signature", restored.ExportTranscript(task.Id));

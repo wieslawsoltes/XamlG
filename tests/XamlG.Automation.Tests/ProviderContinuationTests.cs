@@ -70,7 +70,7 @@ public sealed class ProviderContinuationTests
         Assert.Contains("Updated and verified.", deltas.ToString());
         var saved = JsonSerializer.Deserialize<AgentSessionSnapshot>(JsonSerializer.Serialize(harness.CaptureSession(), AutomationJson.Options), AutomationJson.Options)!;
         using var restored = new AgentHarness(catalog);
-        restored.RestoreSession(saved, (_, _) => provider);
+        restored.RestoreSession(saved, (_, _) => provider, TestContext.Current.CancellationToken);
         await restored.RunAsync(task.Id, "Continue after restart", new(), cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(1, writes);
         Assert.Contains("private-deliberation", handler.Requests[2].GetRawText());

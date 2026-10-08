@@ -2,8 +2,8 @@ import { performance } from 'node:perf_hooks';
 import { test, expect } from './studio-fixture.mjs';
 import { withAgentWorkbench, sendAgentEvent, agentReply, createAgentTask, reviewAgentRun, completedTask, agentSection } from './agent-fixture.mjs';
 
-test('focused catalog and unchanged-state cursors reduce real SDK and companion payloads', async context => {
-  await withAgentWorkbench(context, ({ response, sequence }) => {
+test('focused catalog and unchanged-state cursors reduce real SDK and companion payloads', async ({ page, request, baseURL }) => {
+  await withAgentWorkbench({ page, request, baseURL }, ({ response, sequence }) => {
     sendAgentEvent(response, agentReply('Measured local fixture. '.repeat(700), sequence)); response.end();
   }, async ({ page, pane, api, requests }) => {
     const first = await createAgentTask(pane, 'Focused');

@@ -150,8 +150,9 @@ Open **Coding agent → Connection** and choose one of three transports:
 
 - **Direct API** runs in the browser with an OpenAI, Anthropic or Gemini API key.
   Accept browser key exposure, discover or enter a model, and create a task in
-  **Tasks**. No companion, MCP connection or project sharing is required. Keys stay
-  in page memory and clear on provider changes, pane closure or **Clear credentials**.
+  **Tasks**. No companion, MCP connection or project sharing is required. Connections
+  and keys are remembered per provider by default in private browser storage.
+  **Forget connection** removes saved credentials, including the previous version.
 - **Local provider relay** uses the browser agent with a loopback companion as its
   provider transport. Set provider keys in the companion environment; enter its
   origin and Owner token in Connection. Provider keys remain on the server, and

@@ -15,7 +15,7 @@ public sealed class AgentPersistenceTests
         var provider = new StoredProvider();
         provider.Steps.Enqueue(request => new("", [new("call-1", "edit", AutomationJson.Element(new { }))], new(21, 8), AutomationJson.Element(new { signature = "opaque-private" })));
         provider.Steps.Enqueue(_ => new("Done", [], new(4, 5), AutomationJson.Element(new { signature = "final-private" })));
-        using var harness = new AgentHarness(catalog); var task = harness.CreateTask("Durable", provider, "fixture", workspaceIdentity: "project-1");
+        using var harness = new AgentHarness(catalog); var task = harness.CreateTask("Durable", provider, "fixture", TestContext.Current.CancellationToken, workspaceIdentity: "project-1");
         task.Draft = "next draft"; harness.QueueMessage(task.Id, "queued instruction");
         AgentSessionSnapshot? checkpoint = null;
         harness.PersistSession = (state, _) => { if (state.Tasks[0].ExecutingToolId != null) checkpoint = state; return Task.CompletedTask; };
@@ -24,7 +24,7 @@ public sealed class AgentPersistenceTests
         var stored = JsonSerializer.Serialize(checkpoint, AutomationJson.Options);
         Assert.Contains("opaque-private", stored); Assert.DoesNotContain("opaque-private", harness.ExportTranscript(task.Id));
         using var restored = new AgentHarness(catalog);
-        restored.RestoreSession(JsonSerializer.Deserialize<AgentSessionSnapshot>(stored, AutomationJson.Options)!, (_, _) => provider, workspaceIdentity: "project-1");
+        restored.RestoreSession(JsonSerializer.Deserialize<AgentSessionSnapshot>(stored, AutomationJson.Options)!, (_, _) => provider, TestContext.Current.CancellationToken, workspaceIdentity: "project-1");
         var saved = restored.GetTask(task.Id);
         Assert.Equal(AgentTaskStatus.Paused, saved.Status); Assert.Equal("next draft", saved.Draft);
         Assert.Equal("queued instruction", Assert.Single(saved.Queue.Messages).Text); Assert.Equal(29, saved.TotalTokens);
@@ -46,7 +46,7 @@ public sealed class AgentPersistenceTests
         catalog.Add<NoArgs, object>("edit", "Edit", AutomationScope.Source, AutomationEffect.Edit, (_, _) => ValueTask.FromResult<object>(++writes));
         var provider = new StoredProvider();
         provider.Steps.Enqueue(_ => new("", [new("call-1", "edit", AutomationJson.Element(new { }))], new(1, 1), AutomationJson.Element(new { signature = "private" })));
-        using var harness = new AgentHarness(catalog); var task = harness.CreateTask("Storage failure", provider, "fixture");
+        using var harness = new AgentHarness(catalog); var task = harness.CreateTask("Storage failure", provider, "fixture", TestContext.Current.CancellationToken);
         harness.PersistSession = (snapshot, _) => snapshot.Tasks[0].ExecutingToolId != null ? Task.FromException(new IOException("disk full")) : Task.CompletedTask;
         await Assert.ThrowsAsync<IOException>(() => harness.RunAsync(task.Id, "Edit", new() { Policy = new() { Profile = PermissionProfile.AutoEdit } }, cancellationToken: TestContext.Current.CancellationToken));
         Assert.Equal(0, writes);
@@ -81,7 +81,7 @@ public sealed class AgentPersistenceTests
             return new("", [new("read", "tool_159", AutomationJson.Element(new { }))], new(1, 1), AutomationJson.Element(new { step = 2 }));
         });
         provider.Steps.Enqueue(_ => new("Done", [], new(1, 1), AutomationJson.Element(new { step = 3 })));
-        using var harness = new AgentHarness(catalog); var task = harness.CreateTask("Discovery", provider, "fixture");
+        using var harness = new AgentHarness(catalog); var task = harness.CreateTask("Discovery", provider, "fixture", TestContext.Current.CancellationToken);
         await harness.RunAsync(task.Id, "Use the last tool", new(), cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(1, calls); Assert.Equal(AgentTaskStatus.Completed, task.Status);
         Assert.Contains("tool_159", harness.CaptureSession().Tasks[0].EnabledTools);
