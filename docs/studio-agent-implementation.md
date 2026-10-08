@@ -333,23 +333,17 @@ browser UI compile; their native/browser acceptance tests remain deferred until
 feature implementation is complete.
 
 Full reference parity remains in progress: remaining provider protocol/recovery
-details and account-mode behavioral acceptance; the remaining Roslyn
-authoring surface for the multi-file C# workspace; and the corresponding UI and protocol
-acceptance coverage. This ledger does not claim those capabilities from a build
-or from the existence of a tool name.
+details, account-mode behavioral acceptance, and the corresponding UI, authoring and
+protocol acceptance coverage. This ledger does not infer behavioral acceptance from a
+build or from the existence of a tool name.
 
-The remaining implementation is concentrated in two areas:
-
-- Coordinated XAML/C# renames beyond the implemented generated-field route,
-  including inheritance/interface contracts and regeneration of affected generated
-  sources. Existing rename still rejects those dependencies. Broader semantic
-  source actions and symbol navigation are now implemented as described below,
-  alongside operation/control/data-flow inspection and compiler settings.
-- Remaining reference provider/protocol and recovery edge cases, including exact
-  stop/failure classification and continuation behavior across the three SDKs.
-  The workbench Markdown, Enter/IME, independent review state, source navigation,
-  thread paging and selective block restoration are implemented below; their
-  behavioral acceptance remains pending.
+The remaining feature implementation is the reference provider/protocol recovery
+pass, including exact stop/failure classification and continuation behavior across
+the three SDKs. Coordinated XAML/C# rename, broader semantic source actions and symbol
+navigation are now implemented below, alongside operation/control/data-flow inspection
+and compiler settings. The workbench Markdown, Enter/IME, independent review state,
+source navigation, thread paging and selective block restoration are also implemented;
+their behavioral acceptance remains pending.
 
 After these features, update the acceptance fixtures and run the full native,
 browser, MCP, provider-transport, Pages-origin and package-consumer validation.
@@ -562,3 +556,36 @@ the JavaScript syntax check passes. Behavioral acceptance remains part of the fi
 validation pass: partial/generated declarations, generic interfaces and overrides,
 outline nesting/bounds, Monaco navigation, comment preservation, nullable/target typing,
 overload and binding stability, and atomic action/undo behavior. No full suite was run.
+
+Coordinated rename is now implemented in the reusable `XamlProjectRenameService` and
+shared by the existing XAML/C# editor dialog and MCP, including an XAML preview endpoint.
+The C# planner follows source interface/override contracts and record positional-member
+links; namespaces, aliases, labels and query variables can retain declaration identities
+through edits. The project planner updates compiler-resolved XAML type/member/name
+references, code-behind class names, namespace URIs, matching end tags, static/enum
+values and compiled bindings, then regenerates all XamlG-owned sources and loader adapters.
+Binding verification maps source declarations and generated member identities instead
+of reusing generated-file offsets. It checks source identifiers, XAML symbols,
+constructors/factories, implicit content and member getter/setter identities. Source
+position mapping uses sorted cumulative deltas; XAML owner lookups use ordered syntax
+positions and parents. No files or running controls are changed while planning.
+
+Avalonia properties/events additionally link their registration field, CLR wrapper and
+attached accessors. Different linked declarations retain their required prefixes/suffixes.
+The planner recognizes the actual registration type and compiler-resolved Register call;
+literal names are edited and `nameof` follows normal symbol edits. XAML selections show
+the logical name. External contracts, shared/custom registration factories and unresolved
+reflection/string references are explicit boundaries; the latter are not treated as
+statically resolved references. A failed candidate compilation or binding check rejects
+the complete transaction. Existing x:Name/template scopes retain their specialized
+reference index and now receive the project-level regeneration/binding checks too.
+
+The compiler now supplies more precise type/markup/generic-argument source spans,
+including raw XML entity mapping, and records attached-event member references.
+Existing public type-resolution signatures remain available, with new source-aware
+entry points. Targeted Tooling and integrated Playground builds pass without warnings
+or errors. The old source-interface rejection fixture is updated to expect coordinated
+edits; behavioral suites remain deferred. Final acceptance must cover cross-file and
+cross-language renames, contracts/generics/records, registered and attached members,
+namespace/class changes, XML entities and markup/type arguments, generated adapters,
+implicit content/accessors, binding capture, stale previews and one-step undo.

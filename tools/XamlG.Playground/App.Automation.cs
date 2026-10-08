@@ -185,12 +185,17 @@ public partial class App
                 RestoreWorkspace(_workspaceEdits.Apply(args.ExpectedRevision, [new(args.Path, analysis.Syntax.Text, analysis.Syntax.Version, edits)], context.Caller + ": format", candidate => ValidateWorkspace(candidate.Documents)));
                 return new { revision = SourceRevision };
             });
-        AddAutomation<RenameArguments>("xaml_rename", "Semantically rename an XAML name and its XAML/C# references atomically.", AutomationScope.Source, AutomationEffect.Edit,
+        AddAutomation<RenameArguments>("xaml_rename_preview", "Plan a resolved XAML name or CLR symbol rename across XAML and C#, regenerating output and verifying bindings before returning exact source edits.", AutomationScope.Source, AutomationEffect.Read,
             (args, context) =>
             {
-                CheckSourceRevision(args.ExpectedRevision); var analysis = XamlAnalysisFor(args.Path, context.CancellationToken);
-                var plan = new XamlRenameService(_result!.AuthoringCompiler!).Rename(analysis, args.Offset, args.Name,
-                    _result.Project!.Documents.Select(d => new XamlAnalysis(d.Input.Syntax, d.Document, d.Output)));
+                CheckSourceRevision(args.ExpectedRevision); XamlAnalysisFor(args.Path, context.CancellationToken);
+                return new { revision = SourceRevision, plan = ProjectRename().Rename(args.Path, args.Offset, args.Name, context.CancellationToken) };
+            });
+        AddAutomation<RenameArguments>("xaml_rename", "Rename an XAML name or resolved CLR symbol and its XAML/C# references atomically after compilation and binding verification.", AutomationScope.Source, AutomationEffect.Edit,
+            (args, context) =>
+            {
+                CheckSourceRevision(args.ExpectedRevision); XamlAnalysisFor(args.Path, context.CancellationToken);
+                var plan = ProjectRename().Rename(args.Path, args.Offset, args.Name, context.CancellationToken);
                 RestoreWorkspace(_workspaceEdits.Apply(args.ExpectedRevision, plan.Documents, context.Caller + ": rename", candidate => ValidateWorkspace(candidate.Documents)));
                 return new { revision = SourceRevision, plan.OldName, plan.NewName };
             });

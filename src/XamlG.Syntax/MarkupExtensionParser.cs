@@ -4,6 +4,25 @@ namespace XamlG.Syntax;
 /// <summary>Balanced markup-extension parser; braces inside quoted strings never affect nesting.</summary>
 public static class MarkupExtensionParser
 {
+    /// <summary>Parses decoded XML text while retaining exact raw-source ranges, including entities.</summary>
+    public static MarkupExtensionSyntax? ParseAtSource(string text, TextSpan span, string source, Action<XamlDiagnostic> report)
+    {
+        XamlDecodedTextMap map;
+        try { map = XamlDecodedTextMap.Create(source, span); }
+        catch (ArgumentException) { return Parse(text, span, report); }
+        if (map.Text != text) return Parse(text, span, report);
+        var parsed = Parse(text, new(0, text.Length), diagnostic => report(diagnostic with { Span = map.ToSource(diagnostic.Span) }));
+        return parsed == null ? null : parsed with
+        {
+            Span = span,
+            NameSpan = parsed.NameSpan is { } name ? map.ToSource(name) : null,
+            Arguments = parsed.Arguments.Select(argument => argument with
+            {
+                Span = map.ToSource(argument.Span),
+                ValueSpan = argument.ValueSpan is { } value ? map.ToSource(value) : null
+            }).ToImmutableArray()
+        };
+    }
     public static MarkupExtensionSyntax? Parse(string text, TextSpan span, Action<XamlDiagnostic> report)
     {
         if (text.Length == 0 || text[0] != '{' || text.StartsWith("{}", StringComparison.Ordinal)) return null;
@@ -59,7 +78,7 @@ public static class MarkupExtensionParser
             if (value.Length != 0 || key != null) arguments.Add(new(key, value, argumentSpan) { ValueSpan = TextSpan.FromBounds(span.Start + valueStart, span.Start + valueEnd) });
             if (position < end && text[position] == ',') position++;
         }
-        return new(name, arguments.ToImmutable(), span);
+        return new(name, arguments.ToImmutable(), span) { NameSpan = new(span.Start + nameStart, name.Length) };
     }
     private static bool NextIsNamedArgument(string text, int position, int end)
     {

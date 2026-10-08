@@ -3,7 +3,7 @@
 @if (RenameVisible || ActionsVisible)
 {
     <div class="authoring-backdrop" @onkeydown="KeyDown" @onkeydown:stopPropagation="true">
-        <section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="@(RenameVisible ? (IsCSharp ? "Rename C# symbol" : "Rename XAML name") : "Source code actions")" tabindex="-1" @ref="_dialog">
+        <section class="authoring-dialog" role="dialog" aria-modal="true" aria-label="@(RenameVisible ? (IsCSharp ? "Rename C# symbol" : "Rename XAML symbol") : "Source code actions")" tabindex="-1" @ref="_dialog">
             <header><h2>@(RenameVisible ? "Rename " + OriginalName : "Source code actions")</h2><button aria-label="Close authoring dialog" @onclick="Cancel">✕</button></header>
             @if (RenameVisible)
             {

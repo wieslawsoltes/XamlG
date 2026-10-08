@@ -65,9 +65,9 @@ public partial class App
                 ApplyCSharpSource(args.Path, args.ExpectedRevision, action.Changes, context.Caller + ": " + action.Title);
                 return new { revision = SourceRevision };
             });
-        AddAutomation<RenameArguments>("csharp_rename_preview", "Plan a C# symbol rename with exact edits. Generated XAML fields route to the owning XAML declaration; other generated dependencies or inheritance contracts are rejected.", AutomationScope.Source, AutomationEffect.Read,
+        AddAutomation<RenameArguments>("csharp_rename_preview", "Plan a coordinated C#/XAML rename with exact source edits. Follows source interface/override contracts, regenerates compiler-owned code and verifies C#/XAML bindings. Metadata contracts cannot be renamed.", AutomationScope.Source, AutomationEffect.Read,
             (args, context) => { CheckSourceRevision(args.ExpectedRevision); return new { revision = SourceRevision, plan = PlanCSharpRename(args.Path, args.Offset, args.Name, context.CancellationToken) }; });
-        AddAutomation<RenameArguments>("csharp_rename", "Apply a checked C# rename as one project undo step. Checks binding preservation and handles XAML-generated field names through the XAML rename service.", AutomationScope.Source, AutomationEffect.Edit,
+        AddAutomation<RenameArguments>("csharp_rename", "Apply a coordinated C#/XAML rename as one project undo step after regeneration and binding verification. Generated files remain compiler output.", AutomationScope.Source, AutomationEffect.Edit,
             (args, context) =>
             {
                 CheckSourceRevision(args.ExpectedRevision);
@@ -119,8 +119,8 @@ public partial class App
         switch (request.Command)
         {
             case "rename":
-                var symbol = service.ResolveSymbol(request.Path, request.Start) ?? throw new InvalidOperationException("Select a resolved C# identifier.");
-                _renameName = _renameOriginal = symbol is IMethodSymbol { MethodKind: MethodKind.Constructor or MethodKind.Destructor } constructor ? constructor.ContainingType.Name : symbol.Name;
+                var target = ProjectRename().Prepare(request.Path, request.Start) ?? throw new InvalidOperationException("Select a resolved C# identifier.");
+                _renameName = _renameOriginal = target.Name;
                 _renameVisible = true; break;
             case "format":
                 await ApplyAuthoringEditsAsync([new(request.Path, request.Text, null, service.Format(request.Path))], "Format C#"); break;
@@ -132,22 +132,11 @@ public partial class App
 
     private XamlRenamePlan PlanCSharpRename(string path, int offset, string name, CancellationToken token = default)
     {
-        var service = CSharpLanguage(token); var compilation = _result!;
-        if (service.ResolveSymbol(path, offset, token) is IFieldSymbol field)
-        {
-            foreach (var document in compilation.Project!.Documents)
-            {
-                if (document.Document.ClassSymbol?.ToDisplayString() != field.ContainingType.ToDisplayString()) continue;
-                var analysis = new XamlAnalysis(document.Input.Syntax, document.Document, document.Output);
-                var index = XamlNameReferenceIndex.Create(analysis, compilation.AuthoringCompiler!, token);
-                var declaration = index.Occurrences.FirstOrDefault(o => o.IsDeclaration && o.Name == field.Name && o.NameScopeId == document.Document.Root?.NameScopeId);
-                if (declaration != null)
-                    return new XamlRenameService(compilation.AuthoringCompiler!).Rename(analysis, declaration.Span.Start, name,
-                        compilation.Project.Documents.Select(d => new XamlAnalysis(d.Input.Syntax, d.Document, d.Output)), token);
-            }
-        }
-        return new CSharpRenameService(compilation.Compilation, compilation.SourcePaths).Rename(path, offset, name, token);
+        CSharpLanguage(token);
+        return ProjectRename().Rename(path, offset, name, token);
     }
+
+    private XamlProjectRenameService ProjectRename() => new(_result!.AuthoringCompiler!, _result.Project!, _result.Compilation, _result.SourcePaths);
 
     public sealed record CSharpCompleteArguments(string Path, int Offset, int MaxResults = 200);
     public sealed record CSharpOutlineArguments(string Path, bool IncludeLocals = false, int MaxResults = 1000, int MaxDepth = 16);

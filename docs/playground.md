@@ -155,11 +155,26 @@ distinguishes editable locations from generated locations.
 
 `CSharpRenameService` verifies compilation and identifier bindings before returning an
 atomic source plan. It rejects source collisions, silent local capture, unresolved
-compilations, inheritance/interface contracts and generated dependencies requiring
-framework-aware edits. The browser routes XAML-generated field renames to XAML's existing
-rename service. General C# type/member renames across XAML and inheritance hierarchies
-remain outside this service's current coverage. Formatting uses Roslyn's syntax whitespace
-normalizer; it does not implement desktop `.editorconfig` formatting options. Source
+compilations and contracts owned by referenced assemblies. Source interfaces, overrides,
+record positional members, namespaces and aliases participate in source rename.
+`XamlProjectRenameService` adds resolved XAML references, including code-behind class
+names, namespace URIs, type names, property elements, compiled binding members, event
+handlers, static/enum values and XAML names. It regenerates the project and checks C#
+identifiers, XAML symbols, construction and member access before returning source edits.
+The existing editor dialog and MCP share this planner; `xamlg_xaml_rename_preview` and
+`xamlg_csharp_rename_preview` expose the same exact edit plans. Applying a plan uses one
+revision-checked project undo transaction.
+
+Avalonia registration fields, wrappers and attached accessors follow their naming
+contract together. Literal registration names are updated; `nameof` follows the renamed
+symbol. XAML selections use the logical property/event name. Referenced contracts and
+shared/custom registration factories require changes at their owning declaration;
+ordinary strings and reflection bindings are not inferred as symbol references. Generated
+files remain read-only outputs. Unsupported or ambiguous references that fail regenerated
+compilation/binding checks reject the entire plan without publishing edits.
+
+Formatting uses Roslyn's syntax whitespace normalizer; it does not implement desktop
+`.editorconfig` formatting options. Source
 actions offer explicit/inferred local types, explicit/target-typed object creation,
 qualified type/member names, predefined type keywords, constant-preserving `nameof`
 expressions, and method/property expression or block bodies. Candidates must compile;

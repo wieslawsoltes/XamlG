@@ -40,13 +40,16 @@ public sealed class CSharpRenameTests
         Assert.All(changes, c => Assert.Equal("State", code.Substring(c.Span.Start, c.Span.Length)));
     }
     [Fact]
-    public void Generated_references_and_interface_contracts_are_rejected()
+    public void Generated_references_require_a_project_host_and_source_interface_contracts_are_renamed_together()
     {
         const string code = "partial class State { public int Value; }";
         Assert.Throws<InvalidOperationException>(() => Service(("Code.cs", code), ("State.g.cs", "partial class State { int Read() => Value; }"))
             .Rename("Code.cs", code.IndexOf("Value", StringComparison.Ordinal), "Number"));
         const string contract = "interface IState { int Read(); } class State : IState { public int Read() => 1; }";
-        Assert.Throws<InvalidOperationException>(() => Service(("Code.cs", contract)).Rename("Code.cs", contract.LastIndexOf("Read", StringComparison.Ordinal), "Get"));
+        var plan = Service(("Code.cs", contract)).Rename("Code.cs", contract.LastIndexOf("Read", StringComparison.Ordinal), "Get");
+        var changes = Assert.Single(plan.Documents).Changes;
+        Assert.Equal(2, changes.Length);
+        Assert.All(changes, change => Assert.Equal("Get", change.NewText));
     }
     [Fact]
     public void Keyword_names_are_escaped_and_invalid_names_are_rejected()

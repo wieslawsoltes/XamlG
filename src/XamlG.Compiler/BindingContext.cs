@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Roslyn;
 using XamlG.Syntax;
@@ -43,19 +44,38 @@ public sealed class BindingContext
     }
     public ITypeSymbol? FindName(int scope, string name) => _names.TryGetValue(scope, out var names) && names.TryGetValue(name, out var definition) ? definition.Type : null;
     public TextSpan? FindNameSpan(int scope, string name) => _names.TryGetValue(scope, out var names) && names.TryGetValue(name, out var definition) ? definition.Span : null;
-    public INamedTypeSymbol? ResolveType(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, bool extension = false, NamespaceScope? typeArgumentScope = null)
+    public INamedTypeSymbol? ResolveType(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, bool extension = false, NamespaceScope? typeArgumentScope = null) =>
+        ResolveTypeAtSource(name, scope, span, typeArguments, report, extension, typeArgumentScope);
+    public INamedTypeSymbol? ResolveTypeAtSource(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, bool extension = false, NamespaceScope? typeArgumentScope = null, TextSpan? typeArgumentSpan = null)
     {
         var parsed = XamlTypeNameParser.Parse(name, span, d => { if (report) Diagnostics.Add(d); });
         if (parsed == null) return null;
+        parsed = SourceSpans(parsed, name, span);
         if (typeArguments != null)
         {
             if (parsed.Arguments.Length != 0)
             { if (report) Report("XG1025", "Generic arguments cannot be specified both inline and in x:TypeArguments.", span); return null; }
-            var explicitArguments = XamlTypeNameParser.ParseList(typeArguments, span, d => { if (report) Diagnostics.Add(d); });
+            var explicitArguments = XamlTypeNameParser.ParseList(typeArguments, typeArgumentSpan ?? span, d => { if (report) Diagnostics.Add(d); });
             if (explicitArguments.Length == 0) return null;
+            if (typeArgumentSpan is { } argumentSpan)
+                explicitArguments = explicitArguments.Select(argument => SourceSpans(argument, typeArguments, argumentSpan)).ToImmutableArray();
             parsed = parsed with { Arguments = explicitArguments };
         }
         return ResolveType(parsed, scope, report, extension, typeArguments == null ? null : typeArgumentScope);
+    }
+    private XamlTypeNameSyntax SourceSpans(XamlTypeNameSyntax parsed, string text, TextSpan span)
+    {
+        if (span.End > Syntax.Text.Length) return parsed;
+        XamlDecodedTextMap map;
+        try { map = XamlDecodedTextMap.Create(Syntax.Text, span); }
+        catch (ArgumentException) { return parsed; } // Approximate diagnostic spans need not be complete XML values.
+        if (!map.Text.StartsWith(text, StringComparison.Ordinal)) return parsed;
+        return Remap(parsed);
+        XamlTypeNameSyntax Remap(XamlTypeNameSyntax value) => value with
+        {
+            Span = map.ToSource(new(value.Span.Start - span.Start, value.Span.Length)),
+            Arguments = value.Arguments.Select(Remap).ToImmutableArray()
+        };
     }
     private INamedTypeSymbol? ResolveType(XamlTypeNameSyntax syntax, NamespaceScope scope, bool report, bool extension = false, NamespaceScope? typeArgumentScope = null)
     {

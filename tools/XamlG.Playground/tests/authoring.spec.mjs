@@ -30,7 +30,7 @@ test('Monaco rename previews XAML and C# and project undo restores both atomical
   const beforeXaml = await source(page, 'View.axaml');
   const beforeCode = await source(page, 'Code.cs');
   await command(page, 'View.axaml', 'counter"', 'rename');
-  const dialog = page.getByRole('dialog', { name: 'Rename XAML name' });
+  const dialog = page.getByRole('dialog', { name: 'Rename XAML symbol' });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel('New name', { exact: true }).fill('renamedCounter');
   await dialog.getByRole('button', { name: 'Preview rename', exact: true }).click();
@@ -52,7 +52,7 @@ test('Monaco rename previews XAML and C# and project undo restores both atomical
 test('source changes during rename preview are rejected without overwriting either buffer', async ({ page }) => {
   await start(page);
   await command(page, 'View.axaml', 'counter"', 'rename');
-  const dialog = page.getByRole('dialog', { name: 'Rename XAML name' });
+  const dialog = page.getByRole('dialog', { name: 'Rename XAML symbol' });
   await dialog.getByLabel('New name', { exact: true }).fill('renamedCounter');
   await dialog.getByRole('button', { name: 'Preview rename', exact: true }).click();
   await expect(dialog.getByTestId('rename-files')).toContainText('Code.cs');

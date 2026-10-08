@@ -44,6 +44,8 @@ The returned plan contains the old/new names, selection span and per-document ed
 
 For root names in code-behind classes, the service augments the Roslyn compilation with generated output and resolves the actual generated or explicit field. It changes field declarations/usages and `nameof` references in loaded original C# syntax trees, not comments, string literals or same-spelled unrelated locals. It rejects invalid/keyword identifiers, duplicate names in the same namescope, inherited/member collisions and unqualified C# references that would capture locals/parameters after rename. General type/member rename and arbitrary C# refactoring are outside this service.
 
+For coordinated CLR symbol rename, `XamlProjectRenameService` accepts the source compilation session, complete XAML project output, compilation including generated sources, and editable C# paths. Its `Prepare` and `Rename` operations can start in C# or XAML. It follows source inheritance/interface contracts, adds resolved XAML references and Avalonia registration/accessor links, regenerates compiler output and checks declaration bindings before returning an `XamlRenamePlan`. The browser editor and MCP use this service for their project-wide rename commands. Referenced contracts and unresolved reflection/string references remain outside automatic rename. See [Playground semantic authoring](playground.md#semantic-authoring-commands) for the current boundaries.
+
 `XamlCSharpReferenceService` exposes source-only symbol reference lookup, including code-behind field uses. The host owns refreshing unsaved C# buffers into its Roslyn compilation; the XAML LSP buffer store is not a C# language server.
 
 ## Formatting without XML serialization

@@ -15,7 +15,8 @@ public sealed class ObjectBinder
     {
         _context.Cancellation.ThrowIfCancellationRequested();
         var scope = parentScope.Push(syntax);
-        var type = overrideType ?? _context.ResolveType(syntax.Name, scope, syntax.NameSpan, scope.Directive(syntax, "TypeArguments")?.Value);
+        var typeArguments = scope.Directive(syntax, "TypeArguments");
+        var type = overrideType ?? _context.ResolveTypeAtSource(syntax.Name, scope, syntax.NameSpan, typeArguments?.Value, typeArgumentSpan: typeArguments?.ValueSpan);
         if (type == null) return null;
         if (type.IsAbstract && !isRoot) { _context.Report("XG1006", $"Cannot instantiate abstract type '{type}'.", syntax.NameSpan); return null; }
         if (_context.Types.GetDeclaredContentProperties(type).Length > 1)

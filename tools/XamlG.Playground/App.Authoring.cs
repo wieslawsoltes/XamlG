@@ -95,8 +95,8 @@ public partial class App
             switch (request.Command)
             {
                 case "rename":
-                    var name = new XamlRenameService(_result.AuthoringCompiler!).Prepare(_authoringAnalysis, request.Start)
-                        ?? throw new InvalidOperationException("Select an x:Name or a statically resolved name reference.");
+                    var name = ProjectRename().Prepare(request.Path, request.Start)
+                        ?? throw new InvalidOperationException("Select an x:Name or a resolved CLR type, namespace or member reference.");
                     _renameName = _renameOriginal = name.Name; _renameVisible = true;
                     _status = "Rename previews all XAML and C# changes before one atomic project edit";
                     break;
@@ -125,8 +125,7 @@ public partial class App
             if (IsCSharpPath(_authoringRequest.Path))
             { _renamePlan = PlanCSharpRename(_authoringRequest.Path, _authoringRequest.Start, _renameName); return; }
             if (_authoringAnalysis == null) throw new InvalidOperationException("The XAML authoring snapshot is no longer available.");
-            var analyses = _result!.Project!.Documents.Select(d => new XamlAnalysis(d.Input.Syntax, d.Document, d.Output));
-            _renamePlan = new XamlRenameService(_result.AuthoringCompiler!).Rename(_authoringAnalysis, _authoringRequest.Start, _renameName, analyses);
+            _renamePlan = ProjectRename().Rename(_authoringRequest.Path, _authoringRequest.Start, _renameName);
         }
         catch (Exception error) { _authoringError = error.Message; }
     }
