@@ -7,6 +7,8 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Data;
+using Avalonia.Media;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media.Imaging;
@@ -16,6 +18,7 @@ using Avalonia.Themes.Simple;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using ControlCatalog.Models;
+using ControlCatalog.Pages;
 using ControlCatalog.Validation;
 using XamlG.Runtime;
 using Xunit;
@@ -33,6 +36,20 @@ public static class CatalogTestApplication
 
 public sealed class CatalogTests
 {
+    [AvaloniaFact]
+    public void FluidNavigationDefaultsRemainStyleable()
+    {
+        var control = new FluidNavBar();
+        Assert.Empty(control.Items);
+        Assert.Equal(Colors.White, control.BarColor);
+        Assert.Equal(Colors.White, control.ButtonColor);
+        Assert.Equal(Colors.Black, control.ActiveIconColor);
+        Assert.Equal(Color.FromArgb(140, 120, 120, 120), control.InactiveIconColor);
+        using (control.SetValue(FluidNavBar.BarColorProperty, Colors.Red, BindingPriority.Style))
+            Assert.Equal(Colors.Red, control.BarColor);
+        Assert.Equal(Colors.White, control.BarColor);
+    }
+
     [AvaloniaTheory]
     [InlineData(CatalogTheme.Simple)]
     [InlineData(CatalogTheme.Fluent)]
@@ -81,24 +98,31 @@ public sealed class CatalogTests
         AssertCompiledWithXamlG(typeof(SimpleTheme));
         AssertCompiledWithXamlG(typeof(FluentTheme));
         App.SetCatalogThemes(theme);
-        Application.Current!.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
-        ((FluentTheme)Application.Current.Resources["FluentTheme"]!).DensityStyle =
+        var shell = CatalogCases.CreateShell();
+        ((FluentTheme)Application.Current!.Resources["FluentTheme"]!).DensityStyle =
             compact ? DensityStyle.Compact : DensityStyle.Normal;
-        var cases = CatalogCases.All();
+        var cases = CatalogCases.All(shell);
         Assert.Equal(76, cases.Count(item => item.Kind == "page"));
         Assert.Contains(cases, item => item.Kind == "section");
         Assert.Contains(cases, item => item.Kind == "sample");
+        Assert.Equal(102, cases.Count(item => item.Kind == "gallery"));
         var id = $"{theme}-{(dark ? "Dark" : "Light")}-{(compact ? "Compact" : "Normal")}";
         var output = Path.Combine(Environment.GetEnvironmentVariable("XAMLG_CATALOG_RESULTS") ??
             Path.Combine(AppContext.BaseDirectory, "test-results"), id);
         Directory.CreateDirectory(output);
         var results = new List<object>();
         var errors = new List<string>();
-        var navigation = new NavigationPage { PageTransition = null };
-        var window = new Window { Width = 1280, Height = 800, Content = new PageNavigationHost { Page = navigation } };
+        var navigation = CatalogCases.Navigation(shell);
+        navigation.PageTransition = null;
+        var window = new Window { Width = 1280, Height = 800, DataContext = shell.DataContext,
+            Content = new PageNavigationHost { Page = shell } };
         try
         {
             window.Show();
+            Dispatcher.UIThread.RunJobs();
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+            Dispatcher.UIThread.RunJobs();
+            Application.Current!.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
             foreach (var item in cases)
             {
                 try
@@ -115,6 +139,7 @@ public sealed class CatalogTests
                     Assert.True(control.Bounds.Width > 0 && control.Bounds.Height > 0, item.Name + " has no layout.");
                     var visuals = control.GetVisualDescendants().Count();
                     Assert.True(visuals > 0, item.Name + " has no realized visual content.");
+                    CatalogValidation.VerifyBindings(control);
                     var file = string.Concat(item.Name.Select(c => char.IsLetterOrDigit(c) ? c : '_')) + ".png";
                     frame.Save(Path.Combine(output, file), new PngBitmapEncoderOptions());
                     results.Add(new { item.Name, item.Kind, Visuals = visuals, Status = "passed" });

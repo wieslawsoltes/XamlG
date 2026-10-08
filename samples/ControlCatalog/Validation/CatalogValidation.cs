@@ -10,6 +10,7 @@ using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 using Avalonia.VisualTree;
 using ControlCatalog.Models;
+using ControlCatalog.Pages;
 
 namespace ControlCatalog.Validation;
 
@@ -30,12 +31,16 @@ public static class CatalogValidation
         foreach (var compact in theme == CatalogTheme.Fluent ? new[] { false, true } : new[] { false })
         {
             App.SetCatalogThemes(theme);
+            var shell = CatalogCases.CreateShell();
+            var navigation = CatalogCases.Navigation(shell);
+            navigation.PageTransition = null;
+            show(new PageNavigationHost { Page = shell });
+            await Task.Delay(100);
+            // MainView applies the system variant on Loaded. Select the test variant afterwards.
             Application.Current!.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
             ((FluentTheme)Application.Current.Resources["FluentTheme"]!).DensityStyle =
                 compact ? DensityStyle.Compact : DensityStyle.Normal;
-            var navigation = new NavigationPage { PageTransition = null };
-            show(new PageNavigationHost { Page = navigation });
-            foreach (var item in CatalogCases.All())
+            foreach (var item in CatalogCases.All(shell))
             {
                 var visuals = 0;
                 string? error = null;
@@ -44,10 +49,16 @@ public static class CatalogValidation
                     var control = item.Create();
                     await navigation.ReplaceAsync(control as Page ?? new ContentPage { Content = control, Header = item.Name }, null);
                     // Allow the real platform's layout/render loop to process the newly selected page.
-                    await Task.Delay(60);
+                    for (var attempt = 0; attempt < 40; attempt++)
+                    {
+                        await Task.Delay(25);
+                        if (control.Bounds.Width > 0 && control.Bounds.Height > 0 && control.GetVisualDescendants().Any())
+                            break;
+                    }
                     visuals = control.GetVisualDescendants().Count();
                     if (control.Bounds.Width <= 0 || control.Bounds.Height <= 0 || visuals == 0)
                         throw new InvalidOperationException("The selected sample has no realized layout or visual content.");
+                    VerifyBindings(control);
                 }
                 catch (Exception exception) { error = exception.ToString(); }
                 results.Add(new(theme.ToString(), dark ? "Dark" : "Light", compact ? "Compact" : "Normal",
@@ -60,4 +71,11 @@ public static class CatalogValidation
 
     public static string Serialize(List<CatalogValidationResult> results) =>
         JsonSerializer.Serialize(results, CatalogValidationJsonContext.Default.ListCatalogValidationResult);
+
+    public static void VerifyBindings(Control control)
+    {
+        if (control is HomePage && !control.GetVisualDescendants().OfType<ItemsControl>()
+                .Any(items => items.ItemsSource is IReadOnlyList<HomeSection> { Count: 11 }))
+            throw new InvalidOperationException("Home must resolve the full shell's view model and bind all eleven sections.");
+    }
 }

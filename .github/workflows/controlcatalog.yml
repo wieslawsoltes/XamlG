@@ -1,0 +1,76 @@
+name: Complete ControlCatalog
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths: ['src/**', 'eng/**', 'samples/**', 'scripts/*controlcatalog*', 'Directory.*', '.github/workflows/controlcatalog.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: controlcatalog-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Create an isolated validation worktree
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/xamlg-catalog" HEAD
+          echo "CATALOG_WORKTREE=$RUNNER_TEMP/xamlg-catalog" >> "$GITHUB_ENV"
+      - name: Prepare pinned sources and browser tools
+        working-directory: ${{ env.CATALOG_WORKTREE }}
+        run: |
+          python3 scripts/prepare-controlcatalog.py
+          dotnet workload install wasm-tools --skip-manifest-update
+          npm ci --prefix tools/XamlG.Playground --ignore-scripts --no-audit --no-fund
+          npx --prefix tools/XamlG.Playground playwright install --with-deps chromium
+          mkdir -p artifacts/controlcatalog-validation
+          git rev-parse HEAD > artifacts/controlcatalog-validation/commit.txt
+          cp samples/controlcatalog-upstream.json artifacts/controlcatalog-validation/
+      - name: Build catalog, copied themes and desktop host
+        working-directory: ${{ env.CATALOG_WORKTREE }}
+        run: |
+          set -o pipefail
+          dotnet build samples/ControlCatalog.Desktop -c Release -r linux-x64 -p:AvsSkipBuildingLegacyTargetFrameworks=True -p:NuGetAudit=false -warnaserror 2>&1 | tee artifacts/controlcatalog-validation/desktop-build.log
+      - name: Render every page and demo, and construct every XAML component
+        working-directory: ${{ env.CATALOG_WORKTREE }}
+        run: |
+          set -o pipefail
+          export XAMLG_CATALOG_RESULTS="$PWD/artifacts/controlcatalog-validation/headless"
+          dotnet test samples/ControlCatalog.Tests -c Release -r linux-x64 -p:AvsSkipBuildingLegacyTargetFrameworks=True -p:NuGetAudit=false -warnaserror --logger trx --results-directory artifacts/controlcatalog-validation/trx 2>&1 | tee artifacts/controlcatalog-validation/headless.log
+      - name: Exercise the actual desktop lifetime
+        working-directory: ${{ env.CATALOG_WORKTREE }}
+        run: |
+          set -o pipefail
+          xvfb-run -a dotnet samples/ControlCatalog.Desktop/bin/Release/net10.0/linux-x64/ControlCatalog.Desktop.dll --xamlg-validate artifacts/controlcatalog-validation/desktop-results.json 2>&1 | tee artifacts/controlcatalog-validation/desktop-run.log
+      - name: Publish and execute the trimmed WebAssembly application
+        working-directory: ${{ env.CATALOG_WORKTREE }}
+        run: |
+          set -o pipefail
+          dotnet publish samples/ControlCatalog.Browser -c Release -p:AvsSkipBuildingLegacyTargetFrameworks=True -p:NuGetAudit=false -warnaserror 2>&1 | tee artifacts/controlcatalog-validation/browser-publish.log
+          python3 scripts/serve-playground.py --directory samples/ControlCatalog.Browser/bin/Release/net10.0-browser/publish/wwwroot --port 8943 > artifacts/controlcatalog-validation/browser-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          node scripts/test-controlcatalog-browser.mjs http://127.0.0.1:8943 2>&1 | tee artifacts/controlcatalog-validation/browser-run.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: complete-controlcatalog
+          path: ${{ env.CATALOG_WORKTREE }}/artifacts/controlcatalog-validation
+      - name: Verify source integrity and remove the worktree
+        if: ${{ always() && env.CATALOG_WORKTREE != '' }}
+        run: |
+          git -C "$CATALOG_WORKTREE" diff --exit-code
+          git -C "$CATALOG_WORKTREE" diff --cached --exit-code
+          git worktree remove "$CATALOG_WORKTREE"

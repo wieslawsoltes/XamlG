@@ -25,7 +25,7 @@ try {
     const results = JSON.parse(await page.evaluate(() => globalThis.xamlgValidateCatalog()));
     await writeFile(path.join(output, 'results.json'), JSON.stringify(results, null, 2));
     await page.screenshot({ path: path.join(output, 'completed.png') });
-    assert.equal(results.length, 576, 'Every registered page, section and gallery demo must run in all six theme configurations.');
+    assert.equal(results.length, 1188, 'Every registered page, section and gallery demo must run in all six theme configurations.');
     const groups = new Map();
     for (const result of results) {
         const key = `${result.Theme}/${result.Variant}/${result.Density}`;
@@ -37,7 +37,8 @@ try {
         assert.equal(cases.filter(item => item.Kind === 'page').length, 76, name);
         assert.equal(cases.filter(item => item.Kind === 'section').length, 11, name);
         assert.equal(cases.filter(item => item.Kind === 'sample').length, 9, name);
-        assert.equal(new Set(cases.map(item => item.Name)).size, 96, name);
+        assert.equal(cases.filter(item => item.Kind === 'gallery').length, 102, name);
+        assert.equal(new Set(cases.map(item => item.Name)).size, 198, name);
     }
     assert.deepEqual(results.filter(result => result.Error != null), [], 'Catalog pages failed in the published browser app.');
     assert.deepEqual(errors, [], 'Browser runtime errors');
