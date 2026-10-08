@@ -43,10 +43,11 @@ capabilities to Avalonia XAML and Roslyn C#; it does not introduce a VB6 runtime
 
 ## Acceptance evidence
 
-Completion is pending. Each deliverable above requires current executable evidence;
-a listed tool or a successful build alone is not evidence that its behavior works.
-Provider protocol tests must use deterministic transports through the official
-SDKs; live paid-account validation, if unavailable, must be reported separately.
+Implementation and local acceptance are complete for code candidate `6fd67a3`.
+The evidence below covers the native, browser, protocol and package-consumer
+behavior. Provider tests use deterministic transports through the official SDKs;
+production account sign-in and paid inference were not exercised. PR review,
+required CI completion and publication through main remain release steps.
 
 The implementation branch is `codex/studio-mcp-agent`, based on `19cb780`.
 Main is merged at implementation checkpoints; the latest merged upstream commit
@@ -203,15 +204,19 @@ feedback/navigation/restoration until refreshed. Task-specific drafts, baseline,
 file/block selection, diff display, feedback, queue selection and reading state
 survive pane reopening within this page; they are not saved in browser storage.
 
-## Local evidence and remaining work
+## Local acceptance evidence
 
-The implementation-first pass has reached validation. On 2026-10-08 the complete
-native solution and integrated Playground build with warnings treated as errors.
+The implementation-first pass and local validation are complete. On 2026-10-08,
+the complete native solution and integrated Playground built with warnings treated
+as errors.
 The native suite passes all 2,067 tests after merging `8ebd279`:
 280 core, 169 Tooling, 1,356 Avalonia, 154 automation/MCP/agent, 94 language-server
 and 14 workspace tests. This includes 42 official-SDK provider transport cases.
-The expanded behavioral coverage and browser/package acceptance listed below are
-still required; passing the existing native suite does not complete those checks.
+The expanded behavioral coverage and package acceptance listed below also pass.
+Native, upstream, theme and package evidence uses `b5a61f0`. The subsequent `6fd67a3`
+changes only Playground source-selection focus, its browser regression and this
+ledger; the reusable libraries and companion are unchanged. The Playground publish,
+nine asset tests, 12 focused browser regressions and full browser run use `6fd67a3`.
 
 Fifty additional native agent cases now cover exact block restoration and complete
 patch application/reversal with Git, empty/added/deleted documents, UTF-16 and mixed
@@ -398,9 +403,9 @@ API keys, preferences, model discovery, task isolation, consent, retry, cancella
 and sign-out during a real response stream. All credentials and inference responses
 are synthetic; no production account was signed in or charged.
 
-The complete browser suite now contains 73 scenarios in 27 files. These focused
-passes and the earlier compiler/runtime/designer checks do not certify a complete
-current browser run.
+The complete browser suite passes all 73 scenarios in 27 files in one clean
+Pages-origin run against `6fd67a3` (10.5 minutes, no retries or failures).
+It uses the prepared production publish, HTTPS Pages origin and `/XamlG/` base path.
 
 The first complete Pages-origin run passed 72 cases. Its legacy-draft fixture now
 installs old storage before startup so a live editor capture cannot overwrite it;
@@ -419,7 +424,9 @@ preventing Escape from reaching Avalonia. Visual selection now reveals source wi
 taking focus, including deferred resource-editor reveals. Explicit source navigation
 retains normal focus. The browser regression waits for the asynchronous highlight
 and checks focus before pressing Escape; it reproduces the failure on the old publish.
-The corrected publish and complete browser rerun still require acceptance.
+The corrected publish passes all 12 focused designer/authoring cases and the complete
+73-case browser run. Native/MSBuild CI on Linux and Windows, package, host, upstream,
+theme and source-snapshot jobs also pass for `6fd67a3`; the PR reports current CI status.
 
 The 25 MSBuild input and five fingerprint cases, all 975 pinned upstream assertions
 and parity cases, and CLI process checks pass. Unmodified Simple (81 physical plus
@@ -431,20 +438,18 @@ and resource emission, standalone automation/MCP/agents and all three provider S
 adapters. Temporary consumer caches and large theme/upstream outputs are removed
 after retaining their result summaries.
 
-Remaining completion work:
-
-- Run the full browser suite with the additional MCP/artifact/account acceptance
-  and Pages-origin/base-path pairing on the merged candidate.
-- Close any remaining browser failures, remove obsolete artifacts and update the PR.
-
 Main is merged through `8ebd279`; the merged native solution passes its full build
-and test suite. The existing Playground contains the integration. Public Pages
-deployment remains dependent on the PR reaching main.
+and test suite. The existing Playground contains the integration. All local
+acceptance gates are closed; final evidence is recorded in
+[PR #9](https://github.com/wieslawsoltes/XamlG/pull/9). Superseded publishes, packages,
+reference clones, isolated consumer caches and temporary browser traces are removed.
+Review and required CI completion precede merge; public Pages deployment follows
+the existing main-only workflow.
 
 ## Implementation details and earlier validation
 
-The notes below retain implementation-checkpoint details. The current evidence and
-remaining completion gates are recorded in the preceding section.
+The notes below retain implementation-checkpoint details. The current acceptance
+evidence and release steps are recorded in the preceding section.
 
 Implemented since that checkpoint: tasks bind to the creating browser workspace
 lifetime; replacement and revocation disconnect that lifetime. A separate preparation
@@ -466,15 +471,11 @@ is handled locally. Automatic triggers, model-window estimates, retained turns a
 checkpoint output allowance are configurable. The older synchronous `Compact` API
 remains a local deterministic checkpoint for embedding compatibility.
 
-Targeted companion and browser compilation succeeded during this implementation;
-the full behavioral suites and package consumers are deliberately pending. Earlier
-browser fixtures need updating for the new compaction and restore confirmations.
-MCP templates, completion, resource notifications and catalog pagination also compile
-with the browser and MCP packages; their expanded behavioral coverage is pending.
-Tasks, immutable build downloads and the activity/operations controls are implemented
-in the same feature-first pass. Targeted companion and browser builds succeeded;
-task cancellation/ownership, notification streams and artifact emission/download
-still require the final behavioral validation pass.
+The feature-first pass added compaction and restore confirmations, MCP templates,
+completion, resource notifications, catalog pagination, background tasks, immutable
+build downloads and activity/operations controls. Subsequent behavioral acceptance
+covers cancellation/ownership, notification streams, artifact emission/download and
+independent package consumers; the current evidence is recorded above.
 
 - The merged native solution passed 1,508 tests after merging main through
   `a331efe` (Avalonia class/setter contracts), including 1,017 real-Avalonia tests
@@ -570,26 +571,17 @@ point with schema/revision checks; MCP and agent transports retain their normal
 permission gate. Source navigation validates the preview's source version and can
 reveal resource documents as well as the main XAML file. The new runtime APIs and
 browser UI compile. Native behavioral tests and the expanded Pages-origin runtime,
-browser and MCP scenarios recorded above pass. The full browser, account,
-protocol-extension and package-consumer pass remains open.
-
-Full reference acceptance remains in progress: account-mode behavioral acceptance,
-expanded recovery coverage, and the corresponding UI, authoring and
-protocol acceptance coverage. This ledger does not infer behavioral acceptance from a
-build or from the existence of a tool name.
+browser and MCP scenarios recorded above pass. The current acceptance section also
+records account-mode, recovery, authoring, protocol and package-consumer results.
 
 The reference provider/protocol recovery pass is now implemented, including stop/failure
 classification and continuation behavior across the three SDKs. Coordinated XAML/C# rename, broader semantic source actions and symbol
 navigation are now implemented below, alongside operation/control/data-flow inspection
 and compiler settings. The workbench Markdown, Enter/IME, independent review state,
-source navigation, thread paging and selective block restoration are also implemented;
-their behavioral acceptance remains pending.
-
-Next, update and expand the acceptance fixtures and run the full native,
-browser, MCP, provider-transport, Pages-origin and package-consumer validation.
-Close failures, document exact boundaries and update the draft PR. Earlier test
-counts in this ledger do not certify the current feature additions. The published Pages
-app receives this integration only after the PR reaches main.
+source navigation, thread paging and selective block restoration are also implemented
+and covered by the native and browser acceptance described above. Earlier test
+counts below describe their implementation checkpoints. The published Pages app
+receives this integration only after the PR reaches main.
 
 Reference-valued method/provider results and explicit property/dictionary reads now
 receive bounded retained-object handles, including accessibility text-range and
@@ -721,12 +713,11 @@ pause without automatic retry or billing fallback; temporary failures retain nor
 bounded retry behavior. Account diagnostics retain bounded status/code/parameter,
 response shape and request ID, without raw provider bodies or credentials.
 
-Targeted OpenAI-package, companion and Playground builds pass. A small SDK shape
-probe verified namespace serialization round trips; it is not account acceptance.
-Full deterministic OAuth/provider/browser coverage remains deferred with the rest
-of validation: identity and callback rejection, registration retry, stored-session
-locking/permissions, token rotation/sign-out races, account-bound tools, consent,
-model catalogs, namespace continuations, errors and UI isolation. No actual account
+Targeted OpenAI-package, companion and Playground builds pass. Deterministic
+OAuth/provider/browser coverage now exercises identity and callback rejection,
+registration retry, stored-session locking/permissions, token rotation/sign-out races,
+account-bound tools, consent, model catalogs, namespace continuations, errors and UI
+isolation. The current acceptance section records the results. No actual account
 was signed in and no production/paid inference was requested.
 
 Temporary reference clones and superseded publishes are removed when no longer
@@ -768,11 +759,11 @@ Failed, cancelled, timed-out or output-limited requests publish bounded incomple
 public text while preserving the existing native continuation and accounting rules.
 
 Targeted companion and integrated Playground builds pass without warnings/errors,
-and the JavaScript syntax check passes. Behavioral validation remains deferred:
-exact block reconstruction and Undo, stale/project/checkpoint races, unchanged
+and the JavaScript syntax check passes. Subsequent native and browser acceptance
+covers exact block reconstruction and Undo, stale/project/checkpoint races, unchanged
 feedback targets, task/pane isolation, late responses, source navigation, inert
 Markdown, keyboard/IME, scrolling/selection, thread paging and incomplete replies.
-No full suite or provider inference was run during this implementation pass.
+Provider responses in acceptance are synthetic and use the official SDK transports.
 
 The reusable C# language service now supplies document outlines, declaration search,
 namespace/type member inspection, type definitions, type hierarchies and implementation
@@ -821,11 +812,11 @@ The compiler now supplies more precise type/markup/generic-argument source spans
 including raw XML entity mapping, and records attached-event member references.
 Existing public type-resolution signatures remain available, with new source-aware
 entry points. Targeted Tooling and integrated Playground builds pass without warnings
-or errors. The old source-interface rejection fixture is updated to expect coordinated
-edits; behavioral suites remain deferred. Final acceptance must cover cross-file and
-cross-language renames, contracts/generics/records, registered and attached members,
-namespace/class changes, XML entities and markup/type arguments, generated adapters,
-implicit content/accessors, binding capture, stale previews and one-step undo.
+or errors. The old source-interface rejection fixture now expects coordinated edits.
+Subsequent behavioral acceptance covers cross-file and cross-language renames,
+contracts/generics/records, registered and attached members, namespace/class changes,
+XML entities and markup/type arguments, generated adapters, implicit content/accessors,
+binding capture, stale previews and one-step undo.
 
 The provider recovery pass adds shared exact-code classification for account access,
 safety, context, quota, authentication, request, rate and temporary server failures.
@@ -854,5 +845,5 @@ are discarded. Forty-two provider discovery, continuation and recovery tests now
 through the pinned official SDKs, including quota priority, typed stream failures,
 failed-attempt usage, encrypted/signed continuation preservation, late-error rejection,
 and output-limit resume with and without a supported cap. These fixtures do not sign
-into a real account or request production inference. Full native/browser/MCP/OAuth,
-Pages-origin, package-consumer and CI acceptance remains pending.
+into a real account or request production inference. The current acceptance section
+records the full native/MCP/OAuth, Pages-origin, package-consumer and CI results.
