@@ -1,6 +1,27 @@
 import { test, expect } from './studio-fixture.mjs';
 import { openStudio, call, writeDocument } from './live-preview.mjs';
 
+test('companion credentials are remembered before pairing and Forget removes retained versions', async ({ page }) => {
+  await openStudio(page, false);
+  await page.getByTestId('agent-access').click();
+  const address = 'ws://127.0.0.1:4899/bridge', token = 'synthetic-unconnected-owner-token'.repeat(2);
+  await page.getByLabel('Companion WebSocket', { exact: true }).fill(address);
+  await page.getByLabel('Owner token', { exact: true }).fill(token);
+  await expect.poll(() => page.evaluate(async () => (await (await xamlgBoot.importModule('studio.js')).loadStudioState('companion-connection'))?.token)).toBe(token);
+  await page.reload();
+  await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
+  await page.getByTestId('agent-access').click();
+  await expect(page.getByLabel('Companion WebSocket', { exact: true })).toHaveValue(address);
+  await expect(page.getByLabel('Owner token', { exact: true })).toHaveValue(token);
+  await expect(page.locator('.agent-access-panel').getByRole('status')).toContainText('Disconnected');
+  await page.getByRole('button', { name: 'Forget connection', exact: true }).click();
+  await expect(page.getByLabel('Owner token', { exact: true })).toHaveValue('');
+  expect(await page.evaluate(async () => {
+    const module = await xamlgBoot.importModule('studio.js');
+    return [await module.loadStudioState('companion-connection'), await module.loadStudioState('companion-connection:previous')];
+  })).not.toContainEqual(expect.objectContaining({ token }));
+});
+
 test('source documents, document tabs and undo history survive browser restart', async ({ page }) => {
   await openStudio(page);
   const invoke = (name, args) => call(page, name, args);

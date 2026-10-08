@@ -112,7 +112,7 @@ test('ChatGPT account UI signs in without an API key and keeps tasks bound while
       await expect.poll(() => pane.locator('#agent-models option').evaluateAll(options => options.map(option => option.value))).toEqual(['fixture-z', 'fixture-a']);
       const task = await createAgentTask(pane, 'Alpha task', 'fixture-z');
       await addAccount(page, pane, 'Beta'); const beta = await signedIn(api, pane);
-      expect(beta.id).not.toBe(alpha.id); expect(beta.remember).toBe(false);
+      expect(beta.id).not.toBe(alpha.id); expect(beta.remember).toBe(true);
       expect((await api('state')).tasks.find(item => item.id === task).account.id).toBe(alpha.id);
       await agentSection(pane, 'Conversation');
       await pane.getByLabel('Message', { exact: true }).fill('Use the original account.');
@@ -128,7 +128,7 @@ test('ChatGPT account UI signs in without an API key and keeps tasks bound while
       if (process.platform !== 'win32') {
         const stored = JSON.parse(await readFile(join(directory, 'accounts.dat'), 'utf8'));
         expect(stored.accounts.find(account => account.id === alpha.id).tokens.accessToken).toBe('synthetic_browser_access_1');
-        expect(stored.accounts.find(account => account.id === beta.id).tokens).toBeNull();
+        expect(stored.accounts.find(account => account.id === beta.id).tokens.accessToken).toBe('synthetic_browser_access_2');
         expect((await stat(join(directory, 'accounts.dat'))).mode & 0o777).toBe(0o600);
       }
       const publicState = JSON.stringify(await api('state'));

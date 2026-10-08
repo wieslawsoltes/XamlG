@@ -188,10 +188,12 @@ public partial class AgentWorkbench
     }
     private async Task CreateAsync()
     {
+        var section = _section;
         try
         {
             _error = null; var task = await RequestAsync<TaskView>("create", new { name = _name, provider = _provider, model = _model, accountId = _provider == ChatGptProvider ? ActiveAccount?.Id : null });
-            await RefreshAfterCommandAsync(); Select(task.Id); _section = "Conversation";
+            await RefreshAfterCommandAsync(); Select(task.Id);
+            if (_section == section) _section = "Conversation";
         }
         catch (JSException error) { _error = error.Message; }
     }

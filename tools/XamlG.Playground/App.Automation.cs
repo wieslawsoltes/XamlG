@@ -434,17 +434,17 @@ public partial class App
         try
         {
             await _module.InvokeVoidAsync("connectAutomation", _companionUrl, _companionToken);
-            await _module.InvokeVoidAsync("saveStudioState", "companion-connection", new SavedCompanion(_companionUrl, _companionToken, true));
             _connectionStatus = "Connected";
+            await _module.InvokeVoidAsync("saveStudioState", "companion-connection", new SavedCompanion(_companionUrl, _companionToken, true));
         }
         catch (Exception error) { _connectionStatus = error.Message; }
     }
     private async Task DisconnectAutomationAsync()
     {
         RevokeAutomation();
+        _connectionStatus = "Disconnected";
         if (_module != null) await _module.InvokeVoidAsync("disconnectAutomation");
         if (_module != null) await _module.InvokeVoidAsync("saveStudioState", "companion-connection", new SavedCompanion(_companionUrl, _companionToken, false));
-        _connectionStatus = "Disconnected";
     }
     private async Task RetireAutomationWorkspaceAsync()
     {

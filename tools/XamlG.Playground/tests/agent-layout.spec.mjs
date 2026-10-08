@@ -42,7 +42,8 @@ test('tool cards present large results and errors without exposing raw JSON in t
     // Tool JSON is data: marker-shaped strings and large counts must not crash
     // the renderer or prevent reading the rest of the conversation.
     await page.route('**/agent/state', async route => {
-      const response = await route.fetch();
+      // Inject into a full snapshot, rather than the normal unchanged-state cursor.
+      const response = await route.fetch({ postData: {} });
       try {
         const state = await response.json();
         const task = state.tasks.find(task => task.id === id);

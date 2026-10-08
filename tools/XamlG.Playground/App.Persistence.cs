@@ -9,6 +9,8 @@ public partial class App
     private Task? _initialStateRestore;
     private bool _shellStateLoaded;
     private string? _lastShellState, _failedShellState;
+    private bool _companionStateLoaded;
+    private string? _lastCompanionState, _failedCompanionState;
     private int? _previewWidth, _previewHeight;
     private string PreviewViewportStyle => _previewWidth is { } width && _previewHeight is { } height
         ? $"right:auto;bottom:auto;width:{width}px;height:{height}px;" : "";
@@ -33,6 +35,7 @@ public partial class App
     private async Task SaveShellStateAsync()
     {
         if (!_shellStateLoaded || _module == null || _disposed) return;
+        await SaveCompanionDraftAsync();
         var state = new SavedShell(1, _activeDocumentPath, _editorTab, _inspectorTab, _propertyName, _propertyValue,
             _automationProfile, _capabilityFilter, _capabilityScope, _designMode, _isolationVisible, _previewWidth, _previewHeight);
         var text = System.Text.Json.JsonSerializer.Serialize(state);
@@ -64,10 +67,20 @@ public partial class App
     {
         if (_module == null) return;
         var saved = await _module.InvokeAsync<SavedCompanion?>("loadStudioState", "companion-connection");
-        if (saved == null) return;
+        if (saved == null) { _companionStateLoaded = true; return; }
         _companionUrl = saved.Address; _companionToken = saved.Token;
         // Restoring a connection never restores an external MCP permission lease.
         if (saved.Connected) await ConnectAutomationAsync();
+        _companionStateLoaded = true;
+    }
+    private async Task SaveCompanionDraftAsync()
+    {
+        if (!_companionStateLoaded || _module == null) return;
+        var saved = new SavedCompanion(_companionUrl, _companionToken, _connectionStatus == "Connected");
+        var text = System.Text.Json.JsonSerializer.Serialize(saved);
+        if (_lastCompanionState == text || _failedCompanionState == text) return;
+        try { await _module.InvokeVoidAsync("saveStudioState", "companion-connection", saved); _lastCompanionState = text; _failedCompanionState = null; }
+        catch (JSException) { _failedCompanionState = text; throw; }
     }
     private async Task ForgetCompanionConnectionAsync()
     {
@@ -76,6 +89,7 @@ public partial class App
         _connectionStatus = "Disconnected";
         _companionToken = "";
         if (_module != null) await _module.InvokeVoidAsync("forgetStudioState", "companion-connection");
+        _companionStateLoaded = true; _lastCompanionState = _failedCompanionState = null;
     }
     private sealed record SavedCompanion(string Address, string Token, bool Connected);
     private sealed record SavedShell(int Version, string ActiveDocument, string EditorTab, string InspectorTab, string PropertyName, string PropertyValue,

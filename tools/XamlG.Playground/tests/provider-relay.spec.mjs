@@ -2,6 +2,9 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomBytes } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test, expect as baseExpect } from './studio-fixture.mjs';
 import { openStudio } from './live-preview.mjs';
 import { providerEvents, modelCatalog } from './agent-provider-fixtures.mjs';
@@ -39,7 +42,8 @@ test(`local ${provider} relay keeps provider credentials on the server and needs
   for (const name of ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY']) delete env[name];
   env[`${provider.toUpperCase()}_API_KEY`] = key;
   env[`${provider.toUpperCase()}_ENDPOINT`] = `http://127.0.0.1:${fixture.address().port}${provider === 'openai' ? '/v1' : ''}`;
-  const host = spawn(process.env.XAMLG_TEST_DOTNET || 'dotnet', [process.env.XAMLG_TEST_HOST_DLL, `--port=${port}`, '--chatgpt=false', `--origins=${origin}`], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const stateDirectory = await mkdtemp(join(tmpdir(), 'xamlg-relay-state-'));
+  const host = spawn(process.env.XAMLG_TEST_DOTNET || 'dotnet', [process.env.XAMLG_TEST_HOST_DLL, `--port=${port}`, `--agent-store=${stateDirectory}`, '--chatgpt=false', `--origins=${origin}`], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let log = ''; host.stdout.on('data', data => { log += data; }); host.stderr.on('data', data => { log += data; });
   try {
     await expect.poll(async () => {
@@ -88,8 +92,9 @@ test(`local ${provider} relay keeps provider credentials on the server and needs
   } finally {
     held.resolve();
     host.kill('SIGTERM'); await Promise.race([once(host, 'exit'), new Promise(resolve => setTimeout(resolve, 5000))]);
-    if (host.exitCode == null) host.kill('SIGKILL');
+    if (host.exitCode === null && host.signalCode === null) { host.kill('SIGKILL'); await once(host, 'exit'); }
     fixture.closeAllConnections(); await new Promise(resolve => fixture.close(resolve));
+    await rm(stateDirectory, { recursive: true, force: true });
     if (test.info().status !== test.info().expectedStatus) await test.info().attach('relay.log', { body: log.replaceAll(owner, '[owner]').replaceAll(client, '[client]').replaceAll(key, '[key]'), contentType: 'text/plain' });
   }
 });
