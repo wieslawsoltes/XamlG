@@ -112,3 +112,24 @@ The same compiler checkpoint passed 1,701 native tests, 217 upstream compatibili
 Package validation exposed a missing build setting for deferred-resource function pointers. Integration commit `7e7616d` fixes the Avalonia targets while preserving portable and opted-out project settings; compiler C# sources are unchanged from `edeee51`. All 14 candidate packages (`0.1.0-parity.7e7616d`), 25 MSBuild input tests, five fingerprint tests, eight installed-LSP process suites, portable/Avalonia consumers and the single-reference shipping consumer passed. The shipping checks execute both target frameworks, unchanged builds, edits, resource renames, actual binary/managed assets, CLI output ownership and clean/rebuild. Evidence and the exact source comparison are under `artifacts/tests/7e7616d/`.
 
 The production WebAssembly application published successfully at `7e7616d`, with all three browser-asset tests passing. Browser-driver commit `743cb8a` waits for editor readiness and command completion before issuing the next authoring command. All 30 browser acceptance tests then passed with no failures, flakes or skips against the unchanged published application; hashes of all 1,371 published files were verified. Browser results and provenance are under `artifacts/tests/743cb8a/`. These are local macOS validation results, with compiler, package and browser revisions recorded separately.
+
+## Completed compatibility review checkpoint
+
+The [compatibility and performance review](compatibility-review.md) completed at compiler commit `8ebd279f744f25caa2718ed3217a0f60f5b28592`. The final full run used SDK 10.0.401, the portable XamlX revision above, Avalonia source `8eeda4f6f546165b3f72e63c9f42247abb306905` and Avalonia 12.1.3 packages. All tests passed with no skips, and the solution build completed without warnings.
+
+| Final gate | Result |
+| --- | --- |
+| Native XamlG tests | 1,739 passed: 265 core, 1,272 Avalonia, 94 tooling, 94 LSP and 14 workspaces |
+| Portable compatibility through XamlG | 217 upstream cases and 268 authored shared parity cases passed |
+| Total through XamlG | 2,224 passed |
+| Original XamlX baseline | 222 upstream cases and the same 268 shared parity cases passed: 490 total |
+| Original Simple and Fluent themes | 82 and 86 documents compiled with source metadata and original code-behind; 34 realizations per theme |
+| Candidate packages and consumers | All 14 packages at `0.1.0-review.8ebd279`, installed CLI/LSP, eight LSP process suites and portable/Avalonia shipping consumers passed |
+| MSBuild integration | All 25 input and five fingerprint checks passed |
+| Production browser | Publish, three asset checks and all 30 acceptance tests passed, with no flakes or skips |
+
+Theme and package validation used a clean detached worktree at this exact compiler revision. Retained theme inputs and their hashes match the pinned source checkout. Package inventory records the source commit and package checksums. Shipping consumers exercise both target frameworks, unchanged builds, edits, resource renames, binary/managed assets, CLI output ownership and clean/rebuild. Browser tests used Node 24.21.0; hashes of all 1,371 published files were verified unchanged after the run. Local TRX files, logs, browser results, manifests and provenance are retained under `artifacts/tests/8ebd279/`.
+
+At this revision, [native and MSBuild CI passed on Linux, Windows and macOS](https://github.com/wieslawsoltes/XamlG/actions/runs/37741913589). The [pinned upstream suites](https://github.com/wieslawsoltes/XamlG/actions/runs/37741913559), [original themes](https://github.com/wieslawsoltes/XamlG/actions/runs/37741913602), [host integration](https://github.com/wieslawsoltes/XamlG/actions/runs/37741913524) and [browser playground](https://github.com/wieslawsoltes/XamlG/actions/runs/37741913556) CI runs also passed.
+
+The final [performance comparison](performance.md#final-implementation-comparison) measured roughly 10–16% faster full generation and 11% fewer allocated bytes against the pre-cache baseline on the local test machine. This checkpoint closes the pinned compatibility review; the documented native extensions, upstream exclusions and finite coverage boundaries still apply.

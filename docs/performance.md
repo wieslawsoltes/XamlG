@@ -29,3 +29,18 @@ The initial comparison used macOS 26.6 on Arm64, .NET 10.0.12, SDK 10.0.401, nin
 The full-generation scenarios improved by roughly 24–32% in this local measurement and allocated roughly 11% less memory. Microbenchmark gains are not application speedups; especially the sub-millisecond unchanged-run timing is sensitive to noise. Re-run the harness on the intended project and machine before drawing broader conclusions.
 
 The cache change passed all 252 core tests, all 1,258 Avalonia tests, and all 452 portable compatibility/shared parity tests with no skips. The benchmark and Avalonia test projects built with warnings treated as errors. These checks include inherited metadata, provider selection, generator edits, implicit collection contracts and runtime construction; broader final review gates remain tracked separately.
+
+## Final implementation comparison
+
+The full compatibility revision `8ebd279` was compared again with baseline `c964d82`, using identical harness source, three warmups and nine samples per scenario. The baseline and reviewed compiler ran serially, with local integration jobs stopped during measurement. Compiler identities, harness hashes and raw results are retained under `artifacts/tests/8ebd279/`.
+
+| Scenario | Baseline median | Reviewed median | Baseline allocated bytes | Reviewed allocated bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Fresh compilation and driver | 237.4 ms | 214.3 ms | 255,543,456 | 228,423,520 |
+| Fresh driver | 200.0 ms | 178.9 ms | 254,346,224 | 227,220,960 |
+| Unchanged run | 0.111 ms | 0.090 ms | 19,080 | 19,080 |
+| One XAML edit | 15.4 ms | 11.6 ms | 9,859,160 | 9,067,640 |
+| Unrelated C# edit | 214.1 ms | 180.0 ms | 253,152,920 | 226,026,840 |
+| 10,000 provider selections | 88.1 ms | 0.122 ms | 50,980,000 | 0 |
+
+The final full-generation scenarios were about 10–16% faster with 10.6–10.7% fewer allocated bytes; the one-document edit was about 25% faster. Timing varies with machine load: an earlier follow-up during integration work was slower and remains in `artifacts/tests/compatibility-review/performance/final.json`. Allocation reductions persisted. These are local generator measurements, not application startup or runtime speed guarantees.
