@@ -4,9 +4,9 @@ namespace XamlG.Avalonia.Tests;
 
 internal sealed record AvaloniaUpstreamCompilation(object? Root, IReadOnlyList<RuntimeXamlDiagnostic> Diagnostics, Exception? Error)
 {
-    public static AvaloniaUpstreamCompilation Compile(string xaml, bool createSourceInfo = false, string? documentPath = null, object? rootInstance = null, string? baseUri = null)
+    public static AvaloniaUpstreamCompilation Compile(string xaml, bool createSourceInfo = false, string? documentPath = null, object? rootInstance = null, string? baseUri = null, IServiceProvider? services = null)
     {
-        var document = new RuntimeXamlLoaderDocument(rootInstance, xaml) { Document = documentPath, BaseUri = baseUri == null ? null : new Uri(baseUri) };
+        var document = new RuntimeXamlLoaderDocument(rootInstance, xaml) { Document = documentPath, BaseUri = baseUri == null ? null : new Uri(baseUri), ServiceProvider = services };
         var diagnostics = new List<RuntimeXamlDiagnostic>();
         try
         {

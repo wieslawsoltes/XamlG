@@ -24,6 +24,7 @@ public static class AvaloniaMetadata
     public const string RuntimeNamespace = "Avalonia.Markup.Xaml.XamlIl.Runtime.";
     public const string RuntimeHelpers = RuntimeNamespace + "XamlIlRuntimeHelpers";
     public const string ParentProvider = RuntimeNamespace + "IAvaloniaXamlIlParentStackProvider";
+    public const string EagerParentProvider = RuntimeNamespace + "IAvaloniaXamlIlEagerParentStackProvider";
     public const string NamespaceProvider = RuntimeNamespace + "IAvaloniaXamlIlXmlNamespaceInfoProvider";
     public const string NamespaceItem = RuntimeNamespace + "AvaloniaXamlIlXmlNamespaceInfo";
     public const string NameScope = "Avalonia.Controls.NameScope";

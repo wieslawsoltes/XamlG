@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/XamlG.Generator/XamlG.Generator.csproj" />
+    <ProjectReference Include="../../src/XamlG.CSharp/XamlG.CSharp.csproj" />
+    <ProjectReference Include="../../src/XamlG.Frameworks/XamlG.Frameworks.csproj" />
+    <ProjectReference Include="../../src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" />
+  </ItemGroup>
+</Project>

@@ -13,13 +13,13 @@ For each area, inspect the upstream implementation and integration points, compa
 | Constructors and initialization | Open: argument inference/conversion, service constructors, root/populate differences, initialization order and failure cleanup. |
 | Properties and events | Open: CLR/attached/registered members, qualified/hidden members, assignment alternatives and event/root-method binding. |
 | Conversions and text | Open: intrinsic and runtime conversions, converters and services, list/numeric/enum grammar, nullable values and evaluation order. |
-| Runtime services | Open: root/intermediate root, provide-value target, parent-stack protocols, namespaces, URI/type-descriptor context and custom provider composition. |
+| Runtime services | Eager parent-stack protocol corrected and verified against Avalonia; continue reviewing root/intermediate root, target services, namespaces, URI/type-descriptor context and provider composition. |
 | Deferred content and names | Open: template result types, service/parent capture, sharing, namescopes, forward references and disposal. |
 | Avalonia styles and bindings | Open: revisit every corresponding entry in the transform inventory, including implicit scopes, data-type inference, duck-typed methods and framework binding integration. |
 | Resources and project linking | Open: eager/deferred/merged/theme resources, includes, exported factories, source information and invalidation. |
 | Build and markup integration | Open: compiler/build directives, generated fields/initializers, loader adaptation, package settings and application consumers. |
 | Diagnostics and recovery | Open: upstream warnings/errors, location/phase, malformed input, cancellation and recovery after edits. |
-| Performance | Open: measure cold generation, unchanged runs, a XAML edit, a C# edit and repeated metadata/provider lookup; optimize demonstrated repeated work without retaining symbols across compilations. |
+| Performance | Initial generator baseline and metadata-cache improvement measured; see [the harness and results](performance.md). Continue reviewing runtime parent traversal and other demonstrated repeated work without retaining symbols across compilations. |
 | Final validation | Pending the full review: native/upstream suites, original theme construction, MSBuild/package/host consumers and production browser checks at recorded revisions. |
 
 ## Collection findings
@@ -31,3 +31,9 @@ The corrected discovery includes the declared interface, preserves ordinary adde
 Source inspection suggested that an enumerable backed by a `HashSet` might require a runtime list cast. Execution disproved that assumption: the upstream emitted call uses the declaring `ICollection<T>` mutation method and succeeds. The shared regression preserves this behavior, as well as duck-typed `Add` methods with a non-void return and no enumeration interface.
 
 Local investigation and regression artifacts are under `artifacts/tests/compatibility-review/implicit-collections/`. Early failing runs are retained separately from corrected assertions and the repaired compiler.
+
+## Parent-stack protocol
+
+Avalonia's generated parent-stack service also implements `IAvaloniaXamlIlEagerParentStackProvider`. The original native adapter exposed only its base interface. The adapter now implements the eager contract while retaining the base interface as its service lookup key. Local parents are cached in root-to-nearest order, and the public Avalonia adapter wraps external lazy providers. Target and namespace frames share their owning object's cached list; sibling construction branches retain separate lists.
+
+Nine differential cases compare ordinary trees, templates and deferred resources with absent, lazy and eager external providers. They verify direct parents, full enumeration, provider-chain ordering and stable local lists. All nine failed before the fix and pass after it. Configuration tests reject incompatible implementation interfaces, parent properties and adapter signatures before C# emission. Validation passed 262 core tests, 1,267 Avalonia tests and 452 portable compatibility/parity tests without skips; evidence is under `artifacts/tests/compatibility-review/parent-stack/`.

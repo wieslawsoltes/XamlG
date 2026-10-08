@@ -15,6 +15,7 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
     private readonly IReadOnlyDictionary<Type, object>? _namespaces;
     private Dictionary<Type, object>? _localServices;
     private Dictionary<Type, object>? _adapterCache;
+    private IReadOnlyList<object>? _directParents;
     private IServiceProvider? _inner;
     private bool _resolvingInner;
     private readonly bool _useTypeDescriptorStubs;
@@ -87,6 +88,23 @@ public sealed class XamlRuntimeContext : IServiceProvider, IXamlRootObjectProvid
         var external = GetExternalService(externalContract);
         if (external != null)
             foreach (var parent in selector(external)) yield return parent;
+    }
+
+    /// <summary>Local construction parents in root-to-nearest order, excluding external providers.</summary>
+    public IReadOnlyList<object> DirectParentsStack
+    {
+        get
+        {
+            if (_frameObject == null) return _parent?.DirectParentsStack ?? Array.Empty<object>();
+            if (_directParents != null) return _directParents;
+            var count = 0;
+            for (var current = this; current != null; current = current._parent)
+                if (current._frameObject != null) count++;
+            var parents = new object[count];
+            for (var current = this; current != null; current = current._parent)
+                if (current._frameObject != null) parents[--count] = current._frameObject;
+            return _directParents = parents;
+        }
     }
 
     public XamlRuntimeContext Push(object value, string key)

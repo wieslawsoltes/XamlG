@@ -18,8 +18,16 @@ internal static class RuntimeContractBinder
                 continue;
             }
 
+            var implementation = mapping.ImplementationInterfaceMetadataName == null ? type : context.Types.Find(mapping.ImplementationInterfaceMetadataName);
+            if (implementation == null || implementation.TypeKind != TypeKind.Interface || !context.Types.IsAccessible(implementation) ||
+                !context.Types.Compilation.ClassifyCommonConversion(implementation, type).IsImplicit)
+            {
+                Error(context, $"Service implementation '{mapping.ImplementationInterfaceMetadataName}' must be an accessible interface extending '{type}'.");
+                continue;
+            }
+
             var properties = ImmutableArray.CreateBuilder<BoundServiceProperty>();
-            foreach (var member in type.Members())
+            foreach (var member in implementation.Members())
             {
                 if (member is IMethodSymbol { MethodKind: MethodKind.PropertyGet or MethodKind.PropertySet }) continue;
                 if (member is not IPropertySymbol property || property.IsIndexer || property.IsStatic || property.GetMethod == null)
@@ -35,7 +43,25 @@ internal static class RuntimeContractBinder
                 }
                 if (property.SetMethod != null && value != XamlServiceValue.BaseUri)
                     Error(context, $"Only URI-context service properties may have a setter: '{property}'.");
+                if (value == XamlServiceValue.DirectParents)
+                {
+                    var parentsType = context.Types.Find(ClrNames.IReadOnlyListOfT)?.Construct(context.Types.Special(SpecialType.System_Object));
+                    if (parentsType == null || !context.Types.Compilation.ClassifyCommonConversion(parentsType, property.Type).IsImplicit)
+                        Error(context, $"Direct-parent property '{property}' must accept an IReadOnlyList<object>.");
+                }
                 properties.Add(new(property, value.Value));
+            }
+
+            IMethodSymbol? parentAdapter = null;
+            var parentProperty = properties.FirstOrDefault(property => property.Value == XamlServiceValue.ParentProvider)?.Property;
+            if (parentProperty != null)
+            {
+                parentAdapter = Resolve(context, mapping.ParentProviderAdapter, 1);
+                if (parentAdapter == null || parentAdapter.IsGenericMethod || parentAdapter.ReturnsVoid || parentAdapter.ReturnsByRef || parentAdapter.ReturnsByRefReadonly ||
+                    parentAdapter.Parameters[0].RefKind != RefKind.None ||
+                    !context.Types.Compilation.ClassifyCommonConversion(type, parentAdapter.Parameters[0].Type).IsImplicit ||
+                    !context.Types.Compilation.ClassifyCommonConversion(parentAdapter.ReturnType, parentProperty.Type).IsImplicit)
+                    Error(context, $"Parent-provider adapter for '{type}' must accept its lookup contract and return '{parentProperty.Type}'.");
             }
 
             INamedTypeSymbol? namespaceItem = mapping.NamespaceItemMetadataName == null ? null : context.Types.Find(mapping.NamespaceItemMetadataName);
@@ -58,6 +84,8 @@ internal static class RuntimeContractBinder
             }
             services.Add(new(mapping, type, namespaceItem)
             {
+                ImplementationType = implementation,
+                ParentProviderAdapter = parentAdapter,
                 Properties = properties.ToImmutable(),
                 NamespaceNameProperty = namespaceName,
                 AssemblyNameProperty = assemblyName
