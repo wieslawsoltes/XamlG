@@ -2,16 +2,17 @@ import { test, expect } from './studio-fixture.mjs';
 
 const call = (page, name, args = {}) => page.evaluate(({ name, args }) => window.xamlgAutomation.call(name, args), { name, args });
 const source = (page, path = 'Code.cs') => page.evaluate(path => monaco.editor.getEditors().find(e => e.getModel()?.uri.path.endsWith('/' + path))?.getValue(), path);
-async function ready(page, share = true) {
+async function share(page) {
+  await page.getByTestId('agent-access').click();
+  await page.getByLabel('Enable access to this live project').check();
+  await page.getByLabel('Permission profile', { exact: true }).selectOption('FullAccess');
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
+}
+async function ready(page, sharing = true) {
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await expect(page.getByRole('button', { name: 'Compile', exact: true })).toBeEnabled();
-  if (share) {
-    await page.getByTestId('agent-access').click();
-    await page.getByLabel('Enable access to this live project').check();
-    await page.getByLabel('Permission profile', { exact: true }).selectOption('FullAccess');
-    await page.getByRole('button', { name: 'Close', exact: true }).click();
-  }
+  if (sharing) await share(page);
 }
 async function write(page, path, text) {
   const { revision } = await call(page, 'xamlg_project_get');
@@ -104,9 +105,11 @@ test('Monaco definitions open an unopened C# file through Dockyard', async ({ pa
 });
 
 test('C# generated field rename edits its XAML declaration and generated files can be selected', async ({ page }) => {
-  await ready(page);
+  await ready(page, false);
   await page.getByLabel('Example', { exact: true }).selectOption('1');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
+  // Replacing the workspace retires access to the previous project.
+  await share(page);
   const code = (await call(page, 'xamlg_document_read', { path: 'Code.cs' })).text;
   const { revision } = await call(page, 'xamlg_project_get');
   const definitions = (await call(page, 'xamlg_csharp_definitions', { path: 'Code.cs', offset: code.indexOf('counter.Text') })).definitions;

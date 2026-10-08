@@ -272,8 +272,17 @@ typing, and coordinate/dimension fields have independent labels. The Pages fixtu
 bounds simultaneous local asset reads, and its transport-only companion disables
 account mode so it cannot access or lock the developer's credential store.
 
-The complete browser suite currently contains 53 scenarios. The 16-case pass does
-not certify the unrun authoring, agent, account, isolation and other cases below.
+All six existing C# authoring/project browser scenarios also pass at the Pages
+origin. They cover cross-file completion/definitions/references, semantic actions
+and rename/Undo, owner Monaco commands with sharing disabled, generated-field
+rename into XAML, generated-file selection, multi-file compilation and runtime
+handlers, draft restoration, and C# file move/remove/Undo. The fixtures now enable
+access after example selection retires the old workspace and check version-4
+exports, including consistency between the compiler settings document and options.
+
+The complete browser suite currently contains 53 scenarios. These separate 16- and
+6-case passes do not certify the expanded compiler/navigation/flow coverage or the
+unrun agent, account, isolation and other cases below.
 
 Remaining completion work:
 
