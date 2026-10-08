@@ -52,6 +52,7 @@
     </div>
     <div class="agent-card">
         <h4>Provider access</h4>
+        @if (_storageError != null) { <p class="agent-notice" role="alert">@_storageError</p> }
         <label>Provider <select disabled="@(AnyRunning || _modelsBusy)" aria-label="Provider" @bind="_provider" @bind:after="ProviderChanged">@foreach (var provider in _state.Providers) { <option value="@provider">@ProviderLabel(provider)</option> }</select></label>
         @if (_provider == ChatGptProvider) { <p>New task account: @(ActiveAccount?.Label ?? "Select and sign in to an account below"). Uses ChatGPT plan allowance; account mode never falls back to API-key billing.</p> }
     @if (IsDirect)
@@ -59,8 +60,8 @@
         <section class="agent-direct-connection" aria-label="Direct API connection">
             <label>API key <input placeholder="Paste your provider API key" type="password" aria-label="API key" autocomplete="off" spellcheck="false" maxlength="4096" @bind="_apiKey" @bind:event="oninput" disabled="@(AnyRunning || _modelsBusy)" /></label>
             <label><input type="checkbox" @bind="_acceptBrowserExposure" disabled="@(AnyRunning || _modelsBusy)" /> Accept browser key exposure</label>
-            <p class="agent-help">The key stays in this page's memory and is accessible to page code and browser extensions. It is cleared when you change provider or close the pane. Direct requests depend on provider CORS support.</p>
-            <button @onclick="ClearDirectCredentials">Clear credentials</button>
+            <p class="agent-help">Connections and keys are remembered in this browser by default. Page code and browser extensions can access them. Direct requests depend on provider CORS support.</p>
+            <button @onclick="ForgetConnectionAsync">Forget connection</button>
         </section>
     }
     @if (_connectionMode == "relay")
@@ -69,8 +70,8 @@
             <p>The companion relays provider requests using its configured API keys. Your task and IDE permissions run in this browser, independently of external MCP access.</p>
             <label>Relay origin <input aria-label="Relay origin" @bind="_relayUrl" disabled="@(AnyRunning || _modelsBusy)" /></label>
             <label>Relay Owner token <input aria-label="Relay Owner token" type="password" autocomplete="off" spellcheck="false" @bind="_relayToken" @bind:event="oninput" disabled="@(AnyRunning || _modelsBusy)" /></label>
-            <button @onclick="ClearDirectCredentials">Clear credentials</button>
-            <p class="muted">The Owner token stays in page memory and can spend the relay's configured API quota. It is cleared when this pane closes or you change provider.</p>
+            <button @onclick="ForgetConnectionAsync">Forget connection</button>
+            <p class="muted">The Owner token is remembered in this browser and can spend the relay's configured API quota.</p>
         </section>
     }
         @if (_state.ChatGptError != null) { <p role="status">@_state.ChatGptError</p> }
@@ -188,7 +189,7 @@
                     else
                     {
                         var result = entry.Result ?? item;
-                        <AgentEventCard @key="item.Sequence" Sequence="item.Sequence" Sequences="@entry.Sequences" Kind="@result.Kind" Text="@result.Text" ResultPreview="result.ResultPreview" ToolName="@(item.ToolName ?? (item.Kind == "tool_started" ? item.Text : result.ToolName))" Running="@IsRunning(selected)" CopyRequested="CopyTextAsync" />
+                        <AgentEventCard @key="item.Sequence" Sequence="item.Sequence" Sequences="@entry.Sequences" Kind="@result.Kind" Text="@result.Text" ResultPreview="result.ResultPreview" Images="result.Images" ToolName="@(item.ToolName ?? (item.Kind == "tool_started" ? item.Text : result.ToolName))" Running="@IsRunning(selected)" CopyRequested="CopyTextAsync" />
                     }
                 }
                 @if (VisibleLiveText.Length != 0) { <article class="agent-message"><small>@(Thread.Page == null ? "assistant · streaming" : "assistant · captured partial reply")</small><pre>@VisibleLiveText</pre></article> }
@@ -287,6 +288,8 @@
                 </fieldset>
                 <fieldset class="agent-fieldset"><legend>Context &amp; compaction</legend>
                 <label><input type="checkbox" @bind="_autoCompact" /> Compact context automatically at complete tool boundaries</label>
+                <label><input type="checkbox" @bind="Preferences.FullToolCatalog" /> Send every tool schema with every request</label>
+                <p class="agent-help">By default, the agent discovers tools as needed to reduce request size. Every IDE tool remains available.</p>
                 <div class="agent-form-grid">
                 <label>Automatic compaction input tokens (0 disables this threshold) <input type="number" min="0" max="2000000" @bind="Preferences.Numeric.AutomaticInputTokens" /></label>
                 <label>Model context window tokens (0 unspecified) <input type="number" min="0" max="4000000" @bind="Preferences.Numeric.ModelContextWindowTokens" /></label>

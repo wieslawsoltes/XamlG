@@ -1,8 +1,18 @@
 const { installCSharpLanguage } = await (globalThis.xamlgBoot?.importModule('csharp-language.js') ?? import('./csharp-language.js'));
 const { SourceBuffer } = await (globalThis.xamlgBoot?.importModule('source-buffer.js') ?? import('./source-buffer.js'));
+const storage = await (globalThis.xamlgBoot?.importModule('studio-storage.js') ?? import('./studio-storage.js'));
+export const loadStudioState = storage.loadStudioState, saveStudioState = storage.saveStudioState,
+  forgetStudioState = storage.forgetStudioState, studioStorageStatus = storage.studioStorageStatus;
 let monacoPromise;
 const editors = new Map();
 let sequence = 0;
+let viewPreferences;
+try { viewPreferences = JSON.parse(localStorage.getItem('xamlg.views.v1') || '{}'); } catch { viewPreferences = {}; }
+let saveViewsTimer;
+function saveViewPreferences() {
+  clearTimeout(saveViewsTimer);
+  saveViewsTimer = setTimeout(() => { try { localStorage.setItem('xamlg.views.v1', JSON.stringify(viewPreferences)); } catch { } }, 150);
+}
 
 function loadMonaco() {
   return monacoPromise ??= new Promise((resolve, reject) => {
@@ -56,6 +66,16 @@ export async function createEditor(host, dotnet, text, language, readOnly, path 
         if (editors.has(id)) return dotnet.invokeMethodAsync('Changed', source.text);
       }, 120);
     });
+    const viewKey = (readOnly ? 'generated:' : 'document:') + path;
+    if (path && viewPreferences.editors?.[viewKey]) editor.restoreViewState(viewPreferences.editors[viewKey]);
+    const rememberView = () => {
+      if (!path) return;
+      viewPreferences.editors ??= {}; viewPreferences.editors[viewKey] = editor.saveViewState();
+      const paths = Object.keys(viewPreferences.editors);
+      while (paths.length > 128) delete viewPreferences.editors[paths.shift()];
+      saveViewPreferences();
+    };
+    const viewSelection = editor.onDidChangeCursorSelection(rememberView), viewScroll = editor.onDidScrollChange(rememberView);
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => dotnet.invokeMethodAsync('Run'));
     if (path && !readOnly) {
       const actions = [
@@ -70,7 +90,7 @@ export async function createEditor(host, dotnet, text, language, readOnly, path 
         run: () => requestAuthoring(id, command)
       });
     }
-    editors.set(id, { editor, model, source, subscription, path, dotnet, set: value => { applying = true; try { source.set(value); editor.setValue(value); } finally { applying = false; } }, cleanup: () => clearTimeout(timer) });
+    editors.set(id, { editor, model, source, subscription, path, dotnet, set: value => { applying = true; try { source.set(value); editor.setValue(value); } finally { applying = false; } }, cleanup: () => { rememberView(); viewSelection.dispose(); viewScroll.dispose(); clearTimeout(timer); } });
   } catch (error) {
     const textarea = document.createElement('textarea');
     textarea.className = 'editor-fallback'; textarea.value = text; textarea.readOnly = readOnly;
@@ -151,10 +171,13 @@ export function resetAgentPanelScroll(content, section) {
   if (inner.left < outer.left) nav.scrollLeft -= outer.left - inner.left;
   else if (inner.right > outer.right) nav.scrollLeft += inner.right - outer.right;
 }
-export function saveDraft(xaml, code, resources = {}, codeFiles = {}, compilerOptions = null) {
-  localStorage.setItem('xamlg.draft', JSON.stringify({ version: 4, xaml, code, resources, codeFiles, compilerOptions }));
+export async function saveDraft(xaml, code, resources = {}, codeFiles = {}, compilerOptions = null, workspace = null, workspaceIdentity = null) {
+  await saveStudioState('project', { version: 4, xaml, code, resources, codeFiles, compilerOptions, workspace, workspaceIdentity });
+  localStorage.removeItem('xamlg.draft');
 }
-export function loadDraft() {
+export async function loadDraft() {
+  const saved = await loadStudioState('project');
+  if (saved) return saved;
   try {
     const source = localStorage.getItem('xamlg.draft');
     if (!source || source.length > 12 * 1024 * 1024) return null;
@@ -200,6 +223,13 @@ export function waitForElement(id) {
         const timer = setTimeout(() => { observer.disconnect(); reject(new Error(`Pane ${id} did not mount.`)); }, 30000);
         observer.observe(document.body, { childList: true, subtree: true });
     });
+}
+export async function resizePreviewViewport(width, height) {
+    for (const host of document.querySelectorAll('#avalonia-preview, .isolated-container')) {
+        host.style.width = width == null ? '' : `${width}px`; host.style.height = height == null ? '' : `${height}px`;
+        host.style.right = width == null ? '' : 'auto'; host.style.bottom = height == null ? '' : 'auto';
+    }
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 export function saveDockyardLayout(layout) {
     try { localStorage.setItem('xamlg.dockyard.layout.v3', layout); } catch { }
@@ -384,7 +414,7 @@ export function downloadBytes(name, bytes, mimeType) {
     const link = document.createElement('a'); link.href = url; link.download = name; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-const agentThreadPositions = new Map();
+const agentThreadPositions = new Map(Object.entries(viewPreferences.threads || {}).map(([key, value]) => [key, { ...value, expanded: new Set(value.expanded || []) }]));
 const agentThreadBindings = new WeakMap();
 const agentViewNodes = new Map();
 function rememberAgentView(ownerId, kind, element) {
@@ -431,7 +461,7 @@ export function releaseAgentComposer(element) {
     element.removeEventListener('compositionstart', binding.start); element.removeEventListener('compositionend', binding.end); element.removeEventListener('keydown', binding.key);
     agentComposerBindings.delete(element);
 }
-const agentDiffPositions = new Map();
+const agentDiffPositions = new Map(Object.entries(viewPreferences.diffs || {}));
 const agentDiffBindings = new WeakMap();
 export function bindAgentDiff(element, key, ownerId) {
     rememberAgentView(ownerId, 'diff', element);
@@ -440,6 +470,7 @@ export function bindAgentDiff(element, key, ownerId) {
     const remember = () => {
         if (element.clientHeight && element.dataset.reviewKey === key) agentDiffPositions.set(key, element.scrollTop);
         while (agentDiffPositions.size > 64) agentDiffPositions.delete(agentDiffPositions.keys().next().value);
+        viewPreferences.diffs = Object.fromEntries(agentDiffPositions); saveViewPreferences();
     };
     const restore = () => { if (element.clientHeight && element.dataset.reviewKey === key) element.scrollTop = agentDiffPositions.get(key) || 0; };
     const resize = new ResizeObserver(restore); resize.observe(element);
@@ -472,6 +503,7 @@ export function bindAgentThread(element, taskId, ownerId) {
         const first = [...element.querySelectorAll('[data-sequence]')].find(item => item.getBoundingClientRect().bottom >= top);
         position.anchor = first?.dataset.sequence;
         position.offset = first ? first.getBoundingClientRect().top - top : 0;
+        rememberThreads();
         if (position.follow !== following && agentOwnerId === ownerId)
             agentOwner?.invokeMethodAsync('AgentThreadFollowing', taskId, position.follow).catch(() => {});
     }
@@ -497,10 +529,15 @@ export function bindAgentThread(element, taskId, ownerId) {
         const sequence = event.target.dataset.sequence;
         if (event.target.open) position.expanded.add(sequence); else position.expanded.delete(sequence);
         while (position.expanded.size > 1200) position.expanded.delete(position.expanded.values().next().value);
+        rememberThreads();
     };
     element.addEventListener('toggle', toggle, true);
     element.addEventListener('scroll', remember, { passive: true });
     agentThreadBindings.set(element, { taskId, observer, resize, remember, toggle, position }); restore();
+}
+function rememberThreads() {
+    viewPreferences.threads = Object.fromEntries([...agentThreadPositions].map(([key, value]) => [key, { ...value, expanded: [...value.expanded] }]));
+    saveViewPreferences();
 }
 export function releaseAgentThread(element) {
     const binding = agentThreadBindings.get(element);
@@ -582,6 +619,12 @@ async function startAgentStream() {
 }
 
 export function installStudioShell() {
+    const storageStatus = event => {
+        const banner = document.getElementById('studio-storage-error');
+        if (banner) { banner.textContent = event.detail?.error || ''; banner.hidden = !event.detail?.error; }
+    };
+    globalThis.addEventListener('xamlg-storage-status', storageStatus);
+    storage.studioStorageStatus().then(detail => storageStatus({ detail })).catch(() => {});
     const menus = () => [...document.querySelectorAll('.studio-menubar > details')];
     const close = except => { for (const menu of menus()) if (menu !== except) menu.open = false; };
     const click = event => {
@@ -610,5 +653,5 @@ export function installStudioShell() {
     };
     document.addEventListener('click', click);
     document.addEventListener('keydown', keydown);
-    return { dispose() { document.removeEventListener('click', click); document.removeEventListener('keydown', keydown); } };
+    return { dispose() { globalThis.removeEventListener('xamlg-storage-status', storageStatus); document.removeEventListener('click', click); document.removeEventListener('keydown', keydown); } };
 }

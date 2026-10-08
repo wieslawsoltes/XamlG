@@ -4,7 +4,7 @@ namespace XamlG.Agents;
 
 // A bounded view of public events. Provider history and transcript exports retain the original result.
 internal sealed record AgentEventDisplay(long Sequence, DateTimeOffset Time, string TaskId, string Kind,
-    string Text, string? ToolCallId, string? ToolName, JsonElement? ResultPreview)
+    string Text, string? ToolCallId, string? ToolName, JsonElement? ResultPreview, IReadOnlyList<XamlG.Automation.AutomationImage>? Images)
 {
     public static AgentEventDisplay Create(AgentEvent item, int limit)
     {
@@ -21,7 +21,7 @@ internal sealed record AgentEventDisplay(long Sequence, DateTimeOffset Time, str
         }
         return new(item.Sequence, item.Time, item.TaskId, item.Kind,
             item.Text.Length > limit ? item.Text[..limit] + "\n[see transcript export]" : item.Text,
-            item.ToolCallId, item.ToolName, preview);
+            item.ToolCallId, item.ToolName, preview, item.Images);
     }
 
     private sealed class PreviewBudget

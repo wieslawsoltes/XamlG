@@ -14,7 +14,22 @@ public partial class AgentWorkbench
     private IJSObjectReference? _module;
     private DotNetObjectReference<AgentWorkbench>? _reference;
     private WorkbenchState _state = new();
-    private string _provider = "", _model = "", _name = "New task", _taskName = "", _selectedId = "", _answer = "", _liveText = "";
+    private string _provider = "", _model = "", _name = "New task", _taskName = "", _selectedId = "", _answer = "", _renderedLiveText = "";
+    private readonly System.Text.StringBuilder _liveBuffer = new();
+    private string _liveText { get => _renderedLiveText; set { _renderedLiveText = value; _liveBuffer.Clear().Append(value); } }
+    private bool _streamRenderPending;
+    private async Task RenderStreamAsync()
+    {
+        if (_streamRenderPending) return;
+        _streamRenderPending = true;
+        try
+        {
+            await Task.Delay(33, _lifetime.Token);
+            await InvokeAsync(() => { _renderedLiveText = _liveBuffer.ToString(); if (!_disposed) StateHasChanged(); });
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        finally { _streamRenderPending = false; }
+    }
     private static readonly Dictionary<string, string> ComposerDrafts = new(StringComparer.Ordinal);
     private string _lastSelectedTask { get => LastSelectedTasks.GetValueOrDefault(BackendId, ""); set => LastSelectedTasks[BackendId] = value; }
     private string _draft { get => ComposerDrafts.GetValueOrDefault(_selectedId, Selected?.Draft ?? ""); set => ComposerDrafts[_selectedId] = value; }
@@ -37,6 +52,7 @@ public partial class AgentWorkbench
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender) ScheduleUiSave();
         if (_module != null && _renderedSection != _section)
         {
             _renderedSection = _section;
@@ -56,10 +72,11 @@ public partial class AgentWorkbench
         await LoadNumericPreferencesAsync();
         _reference = DotNetObjectReference.Create(this);
         _connectionMode = _rememberedConnectionMode ?? (await _module.InvokeAsync<bool>("agentConnected") ? "companion" : "direct");
+        await LoadUiStateAsync();
         if (BrowserRuntime != null) BrowserRuntime.Session.Harness.EventPublished += BrowserEventPublished;
         await _module.InvokeVoidAsync("installAgentWorkbench", _reference, _ownerId);
         await RefreshAsync();
-        if (Selected != null) { _section = "Conversation"; StateHasChanged(); }
+        if (Selected != null) StateHasChanged();
         _ = PollAsync();
     }
     private async Task PollAsync()
@@ -88,12 +105,12 @@ public partial class AgentWorkbench
     {
         if (item.TaskId == _selectedId && item.Kind == "text_delta")
         {
-            if (_liveText.Length == 0) _liveTextTruncated = false;
+            if (_liveBuffer.Length == 0) _liveTextTruncated = false;
             if (!_liveTextTruncated)
             {
-                _liveText += item.Text;
-                if (_liveText.Length > 262144) { _liveTextTruncated = true; _liveText = _liveText[..262000] + "\n[streaming display shortened; use the retained transcript after the request finishes]"; }
-                StateHasChanged();
+                _liveBuffer.Append(item.Text);
+                if (_liveBuffer.Length > 262144) { _liveTextTruncated = true; _liveBuffer.Length = 262000; _liveBuffer.Append("\n[streaming display shortened; use the retained transcript after the request finishes]"); }
+                _ = RenderStreamAsync();
             }
         }
         else
@@ -111,16 +128,18 @@ public partial class AgentWorkbench
     {
         if (_module == null || _disposed) return;
         _refreshing = true;
+        var changed = true;
         var version = _connectionVersion;
         try
         {
-            var connected = IsBrowser ? BrowserRuntime != null : await _module.InvokeAsync<bool>("agentConnected");
+            var connected = IsBrowser ? BrowserRuntime?.IsStateLoaded == true : await _module.InvokeAsync<bool>("agentConnected");
             if (_disposed || version != _connectionVersion) return;
             _connected = connected;
             if (_connected)
             {
-                var next = await RequestAsync<WorkbenchState>("state", new { });
+                var next = await RequestAsync<WorkbenchState>("state", new { sessionId = _state.SessionId, revision = _state.Revision });
                 if (_disposed || version != _connectionVersion) return;
+                if (next.Unchanged) { changed = false; return; }
                 foreach (var task in next.Tasks)
                     if (_state.Tasks.FirstOrDefault(previous => previous.Id == task.Id) is { } previous)
                     {
@@ -141,7 +160,7 @@ public partial class AgentWorkbench
             }
         }
         catch (JSException error) { if (version == _connectionVersion) _error = error.Message; }
-        finally { _refreshing = false; if (!_disposed) StateHasChanged(); }
+        finally { _refreshing = false; if (!_disposed && changed) StateHasChanged(); }
     }
     private async Task CommandAsync(string action, object arguments)
     {
@@ -153,8 +172,9 @@ public partial class AgentWorkbench
         _selectedId = _lastSelectedTask = id; _taskName = Selected?.Name ?? ""; _liveText = ""; _runReview = null; _restoreReview = null; _fullAccessAcknowledged = false;
         if (IsBrowser && Selected is { } selected)
         {
-            if (_provider != selected.ProviderId) { ClearDirectCredentials(); _models = []; }
+            if (_provider != selected.ProviderId) { BrowserRuntime?.ClearCredentials(); _models = []; }
             _provider = selected.ProviderId; _model = selected.Model;
+            SelectConnectionProfile();
         }
         EnsureQueueSelection();
     }
@@ -168,10 +188,12 @@ public partial class AgentWorkbench
     }
     private async Task CreateAsync()
     {
+        var section = _section;
         try
         {
             _error = null; var task = await RequestAsync<TaskView>("create", new { name = _name, provider = _provider, model = _model, accountId = _provider == ChatGptProvider ? ActiveAccount?.Id : null });
-            await RefreshAfterCommandAsync(); Select(task.Id); _section = "Conversation";
+            await RefreshAfterCommandAsync(); Select(task.Id);
+            if (_section == section) _section = "Conversation";
         }
         catch (JSException error) { _error = error.Message; }
     }
@@ -193,7 +215,7 @@ public partial class AgentWorkbench
         policy = new { profile = _profile, scopes = _scopes, tools = JsonSerializer.Deserialize<Dictionary<string, string>>(_toolRules), neverAsk = _neverAsk },
         limits = new { requestsPerRun = _requests, toolsPerRun = _tools, outputTokensPerRequest = _outputTokens, totalTaskTokens = _taskTokens,
             contextBytes = _contextBytes, toolResultBytes = _toolResultBytes, automaticRetries = _retries, requestTimeout = TimeSpan.FromMinutes(_timeoutMinutes) },
-        leaseDuration = TimeSpan.FromMinutes(_leaseMinutes), automaticCompaction = _autoCompact,
+        leaseDuration = TimeSpan.FromMinutes(_leaseMinutes), automaticCompaction = _autoCompact, fullToolCatalog = Preferences.FullToolCatalog,
         compaction = new { automaticInputTokens = Preferences.Numeric.AutomaticInputTokens, modelContextWindowTokens = Preferences.Numeric.ModelContextWindowTokens,
             recentCompleteTurns = Preferences.Numeric.RecentCompleteTurns, checkpointOutputTokens = Preferences.Numeric.CheckpointOutputTokens }
     };
@@ -304,7 +326,7 @@ public partial class AgentWorkbench
         }
         _reference?.Dispose(); _lifetime.Dispose();
     }
-    public sealed class WorkbenchState { public int ToolCount { get; set; } public ConstraintView Constraints { get; set; } = new(); public ActivePermissionView? ActivePermissions { get; set; } public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; public AccountStateView? ChatGpt { get; set; } public string? ChatGptError { get; set; } }
+    public sealed class WorkbenchState { public string? SessionId { get; set; } public long Revision { get; set; } public bool Unchanged { get; set; } public int ToolCount { get; set; } public ConstraintView Constraints { get; set; } = new(); public ActivePermissionView? ActivePermissions { get; set; } public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; public AccountStateView? ChatGpt { get; set; } public string? ChatGptError { get; set; } }
     public sealed class OperationView
     {
         public string TaskId { get; set; } = "";
@@ -333,6 +355,7 @@ public partial class AgentWorkbench
         public string? ToolCallId { get; set; }
         public string? ToolName { get; set; }
         public JsonElement? ResultPreview { get; set; }
+        public XamlG.Automation.AutomationImage[]? Images { get; set; }
     }
     public sealed class PlanView { public string Id { get; set; } = ""; public string Text { get; set; } = ""; public string Status { get; set; } = ""; }
     public sealed class PendingView { public string Id { get; set; } = ""; public string TaskId { get; set; } = ""; public string Kind { get; set; } = ""; public JsonElement Content { get; set; } }

@@ -129,7 +129,6 @@ public partial class App
         {
             if (id.StartsWith("document:", StringComparison.Ordinal)) await CaptureEditorsAsync();
             if (id == "agent" && _agentWorkbench != null) await _agentWorkbench.ClosePanelAsync();
-            if (id == "agent-access") _companionToken = "";
             return !_disposed;
         }
         catch (Exception error) { Report(error); StateHasChanged(); return false; }

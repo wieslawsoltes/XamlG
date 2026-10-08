@@ -120,9 +120,9 @@
                 <DesignerCommands Enabled="_designMode" Disabled="@(_busy || _isolationVisible || Preview.Root == null)" Toggle="ToggleDesignMode" />
                 <button @onclick="RefreshCurrentVisualsAsync" disabled="@(!_previewShown)" title="Refresh the realized visual tree">↻ Inspect</button>
             </div>
-            <div class="preview-surface">
-                <div id="avalonia-preview" class="avalonia-preview" style="visibility:@(_isolationVisible ? "hidden" : "visible")"></div>
-                <div class="isolated-container @(_isolationVisible ? "visible" : "")"><IsolatedPreview @ref="_isolatedPreview" /></div>
+            <div class="preview-surface" style="overflow:auto">
+                <div id="avalonia-preview" class="avalonia-preview" style="@(PreviewViewportStyle)visibility:@(_isolationVisible ? "hidden" : "visible")"></div>
+                <div class="isolated-container @(_isolationVisible ? "visible" : "")" style="@PreviewViewportStyle"><IsolatedPreview @ref="_isolatedPreview" /></div>
                 @if (!_previewShown && !_isolationVisible) { <div class="preview-placeholder"><span>◇</span><strong>From source to pixels.</strong><p>Run the compiled document to see its actual Avalonia controls.</p></div> }
             </div>
         </section>
@@ -213,9 +213,10 @@
         <label><input type="checkbox" checked="@_sharing" @onchange="SetAutomationSharing" /> Enable access to this live project</label>
         <label>Permission profile <select aria-label="Permission profile" @bind="_automationProfile">@foreach (var profile in Enum.GetValues<XamlG.Automation.PermissionProfile>()) { <option value="@profile">@profile</option> }</select></label>
         <p>Runtime operations execute application code. Source edits use the project’s normal revision checks and undo.</p>
-        <label>Companion WebSocket <input @bind="_companionUrl" /></label>
-        <label>Owner token <input type="password" autocomplete="off" @bind="_companionToken" /></label>
-        <div><button @onclick="ConnectAutomationAsync" disabled="@(!_sharing)">Connect companion</button><button @onclick="DisconnectAutomationAsync">Revoke &amp; disconnect</button></div>
+        <label>Companion WebSocket <input @bind="_companionUrl" @bind:event="oninput" /></label>
+        <label>Owner token <input type="password" autocomplete="off" @bind="_companionToken" @bind:event="oninput" /></label>
+        <div><button @onclick="ConnectAutomationAsync" disabled="@(!_sharing)">Connect companion</button><button @onclick="DisconnectAutomationAsync">Revoke &amp; disconnect</button><button @onclick="ForgetCompanionConnectionAsync">Forget connection</button></div>
+        <p class="muted">Connections are remembered in this browser. Reconnecting requires fresh MCP permissions.</p>
         <p role="status">@_connectionStatus · @_automation.Tools.Count tools</p>
         <details><summary>Tool catalog</summary>
             <label>Filter capabilities <input @bind="_capabilityFilter" @bind:event="oninput" /></label>
@@ -251,6 +252,7 @@
         <DockingManager @ref="_dock" Theme="@_theme" Ready="InitializeDockyardAsync" Changed="DockyardChangedAsync" Style="height:100%;width:100%" />
     </main>
     <footer class="statusbar">
+        <span id="studio-storage-error" role="alert" hidden></span>
         <span><i class="@(_error == null ? "success-dot" : "error-dot")"></i><span class="status-message" title="@_status">@_status</span></span>
         @if (_startupFailed)
         {

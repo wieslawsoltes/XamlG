@@ -367,7 +367,7 @@ public partial class App
         return _runtimeInspector!;
     }
     [JSInvokable]
-    public JsonElement AutomationCatalog() => AutomationJson.Element(new { tools = _automation.Tools, resources = _automation.Resources, prompts = _automation.Prompts });
+    public JsonElement AutomationCatalog() => AutomationJson.Element(new { tools = _automation.Tools, resources = _automation.Resources, prompts = _automation.Prompts, workspaceIdentity = _browserAgents.WorkspaceIdentity });
     [JSInvokable]
     public async Task<JsonElement> AutomationInvoke(string id, string method, string name, JsonElement arguments, string caller, string principalId)
     {
@@ -431,14 +431,20 @@ public partial class App
     private async Task ConnectAutomationAsync()
     {
         if (_module == null) return;
-        try { await _module.InvokeVoidAsync("connectAutomation", _companionUrl, _companionToken); _companionToken = ""; _connectionStatus = "Connected"; }
+        try
+        {
+            await _module.InvokeVoidAsync("connectAutomation", _companionUrl, _companionToken);
+            _connectionStatus = "Connected";
+            await _module.InvokeVoidAsync("saveStudioState", "companion-connection", new SavedCompanion(_companionUrl, _companionToken, true));
+        }
         catch (Exception error) { _connectionStatus = error.Message; }
     }
     private async Task DisconnectAutomationAsync()
     {
         RevokeAutomation();
+        _connectionStatus = "Disconnected";
         if (_module != null) await _module.InvokeVoidAsync("disconnectAutomation");
-        _companionToken = ""; _connectionStatus = "Disconnected";
+        if (_module != null) await _module.InvokeVoidAsync("saveStudioState", "companion-connection", new SavedCompanion(_companionUrl, _companionToken, false));
     }
     private async Task RetireAutomationWorkspaceAsync()
     {

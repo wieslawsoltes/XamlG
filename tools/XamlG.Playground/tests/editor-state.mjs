@@ -1,9 +1,11 @@
+export const savedProject = page => page.evaluate(async () => (await xamlgBoot.importModule('studio.js')).loadDraft());
+
 // Failure evidence for source/history regressions. This runs only in the test browser.
 export async function captureEditorState(page, label) {
   if (!label.startsWith('failed:') && !process.env.XAMLG_TEST_VERBOSE) return null;
-  const state = await page.evaluate(() => {
+  const state = await page.evaluate(async () => {
     let draft;
-    try { draft = JSON.parse(localStorage.getItem('xamlg.draft') ?? 'null'); } catch { }
+    try { draft = await (await xamlgBoot.importModule('studio.js')).loadDraft(); } catch { }
     const text = value => typeof value === 'string' ? { text: value.slice(0, 4000), length: value.length, truncated: value.length > 4000 } : value;
     const files = value => value && Object.fromEntries(Object.entries(value).slice(0, 32).map(([path, value]) => [path, text(value)]));
     return {

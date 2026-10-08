@@ -1,5 +1,6 @@
 import { test, expect } from './studio-fixture.mjs';
 import { readFile } from 'node:fs/promises';
+import { savedProject } from './editor-state.mjs';
 
 async function ready(page) {
   await page.goto('./');
@@ -29,7 +30,7 @@ test('retiring resource editors preserves pending text and leaves sibling editor
     select.dispatchEvent(new Event('change', { bubbles: true }));
   });
   await expect(page.locator('.code-editor[data-document-path="Styles/Buttons.axaml"]')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('xamlg.draft')).resources['Resources/Palette.axaml'])).toContain('#129944');
+  await expect.poll(async () => (await savedProject(page)).resources['Resources/Palette.axaml']).toContain('#129944');
   await page.getByRole('button', { name: 'Compile', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
   const pending = page.waitForEvent('download');

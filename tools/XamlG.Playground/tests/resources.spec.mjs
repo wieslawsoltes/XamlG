@@ -1,5 +1,6 @@
 import { test, expect } from './studio-fixture.mjs';
 import { readFile } from 'node:fs/promises';
+import { savedProject } from './editor-state.mjs';
 
 async function project(page) {
   await page.goto('./');
@@ -22,14 +23,14 @@ test('project resources compile, capture immediate edits, export and survive dra
     document.querySelector('[data-testid="run-preview"]').click();
   });
   await expect(page.locator('.statusbar')).toContainText('Preview running');
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('xamlg.draft')).resources['Resources/Palette.axaml'])).toContain('#113399');
+  await expect.poll(async () => (await savedProject(page)).resources['Resources/Palette.axaml']).toContain('#113399');
   const downloadPromise = page.waitForEvent('download');
   await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByRole('button', { name: 'Export project', exact: true }).click();
   const download = await downloadPromise;
   const data = JSON.parse(await readFile(await download.path(), 'utf8'));
   expect(data.version).toBe(4);
-  expect(data.compilerOptions).toEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('xamlg.draft')).compilerOptions));
+  expect(data.compilerOptions).toEqual((await savedProject(page)).compilerOptions);
   expect(Object.keys(data.resources)).toHaveLength(2);
   expect(Object.keys(data.generatedFiles)).toHaveLength(3);
   expect(data.generated).toContain('XamlResourceServices.Enter');

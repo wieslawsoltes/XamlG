@@ -11,8 +11,8 @@ public partial class AgentWorkbench
     private bool _handoffBusy;
     [Parameter] public long SourceRevision { get; set; }
     [Parameter] public EventCallback<AgentSourceNavigation> SourceRequested { get; set; }
-    // Page-memory presentation only. Task IDs are unique; deletion prunes their state.
-    // This also survives Dockyard closing/reopening the pane, without browser storage.
+    // Presentation survives closing the pane. Durable preferences save only drafts and
+    // display choices: approvals, revision-bound captures and restore selections expire.
     private static readonly Dictionary<string, ReviewState> ReviewStates = new(StringComparer.Ordinal);
     private ReviewState Review => ReviewStates.TryGetValue(_selectedId, out var state) ? state : ReviewStates[_selectedId] = new();
     private bool _latestRun { get => Review.LatestRun; set => Review.LatestRun = value; }

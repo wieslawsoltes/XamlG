@@ -27,6 +27,8 @@ public partial class App
     private AgentWorkbench? _agentWorkbench;
     private bool _dockReady, _reconcilingDocuments;
     private string? _defaultLayout;
+    private string? _initialDockLayout;
+    private bool _initialLayoutRestored;
     private string PaneTemplate(string id) => _panePrefix + id;
     private DockContent PaneContent(string id, string title, string template) => new()
     {
@@ -38,6 +40,7 @@ public partial class App
         try
         {
             _dockManager = manager;
+            await RestoreInitialStateAsync();
             ReconcileSourceBuffers();
             foreach (var buffer in _documentBuffers.Values)
             { await using var document = await _dock.AddDocumentAsync(PaneContent(buffer.Id, buffer.Path, "document")); _registeredDocuments.Add(buffer.Id); }
@@ -58,6 +61,7 @@ public partial class App
             await module.InvokeVoidAsync("activateDockContent", manager, DocumentId("View.axaml"), true);
             _defaultLayout = await _dock.SaveLayoutAsync();
             var saved = await module.InvokeAsync<string?>("loadDockyardLayout");
+            _initialDockLayout = saved;
             if (saved != null)
             {
                 try
@@ -75,11 +79,23 @@ public partial class App
         StateHasChanged();
     }
     private string[] AllowedDockIds() => ToolPanes.Select(tool => tool.Id).Concat(_documentBuffers.Keys).ToArray();
+    private async Task RestoreInitialDockLayoutAsync()
+    {
+        if (!_dockReady || _initialLayoutRestored || _module == null) return;
+        ReconcileSourceBuffers(); ReconcileGeneratedBuffers();
+        await ReconcileDockDocumentsAsync();
+        if (_initialDockLayout != null)
+        {
+            var layout = await _module.InvokeAsync<string>("filterDockyardLayout", _initialDockLayout, AllowedDockIds());
+            await _dock.LoadLayoutAsync(layout);
+        }
+        _initialLayoutRestored = true;
+    }
     private async Task<DockPaneState[]> DockContentsAsync() => _module == null || _dockManager == null ? [] :
         await _module.InvokeAsync<DockPaneState[]>("dockyardContents", _dockManager);
     private async Task DockyardChangedAsync(BrowserEvent args)
     {
-        if (!_dockReady || _disposed || _module == null) return;
+        if (!_dockReady || !_initialLayoutRestored || _disposed || _module == null) return;
         try { await _module.InvokeVoidAsync("saveDockyardLayout", await _dock.SaveLayoutAsync()); }
         catch (JSDisconnectedException) { }
     }

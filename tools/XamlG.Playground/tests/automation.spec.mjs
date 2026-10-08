@@ -78,7 +78,7 @@ test('HTTP MCP reaches the paired browser project through the companion', async 
   await page.getByLabel('Owner token').fill(ownerToken);
   await page.getByRole('button', { name: 'Connect companion' }).click();
   await expect(page.locator('.agent-access-panel').getByRole('status')).toContainText('Connected');
-  await expect(page.getByLabel('Owner token')).toHaveValue('');
+  await expect(page.getByLabel('Owner token')).toHaveValue(ownerToken);
   expect((await request.post(base + '/agent/state', { headers: { Authorization: `Bearer ${ownerToken}`, 'X-Xamlg-Owner-Session': ownerSession }, data: {} })).status()).toBe(200);
   expect((await request.post(base + '/agent/state', { headers: { Authorization: `Bearer ${token}` }, data: {} })).status()).toBe(401);
   expect((await request.post(base + '/agent/state', { headers: { Authorization: `Bearer ${ownerToken}` }, data: {} })).status()).toBe(409);

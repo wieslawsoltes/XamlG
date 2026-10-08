@@ -8,12 +8,12 @@ public partial class AgentWorkbench
     private const string ChatGptProvider = "openai-chatgpt";
     private string _newAccountLabel = "", _accountLabel = "", _observedAccountId = "";
     private string? _signInLaunchUrl, _signInLaunchId, _accountMessage;
-    private bool _rememberNewAccount, _rememberAccount, _accountBusy;
+    private bool _rememberNewAccount = true, _rememberAccount = true, _accountBusy;
     private AccountView? ActiveAccount => _state.ChatGpt?.Accounts.FirstOrDefault(account => account.Id == _state.ChatGpt.ActiveAccountId);
     private bool SigningIn => _state.ChatGpt?.SignIn?.Status is "waiting" or "exchanging";
     private bool ProviderReady => _connectionMode == "relay" ? !string.IsNullOrWhiteSpace(_relayToken) : IsDirect ? _acceptBrowserExposure && !string.IsNullOrWhiteSpace(_apiKey) : _provider != ChatGptProvider || ActiveAccount is { SignedIn: true, PlanEnabled: true };
     private static string ProviderLabel(string id) => id == ChatGptProvider ? "ChatGPT account · ChatGPT plan usage" : id + " · API key";
-    private void ProviderChanged() { _models = []; _model = ""; if (IsBrowser) ClearDirectCredentials(); }
+    private void ProviderChanged() { _models = []; _model = ""; if (IsBrowser) { BrowserRuntime?.ClearCredentials(); SelectConnectionProfile(); } }
     private void UpdateAccountState()
     {
         var current = _state.ChatGpt?.ActiveAccountId ?? "";

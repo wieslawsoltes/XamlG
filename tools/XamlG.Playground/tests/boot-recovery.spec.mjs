@@ -11,7 +11,7 @@ test('startup retries scripts and their dependencies while retaining one editor 
   const requests = new Map();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.route(/\/(startup|studio|csharp-language|source-buffer|blazor\.webassembly)\.js(?:\?.*)?$/, route => {
+  await page.route(/\/(startup|studio|studio-storage|csharp-language|source-buffer|blazor\.webassembly)\.js(?:\?.*)?$/, route => {
     const name = new URL(route.request().url()).pathname.split('/').at(-1);
     const count = (requests.get(name) ?? 0) + 1;
     requests.set(name, count);
@@ -19,7 +19,7 @@ test('startup retries scripts and their dependencies while retaining one editor 
   });
   await page.goto('./');
   await ready(page);
-  expect(Object.fromEntries(requests)).toEqual({ 'startup.js': 2, 'studio.js': 2, 'blazor.webassembly.js': 2, 'csharp-language.js': 2, 'source-buffer.js': 2 });
+  expect(Object.fromEntries(requests)).toEqual({ 'startup.js': 2, 'studio.js': 2, 'blazor.webassembly.js': 2, 'csharp-language.js': 2, 'source-buffer.js': 2, 'studio-storage.js': 2 });
   expect(await page.evaluate(() => monaco.editor.getModels().filter(model => /\/(View\.axaml|Code\.cs)$/.test(model.uri.path)).length)).toBe(2);
   await page.getByTestId('agent-workbench').click();
   await expect(page.getByRole('region', { name: 'Coding agent workbench' }).getByLabel('API key', { exact: true })).toBeVisible();

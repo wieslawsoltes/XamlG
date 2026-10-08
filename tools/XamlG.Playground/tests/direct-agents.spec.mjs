@@ -63,8 +63,24 @@ test(`direct ${provider} uses browser SDK, source approval and native tool conti
   await section(pane, 'Tools');
   await pane.getByLabel('Search tools', { exact: true }).fill('xamlg_document_write');
   await expect(pane.locator('.agent-catalog-tool')).toContainText('xamlg_document_write');
+  await section(pane, 'Conversation');
+  await pane.getByLabel('Message', { exact: true }).fill('Draft survives a restart');
+  await expect.poll(() => page.evaluate(async () => {
+    const saved = await (await xamlgBoot.importModule('studio.js')).loadStudioState('agent-ui');
+    return Object.values(saved?.drafts || {}).includes('Draft survives a restart');
+  })).toBe(true);
+  await page.reload();
+  await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
+  await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
+  await page.getByTestId('agent-workbench').click();
+  await section(pane, 'Conversation');
+  await expect(pane.locator('.agent-thread')).toContainText('Browser edit compiled successfully.');
+  await expect(pane.getByLabel('Message', { exact: true })).toHaveValue('Draft survives a restart');
   await section(pane, 'Connection');
-  await pane.getByRole('button', { name: 'Clear credentials', exact: true }).click();
+  await expect(pane.getByLabel('API key', { exact: true })).toHaveValue(key);
+  await expect(pane.getByLabel('Accept browser key exposure')).toBeChecked();
+  expect(requests).toHaveLength(4);
+  await pane.getByRole('button', { name: 'Forget connection', exact: true }).click();
   await expect(pane.getByLabel('API key', { exact: true })).toHaveValue('');
   const stored = await page.evaluate(() => JSON.stringify([Object.entries(localStorage), Object.entries(sessionStorage)]));
   expect(stored).not.toContain(key);
@@ -73,7 +89,7 @@ test(`direct ${provider} uses browser SDK, source approval and native tool conti
 });
 }
 
-test('direct credentials clear across providers, tasks, pane closure and workspace replacement', async ({ page }) => {
+test('direct credentials are remembered per provider while closure and workspace replacement revoke the active run', async ({ page }) => {
   test.setTimeout(90000); page.setDefaultTimeout(15000);
   const response = Promise.withResolvers(), arrived = Promise.withResolvers();
   let calls = 0;
@@ -103,7 +119,7 @@ test('direct credentials clear across providers, tasks, pane closure and workspa
     await pane.getByLabel('Task', { exact: true }).selectOption(first);
     await section(pane, 'Connection');
     await expect(pane.getByLabel('Provider', { exact: true })).toHaveValue('openai');
-    await expect(pane.getByLabel('API key', { exact: true })).toHaveValue('');
+    await expect(pane.getByLabel('API key', { exact: true })).toHaveValue(key);
     await pane.getByLabel('API key', { exact: true }).fill(key);
     await pane.getByLabel('Accept browser key exposure').check();
     await section(pane, 'Conversation');
@@ -117,14 +133,14 @@ test('direct credentials clear across providers, tasks, pane closure and workspa
     await expect(pane.locator('.agent-task-status')).toContainText('cancelled');
     await expect(pane.locator('.agent-assistant')).toHaveCount(0);
     await section(pane, 'Connection');
-    await expect(pane.getByLabel('API key', { exact: true })).toHaveValue('');
-    await expect(pane.getByLabel('Accept browser key exposure')).not.toBeChecked();
+    await expect(pane.getByLabel('API key', { exact: true })).toHaveValue(key);
+    await expect(pane.getByLabel('Accept browser key exposure')).toBeChecked();
     await pane.getByLabel('API key', { exact: true }).fill(key);
     await pane.getByLabel('Accept browser key exposure').check();
     await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
     await page.getByLabel('Example', { exact: true }).selectOption('1');
     await page.keyboard.press('Escape');
-    await expect(pane.getByLabel('API key', { exact: true })).toHaveValue('');
+    await expect(pane.getByLabel('API key', { exact: true })).toHaveValue(key);
     await expect(pane.locator('.agent-task-status')).toContainText('Previous workspace');
     expect(calls).toBe(1);
     expect(await page.evaluate(() => JSON.stringify([Object.entries(localStorage), Object.entries(sessionStorage)]))).not.toContain(key);

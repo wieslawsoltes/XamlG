@@ -17,12 +17,12 @@ have independent browser-owned authority.
 | --- | --- | --- |
 | Browser API-key agents without a companion | Implemented | Run the shared C# harness and official OpenAI, Anthropic and Gemini SDK adapters in the Pages app; no bridge or MCP sharing prerequisite. |
 | Local provider relay | Implemented | Browser-owned harness with owner-authenticated, bounded provider transport; provider keys stay in the host; no MCP pairing required. |
-| Direct credential lifecycle | Implemented | Password input, explicit browser-exposure consent, memory-only keys, clear credentials, provider/task-switch and pane-close clearing, cancellation and export/storage exclusion. |
+| Direct credential lifecycle | Implemented | Password input, explicit browser-exposure consent, remembered per-provider credentials by default, explicit Forget connection, live-client cancellation on closure/switching, and exclusion from public exports and localStorage. |
 | Model discovery and manual model IDs | Implemented | Both transports, selected-provider credentials, bounded discovery, no source disclosure from discovery. |
 | Independent coding-agent authority | Implemented | Direct owner adapter with its own run permissions; external MCP grants and sharing remain independent. |
 | Reusable workbench session | Implemented | Share task/queue/review/approval orchestration between browser and companion. |
 | Provider-native continuations and streaming | Implemented | Exercise all three official SDKs in browser direct mode, preserving opaque native state and exposing only public text. |
-| Named tasks, drafts, rename/delete and context handoff | Implemented | Complete task-management UI, deletion confirmation, task/billing-mode identity, credential clearing across providers and independent drafts. |
+| Named tasks, drafts, rename/delete and context handoff | Implemented | Complete task-management UI, deletion confirmation, task/billing-mode identity, separate saved provider credentials and independent durable drafts. |
 | Task plans and questions | Implemented | Keep model-reported plan status distinct from validation; cancel/late-answer and workspace retirement in direct mode. |
 | Permission profiles, exact/scope rules and Never ask | Implemented | Structured scope/tool rule controls, validation against the real catalog, combined-effect denials and destructive Auto edit review. |
 | Immutable embedding restrictions and full-access acknowledgement | Implemented | Host ceiling, allowed modes, denied scopes/tools, lease ceiling and run-approval policy enforced by the reusable engine. |
@@ -35,7 +35,7 @@ have independent browser-owned authority.
 | Queued follow-ups | Implemented | Retain explicit dispatch, optimistic queue revision, editable/reorderable local queue, review and task/workspace isolation. |
 | Changes and selective restoration | Implemented | Preserve task/run baselines, exact patch/block restoration, stale guards, feedback, source navigation and normal Undo with document tabs. |
 | ChatGPT account mode | Implemented | Preserve sign-in, account binding, consent, persistence choices and sign-out; direct API mode must not silently use account billing. |
-| Coding agent as a Dockyard tool | Implemented | Proper close/reopen/floating lifecycle and modern contents; closing cancels work and clears browser credentials. |
+| Coding agent as a Dockyard tool | Implemented | Proper close/reopen/floating lifecycle and modern contents; closing cancels work and clears live SDK clients while preserving saved connections. |
 | Agent access as a Dockyard tool | Implemented | Dockable/floating/closeable/restorable access pane retaining MCP permissions, capabilities, operations and artifacts. |
 | Individual inspector Dockyard tools | Implemented | Every inspector gets its own stable tool identity, activation, floating, close/reopen and persisted layout, including the nine runtime inspection sections. |
 | Source-file Dockyard documents | Implemented | Separate main XAML/C#, auxiliary C# and resource documents; navigation activates the correct file, moves/splits preserve edits, closing preserves project source. |
