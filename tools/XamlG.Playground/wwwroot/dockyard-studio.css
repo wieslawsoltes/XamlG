@@ -54,7 +54,7 @@ summary:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);out
 .preview-auto-toggle { border:1px solid var(--line); border-radius:12px; padding:3px 8px; white-space:nowrap; }
 .preview-auto-toggle[aria-pressed=true] { color:var(--accent); background:var(--raised); }
 
-.statusbar { gap:8px; }
+.statusbar { gap:8px; min-width:0; }
 .statusbar>span:first-child { min-width:0; }
 .statusbar .status-message { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .statusbar .startup-retry { flex:none; margin-right:auto; padding:2px 7px; line-height:16px; border-color:var(--line); color:var(--accent); }
