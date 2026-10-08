@@ -7,15 +7,19 @@ namespace XamlG.Syntax;
 /// A position inside a surrogate-pair entity is not a legal edit boundary.</summary>
 public sealed class XamlDecodedTextMap
 {
-    private readonly int[] _boundaries;
+    private static readonly char[] AttributeEscapes = { '&', '\r', '\n', '\t' };
+    private static readonly char[] TextEscapes = { '&', '\r' };
+    private readonly int[]? _boundaries;
     private readonly int _sourceStart;
-    private XamlDecodedTextMap(string text, int[] boundaries, int sourceStart)
+    private XamlDecodedTextMap(string text, int[]? boundaries, int sourceStart)
     { Text = text; _boundaries = boundaries; _sourceStart = sourceStart; }
     public string Text { get; }
     public TextSpan ToSource(TextSpan decodedSpan)
     {
-        if (decodedSpan.End > Text.Length || _boundaries[decodedSpan.Start] < 0 || _boundaries[decodedSpan.End] < 0)
+        if (decodedSpan.End > Text.Length || _boundaries != null &&
+            (_boundaries[decodedSpan.Start] < 0 || _boundaries[decodedSpan.End] < 0))
             throw new ArgumentException("A source edit cannot split an XML entity or exceed the decoded value.", nameof(decodedSpan));
+        if (_boundaries == null) return new(_sourceStart + decodedSpan.Start, decodedSpan.Length);
         return TextSpan.FromBounds(_sourceStart + _boundaries[decodedSpan.Start], _sourceStart + _boundaries[decodedSpan.End]);
     }
     public static XamlDecodedTextMap Create(string source, TextSpan span, bool attribute = true)
@@ -23,6 +27,8 @@ public sealed class XamlDecodedTextMap
         if (source == null) throw new ArgumentNullException(nameof(source));
         if (span.End > source.Length) throw new ArgumentOutOfRangeException(nameof(span));
         var text = source.Substring(span.Start, span.Length);
+        if (text.IndexOfAny(attribute ? AttributeEscapes : TextEscapes) < 0)
+            return new(text, null, span.Start);
         var output = new StringBuilder(text.Length);
         var boundaries = new List<int> { 0 };
         for (var i = 0; i < text.Length;)
@@ -38,7 +44,13 @@ public sealed class XamlDecodedTextMap
             }
             else if (text[i] == '\r')
             { i++; if (i < text.Length && text[i] == '\n') i++; value = attribute ? " " : "\n"; }
-            else { var c = text[i++]; value = attribute && c is '\n' or '\t' ? " " : c.ToString(); }
+            else
+            {
+                var c = text[i++];
+                output.Append(attribute && c is '\n' or '\t' ? ' ' : c);
+                boundaries.Add(i);
+                continue;
+            }
             output.Append(value);
             for (var n = 1; n < value.Length; n++) boundaries.Add(i - start == value.Length ? start + n : -1);
             boundaries.Add(i);
