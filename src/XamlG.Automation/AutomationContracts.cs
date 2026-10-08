@@ -9,11 +9,16 @@ public enum PermissionDecision { Allow, Ask, Deny }
 public enum PermissionProfile { Ask, ReadOnly, Plan, AutoEdit, FullAccess, Custom }
 
 public sealed record AutomationTool(string Name, string Description, JsonElement InputSchema,
-    AutomationScope Scope, AutomationEffect Effect, bool Destructive = false);
+    AutomationScope Scope, AutomationEffect Effect, bool Destructive = false,
+    IReadOnlyList<AutomationOperationEffect>? AdditionalEffects = null)
+{
+    public IEnumerable<AutomationOperationEffect> Effects => new[] { new AutomationOperationEffect(Scope, Effect) }.Concat(AdditionalEffects ?? []);
+}
+public sealed record AutomationOperationEffect(AutomationScope Scope, AutomationEffect Effect);
 public sealed record AutomationResource(string Uri, string Name, string Description, string MimeType = "application/json", bool IsTemplate = false);
 public sealed record AutomationPrompt(string Name, string Description, string Text);
 public sealed record AutomationCallContext(string Caller, CancellationToken CancellationToken = default, string? PrincipalId = null);
-public sealed record AutomationReview(AutomationTool Tool, JsonElement Arguments, string Caller);
+public sealed record AutomationReview(AutomationTool Tool, JsonElement Arguments, string Caller, JsonElement? Preview = null);
 
 /// <summary>Transport-independent, browser-compatible automation boundary.</summary>
 public interface IAutomationHost

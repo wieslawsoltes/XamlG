@@ -4,7 +4,7 @@ test('file move state binds actual paths and clears errors on destination change
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
-  await page.getByRole('tab', { name: 'Resources', exact: true }).click();
+  await page.locator('[data-tab-id="resources"]').click();
   await page.getByTestId('resource-example').click();
   await expect(page.locator('.statusbar')).toContainText('3 documents');
   await page.getByLabel('Project resource', { exact: true }).selectOption('Resources/Palette.axaml');

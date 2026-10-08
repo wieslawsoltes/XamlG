@@ -22,7 +22,7 @@ public sealed partial class AutomationCatalog : IAutomationHost, IAutomationCata
     public IReadOnlyList<AutomationPrompt> Prompts { get { lock (_gate) return _prompts.Values.ToArray(); } }
 
     public void Add<TArgs, TResult>(string name, string description, AutomationScope scope, AutomationEffect effect,
-        Func<TArgs, AutomationCallContext, ValueTask<TResult>> execute, bool destructive = false)
+        Func<TArgs, AutomationCallContext, ValueTask<TResult>> execute, bool destructive = false, IReadOnlyList<AutomationOperationEffect>? additionalEffects = null)
     {
         if (!ToolName().IsMatch(name)) throw new ArgumentException("Tool names must match [a-zA-Z0-9_-]{1,64}.", nameof(name));
         ArgumentNullException.ThrowIfNull(execute);
@@ -31,7 +31,7 @@ public sealed partial class AutomationCatalog : IAutomationHost, IAutomationCata
         // schema, and CallAsync already rejects null argument envelopes.
         node["type"] = "object";
         var schema = JsonSerializer.SerializeToElement(node);
-        var tool = new AutomationTool(name, description, schema, scope, effect, destructive);
+        var tool = new AutomationTool(name, description, schema, scope, effect, destructive, additionalEffects?.ToArray());
         lock (_gate) _tools.Add(name, new(tool, async (arguments, context) =>
         {
             TArgs args;
@@ -39,6 +39,20 @@ public sealed partial class AutomationCatalog : IAutomationHost, IAutomationCata
             catch (JsonException error) { throw new AutomationException("invalid_arguments", error.Message); }
             return AutomationJson.Element(await execute(args, context));
         }));
+        NotifyCatalogChanged();
+    }
+
+    /// <summary>Declare conservative combined effects before exposing the catalog to an agent.</summary>
+    public void SetEffects(string name, bool destructive, IReadOnlyList<AutomationOperationEffect> additionalEffects)
+    {
+        ArgumentNullException.ThrowIfNull(additionalEffects);
+        if (additionalEffects.Any(effect => !Enum.IsDefined(effect.Scope) || !Enum.IsDefined(effect.Effect)))
+            throw new ArgumentException("Invalid additional tool effects.");
+        lock (_gate)
+        {
+            var entry = _tools.TryGetValue(name, out var found) ? found : throw new KeyNotFoundException("Unknown tool.");
+            _tools[name] = entry with { Tool = entry.Tool with { Destructive = destructive, AdditionalEffects = additionalEffects.ToArray() } };
+        }
         NotifyCatalogChanged();
     }
 

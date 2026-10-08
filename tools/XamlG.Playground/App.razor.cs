@@ -11,12 +11,11 @@ namespace XamlG.Playground;
 
 public partial class App
 {
-    private static readonly string[] InspectorTabs = { "C# output", "C# files", "Resources", "Syntax", "Bound tree", "Visual tree", "Properties", "Designer", "Runtime", "Compiler", "Pipeline" };
     private XamlDocumentSession _document = new(PlaygroundExamples.All[0].Xaml, "View.axaml");
     private string _code = PlaygroundExamples.All[0].Code;
     private BrowserCompilation? _result;
-    private CodeEditor? _xamlEditor;
-    private CodeEditor? _codeEditor;
+    private CodeEditor? _xamlEditor => DocumentEditor("View.axaml");
+    private CodeEditor? _codeEditor => DocumentEditor("Code.cs");
     private IJSObjectReference? _module;
     private AvaloniaVisualNode? _visualTree;
     private AvaloniaVisualNode? _selectedVisual;
@@ -36,12 +35,13 @@ public partial class App
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        await RevealGeneratedAsync();
-        await RevealAgentSourceAsync();
+        await ReconcileDockDocumentsAsync();
+        await RevealDocumentBuffersAsync();
         if (!firstRender) return;
         try
         {
             _module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+            _shellHooks = await _module.InvokeAsync<IJSObjectReference>("installStudioShell");
             _theme = await _module.InvokeAsync<string>("loadTheme");
             await _module.InvokeVoidAsync("setTheme", _theme);
             await Compiler.InitializeAsync((current, total) =>
@@ -86,18 +86,15 @@ public partial class App
             _result = Compiler.Analyze(_document.Current, _code);
             NotifyCompilerResources();
             _status = _result.Success ? $"Compilation succeeded · {_result.Project?.Documents.Length ?? 1} documents · {_result.ElapsedMilliseconds:0.0} ms" : "Compilation has errors";
-            if (_xamlEditor != null) await _xamlEditor.SetDiagnosticsAsync(_result.Diagnostics.Where(d => !d.IsSuppressed && d.Path == "View.axaml"));
-            if (_codeEditor != null) await _codeEditor.SetDiagnosticsAsync(_result.Diagnostics.Where(d => !d.IsSuppressed && d.Path == "Code.cs"));
+            foreach (var buffer in _documentBuffers.Values.ToArray())
+                if (buffer.Editor is { IsRetired: false } editor) await editor.SetDiagnosticsAsync(_result.Diagnostics.Where(d => !d.IsSuppressed && d.Path == buffer.Path));
         }
         catch (Exception error) { _result = null; Report(error); }
         finally { _busy = false; }
     }
     private async Task CaptureEditorsAsync()
     {
-        if (_xamlEditor != null) UpdateXaml(await _xamlEditor.GetTextAsync());
-        if (_codeEditor != null) _code = await _codeEditor.GetTextAsync();
-        if (_resourceEditor != null) await _resourceEditor.CaptureAsync();
-        if (_projectCodeEditor != null) await _projectCodeEditor.CaptureAsync();
+        await CaptureDocumentBuffersAsync();
         await SaveDraftAsync();
     }
     private async Task RunAsync()
@@ -131,18 +128,18 @@ public partial class App
     }
     private async Task SelectSyntaxAsync(XamlInspectionNode node)
     {
-        if (_result == null || !ReferenceEquals(_result.Analysis.Syntax, _document.Current))
+        if (InspectionAnalysis is not { } analysis || !ReferenceEquals(analysis.Syntax, DesignerSyntax(_inspectionPath)))
         { _status = "Source changed · compile before selecting an inspection node"; return; }
-        _selectedDesignerSyntax = _document.Current;
-        _selectedElement = _document.Current.FindElement(node.Span.Start); _editorTab = "xaml";
-        if (_xamlEditor != null) await _xamlEditor.RevealAsync(node.Span);
+        _selectedDesignerSyntax = analysis.Syntax;
+        _selectedElement = analysis.Syntax.FindElement(node.Span.Start);
+        await RevealDocumentAsync(analysis.Syntax.Path, node.Span);
         if (_selectedElement != null)
         {
             var attribute = _selectedElement.Attributes.FirstOrDefault(a => !a.IsNamespace);
             if (attribute != null) { _propertyName = attribute.Name; _propertyValue = attribute.Value; }
         }
     }
-    private void SelectVisual(AvaloniaVisualNode node) { _selectedVisual = node; _inspectorTab = "Properties"; }
+    private async Task SelectVisual(AvaloniaVisualNode node) { _selectedVisual = node; await ShowPaneAsync("properties"); }
     private void RefreshVisuals() { try { _visualTree = Preview.Inspect(); } catch (Exception error) { Report(error); } }
     private Task UndoAsync() => NavigateWorkspaceAsync(true);
     private Task RedoAsync() => NavigateWorkspaceAsync(false);
@@ -201,23 +198,14 @@ public partial class App
     }
     private async Task RevealDiagnosticAsync(PlaygroundDiagnostic diagnostic)
     {
-        if (Compiler.CodeFiles.Snapshot.ContainsKey(diagnostic.Path))
-        {
-            if (_projectCodeEditor != null) { await _projectCodeEditor.CaptureAsync(); _projectCodeEditor.SelectDocument(diagnostic.Path); }
-            _inspectorTab = "C# files"; return;
-        }
-        if (Compiler.Resources.Snapshot.ContainsKey(diagnostic.Path))
-        {
-            if (_resourceEditor != null) { await _resourceEditor.CaptureAsync(); _resourceEditor.SelectDocument(diagnostic.Path); }
-            _inspectorTab = "Resources"; return;
-        }
-        var code = diagnostic.Path == "Code.cs"; _editorTab = code ? "code" : "xaml";
-        var source = code ? _code : _document.Current.Text; var map = new SourceLineMap(source);
+        await CaptureEditorsAsync();
+        var generated = !WorkspaceTexts().ContainsKey(diagnostic.Path);
+        var source = generated ? _result?.Compilation.SyntaxTrees.FirstOrDefault(tree => tree.FilePath == diagnostic.Path)?.ToString() : Source(diagnostic.Path);
+        if (source == null) return;
         try
         {
-            var start = map.GetOffset(new(diagnostic.StartLine - 1, diagnostic.StartColumn - 1));
-            var editor = code ? _codeEditor : _xamlEditor;
-            if (editor != null) await editor.RevealAsync(new(start, Math.Min(1, source.Length - start)));
+            var start = new SourceLineMap(source).GetOffset(new(diagnostic.StartLine - 1, diagnostic.StartColumn - 1));
+            await RevealDocumentAsync(diagnostic.Path, new(start, Math.Min(1, source.Length - start)), generated: generated);
         }
         catch (ArgumentOutOfRangeException) { }
     }
@@ -229,6 +217,12 @@ public partial class App
     }
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
+        RetireDocumentBuffers();
+        if (_dockHooks != null) { await _dockHooks.InvokeVoidAsync("dispose"); await _dockHooks.DisposeAsync(); }
+        _dockReference?.Dispose();
+        if (_shellHooks != null) { await _shellHooks.InvokeVoidAsync("dispose"); await _shellHooks.DisposeAsync(); }
+        _browserAgents.Dispose();
         RevokeAutomation(); _runtimeInspector?.Dispose(); _buildArtifacts.Dispose();
         if (_module != null) await _module.InvokeVoidAsync("disconnectAutomation");
         _automationReference?.Dispose();

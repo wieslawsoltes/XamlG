@@ -18,9 +18,17 @@ Open `http://localhost:8765/`. The development server enables public cross-origi
 
 The studio includes XAML/C# editors, compiler/generated-C# diagnostics, source mappings, syntax and typed-operation inspection, realized visual trees, property/structure editing, undo/redo, project drafts/export and responsive dark/light themes.
 
+Each source file opens as a Dockyard document tab. Documents can split, dock, float,
+close and reopen from Explorer or **View**; closing captures pending edits and keeps
+the project file. Generated files open as read-only documents. Inspectors, Coding
+agent and Agent access are separate tool panels, available from **Tools**. Use
+**View → Reset layout** to restore the default arrangement. Project, editing and
+execution commands live in the compact top menus; Compile, Run and Undo/Redo remain
+in the toolbar.
+
 Compile and Run capture current buffers instead of relying on delayed notifications. Unrelated renders do not overwrite pending edits. Minimal UTF-16-safe changes permit eligible local subtree reparsing with unchanged-node reuse. Parser-work counters are not an end-to-end complexity claim: text construction, indexing, project linking and binding have separate costs.
 
-Design mode provides group selection, real drag/eight-handle resize, snapping, aspect locking, keyboard nudging and cancellation. **Inspectors → Designer** adds source geometry previews, alignment, equal sizing and distribution. Property/structure commands and multi-document geometry edits use workspace transactions; see [design and reload](hot-reload.md).
+Design mode provides group selection, real drag/eight-handle resize, snapping, aspect locking, keyboard nudging and cancellation. **Tools → Designer** adds source geometry previews, alignment, equal sizing and distribution. Property/structure commands and multi-document geometry edits use workspace transactions; see [design and reload](hot-reload.md).
 
 ## Code-behind factory identity
 
@@ -30,7 +38,7 @@ Authoring formatting, rename, code actions and token deltas are exposed through 
 
 ## Multi-document resources
 
-The Resources tab manages reusable classless dictionaries/styles in the same project as `View.axaml`. It has a path selector, add/remove controls, source/generated/syntax views and a complete three-document example. Source remains local to the browser. Adding/removing files changes the compilation's resource catalog; unresolved dependencies appear as source diagnostics, not runtime loader failures.
+The **Resources** tool manages reusable classless dictionaries/styles in the same project as `View.axaml`. It has a path selector, add/remove controls, links to source/generated documents and syntax inspection, and a complete three-document example. Source remains local to the browser. Adding/removing files changes the compilation's resource catalog; unresolved dependencies appear as source diagnostics, not runtime loader failures.
 
 Run emits the view, dictionaries, styles and all C# source files into one assembly. `ResourceInclude`, `StyleInclude` and `MergeResourceInclude` call compiled factories. Changing a source before its debounce timer fires is captured by the next Compile/Run. Export format version 3 includes resource text, additional C# files and current generated files; outdated output is omitted. Draft restoration accepts versions 1, 2 and 3 without executing source.
 
@@ -46,18 +54,19 @@ Resource document count/character limits, normalized relative paths, reserved ro
 
 ## Live runtime inspection
 
-Run a trusted preview and open **Inspectors → Runtime**. Choose visual or logical
+Run a trusted preview and open **Tools → Runtime properties**. Choose visual or logical
 relationships, filter by name/type/handle, inspect effective properties and classes,
 and edit live values. **Open XAML source** checks the preview's source version before
 navigating to the main document or a resource file. Runtime edits affect running
 objects; source edits continue through the normal designer and undo history.
 
-The runtime workbench includes object paths and exact method invocation, binding
+The runtime tool panels include object paths and exact method invocation, binding
 expressions, style/value frames, resources, routed-event watches and the bounded
-change journal. Its **Input** section sends keys, text, mouse and wheel events
+change journal. Each panel docks independently and shares the selected object.
+The **Input** panel sends keys, text, mouse and wheel events
 through Avalonia's actual input pipeline. Leave Design mode first. Pointer
 coordinates are control-local DIPs; Down/Move/Up preserve capture for dragging.
-Touch contacts and the full runtime catalog are available through **Tools**.
+Touch contacts and the full runtime catalog are available through **Runtime tools**.
 
 **Accessibility** reads the actual automation-peer tree, including virtual peers,
 and inspects or invokes the provider methods supported by each peer. Advanced
@@ -67,7 +76,7 @@ disabled; remote clients retain the separate permission gate. Typed runtime inpu
 uses Avalonia's private platform APIs, so `XamlG.AvaloniaRuntime` pins its dependency
 to exactly `12.1.3`.
 
-The **Objects** section also inspects returned objects. Property, dictionary and
+The **Runtime objects** panel also inspects returned objects. Property, dictionary and
 method results expose an `objectId` and `referenceKind` when a live reference is
 available. Use that ID with an empty path to inspect the result, or pass it in a
 typed method argument such as `{ "objectId": "…" }`. Tree, accessibility-peer and
@@ -84,7 +93,7 @@ The inspector retains at most 512 non-scalar reference objects with absolute
 five-minute leases. A lease keeps the original object's identity even if a source
 property later changes. It retires when its originating tree node or peer leaves
 the preview, when the preview is replaced, or when explicitly released. Inspect
-and release these leases under **Objects → Retained objects**, or with
+and release these leases under **Runtime objects → Retained objects**, or with
 `xamlg_runtime_object_handles` / `xamlg_runtime_object_handles_release`. Releasing
 does not call application `Dispose` methods. Expiry releases inspector references
 on the dispatcher; every access checks the deadline. A full handle table reports
@@ -102,6 +111,30 @@ Isolation is not an operating-system resource quota. Code may consume CPU/memory
 
 Both hosts bound loaded preview assemblies because collectible browser load contexts are not assumed. Trusted mode needs page reload to reclaim loaded code; isolated mode can discard its runtime independently. Local visual gestures are disabled in isolated mode, while source edits continue through isolated execution rather than silently loading code into the editor.
 
+## Coding agents
+
+Open **Coding agent → Connection** and choose one of three transports:
+
+- **Direct API** runs in the browser with an OpenAI, Anthropic or Gemini API key.
+  Accept browser key exposure, discover or enter a model, and create a task in
+  **Tasks**. No companion, MCP connection or project sharing is required. Keys stay
+  in page memory and clear on provider changes, pane closure or **Clear credentials**.
+- **Local provider relay** uses the browser agent with a loopback companion as its
+  provider transport. Set provider keys in the companion environment; enter its
+  origin and Owner token in Connection. Provider keys remain on the server, and
+  this mode also works without MCP pairing.
+- **Paired companion** runs the agent in the companion and supports ChatGPT account
+  sign-in. Pair the workspace through Agent access first. Its sharing policy and
+  the agent's run policy both apply.
+
+The workbench has Conversation, Tasks, Plan, Changes, Queue, Permissions, Tools and
+Activity sections. Permissions control the next run and expose active grants for
+revocation. Source approvals show Before/After excerpts and a full-review download;
+Changes supports review, selective restoration and normal project Undo. Tasks keep
+separate drafts, queues, context and review state. The tool catalog is available
+inside the coding-agent panel. See the [agent guide](studio-agent-implementation.md#run-the-current-implementation)
+for account setup, limits, compaction and recovery.
+
 ## Deployment and acceptance
 
 Dockyard, the runtime/designer inspectors, C# tooling, MCP access and the coding-agent
@@ -114,9 +147,9 @@ To connect the published app, start the companion from a checkout with
 `dotnet run --project tools/XamlG.Studio.Host -c Release`. Keep the Pages app open,
 choose **Agent access**, enable sharing, and pair `ws://127.0.0.1:4893/bridge` using
 the printed **Owner token**. The companion accepts `https://wieslawsoltes.github.io`
-by default; no local copy of the web app is needed. Provider keys belong in the
-companion environment. External MCP clients use its separate MCP token. The access
-dialog includes these setup instructions. If the browser requests local network
+by default; no local copy of the web app is needed. Relay and companion provider
+keys belong in the companion environment. External MCP clients use its separate MCP
+token. The access tool panel includes these setup instructions. If the browser requests local network
 permission, allow it for the Pages site to connect to the companion; see
 [Chrome's local network access documentation](https://developer.chrome.com/blog/local-network-access).
 
@@ -144,8 +177,8 @@ Use Rename, Format and Actions in the source toolbar or Monaco command palette/c
 C# editors provide accessible-symbol completion, hover, method/constructor signature help,
 definitions, type definitions, implementations, references and a hierarchical document
 outline through the reusable `CSharpLanguageService` in `XamlG.Tooling`. Navigation opens
-the owning Dockyard document. The generated-C# inspector
-selects every emitted file, including loader adapters, as read-only source. The same
+the owning Dockyard document. The **C# output** tool opens every emitted file,
+including loader adapters, as a read-only document. The same
 operations are exposed as `xamlg_csharp_*` tools, with explicit result bounds and source
 revision checks for edits. Interactive editor operations work with agent access disabled.
 MCP additionally exposes declaration search, namespace/type members and type hierarchies.

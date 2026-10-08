@@ -3,7 +3,7 @@ import { test, expect } from './studio-fixture.mjs';
 import { call, connectMcp, openStudio, writeDocument } from './live-preview.mjs';
 
 async function compilerPane(page) {
-  await page.getByRole('tab', { name: 'Compiler', exact: true }).click();
+  await page.locator('[data-tab-id="compiler"]').click();
   const pane = page.getByRole('region', { name: 'Roslyn compiler workbench' });
   await expect(pane.getByRole('checkbox', { name: 'Check arithmetic overflow' })).toBeVisible();
   return pane;
@@ -113,7 +113,7 @@ test('owner compiler UI supports Undo, Redo, draft restoration and version-4 exp
   await pane.getByLabel('Conditional symbols').press('Tab');
   await pane.getByRole('button', { name: 'Save compiler options', exact: true }).click();
   await expect(pane.locator('.runtime-result')).toContainText('"saved": true');
-  await page.getByRole('button', { name: '↶ Undo', exact: true }).click();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(overflow()).not.toBeChecked({ timeout: 15000 });
   await expect(pane.getByRole('alert')).toHaveCount(0);
   await page.getByRole('button', { name: 'Redo', exact: false }).click();
@@ -121,13 +121,15 @@ test('owner compiler UI supports Undo, Redo, draft restoration and version-4 exp
   await expect(pane.getByRole('combobox', { name: 'Optimization' })).toHaveValue('Debug');
   await page.reload();
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Draft restored without executing');
   pane = await compilerPane(page);
   await expect(overflow()).toBeChecked();
   await expect(pane.getByLabel('Conditional symbols')).toHaveValue('FEATURE, TRACE');
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
+  await page.getByRole('button', { name: 'Export project', exact: true }).click();
   const download = await downloadPromise;
   const project = JSON.parse(await readFile(await download.path(), 'utf8'));
   expect(project.version).toBe(4);
@@ -143,6 +145,7 @@ test('owner compiler UI supports Undo, Redo, draft restoration and version-4 exp
   await page.addInitScript(draft => localStorage.setItem('xamlg.draft', JSON.stringify(draft)), legacyDraft);
   await page.reload();
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Draft restored without executing');
   pane = await compilerPane(page);

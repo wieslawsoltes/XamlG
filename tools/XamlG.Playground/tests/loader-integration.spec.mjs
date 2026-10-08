@@ -50,9 +50,11 @@ test('handwritten component loaders share initialization in trusted and isolated
   await setProject(page, markup, code);
   await expect(page.locator('.statusbar')).toContainText('Preview running');
   await expect(page.locator('.runtime-error')).toHaveCount(0);
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Run$/ }).click();
   await page.getByTestId('run-isolated').click();
   await expect(page.locator('.statusbar')).toContainText('Isolated preview running');
   await expect(page.locator('iframe[title="XamlG isolated preview"]')).toHaveAttribute('sandbox', 'allow-scripts');
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Run$/ }).click();
   await page.getByTestId('reset-isolation').click();
   expect(errors).toEqual([]);
 });
@@ -63,7 +65,7 @@ test('unsupported loader method groups are diagnosed against original C# source'
     'public static readonly Action<object> Unadapted = AvaloniaXamlLoader.Load;\n    public View() {');
   await setProject(page, markup, unsupported);
   await expect(page.locator('.statusbar')).toContainText('Compilation has errors');
-  await page.getByRole('tab', { name: 'Problems', exact: true }).click();
+  await page.locator('[data-tab-id="problems"]').click();
   await expect(page.locator('.diagnostics')).toContainText('XG3400');
   await expect(page.locator('.diagnostics')).toContainText('Code.cs');
   await expect(page.locator('.runtime-error')).toHaveCount(0);

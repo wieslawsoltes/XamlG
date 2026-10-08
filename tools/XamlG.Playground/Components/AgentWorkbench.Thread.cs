@@ -18,7 +18,7 @@ public partial class AgentWorkbench
         StateHasChanged();
     }
     private void PruneThreadState()
-    { foreach (var id in ThreadStates.Keys.Where(id => !_state.Tasks.Any(task => task.Id == id)).ToArray()) ThreadStates.Remove(id); }
+    { foreach (var id in ThreadStates.Keys.Where(RetiredView).ToArray()) ThreadStates.Remove(id); }
     private async Task PageThreadAsync(bool earlier)
     {
         var view = Thread; if (view.Busy || VisibleEvents.Length == 0) return;

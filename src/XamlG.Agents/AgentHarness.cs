@@ -8,12 +8,31 @@ namespace XamlG.Agents;
 /// One serialized agent runner per IDE adapter. Provider continuations are committed only
 /// after a valid terminal reply; completed tool results are retained before the next request.
 /// </summary>
-public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? workspace = null) : IDisposable
+public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? workspace = null, AgentPermissionConstraints? constraints = null) : IDisposable
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, AgentTask> _tasks = new(StringComparer.Ordinal);
     private readonly object _taskGate = new();
     private readonly SemaphoreSlim _runGate = new(1);
     private AutomationLease? _activeLease;
+    private string? _activeTaskId;
+    public AgentPermissionConstraints Constraints { get; } = constraints ?? new();
+    public AgentActivePermissions? ActivePermissions => _activeLease is { } lease && lease.IsActive && _activeTaskId is { } id
+        ? new(id, lease.Policy, lease.ExpiresAt, lease.GrantedTools) : null;
+    public bool RevokeGrant(string taskId, string tool) => _activeTaskId == taskId && _activeLease?.RevokeTool(tool) == true;
+    public AgentRunOptions ValidateOptions(AgentRunOptions options, bool requireAcknowledgement = true)
+    {
+        ArgumentNullException.ThrowIfNull(options); options.Limits.Validate(); options.Compaction.Validate();
+        return options with { Policy = Constraints.Apply(options, ToolCatalog, requireAcknowledgement) };
+    }
+    public IReadOnlyList<AutomationTool> ToolCatalog => host.Tools.Concat(LocalToolDescriptions).ToArray();
+    private static readonly IReadOnlyList<AutomationTool> LocalToolDescriptions = DescribeLocalTools();
+    private static IReadOnlyList<AutomationTool> DescribeLocalTools()
+    {
+        var catalog = new AutomationCatalog();
+        catalog.Add<PlanArguments, object>("xamlg_agent_plan", "Replace the task's revision-checked plan, with at most 12 steps and one in progress.", AutomationScope.Agent, AutomationEffect.Read, (_, _) => throw new InvalidOperationException());
+        catalog.Add<AgentQuestion, object>("xamlg_agent_question", "Ask for task information. Answers never authorize tool operations.", AutomationScope.Agent, AutomationEffect.Read, (_, _) => throw new InvalidOperationException());
+        return catalog.Tools;
+    }
     private long _sequence;
     private bool _disposed;
     public IReadOnlyList<AgentTask> Tasks => _tasks.Values.ToArray();
@@ -58,7 +77,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
         Func<AutomationReview, CancellationToken, Task<AgentApproval>>? review,
         Func<AgentQuestion, CancellationToken, Task<string>>? askUser, CancellationToken cancellationToken)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this); options.Limits.Validate(); options.Compaction.Validate();
+        ObjectDisposedException.ThrowIf(_disposed, this); options = ValidateOptions(options);
         var task = GetTask(id);
         if (!await _runGate.WaitAsync(0, cancellationToken)) throw new InvalidOperationException("An agent is already running in this IDE.");
         var started = false;
@@ -89,7 +108,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 else if (task.Status != AgentTaskStatus.Paused) throw new InvalidOperationException("Only a paused task can be resumed without a new message.");
                 task.Status = AgentTaskStatus.Preparing; preparing = true;
             }
-            _activeLease = lease;
+            _activeLease = lease; _activeTaskId = id;
             // Checkpoint and catalog failures must not consume the reviewed message.
             var checkpoint = workspace != null && (message != null || task.BeforeRun == null)
                 ? await CaptureWorkspaceAsync(lease.Token) : null;
@@ -118,7 +137,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 if (task.TotalTokens >= options.Limits.TotalTaskTokens) { Pause(task, "Task token budget reached."); return; }
                 if (task.PendingReply == null)
                 {
-                    var request = new AgentRequest(task.Model, options.Instructions, task.Messages.ToArray(), tools, options.Limits.OutputTokensPerRequest);
+                    var request = new AgentRequest(task.Model, RunInstructions(options), task.Messages.ToArray(), tools, options.Limits.OutputTokensPerRequest);
                     task.NativeContextBytes = task.Provider.GetContextBytes(request);
                     if (NeedsCompaction(task, options) && options.AutomaticCompaction && task.Messages.Count > 1)
                     {
@@ -167,8 +186,17 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                     {
                         if (review == null) throw new AutomationException("permission_denied", "This operation requires a host review callback.");
                         task.Status = AgentTaskStatus.AwaitingApproval; Publish(task, "approval", tool.Name, call.Id);
-                        var answer = await review(new(tool, call.Arguments, "AI Agent"), lease.Token);
+                        JsonElement? preview = null;
+                        if (workspace is IAgentOperationPreview planner)
+                        {
+                            try { preview = await planner.PreviewOperationAsync(tool.Name, call.Arguments, lease.Token); }
+                            catch (Exception error) when (error is AutomationException or ArgumentException or InvalidOperationException or KeyNotFoundException)
+                            { preview = AutomationJson.Element(new { sourcePreview = false, note = "The operation preview could not be produced. Re-read current source before approving.", files = Array.Empty<object>() }); }
+                        }
+                        var answer = await review(new(tool, call.Arguments, "AI Agent", preview), lease.Token);
                         lease.Token.ThrowIfCancellationRequested(); task.Status = AgentTaskStatus.Running;
+                        if (!Enum.IsDefined(answer) || answer == AgentApproval.AllowToolForRun && !Constraints.AllowRunApprovals)
+                            throw new AutomationException("permission_denied", "The host does not allow this approval grant.");
                         if (answer == AgentApproval.Deny) throw new AutomationException("permission_denied", "Operation denied by the user.");
                         if (answer == AgentApproval.AllowToolForRun) lease.GrantTool(tool.Name);
                     }
@@ -218,9 +246,14 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 catch (Exception error) when (error is not OutOfMemoryException)
                 { Publish(task, "changes_unavailable", "The source checkpoint could not be refreshed. Inspect the current project before restoring."); }
             }
-            _activeLease = null; _runGate.Release();
+            _activeLease = null; _activeTaskId = null; _runGate.Release();
         }
     }
+
+    private string RunInstructions(AgentRunOptions options) => options.Instructions +
+        "\nThe embedding host enforces this run's permission policy: " + JsonSerializer.Serialize(new { options.Policy, constraints = Constraints }, AutomationJson.Options) +
+        "\nA denied operation ends the batch. Do not try a different operation to bypass a denied effect." +
+        (options.Policy.Profile == PermissionProfile.Plan ? "\nThis is a planning run. Inspect and propose a plan; implementation requires a separately confirmed editing run." : "");
 
     private AutomationCatalog LocalTools(AgentTask task, Func<AgentQuestion, CancellationToken, Task<string>>? askUser, CancellationToken token)
     {
@@ -282,3 +315,5 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
     public sealed record PlanArguments(long ExpectedRevision, AgentPlanStep[] Steps);
     private sealed record QueuedRun(string Id, long Revision);
 }
+
+public sealed record AgentActivePermissions(string TaskId, AutomationPolicy Policy, DateTimeOffset ExpiresAt, IReadOnlyList<string> GrantedTools);

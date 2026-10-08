@@ -1,3 +1,5 @@
+import { providerEvents } from './agent-provider-fixtures.mjs';
+import { agentSection } from './agent-fixture.mjs';
 import { test, expect as baseExpect } from './studio-fixture.mjs';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
@@ -91,18 +93,22 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await page.getByLabel('Companion WebSocket').fill(`ws://127.0.0.1:${companionPort}/bridge`);
     await page.getByLabel('Owner token').fill(token);
     await page.getByRole('button', { name: 'Connect companion' }).click();
-    await expect(page.getByRole('dialog', { name: 'Agent access' }).getByRole('status')).toContainText('Connected');
-    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(page.locator('.agent-access-panel').getByRole('status')).toContainText('Connected');
+    await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
     const original = await page.evaluate(() => window.xamlgAutomation.call('xamlg_document_read', { path: 'View.axaml' }));
     await page.getByTestId('agent-workbench').click();
     const workbench = page.getByRole('region', { name: 'Coding agent workbench' });
+    await agentSection(workbench, 'Connection');
+    await workbench.getByLabel('Agent connection', { exact: true }).selectOption('companion');
     await expect(workbench.getByLabel('Provider', { exact: true })).toHaveValue(provider);
+    await agentSection(workbench, 'Connection');
     await workbench.getByRole('button', { name: 'Discover models' }).click();
     await expect(workbench.locator('#agent-models option')).toHaveCount(1);
     await workbench.getByLabel('Model', { exact: true }).fill('test-model');
+    await agentSection(workbench, 'Tasks');
     await workbench.getByLabel('Task name', { exact: true }).fill('Change and review');
     await workbench.getByRole('button', { name: 'Create task', exact: true }).click();
-    await workbench.getByText('Run permissions and limits', { exact: true }).click();
+    await agentSection(workbench, 'Permissions');
     await workbench.getByLabel('Task permission profile').selectOption('autoEdit');
     await page.route('**/agent/draft', async route => {
       const response = await route.fetch();
@@ -112,17 +118,20 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     const composer = workbench.getByLabel('Message', { exact: true });
     const prompt = 'Change the TextBlock, compile and report.';
     const review = page.getByRole('dialog', { name: 'Review agent run' });
+    await agentSection(workbench, 'Conversation');
     await composer.fill(prompt);
     await expect(composer).toHaveAttribute('data-can-submit', 'true');
     await composer.press('Shift+Enter');
     await expect(composer).toHaveValue(prompt + '\n');
     await expect(review).not.toBeVisible();
+    await agentSection(workbench, 'Conversation');
     await composer.fill(prompt);
     await composer.dispatchEvent('compositionstart', { data: '文字' });
     await composer.press('Enter');
     await expect(composer).toHaveValue(prompt + '\n');
     await expect(review).not.toBeVisible();
     await composer.dispatchEvent('compositionend', { data: '文字' });
+    await agentSection(workbench, 'Conversation');
     await composer.fill(prompt);
     await composer.press('Control+Enter');
     await expect(review).toBeVisible();
@@ -136,9 +145,12 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     composerDraftResponse.resolve();
     await review.getByRole('button', { name: 'Confirm run', exact: true }).click();
     await expect.poll(() => requests.length).toBe(1);
+    await agentSection(workbench, 'Conversation');
     await workbench.getByLabel('Message', { exact: true }).fill('First queued follow-up');
     await workbench.getByRole('button', { name: 'Queue follow-up', exact: true }).click();
+    await agentSection(workbench, 'Conversation');
     await expect(workbench.getByLabel('Message', { exact: true })).toHaveValue('');
+    await agentSection(workbench, 'Conversation');
     await workbench.getByLabel('Message', { exact: true }).fill('Keep this message queued');
     await workbench.getByRole('button', { name: 'Queue follow-up', exact: true }).click();
     await expect(workbench.locator('.agent-queue summary')).toContainText('2 queued follow-ups');
@@ -146,17 +158,24 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
       const response = await route.fetch(); moveArrived.resolve();
       await moveResponse.promise; await route.fulfill({ response });
     });
+    await agentSection(workbench, 'Queue');
     await workbench.getByRole('button', { name: 'Move down', exact: true }).click();
     await moveArrived.promise;
+    await agentSection(workbench, 'Queue');
     await workbench.getByLabel('Edit queued message', { exact: true }).fill('Saved queued follow-up');
+    await agentSection(workbench, 'Queue');
     await expect(workbench.getByRole('button', { name: 'Save queued edit', exact: true })).toBeDisabled();
     moveResponse.resolve();
+    await agentSection(workbench, 'Queue');
     await workbench.getByRole('button', { name: 'Save queued edit', exact: true }).click();
+    await agentSection(workbench, 'Queue');
     await expect(workbench.getByLabel('Queued message', { exact: true }).locator('option').last()).toHaveText('Saved queued follow-up');
+    await agentSection(workbench, 'Queue');
     await expect(workbench.getByRole('button', { name: 'Send selected message', exact: true })).toBeDisabled();
     releaseFirst();
-    await expect(workbench.getByRole('status')).toContainText('completed', { timeout: 30000 });
+    await expect(workbench.locator('.agent-task-status')).toContainText('completed', { timeout: 30000 });
     expect(failures).toEqual([]); expect(requests).toHaveLength(4);
+    await agentSection(workbench, 'Conversation');
     const rendered = workbench.locator('.agent-assistant .agent-markdown').filter({ hasText: 'Verified locally' });
     await expect(rendered.locator('strong')).toHaveText('Verified locally');
     await expect(rendered.locator('.agent-code-block code')).toHaveText(xaml);
@@ -168,10 +187,13 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     // The next accepted run captures this manual edit as its own source baseline.
     await writeSource(reviewBaseline);
     await expect(workbench.locator('.agent-queue summary')).toContainText('2 queued follow-ups');
+    await agentSection(workbench, 'Conversation');
     await workbench.getByLabel('Message', { exact: true }).fill('Unsent independent composer draft');
+    await agentSection(workbench, 'Permissions');
     await workbench.getByLabel('Task permission profile').selectOption('fullAccess');
     const taskId = await workbench.getByLabel('Task', { exact: true }).inputValue();
     const queuedId = await workbench.getByLabel('Queued message', { exact: true }).inputValue();
+    await agentSection(workbench, 'Queue');
     await workbench.getByRole('button', { name: 'Send selected message', exact: true }).click();
     await expect(review).toContainText('Saved queued follow-up');
     await expect(review.getByRole('button', { name: 'Confirm run', exact: true })).toBeDisabled();
@@ -184,6 +206,7 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     }, { taskId, queuedId })).rejects.toThrow('Full Access acknowledgement');
     await review.getByRole('button', { name: 'Cancel', exact: true }).click();
     expect(requests).toHaveLength(4);
+    await agentSection(workbench, 'Queue');
     await workbench.getByRole('button', { name: 'Send selected message', exact: true }).click();
     await page.evaluate(async ({ taskId, queuedId }) => {
       const studio = await import('./studio.js');
@@ -196,15 +219,18 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await expect(review.getByRole('alert')).toContainText('queue changed');
     expect(requests).toHaveLength(4);
     await review.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await workbench.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await workbench.getByRole('button', { name: 'Refresh coding agent', exact: true }).click();
+    await agentSection(workbench, 'Queue');
     await expect(workbench.getByLabel('Queued message', { exact: true }).locator('option').last()).toHaveText('Reviewed after concurrent queue edit');
+    await agentSection(workbench, 'Queue');
     await workbench.getByRole('button', { name: 'Send selected message', exact: true }).click();
     await expect(review).toContainText('Reviewed after concurrent queue edit');
     await expect(review.getByRole('checkbox')).not.toBeChecked();
     await review.getByRole('checkbox').check();
     await review.getByRole('button', { name: 'Confirm run', exact: true }).click();
     await expect.poll(() => requests.length).toBe(5);
-    await expect(workbench.getByRole('status')).toContainText('completed');
+    await expect(workbench.locator('.agent-task-status')).toContainText('completed');
+    await agentSection(workbench, 'Conversation');
     await expect(workbench.getByLabel('Message', { exact: true })).toHaveValue('Unsent independent composer draft');
     await expect(workbench.locator('.agent-queue summary')).toContainText('1 queued follow-ups');
     const continuation = JSON.stringify(requests[4]);
@@ -212,10 +238,13 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     expect(continuation).not.toContain('Keep this message queued');
     expect(continuation).not.toContain('Unsent independent composer draft');
     await writeSource(reviewAfter);
+    await agentSection(workbench, 'Changes');
     await workbench.getByLabel('Source comparison').selectOption('latest');
+    await agentSection(workbench, 'Changes');
     await expect(workbench.getByLabel('Selected change block')).toHaveText('Change 1 of 2');
     await workbench.getByRole('button', { name: 'Open current document', exact: true }).click();
-    await expect(page.getByRole('tab', { name: /^◇.*View.axaml$/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[data-tab-id="document:View.axaml"]')).toHaveAttribute('aria-selected', 'true');
+    await agentSection(workbench, 'Changes');
     await workbench.getByRole('button', { name: 'Restore selected change', exact: true }).click();
     const restore = page.getByRole('dialog', { name: 'Review source restore' });
     await expect(restore).toContainText('First 🦊 after');
@@ -229,42 +258,54 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
       await window.xamlgAutomation.call('xamlg_project_undo', { expectedRevision: project.revision });
     });
     await expect.poll(async () => (await readSource()).text).toBe(reviewAfter);
+    await agentSection(workbench, 'Changes');
     await expect(workbench.getByRole('button', { name: 'Restore selected change', exact: true })).toBeDisabled();
+    await agentSection(workbench, 'Changes');
     await workbench.getByRole('button', { name: 'Refresh changes', exact: true }).click();
+    await agentSection(workbench, 'Changes');
     await workbench.getByRole('button', { name: 'Next change', exact: true }).click();
+    await agentSection(workbench, 'Changes');
     await expect(workbench.getByLabel('Selected change block')).toHaveText('Change 2 of 2');
+    await agentSection(workbench, 'Changes');
     await workbench.getByRole('button', { name: 'Restore selected change', exact: true }).click();
     await expect(restore).toContainText('Second after');
     await writeSource(reviewAfter.replace('Height="8"', 'Height="9"'));
     await expect(restore.getByRole('button', { name: 'Confirm source restore', exact: true })).toBeDisabled();
     await restore.getByRole('button', { name: 'Cancel', exact: true }).click();
     expect((await readSource()).text).toContain('Second after');
+    await agentSection(workbench, 'Changes');
     await workbench.getByLabel('Source comparison').selectOption('task');
+    await agentSection(workbench, 'Changes');
     await workbench.getByRole('button', { name: 'Refresh changes', exact: true }).click();
     await expect(workbench.locator('details.agent-changes summary')).toHaveText('Review 1 changed source files');
     await workbench.getByLabel(/View.axaml \(/).check();
+    await agentSection(workbench, 'Changes');
     await workbench.getByRole('button', { name: 'Show before and after' }).click();
     await expect(workbench.locator('details.agent-changes')).toContainText('Second after');
+    await agentSection(workbench, 'Changes');
     await workbench.getByRole('button', { name: 'Restore selected files' }).click();
     await page.getByRole('dialog', { name: 'Review source restore' }).getByRole('button', { name: 'Confirm source restore', exact: true }).click();
     await expect.poll(async () => (await page.evaluate(() => window.xamlgAutomation.call('xamlg_document_read', { path: 'View.axaml' }))).text).toBe(original.text);
+    await agentSection(workbench, 'Conversation');
     await workbench.getByRole('button', { name: 'Compact context' }).click();
     await expect(review).toContainText('Review context compaction');
     expect(requests).toHaveLength(5);
     await review.getByRole('checkbox').check();
     await review.getByRole('button', { name: 'Confirm compaction', exact: true }).click();
-    await expect(workbench.getByRole('status')).toContainText('1 checkpoints');
+    await expect(workbench.locator('.agent-task-status')).toContainText('1 checkpoints');
     expect(failures).toEqual([]); expect(requests).toHaveLength(6);
     const downloadPromise = page.waitForEvent('download');
+    await agentSection(workbench, 'Tasks');
     await workbench.getByRole('button', { name: 'Export thread' }).click();
     expect((await downloadPromise).suggestedFilename()).toBe('xamlg-agent-thread.json');
+    await page.locator('[data-tab-id="agent"]').click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Float', exact: true }).click();
     await page.evaluate(async () => {
       const layout = await window.xamlgAutomation.call('xamlg_layout_get');
-      await window.xamlgAutomation.call('xamlg_layout_content', { contentId: 'agent', operation: 'floatInPage' });
       await window.xamlgAutomation.call('xamlg_layout_set', { layout: layout.layout });
     });
     await page.getByTestId('agent-workbench').click();
-    await expect(workbench.getByRole('status')).toContainText('1 checkpoints');
+    await expect(workbench.locator('.agent-task-status')).toContainText('1 checkpoints');
     expect(pageErrors).toEqual([]);
     await page.getByTestId('agent-access').click();
     await page.getByRole('button', { name: 'Revoke & disconnect' }).click();
@@ -279,21 +320,4 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     fixture.closeAllConnections(); await new Promise(resolve => fixture.close(resolve));
   }
 });
-}
-
-function providerEvents(provider, output, round) {
-  if (provider === 'openai') return [{ type: 'response.completed', sequence_number: round,
-    response: { id: `resp_${round}`, object: 'response', created_at: 123, model: 'test-model', status: 'completed', output, usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 } } }];
-  if (provider === 'gemini') return [{ candidates: [{ index: 0, content: { role: 'model', parts: output.map(item => item.type === 'function_call' ?
-    { functionCall: { id: item.call_id, name: item.name, args: JSON.parse(item.arguments) } } : { text: item.content[0].text }) }, finishReason: 'STOP' }],
-    usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 } }];
-  const events = [{ type: 'message_start', message: { id: `msg_${round}`, type: 'message', role: 'assistant', model: 'test-model', content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0 } } }];
-  output.forEach((item, index) => {
-    events.push({ type: 'content_block_start', index, content_block: item.type === 'function_call' ? { type: 'tool_use', id: item.call_id, name: item.name, input: {} } : { type: 'text', text: '' } });
-    events.push({ type: 'content_block_delta', index, delta: item.type === 'function_call' ? { type: 'input_json_delta', partial_json: item.arguments } : { type: 'text_delta', text: item.content[0].text } });
-    events.push({ type: 'content_block_stop', index });
-  });
-  events.push({ type: 'message_delta', delta: { stop_reason: output.some(item => item.type === 'function_call') ? 'tool_use' : 'end_turn', stop_sequence: null }, usage: { output_tokens: 5 } });
-  events.push({ type: 'message_stop' });
-  return events;
 }

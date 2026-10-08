@@ -10,7 +10,7 @@ public sealed partial class AgentHarness
     /// precedes replacing native history; failed summaries preserve the old context.</summary>
     public async Task<bool> CompactAsync(string id, AgentRunOptions options, CancellationToken cancellationToken = default)
     {
-        options.Limits.Validate(); options.Compaction.Validate();
+        options = ValidateOptions(options, requireAcknowledgement: false);
         var task = GetTask(id); EnsureIdle(task); EnsureCurrentWorkspace(task);
         if (task.Messages.Count == 0) throw new InvalidOperationException("This task has no accepted context to compact.");
         if (!await _runGate.WaitAsync(0, cancellationToken)) throw new InvalidOperationException("An agent is already running in this IDE.");
@@ -20,7 +20,7 @@ public sealed partial class AgentHarness
             using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, task.WorkspaceLifetime,
                 task.Provider is IAgentProviderSession session ? session.GetSessionLifetime() : default);
             using var lease = new AutomationLease(options.Policy, options.LeaseDuration, lifetime.Token);
-            _activeLease = lease; task.Status = AgentTaskStatus.Running;
+            _activeLease = lease; _activeTaskId = id; task.Status = AgentTaskStatus.Running;
             var tools = host.Tools.Concat(LocalTools(task, null, lease.Token).Tools).ToArray();
             var result = await CompactContextAsync(task, options, tools, lease, new());
             task.Status = status;
@@ -29,7 +29,7 @@ public sealed partial class AgentHarness
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         { task.Status = status; task.StatusReason = "Compaction did not replace context: " + error.Message; Publish(task, "checkpoint_failed", task.StatusReason); throw; }
-        finally { _activeLease = null; _runGate.Release(); }
+        finally { _activeLease = null; _activeTaskId = null; _runGate.Release(); }
     }
 
     private async Task<bool> CompactContextAsync(AgentTask task, AgentRunOptions options, IReadOnlyList<AutomationTool> tools,

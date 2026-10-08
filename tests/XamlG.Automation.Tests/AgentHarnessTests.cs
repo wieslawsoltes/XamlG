@@ -36,7 +36,7 @@ public sealed class AgentHarnessTests
             new("two", "edit", AutomationJson.Element(new { wrong = 1 }))], new(1, 1), new object()));
         using var harness = new AgentHarness(Host(() => ++writes));
         var task = harness.CreateTask("Invalid", provider, "test-model", TestContext.Current.CancellationToken);
-        await Assert.ThrowsAsync<AutomationException>(() => harness.RunAsync(task.Id, "Change", new() { Policy = new() { Profile = PermissionProfile.FullAccess } }, cancellationToken: TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<AutomationException>(() => harness.RunAsync(task.Id, "Change", new() { Policy = new() { Profile = PermissionProfile.FullAccess }, FullAccessAcknowledged = true }, cancellationToken: TestContext.Current.CancellationToken));
         Assert.Equal(0, writes); Assert.Equal(AgentTaskStatus.Failed, task.Status);
     }
 

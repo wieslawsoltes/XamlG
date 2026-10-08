@@ -6,7 +6,7 @@ async function share(page) {
   await page.getByTestId('agent-access').click();
   await page.getByLabel('Enable access to this live project').check();
   await page.getByLabel('Permission profile', { exact: true }).selectOption('FullAccess');
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
 }
 async function ready(page, sharing = true) {
   await page.goto('./');
@@ -65,7 +65,7 @@ test('C# MCP authoring resolves other files, previews renames and applies undoab
 
 test('Monaco C# completion, rename and formatting work without enabling agent access', async ({ page }) => {
   await ready(page, false);
-  await page.getByRole('tab', { name: /^#.*Code.cs$/ }).click();
+  await page.locator('[data-tab-id="document:Code.cs"]').click();
   const code = 'public class Sample { public int Answer = 42; public int Read(){var result=Answer;return result;} }';
   await page.evaluate(code => monaco.editor.getEditors().find(e => e.getModel()?.uri.path.endsWith('/Code.cs')).setValue(code), code);
   await command(page, 'Answer;', 'editor.action.triggerSuggest', 3);
@@ -92,7 +92,7 @@ test('Monaco definitions open an unopened C# file through Dockyard', async ({ pa
   await write(page, 'Models/Alpha.cs', 'namespace Model; public class Alpha {}');
   await write(page, 'Models/Zebra.cs', 'namespace Model; public class Item { public int Number = 42; }');
   await write(page, 'Code.cs', 'namespace Model; public class Page { public int Read(Item item) => item.Number; }');
-  await page.getByRole('tab', { name: /^#.*Code.cs$/ }).click();
+  await page.locator('[data-tab-id="document:Code.cs"]').click();
   await command(page, 'Number;', 'editor.action.revealDefinition', 2);
   const files = page.getByRole('region', { name: 'C# project documents' });
   await expect(files).toBeVisible();
@@ -113,7 +113,7 @@ test('Monaco definitions navigate to exact first-line symbols in BOM source file
   await write(page, 'Models/Zebra.cs', target);
   await write(page, 'Code.cs', code);
   for (const [word, path, symbol] of [['Number +', 'Models/Zebra.cs', 'Number'], ['Local;', 'Code.cs', 'Local'], ['Number +', 'Models/Zebra.cs', 'Number']]) {
-    await page.getByRole('tab', { name: /^#.*Code.cs$/ }).click();
+    await page.locator('[data-tab-id="document:Code.cs"]').click();
     await command(page, word, 'editor.action.revealDefinition', 2);
     await expect.poll(() => page.evaluate(path => {
       const editor = monaco.editor.getEditors().find(e => e.getModel()?.uri.path.endsWith('/' + path));
@@ -126,7 +126,9 @@ test('Monaco definitions navigate to exact first-line symbols in BOM source file
 
 test('C# generated field rename edits its XAML declaration and generated files can be selected', async ({ page }) => {
   await ready(page, false);
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByLabel('Example', { exact: true }).selectOption('1');
+  await page.keyboard.press('Escape');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
   // Replacing the workspace retires access to the previous project.
   await share(page);
@@ -139,9 +141,9 @@ test('C# generated field rename edits its XAML declaration and generated files c
   expect((await call(page, 'xamlg_document_read', { path: 'Code.cs' })).text).toContain('caption.Text');
   expect((await call(page, 'xamlg_compiler_compile')).success).toBe(true);
   const files = (await call(page, 'xamlg_generated_list')).files;
-  await page.getByRole('tab', { name: 'C# output', exact: true }).click();
-  const picker = page.getByLabel('Generated C# file', { exact: true });
-  await expect(picker.locator('option')).toHaveCount(files.length);
-  await picker.selectOption(files.at(-1).path);
+  await page.locator('[data-tab-id="generated"]').click();
+  const generated = page.locator('.generated-files');
+  await expect(generated.getByRole('button')).toHaveCount(files.length);
+  await generated.getByRole('button', { name: '# ' + files.at(-1).path, exact: true }).click();
   await expect.poll(() => page.evaluate(path => monaco.editor.getEditors().some(e => e.getOption(monaco.editor.EditorOption.readOnly) && e.getModel()?.uri.path.endsWith('/' + path)), files.at(-1).path)).toBe(true);
 });

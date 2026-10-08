@@ -83,7 +83,7 @@ test('MCP creates immutable JSON ZIP assembly and PDB artifacts with owned chunk
     await expect(mcp.call('xamlg_build_release', { id: ownerArtifact.id })).rejects.toThrow();
     await expect(resource(mcp, 'xamlg://artifacts/' + ownerArtifact.id)).rejects.toThrow();
     await page.getByTestId('agent-access').click();
-    const access = page.getByRole('dialog', { name: 'Agent access' });
+    const access = page.locator('.agent-access-panel');
     const inventory = await details(access, 'Build artifacts');
     const row = inventory.locator('div').filter({ has: page.locator('strong', { hasText: 'xamlg-source.zip' }) });
     const downloading = page.waitForEvent('download'); await row.getByRole('button', { name: 'Download', exact: true }).click();
@@ -111,7 +111,7 @@ test('MCP creates immutable JSON ZIP assembly and PDB artifacts with owned chunk
     await access.getByRole('button', { name: 'Release all artifacts' }).click();
     await expect(inventory.locator('div')).toHaveCount(0);
     await expect(mcp.call('xamlg_build_read', { id })).rejects.toThrow();
-    await access.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
   } finally { await mcp.close(); }
 });
 
@@ -153,19 +153,21 @@ test('MCP waits observe source updates without blocking edits and owner cancella
     await expect(mcp.rpc('tasks/get', { taskId: ownerCancel.taskId })).rejects.toThrow();
     const obsolete = await waitTask(mcp, { milliseconds: 60000, resources: [] });
     const artifact = await mcp.call('xamlg_build_create', { target: 'project-json', expectedRevision: (await mcp.call('xamlg_project_get')).revision });
-    await page.getByLabel('Example', { exact: true }).selectOption('1');
+    await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
+  await page.getByLabel('Example', { exact: true }).selectOption('1');
+  await page.keyboard.press('Escape');
     await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
     await expect.poll(async () => (await mcp.rpc('tools/list')).tools.length).toBe(0);
     await expect(mcp.rpc('tasks/get', { taskId: obsolete.taskId })).rejects.toThrow();
     await page.getByTestId('agent-access').click();
-    const access = page.getByRole('dialog', { name: 'Agent access' });
+    const access = page.locator('.agent-access-panel');
     await expect(access.getByLabel('Enable access to this live project')).not.toBeChecked();
     await expect(access.locator('summary', { hasText: 'Build artifacts' })).toHaveText('Build artifacts (0)');
     await access.getByLabel('Enable access to this live project').check();
     await access.getByLabel('Owner token').fill(process.env.XAMLG_TEST_OWNER_TOKEN);
     await access.getByRole('button', { name: 'Connect companion', exact: true }).click();
     await expect(access.getByRole('status')).toContainText('Connected');
-    await access.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
     await expect(mcp.call('xamlg_build_read', { id: artifact.id })).rejects.toThrow();
     await expect(mcp.rpc('tasks/get', { taskId: obsolete.taskId })).rejects.toThrow();
     expect((await agentRequest(page, 'state')).operations).toEqual([]);
@@ -200,9 +202,9 @@ test('MCP resources follow generated and runtime changes while permissions and r
     await stream.close(); await runtimeUpdates.close();
     const project = await mcp.call('xamlg_project_get');
     await page.getByTestId('agent-access').click();
-    const access = page.getByRole('dialog', { name: 'Agent access' });
+    const access = page.locator('.agent-access-panel');
     await access.getByLabel('Permission profile').selectOption('ReadOnly');
-    await access.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
     const mutation = { path: 'View.axaml', text: '<Border xmlns="https://github.com/avaloniaui"/>', expectedRevision: project.revision };
     await expect(mcp.call('xamlg_document_write', mutation)).rejects.toThrow();
     await expect(mcp.call('xamlg_runtime_run', { expectedRevision: project.revision })).rejects.toThrow();
@@ -213,7 +215,7 @@ test('MCP resources follow generated and runtime changes while permissions and r
     expect((await complete()).completion.values).toEqual(['View.axaml']);
     await page.getByTestId('agent-access').click();
     await access.getByLabel('Permission profile').selectOption('Ask');
-    await access.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
     const denied = mcp.call('xamlg_document_write', mutation).then(value => ({ value }), error => ({ error: error.message }));
     const review = page.getByRole('dialog', { name: 'Review agent operation' });
     await expect(review).toContainText('xamlg_document_write'); await review.getByRole('button', { name: 'Deny', exact: true }).click();

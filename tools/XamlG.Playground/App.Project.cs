@@ -8,11 +8,13 @@ public partial class App
     private async Task ResourceChangedAsync()
     {
         _status = "Project resource changed · compile to update all dependent documents";
+        ReconcileSourceBuffers();
         await SaveDraftAsync();
     }
     private async Task LoadResourceExampleAsync()
     {
         if (_busy) return;
+        await RetireAutomationWorkspaceAsync();
         ResetCompilerSettings();
         Compiler.CodeFiles.ReplaceAll(new Dictionary<string, string>());
         Compiler.Resources.ReplaceAll(new Dictionary<string, string>(StringComparer.Ordinal)
@@ -49,6 +51,8 @@ public partial class App
             """, "View.axaml");
         _code = "// Optional application types. All XAML resources compile into one assembly.\n";
         _selectedElement = null; _error = null; _result = null;
+        ReconcileSourceBuffers();
         await SaveDraftAsync(); await CompileSnapshotAsync();
+        await OpenDocumentAsync("Resources/Palette.axaml");
     }
 }

@@ -75,10 +75,12 @@ export async function withAgentWorkbench({ page, request, baseURL }, handle, exe
     await page.getByLabel('Companion WebSocket').fill(`ws://127.0.0.1:${port}/bridge`);
     await page.getByLabel('Owner token').fill(token);
     await page.getByRole('button', { name: 'Connect companion', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: 'Agent access' }).getByRole('status')).toContainText('Connected');
-    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(page.locator('.agent-access-panel').getByRole('status')).toContainText('Connected');
+    await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
     await page.getByTestId('agent-workbench').click();
     const pane = page.getByRole('region', { name: 'Coding agent workbench' });
+    await agentSection(pane, 'Connection');
+    await pane.getByLabel('Agent connection', { exact: true }).selectOption('companion');
     await expect(pane.getByLabel('Provider', { exact: true })).toHaveValue(options.accountStore ? 'openai-chatgpt' : 'openai');
     await execute({ page, pane, requests, api: (action, args) => agentRequest(page, action, args) });
     expect(failures).toEqual([]); expect(errors).toEqual([]);
@@ -96,9 +98,11 @@ export async function withAgentWorkbench({ page, request, baseURL }, handle, exe
 }
 
 export async function createAgentTask(pane, name, model = 'test-model') {
+  await agentSection(pane, 'Connection');
+  await pane.getByLabel('Model', { exact: true }).fill(model);
+  await agentSection(pane, 'Tasks');
   const create = pane.locator('details.agent-create');
   if (await create.getAttribute('open') === null) await create.locator('summary').click();
-  await create.getByLabel('Model', { exact: true }).fill(model);
   await create.getByLabel('Task name', { exact: true }).fill(name);
   await create.getByRole('button', { name: 'Create task', exact: true }).click();
   await expect(pane.getByLabel('Rename task', { exact: true })).toHaveValue(name);
@@ -106,11 +110,17 @@ export async function createAgentTask(pane, name, model = 'test-model') {
 }
 
 export async function reviewAgentRun(page, pane, text) {
+  await agentSection(pane, 'Conversation');
   await pane.getByLabel('Message', { exact: true }).fill(text);
   await pane.getByRole('button', { name: 'Run', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Review agent run' });
   await expect(review).toContainText(text);
   await review.getByRole('button', { name: 'Confirm run', exact: true }).click();
+}
+
+export async function agentSection(pane, name) {
+  const button = pane.getByRole('navigation', { name: 'Agent sections' }).getByRole('button', { name, exact: true });
+  if (await button.getAttribute('aria-pressed') !== 'true') await button.click();
 }
 
 export async function completedTask(api, id) {

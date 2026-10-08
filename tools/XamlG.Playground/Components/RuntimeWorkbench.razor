@@ -1,8 +1,8 @@
 @using XamlG.AvaloniaRuntime.Inspection
 @inject IJSRuntime JavaScript
 
-<section class="runtime-workbench" aria-label="Avalonia runtime workbench">
-    <header><strong>Live Avalonia runtime</strong><button @onclick="RefreshAsync" disabled="@Busy">Refresh runtime</button><span>Revision @_revision</span></header>
+<section class="runtime-workbench" aria-label="Avalonia runtime @Panel.ToLowerInvariant()">
+    <header><strong>Runtime @Panel.ToLowerInvariant()</strong><button @onclick="RefreshAsync" disabled="@Busy">Refresh runtime</button><span>Revision @_revision</span></header>
     @if (_error != null) { <p role="alert" class="runtime-error">@_error</p> }
     @if (_snapshot == null) { <p class="empty">Run a trusted preview to inspect and manipulate its live controls.</p> }
     else
@@ -26,7 +26,6 @@
                         <button @onclick="FocusAsync" disabled="@Busy">Focus</button><button @onclick="BringIntoViewAsync" disabled="@Busy">Bring into view</button><button @onclick="LayoutAsync" disabled="@Busy">Update layout</button>
                         @if (selected.Source is { } source) { <button @onclick="() => SourceRequested.InvokeAsync(source)">Open XAML source</button> }
                     </div>
-                    <nav class="runtime-tabs" aria-label="Runtime inspection sections">@foreach (var panel in Panels) { <button aria-pressed="@(_panel == panel)" @onclick="() => _panel = panel">@panel</button> }</nav>
                     @if (_panel == "Properties")
                     {
                         <label>Classes <input @bind="_classes" /></label><button @onclick="SetClassesAsync" disabled="@Busy">Set classes</button>
@@ -83,7 +82,7 @@
                     {
                         <button @onclick='() => ReadDetailsAsync(_panel == "Bindings" ? "bindings" : _panel == "Styles" ? "styles" : "resources")' disabled="@Busy">Inspect @_panel.ToLowerInvariant()</button>
                         @if (_panel == "Styles") { <button @onclick='() => ReadDetailsAsync("value_frames")' disabled="@Busy">Inspect effective value frames</button> }
-                        <p>Use Tools to edit bindings, selectors, setters and resource values with the current runtime revision.</p>
+                        <p>Open Runtime tools from the Tools menu to edit bindings, selectors, setters and resource values.</p>
                     }
                     @if (_panel == "Events")
                     {

@@ -5,7 +5,7 @@ async function ready(page) {
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
-  await page.getByRole('tab', { name: 'Resources', exact: true }).click();
+  await page.locator('[data-tab-id="resources"]').click();
   await page.getByTestId('resource-example').click();
   await expect(page.locator('.statusbar')).toContainText('3 documents');
 }
@@ -33,7 +33,8 @@ test('retiring resource editors preserves pending text and leaves sibling editor
   await page.getByRole('button', { name: 'Compile', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
   const pending = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
+  await page.getByRole('button', { name: 'Export project', exact: true }).click();
   const exported = JSON.parse(await readFile(await (await pending).path(), 'utf8'));
   expect(exported.resources['Resources/Palette.axaml']).toContain('#129944');
   expect(exported.resources['Styles/Buttons.axaml']).toContain('Button.primary');
@@ -42,21 +43,20 @@ test('retiring resource editors preserves pending text and leaves sibling editor
   expect(failures).toEqual([]);
 });
 
-test('repeated keyed resource replacement releases old Monaco models without disturbing root buffers', async ({ page }) => {
+test('document switching reuses each open resource model without disturbing root buffers', async ({ page }) => {
   await ready(page);
   const rootIdentities = await page.evaluate(() => monaco.editor.getModels()
     .filter(model => /\/(View\.axaml|Code\.cs)$/.test(model.uri.path)).map(model => model.uri.toString()).sort());
   const selector = page.getByLabel('Project resource', { exact: true });
-  const identities = new Set();
+  const identities = new Map();
   for (let i = 0; i < 6; i++) {
     const path = i % 2 === 0 ? 'Styles/Buttons.axaml' : 'Resources/Palette.axaml';
     await selector.selectOption(path);
     await expect(page.locator(`.code-editor[data-document-path="${path}"]`)).toBeVisible();
-    await expect.poll(() => resourceModels(page)).toHaveLength(1);
-    const [current] = await resourceModels(page);
-    expect(current.uri.endsWith('/' + path)).toBe(true);
-    expect(identities.has(current.uri)).toBe(false);
-    identities.add(current.uri);
+    await expect.poll(() => resourceModels(page)).toHaveLength(2);
+    const current = (await resourceModels(page)).find(model => model.uri.endsWith('/' + path));
+    if (identities.has(path)) expect(current.uri).toBe(identities.get(path));
+    identities.set(path, current.uri);
     await page.getByRole('button', { name: 'Compile', exact: true }).click();
     await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
   }

@@ -135,8 +135,8 @@ test('HTTP MCP retains explicit-interface objects and observes typed dictionary,
 
 test('owner runtime workbench edits properties, sends input and uses accessibility with sharing disabled', async ({ page }) => {
   await openStudio(page, false); await setSourceAndRun(page, controls);
-  await page.getByRole('tab', { name: 'Runtime', exact: true }).click();
-  const runtime = page.getByRole('region', { name: 'Avalonia runtime workbench' });
+  await page.locator('[data-tab-id="runtime"]').click();
+  const runtime = page.getByRole('region', { name: /^Avalonia runtime / }).filter({ visible: true });
   await runtime.getByRole('button', { name: 'editor · TextBox', exact: true }).click();
   await runtime.getByRole('combobox', { name: 'Tree', exact: true }).selectOption('logical');
   await runtime.getByLabel('Find property').fill('Text');
@@ -145,13 +145,16 @@ test('owner runtime workbench edits properties, sends input and uses accessibili
   await runtime.getByLabel('Property value (JSON)').fill('"owner value"');
   await runtime.getByRole('button', { name: 'Set live property', exact: true }).click();
   await expect(textProperty).toContainText('owner value');
-  await runtime.getByRole('button', { name: 'Input', exact: true }).click();
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Tools$/ }).click();
+  await page.locator('.studio-menu-items').getByRole('button', { name: 'Input', exact: true }).click();
   await runtime.getByLabel('Modifiers', { exact: true }).fill('Control'); await runtime.getByLabel('Key', { exact: true }).fill('A');
   await runtime.getByRole('button', { name: 'Press key', exact: true }).click();
   await runtime.getByLabel('Text', { exact: true }).fill('owner input β'); await runtime.getByRole('button', { name: 'Send text', exact: true }).click();
-  await runtime.getByRole('button', { name: 'Properties', exact: true }).click();
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Tools$/ }).click();
+  await page.locator('.studio-menu-items').getByRole('button', { name: 'Runtime properties', exact: true }).click();
   await expect(textProperty).toContainText('owner input β');
-  await runtime.getByRole('button', { name: 'Accessibility', exact: true }).click();
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Tools$/ }).click();
+  await page.locator('.studio-menu-items').getByRole('button', { name: 'Accessibility', exact: true }).click();
   await runtime.getByRole('button', { name: 'Inspect accessibility', exact: true }).click();
   const peers = runtime.getByRole('combobox', { name: 'Peer', exact: true });
   await peers.selectOption(await peers.locator('option').filter({ hasText: /^Editor · / }).getAttribute('value'));
@@ -161,10 +164,13 @@ test('owner runtime workbench edits properties, sends input and uses accessibili
   await runtime.getByRole('combobox', { name: 'Provider method' }).selectOption('SetValue(System.String)');
   await runtime.getByLabel('Provider arguments').fill('[{"value":"owner provider"}]');
   await runtime.getByRole('button', { name: 'Invoke provider', exact: true }).click();
-  await runtime.getByRole('button', { name: 'Properties', exact: true }).click();
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Tools$/ }).click();
+  await page.locator('.studio-menu-items').getByRole('button', { name: 'Runtime properties', exact: true }).click();
   await expect(textProperty).toContainText('owner provider'); await expect(runtime.getByRole('alert')).toHaveCount(0);
+  await page.locator('[data-tab-id="runtime-accessibility"]').click();
   const downloadEvent = page.waitForEvent('download'); await runtime.getByRole('button', { name: 'Export result', exact: true }).click();
   expect((await downloadEvent).suggestedFilename()).toBe('xamlg-runtime-inspection.json');
+  await page.locator('[data-tab-id="runtime"]').click();
   const oldHandle = await runtime.locator('h3 + code').textContent();
   await page.getByTestId('run-preview').click();
   await expect(runtime.locator('h3 + code')).not.toHaveText(oldHandle);

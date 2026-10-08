@@ -9,19 +9,23 @@ async function studio(page) {
 test('reset cancels a runtime which has not sent its ready message', async ({ page }) => {
   await page.route('**/sandbox.html', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Startup deliberately paused</title>' }));
   await studio(page);
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Run$/ }).click();
   await page.getByTestId('run-isolated').click();
   const frame = page.locator('iframe[title="XamlG isolated preview"]');
   await expect(frame).toHaveCount(1);
   await expect(page.locator('.statusbar')).toContainText('Starting isolated execution');
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Run$/ }).click();
   await page.getByTestId('reset-isolation').click();
   await expect(frame).toHaveCount(0);
   await expect(page.locator('.statusbar')).toContainText('Isolated execution frame discarded');
   await expect(page.getByTestId('run-preview')).toBeEnabled();
   // A new execution must work without reloading the editor after the cancelled startup.
   await page.unroute('**/sandbox.html');
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Run$/ }).click();
   await page.getByTestId('run-isolated').click();
   await expect(page.locator('.statusbar')).toContainText('Isolated preview running');
   await expect(frame).toHaveCount(1);
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Run$/ }).click();
   await page.getByTestId('reset-isolation').click();
   await expect(frame).toHaveCount(0);
 });

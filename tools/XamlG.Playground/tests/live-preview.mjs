@@ -12,7 +12,7 @@ export async function openStudio(page, sharing = true) {
     await page.getByTestId('agent-access').click();
     await page.getByLabel('Enable access to this live project').check();
     await page.getByLabel('Permission profile').selectOption('FullAccess');
-    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
   }
 }
 
@@ -32,8 +32,8 @@ export async function connectMcp(page, request) {
   await page.getByLabel('Companion WebSocket').fill(base.replace('http:', 'ws:') + '/bridge');
   await page.getByLabel('Owner token').fill(process.env.XAMLG_TEST_OWNER_TOKEN);
   await page.getByRole('button', { name: 'Connect companion' }).click();
-  await expect(page.getByRole('dialog', { name: 'Agent access' }).getByRole('status')).toContainText('Connected');
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.locator('.agent-access-panel').getByRole('status')).toContainText('Connected');
+  await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
   let sequence = 0, session;
   const headers = () => ({ Authorization: `Bearer ${process.env.XAMLG_TEST_MCP_TOKEN}`, Accept: 'application/json, text/event-stream',
     'MCP-Protocol-Version': '2025-11-25', ...(session ? { 'Mcp-Session-Id': session } : {}) });

@@ -16,6 +16,9 @@
     <ProjectReference Include="../../src/XamlG.Frameworks/XamlG.Frameworks.csproj" />
     <ProjectReference Include="../../src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" />
     <ProjectReference Include="../../src/XamlG.Automation/XamlG.Automation.csproj" />
+    <ProjectReference Include="../../src/XamlG.Agents.OpenAI/XamlG.Agents.OpenAI.csproj" />
+    <ProjectReference Include="../../src/XamlG.Agents.Anthropic/XamlG.Agents.Anthropic.csproj" />
+    <ProjectReference Include="../../src/XamlG.Agents.Gemini/XamlG.Agents.Gemini.csproj" />
     <PackageReference Include="Dockyard.Blazor" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />

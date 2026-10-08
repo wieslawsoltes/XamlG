@@ -16,16 +16,18 @@ public partial class AgentWorkbench
     private WorkbenchState _state = new();
     private string _provider = "", _model = "", _name = "New task", _taskName = "", _selectedId = "", _answer = "", _liveText = "";
     private static readonly Dictionary<string, string> ComposerDrafts = new(StringComparer.Ordinal);
-    private static string _lastSelectedTask = "";
+    private string _lastSelectedTask { get => LastSelectedTasks.GetValueOrDefault(BackendId, ""); set => LastSelectedTasks[BackendId] = value; }
     private string _draft { get => ComposerDrafts.GetValueOrDefault(_selectedId, Selected?.Draft ?? ""); set => ComposerDrafts[_selectedId] = value; }
     private ElementReference _composerElement;
     private bool CanRun => Selected is { IsPreviousWorkspace: false } task && !AnyRunning &&
-        task.Status is "ready" or "completed" && !string.IsNullOrWhiteSpace(_draft) && _runReview == null;
+        task.Status is "ready" or "completed" && ProviderReady && !_modelsBusy && !string.IsNullOrWhiteSpace(_draft) && _runReview == null;
     private ModelChoiceView[] _models = [];
     private string? _error;
     private RunReview? _runReview;
     private ElementReference _runReviewCancel;
     private bool _connected, _refreshing, _disposed, _fullAccessAcknowledged, _reviewBusy, _focusRunReview, _queueBusy, _liveTextTruncated;
+    private Task? _refreshTask;
+    private int _connectionVersion;
     private TaskView? Selected => _state.Tasks.FirstOrDefault(task => task.Id == _selectedId);
     private static bool IsRunning(TaskView task) => task.Status is "preparing" or "running" or "awaitingApproval" or "awaitingAnswer";
     private bool AnyRunning => _state.Tasks.Any(IsRunning);
@@ -48,6 +50,8 @@ public partial class AgentWorkbench
         _module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
         await LoadNumericPreferencesAsync();
         _reference = DotNetObjectReference.Create(this);
+        _connectionMode = _rememberedConnectionMode ?? (await _module.InvokeAsync<bool>("agentConnected") ? "companion" : "direct");
+        if (BrowserRuntime != null) BrowserRuntime.Session.Harness.EventPublished += BrowserEventPublished;
         await _module.InvokeVoidAsync("installAgentWorkbench", _reference, _ownerId);
         await RefreshAsync(); _ = PollAsync();
     }
@@ -70,9 +74,10 @@ public partial class AgentWorkbench
         try { await RequestAsync<JsonElement>("draft", new { id = taskId, text = value }); }
         catch (JSException error) { _error = error.Message; StateHasChanged(); }
     }
-    [JSInvokable] public void AgentDisconnected() { _connected = false; _liveText = ""; _runReview = null; _restoreReview = null; _handoff = null; _fullAccessAcknowledged = false; _signInLaunchUrl = null; _signInLaunchId = null; StateHasChanged(); }
-    [JSInvokable] public void AgentStreamError(string message) { _error = message; StateHasChanged(); }
-    [JSInvokable] public async Task AgentStream(EventView item)
+    [JSInvokable] public void AgentDisconnected() { if (IsBrowser) return; _connected = false; _liveText = ""; _runReview = null; _restoreReview = null; _handoff = null; _fullAccessAcknowledged = false; _signInLaunchUrl = null; _signInLaunchId = null; StateHasChanged(); }
+    [JSInvokable] public void AgentStreamError(string message) { if (IsBrowser) return; _error = message; StateHasChanged(); }
+    [JSInvokable] public Task AgentStream(EventView item) => IsBrowser ? Task.CompletedTask : ProcessStreamAsync(item);
+    private async Task ProcessStreamAsync(EventView item)
     {
         if (item.TaskId == _selectedId && item.Kind == "text_delta")
         {
@@ -87,16 +92,28 @@ public partial class AgentWorkbench
         else
         { if (item.TaskId == _selectedId && item.Kind is "request" or "retry" or "assistant" or "assistant_incomplete" or "completed" or "failed" or "paused" or "cancelled") _liveText = ""; await RefreshAsync(); }
     }
-    private async Task RefreshAsync()
+    private Task RefreshAsync() => _refreshTask is { IsCompleted: false } current ? current : _refreshTask = RefreshCoreAsync();
+    private async Task RefreshAfterCommandAsync()
     {
-        if (_module == null || _refreshing || _disposed) return;
+        // A poll started before this command may not contain its result. Wait for
+        // that snapshot, then request a fresh one before selecting a created task.
+        if (_refreshTask is { IsCompleted: false } current) await current;
+        await RefreshAsync();
+    }
+    private async Task RefreshCoreAsync()
+    {
+        if (_module == null || _disposed) return;
         _refreshing = true;
+        var version = _connectionVersion;
         try
         {
-            _connected = await _module.InvokeAsync<bool>("agentConnected");
+            var connected = IsBrowser ? BrowserRuntime != null : await _module.InvokeAsync<bool>("agentConnected");
+            if (_disposed || version != _connectionVersion) return;
+            _connected = connected;
             if (_connected)
             {
                 var next = await RequestAsync<WorkbenchState>("state", new { });
+                if (_disposed || version != _connectionVersion) return;
                 foreach (var task in next.Tasks)
                     if (_state.Tasks.FirstOrDefault(previous => previous.Id == task.Id) is { } previous)
                     {
@@ -105,26 +122,35 @@ public partial class AgentWorkbench
                         if (previous.LatestRunChanges?.ReviewVersion > (task.LatestRunChanges?.ReviewVersion ?? -1)) task.LatestRunChanges = previous.LatestRunChanges;
                     }
                 _state = next;
+                foreach (var task in next.Tasks) TaskConnections[task.Id] = BackendId;
                 UpdateAccountState(); PruneReviewState(); PruneThreadState();
-                if (!_state.Providers.Contains(_provider)) { _provider = _state.Providers.FirstOrDefault() ?? ""; ProviderChanged(); }
+                if (!_state.Providers.Contains(_provider)) { _provider = _state.Providers.Contains("openai") ? "openai" : _state.Providers.FirstOrDefault() ?? ""; ProviderChanged(); }
                 if (Selected == null) Select(_state.Tasks.Any(task => task.Id == _lastSelectedTask) ? _lastSelectedTask : _state.Tasks.FirstOrDefault()?.Id ?? "");
                 EnsureQueueSelection();
-                foreach (var id in ComposerDrafts.Keys.Where(id => !_state.Tasks.Any(task => task.Id == id)).ToArray()) ComposerDrafts.Remove(id);
-                foreach (var id in _queueEditors.Keys.Where(id => !_state.Tasks.Any(task => task.Id == id)).ToArray()) _queueEditors.Remove(id);
-                foreach (var id in _taskPreferences.Keys.Where(id => !_state.Tasks.Any(task => task.Id == id)).ToArray()) _taskPreferences.Remove(id);
+                if (_section == "Activity") await LoadActivityAsync();
+                foreach (var id in ComposerDrafts.Keys.Where(RetiredView).ToArray()) ComposerDrafts.Remove(id);
+                foreach (var id in _queueEditors.Keys.Where(RetiredView).ToArray()) _queueEditors.Remove(id);
+                foreach (var id in _taskPreferences.Keys.Where(RetiredView).ToArray()) _taskPreferences.Remove(id);
             }
         }
-        catch (JSException error) { _error = error.Message; }
+        catch (JSException error) { if (version == _connectionVersion) _error = error.Message; }
         finally { _refreshing = false; if (!_disposed) StateHasChanged(); }
     }
-    private ValueTask<T> RequestAsync<T>(string action, object arguments) => _module!.InvokeAsync<T>("agentRequest", action, arguments);
     private async Task CommandAsync(string action, object arguments)
     {
-        try { _error = null; await RequestAsync<JsonElement>(action, arguments); await RefreshAsync(); }
+        try { _error = null; await RequestAsync<JsonElement>(action, arguments); await RefreshAfterCommandAsync(); }
         catch (Exception error) when (error is JSException or JsonException or ArgumentException) { _error = error.Message; }
     }
     private void Select(string id)
-    { _selectedId = _lastSelectedTask = id; _taskName = Selected?.Name ?? ""; _liveText = ""; _runReview = null; _restoreReview = null; _fullAccessAcknowledged = false; EnsureQueueSelection(); }
+    {
+        _selectedId = _lastSelectedTask = id; _taskName = Selected?.Name ?? ""; _liveText = ""; _runReview = null; _restoreReview = null; _fullAccessAcknowledged = false;
+        if (IsBrowser && Selected is { } selected)
+        {
+            if (_provider != selected.ProviderId) { ClearDirectCredentials(); _models = []; }
+            _provider = selected.ProviderId; _model = selected.Model;
+        }
+        EnsureQueueSelection();
+    }
     private Task SelectTaskAsync(ChangeEventArgs args) { Select(args.Value?.ToString() ?? ""); return Task.CompletedTask; }
     private async Task DraftChangedAsync(ChangeEventArgs args)
     {
@@ -138,12 +164,14 @@ public partial class AgentWorkbench
         try
         {
             _error = null; var task = await RequestAsync<TaskView>("create", new { name = _name, provider = _provider, model = _model, accountId = _provider == ChatGptProvider ? ActiveAccount?.Id : null });
-            await RefreshAsync(); Select(task.Id);
+            await RefreshAfterCommandAsync(); Select(task.Id); _section = "Conversation";
         }
         catch (JSException error) { _error = error.Message; }
     }
     private async Task DiscoverModelsAsync()
     {
+        if (_modelsBusy || AnyRunning) return;
+        _modelsBusy = true;
         try
         {
             _error = null; var provider = _provider; var accountId = provider == ChatGptProvider ? ActiveAccount?.Id : null;
@@ -151,6 +179,7 @@ public partial class AgentWorkbench
             if (_provider == provider && (provider != ChatGptProvider || ActiveAccount?.Id == accountId)) _models = models;
         }
         catch (JSException error) { _error = error.Message; }
+        finally { _modelsBusy = false; }
     }
     private object Options() => new
     {
@@ -257,7 +286,10 @@ public partial class AgentWorkbench
     }
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return; _disposed = true; _lifetime.Cancel();
+        if (_disposed) return;
+        try { await ClosePanelAsync(); } catch (JSException) { }
+        _disposed = true; _lifetime.Cancel();
+        if (BrowserRuntime != null) { BrowserRuntime.Session.Harness.EventPublished -= BrowserEventPublished; ClearDirectCredentials(); }
         if (_module != null)
         {
             try { await _module.InvokeVoidAsync("releaseAgentThread", _threadElement); await _module.InvokeVoidAsync("releaseAgentComposer", _composerElement); await _module.InvokeVoidAsync("releaseAgentDiff", _diffElement); await _module.InvokeVoidAsync("uninstallAgentWorkbench", _ownerId); await _module.DisposeAsync(); }
@@ -265,7 +297,7 @@ public partial class AgentWorkbench
         }
         _reference?.Dispose(); _lifetime.Dispose();
     }
-    public sealed class WorkbenchState { public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; public AccountStateView? ChatGpt { get; set; } public string? ChatGptError { get; set; } }
+    public sealed class WorkbenchState { public int ToolCount { get; set; } public ConstraintView Constraints { get; set; } = new(); public ActivePermissionView? ActivePermissions { get; set; } public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; public AccountStateView? ChatGpt { get; set; } public string? ChatGptError { get; set; } }
     public sealed class OperationView
     {
         public string TaskId { get; set; } = "";

@@ -11,6 +11,8 @@ test('Run captures an edit before its debounce timer fires', async ({ page }) =>
     document.querySelector('[data-testid="run-preview"]').click();
   });
   await expect(page.locator('.statusbar')).toContainText('Preview running');
+  await page.locator('[data-tab-id="generated"]').click();
+  await page.locator('.generated-files button').first().click();
   await expect.poll(() => page.evaluate(() => monaco.editor.getModels().some(model =>
     model.getLanguageId() === 'csharp' && model.getValue().includes('Immediate snapshot marker')))).toBe(true);
   await page.getByRole('button', { name: 'Toggle color theme' }).click();
@@ -21,7 +23,9 @@ test('document switching, source undo and redo use the managed revision', async 
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByLabel('Example', { exact: true }).selectOption('1');
+  await page.keyboard.press('Escape');
   await expect.poll(() => page.evaluate(() => monaco.editor.getModels().find(model => model.getLanguageId() === 'xml').getValue())).toContain('CounterView');
   await page.evaluate(() => {
     const model = monaco.editor.getModels().find(model => model.getLanguageId() === 'xml');
@@ -45,7 +49,7 @@ test('exact mixed line endings survive captures, typing, Roslyn navigation and r
     Array.from({ length: 16 }, (_, i) => `  // CRLF ${i}\r\n`).join('') +
     '  public const int TokenName = 3;\r\n  public static int Read() => TokenName;\r\n}';
   await writeDocument(invoke, 'Code.cs', source);
-  await page.getByRole('tab', { name: /^#.*Code.cs$/ }).click();
+  await page.locator('[data-tab-id="document:Code.cs"]').click();
   await expect.poll(() => page.evaluate(() => monaco.editor.getEditors().some(editor => editor.getModel()?.uri.path.endsWith('/Code.cs')))).toBe(true);
   expect((await invoke('xamlg_document_read', { path: 'Code.cs' })).text).toBe(source);
   await page.evaluate(() => {

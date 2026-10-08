@@ -43,15 +43,21 @@ capabilities to Avalonia XAML and Roslyn C#; it does not introduce a VB6 runtime
 
 ## Acceptance evidence
 
-Implementation and local acceptance are complete for code candidate `6fd67a3`.
-The evidence below covers the native, browser, protocol and package-consumer
-behavior. Provider tests use deterministic transports through the official SDKs;
-production account sign-in and paid inference were not exercised. PR review,
-required CI completion and publication through main remain release steps.
+The expanded parity implementation is undergoing acceptance. Candidate `6fd67a3` passed the historical checks below,
+but those checks did not cover VB6's direct browser API-key agent mode, independent
+agent permissions and complete workbench controls. The user also requires separate
+Dockyard inspector/access tool panes and source-file document tabs. The corrected
+[feature parity audit](studio-agent-parity.md) tracks these requirements. PR #9 is
+back in draft and must not merge until the expanded implementation passes acceptance.
+The current native solution passes 2,071 tests. Direct browser SDK and local relay
+tests pass for all three providers; 17 document, runtime and editor regressions also
+pass. Full browser, package and current-head CI acceptance remain pending.
+Provider tests use deterministic transports through the official SDKs; production
+account sign-in and paid inference have not been exercised.
 
 The implementation branch is `codex/studio-mcp-agent`, based on `19cb780`.
 Main is merged at implementation checkpoints; the latest merged upstream commit
-is `8ebd279` (including literal/enum conversions, Avalonia class/setter contracts,
+is `7a48cd7` (including literal/enum conversions, Avalonia class/setter contracts,
 precompilation/visibility directives, the remaining compiled-binding paths and
 transform contracts, deferred resource callbacks, implicit child collection contracts
 and adder precedence, compilation metadata caching, eager parent-stack services,
@@ -63,6 +69,32 @@ The locally available pinned SDK is `/tmp/xamlg-dotnet-10.0.401/dotnet`.
 
 The IDE is integrated into the existing `tools/XamlG.Playground` application and
 its main-only GitHub Pages deployment at `https://wieslawsoltes.github.io/XamlG/`.
+Open **Coding agent → Connection** to choose a transport:
+
+- **Direct API** runs the shared harness in the Pages/browser app. Enter a provider
+  key, accept browser exposure, discover or enter a model, and create a task.
+  OpenAI, Anthropic and Gemini use their official SDK models and services. Keys
+  are held only in page memory; closing the pane, changing provider or clearing
+  credentials cancels requests and drops the clients.
+- **Local provider relay** uses the same browser harness but sends SDK requests
+  through the companion's fixed provider routes. Set API keys in the companion,
+  then enter its loopback origin and Owner token in Connection. No MCP pairing or
+  project sharing is required. The token can spend the configured API quota.
+- **Paired companion** retains server-run agents and ChatGPT account mode. Its
+  agent run policy and the browser sharing policy both apply.
+
+Conversation, Connection, Tasks, Plan, Changes, Queue, Permissions, Tools and
+Activity organize the workbench. Permissions show the current host ceiling and
+active lease/grants separately from preferences for the next run. Source approvals
+include revision-bound Before/After excerpts with a full-review download.
+
+Each source or generated file opens in a Dockyard document tab. Closing a source
+tab captures its pending edits and keeps the project file. Inspector and Agent
+access windows are Dockyard tools available from **Tools**; each runtime inspection
+section can dock, float or close independently. **View → Reset layout** restores
+the standard arrangement. Layout storage contains identities and geometry, not
+source text, credentials or agent transcripts.
+
 Start the companion with `dotnet run --project tools/XamlG.Studio.Host -c Release`
 and pair it from **Agent access** on that page after this branch reaches `main`.
 The Pages origin is accepted by default; hosting a local web app is optional.
@@ -88,7 +120,7 @@ companion as **Owner token**. The host prints separate owner and MCP client toke
 Set `XAMLG_STUDIO_OWNER_TOKEN` for browser pairing/workbench access and
 `XAMLG_STUDIO_TOKEN` for external MCP clients, or let the host generate both.
 Configured tokens must be distinct and contain 32–256 non-whitespace characters.
-The workbench additionally requires the private lease of the currently paired
+Paired companion mode additionally requires the private lease of the currently paired
 browser; detaching cancels its requests and agent run. Sharing begins disabled and disconnecting
 revokes in-flight operations. Browser sharing policy and agent run policy both
 apply. Runtime actions execute the application running in the preview.
@@ -104,7 +136,7 @@ accounting. The official OpenAI SDK currently marks Responses APIs with
 `OPENAI001`; the adapter suppresses that diagnostic.
 
 ChatGPT account mode is available without an API
-key: open **Coding agent → ChatGPT accounts**, choose **Continue with ChatGPT**,
+key: open **Coding agent → Connection → ChatGPT accounts**, choose **Continue with ChatGPT**,
 complete consent in the opened window, then select **ChatGPT account · ChatGPT
 plan usage** for a new task and discover models. A manual loopback launch link
 is shown if the window was blocked. Use **Enable ChatGPT plan usage** if identity
@@ -204,9 +236,11 @@ feedback/navigation/restoration until refreshed. Task-specific drafts, baseline,
 file/block selection, diff display, feedback, queue selection and reading state
 survive pane reopening within this page; they are not saved in browser storage.
 
-## Local acceptance evidence
+## Historical companion candidate acceptance
 
-The implementation-first pass and local validation are complete. On 2026-10-08,
+The following evidence concerns the earlier companion candidate, before the direct
+browser agents and document/tool docking expansion. It does not establish acceptance
+for the current implementation. On 2026-10-08,
 the complete native solution and integrated Playground built with warnings treated
 as errors.
 The native suite passes all 2,067 tests after merging `8ebd279`:
@@ -438,9 +472,9 @@ and resource emission, standalone automation/MCP/agents and all three provider S
 adapters. Temporary consumer caches and large theme/upstream outputs are removed
 after retaining their result summaries.
 
-Main is merged through `8ebd279`; the merged native solution passes its full build
-and test suite. The existing Playground contains the integration. All local
-acceptance gates are closed; final evidence is recorded in
+That candidate merged main through `8ebd279` and passed its native build and test
+suite. Its integration was in the existing Playground. The candidate's local
+acceptance evidence is recorded in
 [PR #9](https://github.com/wieslawsoltes/XamlG/pull/9). Superseded publishes, packages,
 reference clones, isolated consumer caches and temporary browser traces are removed.
 Review and required CI completion precede merge; public Pages deployment follows
@@ -448,8 +482,8 @@ the existing main-only workflow.
 
 ## Implementation details and earlier validation
 
-The notes below retain implementation-checkpoint details. The current acceptance
-evidence and release steps are recorded in the preceding section.
+The notes below retain historical implementation-checkpoint details. Current
+acceptance status is at the top of this document and in the feature parity audit.
 
 Implemented since that checkpoint: tasks bind to the creating browser workspace
 lifetime; replacement and revocation disconnect that lifetime. A separate preparation

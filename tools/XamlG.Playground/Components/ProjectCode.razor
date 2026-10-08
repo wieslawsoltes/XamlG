@@ -15,11 +15,7 @@
     @if (Active is { } document)
     {
         <small>@document.Path · revision @document.Version</small>
-        <div class="project-code-editor">
-            <CodeEditor @key="(document.Path, _editorEpoch)" @ref="_editor" Text="@document.Text" Language="csharp"
-                TextChanged="text => ChangeAsync(document, text)" RunRequested="RunRequested" DocumentPath="@document.Path" AuthoringRequested="AuthoringRequested"
-                LanguageQueryRequested="LanguageQueryRequested" NavigateRequested="NavigateRequested" />
-        </div>
+        <button @onclick="() => OpenRequested.InvokeAsync(document.Path)">Open source document</button>
     }
     else { <p class="empty">Add C# models, controls and partial classes. All source files share the same XAML compilation and preview assembly.</p> }
 </section>
@@ -28,47 +24,19 @@
     [Parameter, EditorRequired] public CSharpProjectDocumentStore Documents { get; set; } = default!;
     [Parameter] public bool Busy { get; set; }
     [Parameter] public EventCallback Changed { get; set; }
-    [Parameter] public EventCallback<EditorCommandRequest> AuthoringRequested { get; set; }
-    [Parameter] public EventCallback RunRequested { get; set; }
-    [Parameter] public Func<CSharpEditorQuery, Task<System.Text.Json.JsonElement>>? LanguageQueryRequested { get; set; }
-    [Parameter] public EventCallback<CSharpNavigationRequest> NavigateRequested { get; set; }
+    [Parameter] public EventCallback CaptureRequested { get; set; }
+    [Parameter] public EventCallback<string> OpenRequested { get; set; }
     private string _activePath = "", _newPath = "Models/Model.cs";
     private string? _error;
-    private CodeEditor? _editor;
-    private CSharpProjectDocument? _lastObserved;
-    private long _editorEpoch;
-    private TextSpan? _pendingReveal;
     private CSharpProjectDocument? Active => Documents.Snapshot.GetValueOrDefault(_activePath);
-
     protected override void OnParametersSet() => SynchronizeSelection();
     public void SynchronizeDocuments() { SynchronizeSelection(); StateHasChanged(); }
     private void SynchronizeSelection() => Activate(Active != null ? _activePath : Documents.Snapshot.Keys.Order(StringComparer.Ordinal).FirstOrDefault() ?? "");
-    private void Activate(string path)
-    {
-        var document = Documents.Snapshot.GetValueOrDefault(path);
-        if (_activePath == path && ReferenceEquals(_lastObserved, document)) return;
-        _activePath = path; _lastObserved = document; _editorEpoch = checked(_editorEpoch + 1); _editor = null;
-    }
-    private bool Owns(CodeEditor editor, CSharpProjectDocument document, long epoch) =>
-        !editor.IsRetired && epoch == _editorEpoch && ReferenceEquals(editor, _editor) &&
-        ReferenceEquals(document, Active) && ReferenceEquals(document, _lastObserved) && editor.DocumentPath == document.Path;
-    public async Task CaptureAsync()
-    {
-        var document = Active; var editor = _editor; var epoch = _editorEpoch;
-        if (document == null || editor == null || !Owns(editor, document, epoch)) return;
-        var text = await editor.TryGetTextAsync();
-        if (text == null || !Owns(editor, document, epoch) || text == document.Text) return;
-        _lastObserved = Documents.Update(document.Path, document.Version, text); await Changed.InvokeAsync();
-    }
-    private async Task ChangeAsync(CSharpProjectDocument snapshot, string text)
-    {
-        if (!ReferenceEquals(Active, snapshot) || !ReferenceEquals(_lastObserved, snapshot)) return;
-        try { _lastObserved = Documents.Update(snapshot.Path, snapshot.Version, text); _error = null; await Changed.InvokeAsync(); }
-        catch (Exception error) { _error = error.Message; }
-    }
+    private void Activate(string path) => _activePath = path;
+    private Task CaptureAsync() => CaptureRequested.InvokeAsync();
     private async Task SwitchAsync(ChangeEventArgs args)
     {
-        try { await CaptureAsync(); Activate(args.Value?.ToString() ?? ""); _error = null; }
+        try { await CaptureAsync(); Activate(args.Value?.ToString() ?? ""); _error = null; if (Active != null) await OpenRequested.InvokeAsync(_activePath); }
         catch (Exception error) { _error = error.Message; }
     }
     private async Task AddAsync()
@@ -76,7 +44,7 @@
         try
         {
             await CaptureAsync(); var document = Documents.Add(_newPath, "// C# source shared by the project's XAML and code-behind.\n");
-            Activate(document.Path); _error = null; await Changed.InvokeAsync();
+            Activate(document.Path); _error = null; await Changed.InvokeAsync(); await OpenRequested.InvokeAsync(document.Path);
         }
         catch (Exception error) { _error = error.Message; }
     }
@@ -90,7 +58,7 @@
             var files = Documents.Snapshot.ToDictionary(p => p.Key, p => p.Value.Text, StringComparer.Ordinal);
             if (target == document.Path || files.ContainsKey(target)) throw new ArgumentException("Choose an unused C# file path.");
             files.Remove(document.Path); files.Add(target, document.Text); Documents.ReplaceAll(files);
-            Activate(target); _error = null; await Changed.InvokeAsync();
+            Activate(target); _error = null; await Changed.InvokeAsync(); await OpenRequested.InvokeAsync(target);
         }
         catch (Exception error) { _error = error.Message; }
     }
@@ -102,16 +70,5 @@
             SynchronizeSelection(); _error = null; await Changed.InvokeAsync();
         }
         catch (Exception error) { _error = error.Message; }
-    }
-    public void SelectDocument(string path)
-    {
-        if (!Documents.Snapshot.ContainsKey(path)) return;
-        Activate(path); StateHasChanged();
-    }
-    public void Reveal(string path, TextSpan span) { SelectDocument(path); _pendingReveal = span; }
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (_pendingReveal is { } span && _editor != null)
-        { _pendingReveal = null; await _editor.RevealAsync(span); }
     }
 }

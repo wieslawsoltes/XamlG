@@ -1,8 +1,8 @@
 .dockyard-workspace { min-height: 0; min-width: 0; overflow: hidden; }
 .dockyard-workspace dockyard-razor-template { height: 100%; min-width: 0; min-height: 0; }
-.dock-source { height: 100%; grid-template-rows: 37px minmax(0, 1fr); }
+.dock-source { height: 100%; display:flex; flex-direction:column; }
 .dock-preview { height: 100%; display: grid; grid-template-rows: 37px minmax(0, 1fr); min-width: 0; min-height: 0; background: var(--panel); }
-.dock-inspector { height: 100%; display: grid; grid-template-rows: 37px minmax(0, 1fr); min-width: 0; min-height: 0; background: var(--panel); }
+.dock-inspector { height: 100%; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--panel); }
 .dockyard-workspace .explorer { height: 100%; overflow: auto; display: flex; }
 .dockyard-workspace .diagnostics { height: 100%; }
 .dockyard-workspace .ad-content { min-width: 0; min-height: 0; }
@@ -14,3 +14,36 @@
 .automation-dialog pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:40vh; overflow:auto; }
 .automation-review { z-index:1100; }
 @media(max-width:620px) { .studio { height:100dvh; grid-template-rows:48px 47px minmax(0,1fr) 27px; } .dock-source {height:100%;} }
+
+:root{--surface:var(--panel-2);--surface-raised:var(--raised);--border:var(--line);--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+.studio{grid-template-rows:44px 42px minmax(0,1fr) 27px}
+.titlebar.studio-shell{padding:0 10px;gap:12px;justify-content:initial}
+.studio-shell .brand{gap:8px;color:var(--text)}
+.studio-shell .brand strong{font-size:15px}
+.studio-shell .brand-mark{width:24px;height:24px;font-size:14px;border-radius:6px}
+.studio-shell .studio-name{font-size:12px;color:var(--muted)}
+.studio-shell .studio-menubar{display:flex;gap:1px;font-size:12px;align-self:stretch;align-items:stretch}
+.studio-menu{position:relative;display:flex;align-items:center}
+.studio-menu>summary{display:flex;align-items:center;cursor:pointer;padding:0 9px;height:100%;list-style:none;border-radius:4px}
+.studio-menu>summary::-webkit-details-marker{display:none}
+.studio-menu[open]>summary,.studio-menu>summary:hover{background:var(--raised);color:var(--text)}
+.studio-menu-items{position:absolute;top:100%;left:0;z-index:1500;min-width:220px;max-width:min(380px,90vw);max-height:75dvh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:0 6px 6px 6px;box-shadow:0 12px 28px #0005;padding:5px;display:flex;flex-direction:column;gap:2px}
+.studio-menu-items>button{display:flex;justify-content:space-between;gap:18px;text-align:left;padding:7px 10px;font-size:12px;white-space:normal;overflow-wrap:anywhere}
+.studio-menu-items hr{border:0;border-top:1px solid var(--line);margin:4px}
+.studio-menu-items kbd{font:10px var(--mono);color:var(--muted);white-space:nowrap}
+.menu-caption{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:6px 10px}
+.studio-menu-items .example-picker{padding:6px;display:flex;flex-direction:column;align-items:stretch}
+.studio-menu-items .example-picker select{max-width:none;width:100%}
+.shell-project{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.studio-commandbar{padding:0 10px;gap:5px;overflow:visible}
+.studio-commandbar button{font-size:11px;flex:none}
+.studio-commandbar .icon-button{font-size:17px;width:30px;padding:3px}
+.studio-commandbar .active-document{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px;padding-left:10px}
+.studio-commandbar [data-testid=agent-access]{display:flex;align-items:center;gap:6px}
+.access-dot{width:6px;height:6px;border:1px solid var(--muted);border-radius:50%}
+.inspector-body{flex:1;min-height:0;overflow:auto;position:relative}
+.inspector-body:has(>.inspection-path){display:flex;flex-direction:column}
+.inspector-body:has(>.inspection-path)>.tree-scroll{position:relative;flex:1;min-height:0}
+summary:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@media(max-width:850px){.studio-commandbar .toolbar-spacer,.studio-shell .toolbar-spacer{display:block}.shell-project{display:none}.studio-commandbar .active-document{display:none}}
+@media(max-width:620px){html,body,#app{height:100%;overflow:hidden}.studio{height:100dvh;min-height:0;grid-template-rows:40px 40px minmax(0,1fr) 24px}.studio-shell .studio-name,.studio-shell .brand strong{display:none}.titlebar.studio-shell{gap:5px;padding:0 6px}.studio-menu>summary{padding:0 6px}.studio-menu-items{position:fixed;top:40px;left:8px;right:8px;max-width:none}.studio-commandbar{overflow-x:auto;scrollbar-width:thin;padding:0 6px}.studio-commandbar button{font-size:10px;padding:5px 6px}.studio-commandbar .icon-button{width:24px}.dock-source{height:100%;flex:none}.statusbar{position:static;min-height:24px}}

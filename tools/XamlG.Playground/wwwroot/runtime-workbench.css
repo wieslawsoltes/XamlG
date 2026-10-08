@@ -1,4 +1,4 @@
-.runtime-workbench { height:100%; overflow:auto; padding:12px; box-sizing:border-box; font-size:12px; }
+.runtime-workbench { height:100%; overflow:auto; padding:12px; box-sizing:border-box; font-size:12px; container-type:inline-size; }
 .runtime-workbench header,.runtime-actions,.runtime-tabs { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .runtime-workbench header strong { flex:1; }
 .runtime-columns { display:grid; grid-template-columns:minmax(180px,28%) minmax(0,1fr); gap:12px; margin-top:10px; }
@@ -27,3 +27,4 @@
 .compiler-workbench fieldset { border:1px solid var(--border); border-radius:4px; padding:10px; margin:12px 0; min-width:0; }
 .compiler-workbench input[type=checkbox] { flex:none; width:16px; height:16px; margin:0; accent-color:var(--accent); }
 @media(max-width:700px) { .runtime-columns { grid-template-columns:1fr; } .runtime-node-list { max-height:180px; } }
+@container(max-width:480px) { .runtime-columns { grid-template-columns:1fr; } .runtime-node-list { max-height:180px; } }

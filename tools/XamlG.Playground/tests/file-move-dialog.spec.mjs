@@ -7,7 +7,7 @@ const mainSource = page => page.evaluate(() => monaco.editor.getModels()
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
-  await page.getByRole('tab', { name: 'Resources', exact: true }).click();
+  await page.locator('[data-tab-id="resources"]').click();
   await page.getByTestId('resource-example').click();
   await expect(page.locator('.statusbar')).toContainText('3 documents');
   const resources = page.getByLabel('Project resource', { exact: true });

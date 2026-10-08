@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { test, expect as baseExpect } from './studio-fixture.mjs';
-import { withAgentWorkbench, createAgentTask, completedTask, agentReply, agentDelta, sendAgentEvent } from './agent-fixture.mjs';
+import { withAgentWorkbench, createAgentTask, completedTask, agentReply, agentDelta, sendAgentEvent, agentSection } from './agent-fixture.mjs';
 
 const expect = baseExpect.configure({ timeout: 15000 });
 test.setTimeout(120000);
@@ -64,6 +64,7 @@ function accountServer() {
 }
 
 async function accounts(pane) {
+  await agentSection(pane, 'Connection');
   const section = pane.locator('details.agent-accounts');
   if (await section.getAttribute('open') === null) await section.locator('summary').first().click();
   return section;
@@ -95,20 +96,27 @@ test('ChatGPT account UI signs in without an API key and keeps tasks bound while
     await withAgentWorkbench({ page, request, baseURL }, async ({ response, sequence }) => {
       sendAgentEvent(response, agentReply('Account task completed.', sequence)); response.end();
     }, async ({ pane, api, requests }) => {
+      await agentSection(pane, 'Tasks');
       await expect(pane.getByRole('button', { name: 'Create task', exact: true })).toBeDisabled();
       await addAccount(page, pane, 'Alpha'); const alpha = await signedIn(api, pane);
       let section = await accounts(pane);
+      await agentSection(pane, 'Connection');
       await section.getByLabel('Account label', { exact: true }).fill('Alpha saved');
+      await agentSection(pane, 'Connection');
       await section.getByLabel('Remember credentials on this computer').first().check();
+      await agentSection(pane, 'Connection');
       await section.getByRole('button', { name: 'Save account preferences' }).click();
       await expect.poll(async () => (await api('state')).chatGpt.accounts[0].remember).toBe(true);
+      await agentSection(pane, 'Connection');
       await pane.getByRole('button', { name: 'Discover models', exact: true }).click();
       await expect.poll(() => pane.locator('#agent-models option').evaluateAll(options => options.map(option => option.value))).toEqual(['fixture-z', 'fixture-a']);
       const task = await createAgentTask(pane, 'Alpha task', 'fixture-z');
       await addAccount(page, pane, 'Beta'); const beta = await signedIn(api, pane);
       expect(beta.id).not.toBe(alpha.id); expect(beta.remember).toBe(false);
       expect((await api('state')).tasks.find(item => item.id === task).account.id).toBe(alpha.id);
+      await agentSection(pane, 'Conversation');
       await pane.getByLabel('Message', { exact: true }).fill('Use the original account.');
+      await agentSection(pane, 'Conversation');
       await pane.getByRole('button', { name: 'Run', exact: true }).click();
       const review = page.getByRole('dialog', { name: 'Review agent run' });
       await expect(review).toContainText('Alpha saved'); await expect(review).not.toContainText('Beta');
@@ -126,15 +134,18 @@ test('ChatGPT account UI signs in without an API key and keeps tasks bound while
       const publicState = JSON.stringify(await api('state'));
       expect(publicState).not.toContain('synthetic_browser_access_'); expect(publicState).not.toContain('synthetic_browser_refresh_');
       section = await accounts(pane);
+      await agentSection(pane, 'Connection');
       await section.getByRole('combobox', { name: 'Active account', exact: true }).selectOption(alpha.id);
       await expect(section.getByLabel('Account label', { exact: true })).toHaveValue('Alpha saved');
       fixture.state.revocationStatus = 400;
+      await agentSection(pane, 'Connection');
       await section.getByRole('button', { name: 'Sign out and stop account tasks' }).click();
       await expect(section).toContainText('Remote revocation was not confirmed');
       expect(fixture.state.revocations[0].token).toBe('synthetic_browser_refresh_1');
       const state = (await api('state')).chatGpt;
       expect(state.accounts.find(account => account.id === alpha.id).signedIn).toBe(false);
       expect(state.accounts.find(account => account.id === beta.id).signedIn).toBe(true);
+      await agentSection(pane, 'Connection');
       await section.getByRole('combobox', { name: 'Active account', exact: true }).selectOption(beta.id);
       expect((await api('state')).tasks.find(item => item.id === task).account.id).toBe(alpha.id);
     }, { accountStore: directory, handleHttp: fixture.handleHttp });
@@ -157,17 +168,21 @@ test('ChatGPT account UI retries registration grants plan consent and sign-out s
       const account = await signedIn(api, pane); expect(account.planEnabled).toBe(false);
       expect(fixture.state.authorizations[0].client_id).toBe('dynamic_agent_client');
       expect(fixture.state.authorizations[1].client_id).toBe(account.clientId);
+      await agentSection(pane, 'Tasks');
       await expect(pane.getByRole('button', { name: 'Create task', exact: true })).toBeDisabled();
       section = await accounts(pane); fixture.state.plan = true;
       await popupSignIn(page, section.getByRole('button', { name: 'Enable ChatGPT plan usage' }));
       expect((await signedIn(api, pane)).id).toBe(account.id);
       expect(fixture.state.authorizations.at(-1).prompt).toBe('consent');
       const task = await createAgentTask(pane, 'Account cancellation', 'fixture-z');
+      await agentSection(pane, 'Conversation');
       await pane.getByLabel('Message', { exact: true }).fill('Start a response.');
+      await agentSection(pane, 'Conversation');
       await pane.getByRole('button', { name: 'Run', exact: true }).click();
       await page.getByRole('dialog', { name: 'Review agent run' }).getByRole('button', { name: 'Confirm run', exact: true }).click();
       await expect(pane).toContainText('Account response still running');
       section = await accounts(pane);
+      await agentSection(pane, 'Connection');
       await section.getByRole('button', { name: 'Sign out and stop account tasks' }).click();
       await expect.poll(() => closed).toBe(true);
       await expect.poll(async () => (await api('state')).tasks.find(item => item.id === task).status).toBe('cancelled');

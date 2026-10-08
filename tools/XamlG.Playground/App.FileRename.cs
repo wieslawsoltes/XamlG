@@ -80,6 +80,7 @@ public partial class App
             var completedGeneration = _fileMoveGeneration;
             await SaveDraftAsync(); await CompileSnapshotAsync();
             if (completedGeneration != _fileMoveGeneration) return;
+            await OpenDocumentAsync(plan.Moves.Single().NewPath);
             _status = "Resource moved · linked sources updated · one project undo step";
         }
         catch (Exception error) { if (generation == _fileMoveGeneration) _fileMoveError = error.Message; else Report(error); }

@@ -17,6 +17,7 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
     [Parameter] public string Language { get; set; } = "xml";
     [Parameter] public bool ReadOnly { get; set; }
     [Parameter] public EventCallback<string> TextChanged { get; set; }
+    [Parameter] public EventCallback Ready { get; set; }
     [Parameter] public EventCallback RunRequested { get; set; }
     [Parameter] public Func<CSharpEditorQuery, Task<JsonElement>>? LanguageQueryRequested { get; set; }
     [Parameter] public EventCallback<CSharpNavigationRequest> NavigateRequested { get; set; }
@@ -53,6 +54,7 @@ public partial class CodeEditor : ComponentBase, IAsyncDisposable
             var current = _parameterText ?? Text;
             if (current != initialText) await session.InvokeAsync("setEditorText", current);
             if (_pendingReveal is { } reveal) { _pendingReveal = null; await session.InvokeAsync("reveal", reveal.Span.Start, reveal.Span.Length, reveal.Focus); }
+            await Ready.InvokeAsync();
         }
         catch
         {

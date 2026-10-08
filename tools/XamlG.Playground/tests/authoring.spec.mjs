@@ -4,7 +4,9 @@ async function start(page) {
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByLabel('Example', { exact: true }).selectOption('1');
+  await page.keyboard.press('Escape');
   await expect.poll(() => source(page, 'View.axaml')).toContain('CounterView');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
 }

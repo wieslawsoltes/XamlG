@@ -11,7 +11,7 @@ async function enable(page, profile = 'FullAccess') {
   await page.getByTestId('agent-access').click();
   await page.getByLabel('Enable access to this live project').check();
   await page.getByLabel('Permission profile').selectOption(profile);
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
 }
 
 test('shared automation edits, compiles, inspects Roslyn and manipulates real Avalonia objects', async ({ page }) => {
@@ -77,7 +77,7 @@ test('HTTP MCP reaches the paired browser project through the companion', async 
   await page.getByLabel('Companion WebSocket').fill(base.replace('http:', 'ws:') + '/bridge');
   await page.getByLabel('Owner token').fill(ownerToken);
   await page.getByRole('button', { name: 'Connect companion' }).click();
-  await expect(page.getByRole('dialog', { name: 'Agent access' }).getByRole('status')).toContainText('Connected');
+  await expect(page.locator('.agent-access-panel').getByRole('status')).toContainText('Connected');
   await expect(page.getByLabel('Owner token')).toHaveValue('');
   expect((await request.post(base + '/agent/state', { headers: { Authorization: `Bearer ${ownerToken}`, 'X-Xamlg-Owner-Session': ownerSession }, data: {} })).status()).toBe(200);
   expect((await request.post(base + '/agent/state', { headers: { Authorization: `Bearer ${token}` }, data: {} })).status()).toBe(401);
@@ -161,7 +161,7 @@ test('modern HTTP MCP observes browser pairing and revocation on its subscriptio
     await page.getByLabel('Companion WebSocket').fill(base.replace('http:', 'ws:') + '/bridge');
     await page.getByLabel('Owner token').fill(process.env.XAMLG_TEST_OWNER_TOKEN);
     await page.getByRole('button', { name: 'Connect companion' }).click();
-    await expect(page.getByRole('dialog', { name: 'Agent access' }).getByRole('status')).toContainText('Connected');
+    await expect(page.locator('.agent-access-panel').getByRole('status')).toContainText('Connected');
     expect((await next()).method).toBe('notifications/tools/list_changed');
     expect((await rpc('tools/list')).tools.some(tool => tool.name === 'xamlg_runtime_properties')).toBe(true);
     await page.getByRole('button', { name: 'Revoke & disconnect' }).click();
@@ -182,7 +182,7 @@ test('floating, docking and layout restoration retain the source buffers and Ava
   expect((await call(page, 'xamlg_document_read', { path: 'View.axaml' })).text).toBe(text);
   await call(page, 'xamlg_layout_content', { contentId: 'source', operation: 'dock' });
   await call(page, 'xamlg_layout_set', { layout: layout.layout });
-  await expect(page.locator('.source-pane .editor-page.visible')).toBeVisible();
+  await expect(page.locator('.source-pane[data-document-path="View.axaml"]')).toBeVisible();
   expect((await call(page, 'xamlg_document_read', { path: 'View.axaml' })).text).toBe(text);
   expect((await call(page, 'xamlg_runtime_tree')).sessionId).toBe(runtime.sessionId);
   await expect(page.locator('#avalonia-preview canvas').first()).toBeVisible();

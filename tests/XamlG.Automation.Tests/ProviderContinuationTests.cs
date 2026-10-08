@@ -84,7 +84,7 @@ public sealed class ProviderContinuationTests
             (_, _) => { writes++; return ValueTask.FromResult<object>(new { changed = true }); });
         using var harness = new AgentHarness(catalog);
         var task = harness.CreateTask("incomplete response", provider, "fixture-model", TestContext.Current.CancellationToken);
-        var options = new AgentRunOptions { Policy = new() { Profile = PermissionProfile.FullAccess }, Limits = new() { AutomaticRetries = 0 } };
+        var options = new AgentRunOptions { Policy = new() { Profile = PermissionProfile.FullAccess }, FullAccessAcknowledged = true, Limits = new() { AutomaticRetries = 0 } };
         if (expected == AgentTaskStatus.Failed)
             await Assert.ThrowsAsync<AgentProviderException>(() => harness.RunAsync(task.Id, "Edit", options, cancellationToken: TestContext.Current.CancellationToken));
         else await harness.RunAsync(task.Id, "Edit", options, cancellationToken: TestContext.Current.CancellationToken);

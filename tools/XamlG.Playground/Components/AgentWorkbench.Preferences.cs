@@ -5,10 +5,10 @@ namespace XamlG.Playground.Components;
 
 public partial class AgentWorkbench
 {
-    private readonly Dictionary<string, TaskPreferences> _taskPreferences = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, TaskPreferences> _taskPreferences = new(StringComparer.Ordinal);
     private NumericPreferences _numericDefaults = new();
     private TaskPreferences Preferences => _taskPreferences.TryGetValue(_selectedId, out var preferences)
-        ? preferences : _taskPreferences[_selectedId] = new() { Numeric = _numericDefaults with { } };
+        ? preferences : _taskPreferences[_selectedId] = new() { Numeric = _numericDefaults with { }, Profile = _state.Constraints.AllowedProfiles.FirstOrDefault() ?? "ask" };
     private Dictionary<string, string> _scopes => Preferences.Scopes;
     private string _profile { get => Preferences.Profile; set => Preferences.Profile = value; }
     private string _toolRules { get => Preferences.ToolRules; set => Preferences.ToolRules = value; }

@@ -86,13 +86,13 @@ test('owner Monaco type and implementation navigation, outline and new source ac
   await writeDocument(invoke, 'Code.cs', 'namespace Model; public class Consumer { public IValue<int> Create() => new Item(); public int Read(IValue<int> value) => value.Get(1); }');
   await page.getByTestId('agent-access').click();
   await page.getByLabel('Enable access to this live project').uncheck();
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
-  await page.getByRole('tab', { name: /^#.*Code.cs$/ }).click();
+  await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
+  await page.locator('[data-tab-id="document:Code.cs"]').click();
   await command(page, 'Code.cs', 'Create()', 'editor.action.goToTypeDefinition');
   const files = page.getByRole('region', { name: 'C# project documents' });
-  await expect(files.getByLabel('C# source document')).toHaveValue('Models/Contract.cs');
+  await expect(page.locator('[data-tab-id="document:Models%2FContract.cs"]')).toHaveAttribute('aria-selected', 'true');
   await command(page, 'Models/Contract.cs', 'Get(T', 'editor.action.goToImplementation');
-  await expect(files.getByLabel('C# source document')).toHaveValue('Models/Item.cs');
+  await expect(page.locator('[data-tab-id="document:Models%2FItem.cs"]')).toHaveAttribute('aria-selected', 'true');
   await command(page, 'Models/Item.cs', 'Item :', 'editor.action.quickOutline');
   await expect(page.locator('.quick-input-widget')).toBeVisible();
   // The docked pane's list is virtualized; search for the method before choosing it.
@@ -103,7 +103,7 @@ test('owner Monaco type and implementation navigation, outline and new source ac
   await command(page, 'Models/Item.cs', 'Get(int', 'xamlg.actions');
   await page.getByRole('dialog', { name: 'Source code actions' }).getByRole('button', { name: 'Use block body', exact: true }).click();
   await expect.poll(() => editorText(page, 'Models/Item.cs')).toContain('return value + 1;');
-  await page.getByRole('button', { name: '↶ Undo', exact: true }).click();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect.poll(() => editorText(page, 'Models/Item.cs')).toBe(item);
 });
 
@@ -118,7 +118,7 @@ test('cross-language rename UI rejects a stale preview and applies all source fi
     await writeDocument(mcp.call, 'Models/Labels.cs', labels);
     await writeDocument(mcp.call, 'View.axaml', xaml);
     expect((await mcp.call('xamlg_compiler_compile')).success).toBe(true);
-    await page.getByRole('tab', { name: /^#.*Code.cs$/ }).click();
+    await page.locator('[data-tab-id="document:Code.cs"]').click();
     const dialog = page.getByRole('dialog', { name: 'Rename C# symbol', exact: true });
     async function preview() {
       await command(page, 'Code.cs', 'Title;', 'xamlg.rename');
@@ -143,7 +143,7 @@ test('cross-language rename UI rejects a stale preview and applies all source fi
     const tree = await mcp.call('xamlg_runtime_run', { expectedRevision: revision });
     const label = tree.nodes.find(node => node.name === 'label');
     expect((await mcp.call('xamlg_runtime_properties', { objectId: label.id })).properties.find(property => property.name === 'Text').value.value).toBe('Renamed successfully');
-    await page.getByRole('button', { name: '↶ Undo', exact: true }).click();
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Compile', exact: true })).toBeEnabled();
     for (const [path, text] of [['Code.cs', code], ['Models/Labels.cs', labels], ['View.axaml', xaml]])
       expect((await mcp.call('xamlg_document_read', { path })).text).toBe(text);

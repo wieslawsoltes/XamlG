@@ -5,7 +5,7 @@ async function share(page) {
   await page.getByTestId('agent-access').click();
   await page.getByLabel('Enable access to this live project').check();
   await page.getByLabel('Permission profile', { exact: true }).selectOption('FullAccess');
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
 }
 async function open(page) {
   await page.goto('./');
@@ -57,6 +57,7 @@ test('multiple C# files compile with XAML, support cross-file rename, runtime me
   expect(project.codeFiles['Models/Labels.cs']).toBe(model);
   expect(JSON.parse(project.documents['CompilerSettings.json'])).toEqual(project.compilerOptions);
   await page.reload(); await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
+  await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
   await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Draft restored');
   await share(page);
@@ -66,12 +67,12 @@ test('multiple C# files compile with XAML, support cross-file rename, runtime me
 
 test('C# editor capture, move, remove and project undo preserve current buffers', async ({ page }) => {
   await open(page);
-  await page.getByRole('tab', { name: 'C# files', exact: true }).click();
+  await page.locator('[data-tab-id="code-files"]').click();
   const editor = page.getByRole('region', { name: 'C# project documents' });
   await editor.getByLabel('C# file path').fill('Models/Value.cs');
   await editor.getByRole('button', { name: 'Add C# file', exact: true }).click();
   await expect(editor.getByLabel('C# source document')).toHaveValue('Models/Value.cs');
-  await expect(editor.locator('.monaco-editor')).toBeVisible();
+  await expect(page.locator('.source-pane[data-document-path="Models/Value.cs"] .monaco-editor')).toBeVisible();
   const code = 'namespace Extra; public class Value { public int Number => 42; }';
   // No debounce wait: the automation boundary must capture Monaco before compiling.
   const compiled = await page.evaluate(async code => {
@@ -87,7 +88,7 @@ test('C# editor capture, move, remove and project undo preserve current buffers'
   expect((await call(page, 'xamlg_document_read', { path: 'Models/Renamed.cs' })).text).toBe(code);
   await editor.getByRole('button', { name: 'Remove C# file', exact: true }).click();
   expect((await call(page, 'xamlg_project_get')).documents.some(d => d.path === 'Models/Renamed.cs')).toBe(false);
-  await page.getByRole('button', { name: '↶ Undo', exact: true }).click();
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
   await expect(editor.getByLabel('C# source document')).toHaveValue('Models/Renamed.cs');
   await expect(page.getByRole('button', { name: 'Compile', exact: true })).toBeEnabled();
   expect((await call(page, 'xamlg_document_read', { path: 'Models/Renamed.cs' })).text).toBe(code);

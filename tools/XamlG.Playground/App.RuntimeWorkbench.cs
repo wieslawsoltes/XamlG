@@ -7,6 +7,17 @@ namespace XamlG.Playground;
 
 public partial class App
 {
+    private string? _runtimeSelectedId, _runtimeObjectHandle;
+    private static string? RuntimePanel(string id) => id switch
+    {
+        "runtime" => "Properties", "runtime-objects" => "Objects", "runtime-bindings" => "Bindings",
+        "runtime-styles" => "Styles", "runtime-resources" => "Resources", "runtime-events" => "Events",
+        "runtime-input" => "Input", "runtime-accessibility" => "Accessibility", "runtime-tools" => "Tools", _ => null
+    };
+    private void RuntimeSelectionChanged(string id) => _runtimeSelectedId = id;
+    private async Task OpenRuntimeObjectAsync(string id)
+    { _runtimeObjectHandle = id; await ShowPaneAsync("runtime-objects"); }
+
     // This callback belongs only to the local Razor component. It is neither a JS
     // invocation nor an automation transport method, and cannot be selected by MCP.
     private async Task<JsonElement> ExecuteRuntimeUiAsync(string name, JsonElement arguments, CancellationToken cancellationToken)
@@ -44,12 +55,7 @@ public partial class App
             if (syntax == null || syntax.Version != source.Version) throw new InvalidOperationException("Source has changed since this preview. Run the preview again before navigating to its source.");
             var span = new TextSpan(source.Start, source.Length);
             if (span.Start < 0 || span.End > syntax.Text.Length) throw new InvalidOperationException("The source location is unavailable.");
-            if (source.Path == _document.Current.Path)
-            {
-                _editorTab = "xaml"; await ShowPaneAsync("source");
-                if (_xamlEditor != null) await _xamlEditor.RevealAsync(span);
-            }
-            else { _inspectorTab = "Resources"; _resourceEditor?.Reveal(source.Path, span); await ShowPaneAsync("inspector"); }
+            await RevealDocumentAsync(source.Path, span);
         }
         catch (Exception error) { Report(error); }
     }

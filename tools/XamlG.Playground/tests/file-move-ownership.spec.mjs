@@ -13,7 +13,7 @@ test('capturing renamed and switched resource editors does not add phantom proje
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
-  await page.getByRole('tab', { name: 'Resources', exact: true }).click();
+  await page.locator('[data-tab-id="resources"]').click();
   await page.getByTestId('resource-example').click();
   await expect(page.locator('.statusbar')).toContainText('3 documents');
   const original = await draft(page);

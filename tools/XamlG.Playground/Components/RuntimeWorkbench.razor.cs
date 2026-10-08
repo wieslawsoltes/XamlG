@@ -14,8 +14,14 @@ public partial class RuntimeWorkbench : IDisposable
     [Parameter] public IReadOnlyList<AutomationTool> Tools { get; set; } = [];
     [Parameter] public EventCallback<XamlSourceInfo> SourceRequested { get; set; }
     [Parameter] public long PreviewRevision { get; set; }
+    [Parameter] public long RuntimeRevision { get; set; }
     [Parameter] public long SourceRevision { get; set; }
     [Parameter] public bool HostBusy { get; set; }
+    [Parameter] public string Panel { get; set; } = "Properties";
+    [Parameter] public string? SelectedObjectId { get; set; }
+    [Parameter] public EventCallback<string> SelectedObjectIdChanged { get; set; }
+    [Parameter] public string? ObjectHandle { get; set; }
+    [Parameter] public EventCallback<string> ObjectRequested { get; set; }
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Dictionary<string, RuntimeNode> _nodes = new(StringComparer.Ordinal);
     private RuntimeSnapshot? _snapshot;
@@ -26,7 +32,9 @@ public partial class RuntimeWorkbench : IDisposable
     private RuntimeObjectHandles? _objectHandles;
     private JsonElement? _details;
     private string _selectedId = "", _treeFilter = "", _treeMode = "visual", _propertyFilter = "", _propertyKey = "", _propertyJson = "null", _classes = "";
-    private string _panel = "Properties", _key = "Enter", _text = "", _button = "Left", _modifiers = "", _objectPath = "DataContext", _method = "", _methodArguments = "[]";
+    private string _key = "Enter", _text = "", _button = "Left", _modifiers = "", _objectPath = "DataContext", _method = "", _methodArguments = "[]";
+    private string? _observedHandle;
+    private string _panel => Panel;
     private string _peerId = "", _providerName = "", _providerMethod = "", _providerArguments = "[]", _event = "";
     private string _toolName = "", _toolArguments = "{}", _toolFilter = "";
     private string _objectId = "", _objectInterface = "";
@@ -36,7 +44,6 @@ public partial class RuntimeWorkbench : IDisposable
     private long _revision, _observedPreview = long.MinValue, _changeSequence;
     private bool _busy, _disposed, _refreshAfterBusy;
     private bool Busy => _busy || HostBusy;
-    private static readonly string[] Panels = ["Properties", "Objects", "Bindings", "Styles", "Resources", "Events", "Input", "Accessibility", "Tools"];
     private RuntimeNode? Selected => _nodes.GetValueOrDefault(_selectedId);
     private RuntimeProperty? SelectedProperty => _properties.FirstOrDefault(property => property.Key == _propertyKey);
     private RuntimeAccessibilityNode? SelectedPeer => _accessibility?.Nodes.FirstOrDefault(peer => peer.Id == _peerId);
@@ -64,11 +71,20 @@ public partial class RuntimeWorkbench : IDisposable
     protected override async Task OnParametersSetAsync()
     {
         if (HostBusy) return;
-        if (_observedPreview == PreviewRevision) return;
-        _observedPreview = PreviewRevision; _snapshot = null; _nodes.Clear(); _selectedId = ""; _properties = []; _details = null; _accessibility = null; _provider = null; _changeSequence = 0;
-        _objectHandles = null; _objectInspection = null; _objectId = ""; _objectInterface = "";
-        if (PreviewRevision >= 0)
+        if (_observedPreview != PreviewRevision)
+        {
+            _observedHandle = _observedPreview == long.MinValue ? null : ObjectHandle;
+            _observedPreview = PreviewRevision; _snapshot = null; _nodes.Clear(); _selectedId = ""; _properties = []; _details = null; _accessibility = null; _provider = null; _changeSequence = 0;
+            _objectHandles = null; _objectInspection = null; _objectId = ""; _objectInterface = "";
+            if (PreviewRevision >= 0)
+            { if (_busy) _refreshAfterBusy = true; else await RefreshAsync(); }
+        }
+        if (!Busy && SelectedObjectId is { } selected && selected != _selectedId && _nodes.ContainsKey(selected))
+            await SelectNodeAsync(selected);
+        if (_snapshot != null && _revision != RuntimeRevision)
         { if (_busy) _refreshAfterBusy = true; else await RefreshAsync(); }
+        if (!Busy && Panel == "Objects" && ObjectHandle is { } handle && handle != _observedHandle && _snapshot != null)
+        { _observedHandle = handle; await Guard(() => OpenObjectCoreAsync(handle)); }
     }
     private async Task Guard(Func<Task> action)
     {
@@ -100,12 +116,13 @@ public partial class RuntimeWorkbench : IDisposable
     {
         _snapshot = (await CallAsync("xamlg_runtime_tree", new { })).Deserialize<RuntimeSnapshot>(AutomationJson.Options)!;
         _nodes.Clear(); foreach (var node in _snapshot.Nodes) _nodes[node.Id] = node;
-        if (!_nodes.ContainsKey(_selectedId)) _selectedId = _snapshot.RootId;
+        if (SelectedObjectId is { } selected && _nodes.ContainsKey(selected)) _selectedId = selected;
+        else if (!_nodes.ContainsKey(_selectedId)) _selectedId = _snapshot.RootId;
         _classes = string.Join(' ', Selected?.Classes.Where(value => !value.StartsWith(':')) ?? []);
         await ReadPropertiesAsync();
     }
     private Task SelectNodeAsync(string id) => Guard(async () =>
-    { _selectedId = id; _propertyKey = ""; _details = null; _method = ""; _objectId = ""; _objectInterface = ""; _objectInspection = null; _classes = string.Join(' ', Selected?.Classes.Where(value => !value.StartsWith(':')) ?? []); await ReadPropertiesAsync(); });
+    { _selectedId = id; _propertyKey = ""; _details = null; _method = ""; _objectId = ""; _objectInterface = ""; _objectInspection = null; _classes = string.Join(' ', Selected?.Classes.Where(value => !value.StartsWith(':')) ?? []); await ReadPropertiesAsync(); await SelectedObjectIdChanged.InvokeAsync(id); });
     private async Task ReadPropertiesAsync()
     {
         _properties = (await CallAsync("xamlg_runtime_properties", new { objectId = _selectedId })).GetProperty("properties").Deserialize<RuntimeProperty[]>(AutomationJson.Options)!;
@@ -131,11 +148,12 @@ public partial class RuntimeWorkbench : IDisposable
         _objectInspection = _details.Value.Deserialize<RuntimeObjectInspection>(AutomationJson.Options)!;
         _method = _objectInspection.Methods.FirstOrDefault() ?? "";
     }
-    private Task OpenObjectReferenceAsync(string id) => Guard(async () =>
+    private Task OpenObjectReferenceAsync(string id) => Panel == "Objects" ? Guard(() => OpenObjectCoreAsync(id)) : ObjectRequested.InvokeAsync(id);
+    private async Task OpenObjectCoreAsync(string id)
     {
-        _panel = "Objects"; _objectId = id; _objectPath = ""; _objectInterface = ""; _objectInspection = null;
+        _objectId = id; _objectPath = ""; _objectInterface = ""; _objectInspection = null;
         await InspectObjectCoreAsync();
-    });
+    }
     private Task ReadObjectHandlesAsync() => Guard(ReadObjectHandlesCoreAsync);
     private async Task ReadObjectHandlesCoreAsync() => _objectHandles =
         (await CallAsync("xamlg_runtime_object_handles", new { })).Deserialize<RuntimeObjectHandles>(AutomationJson.Options)!;

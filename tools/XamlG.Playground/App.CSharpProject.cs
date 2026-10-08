@@ -19,6 +19,7 @@ public partial class App
     private async Task ProjectCodeChangedAsync()
     {
         _result = null; _status = "C# source changed · compile to update XAML and Roslyn analysis";
+        ReconcileSourceBuffers();
         await SaveDraftAsync();
     }
 }

@@ -29,6 +29,7 @@ public partial class App
     }
     private async Task ShowIsolatedCompilationAsync()
     {
+        await ShowPaneAsync("preview", focus: false);
         if (_result?.Success != true || _isolatedPreview == null) throw new InvalidOperationException("No valid isolated compilation is available.");
         if (!IsCompilationCurrent(_result)) throw new InvalidOperationException("The isolated compilation was superseded by project changes. Compile again before running.");
         BrowserCompilerService.EnsureBrowserRunnable(_result);

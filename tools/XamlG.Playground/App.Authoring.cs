@@ -39,7 +39,7 @@ public partial class App
     private void ResetWorkspaceHistory()
     {
         _workspaceEdits.ReplaceAll(_workspaceEdits.Current.Revision, WorkspaceTexts(), "Load project", false);
-        _workspaceEdits.ClearHistory(); CloseAuthoring();
+        _workspaceEdits.ClearHistory(); CloseAuthoring(); ReconcileSourceBuffers();
     }
     private void RestoreWorkspace(XamlWorkspaceSnapshot snapshot, string? preferredResourcePath = null)
     {
@@ -61,6 +61,7 @@ public partial class App
         if (code.Count != currentCode.Count || code.Any(p => !currentCode.TryGetValue(p.Key, out var value) || value.Text != p.Value))
             Compiler.CodeFiles.ReplaceAll(code);
         _projectCodeEditor?.SynchronizeDocuments();
+        ReconcileSourceBuffers();
         _selectedElement = null; _selectedDesignerSyntax = null; _selectedVisual = null; _result = null;
     }
     private async Task NavigateWorkspaceAsync(bool undo)
@@ -72,7 +73,7 @@ public partial class App
         RestoreWorkspace(snapshot);
         await SaveDraftAsync(); await CompileSnapshotAsync();
     }
-    private Task RequestMainCommandAsync(string command) => (_editorTab == "code" ? _codeEditor : _xamlEditor)?.RequestCommandAsync(command) ?? Task.CompletedTask;
+    private Task RequestMainCommandAsync(string command) => DocumentCommandAsync(_activeDocumentPath, command);
     private async Task AuthoringCommandAsync(EditorCommandRequest request)
     {
         if (_busy || !_ready) return;

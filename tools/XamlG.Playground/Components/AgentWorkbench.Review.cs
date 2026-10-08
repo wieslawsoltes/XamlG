@@ -31,7 +31,7 @@ public partial class AgentWorkbench
     private string DiffScrollKey => _selectedId + ":" + (_latestRun ? "latest:" : "task:") + Review.Path + ":" + Review.Diff?.FirstRow;
     private void PruneReviewState()
     {
-        foreach (var id in ReviewStates.Keys.Where(id => !_state.Tasks.Any(task => task.Id == id)).ToArray()) ReviewStates.Remove(id);
+        foreach (var id in ReviewStates.Keys.Where(RetiredView).ToArray()) ReviewStates.Remove(id);
     }
 
     private async Task CopyThreadAsync()
@@ -52,7 +52,7 @@ public partial class AgentWorkbench
             var text = _handoff;
             var task = await RequestAsync<TaskView>("create", new { name = _name, provider = _provider, model = _model, accountId = _provider == ChatGptProvider ? ActiveAccount?.Id : null });
             await RequestAsync<JsonElement>("draft", new { id = task.Id, text });
-            _handoff = null; await RefreshAsync(); Select(task.Id); _draft = text;
+            _handoff = null; await RefreshAfterCommandAsync(); Select(task.Id); _draft = text;
         }
         catch (JSException error) { _error = error.Message; }
         finally { _handoffBusy = false; }

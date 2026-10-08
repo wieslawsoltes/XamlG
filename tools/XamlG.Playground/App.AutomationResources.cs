@@ -57,6 +57,7 @@ public partial class App
     }
     private void NotifyCompilerResources()
     {
+        ReconcileGeneratedBuffers();
         if (_automation == null) return;
         _automation.NotifyResourceChanged("xamlg://diagnostics"); _automation.NotifyResourceChanged("xamlg://generated");
         if (_result != null)

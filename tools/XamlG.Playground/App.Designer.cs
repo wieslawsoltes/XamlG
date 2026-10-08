@@ -49,15 +49,12 @@ public partial class App
         _selectedElement = syntax.Root?.DescendantsAndSelf().FirstOrDefault(element => element.Span.Start == source.Start && element.Span.Length == source.Length);
         if (_selectedElement == null) return;
         _selectedDesignerSyntax = syntax;
-        var keepDesigner = _inspectorTab == "Designer";
-        if (source.Path == _document.Current.Path)
+        // Keep keyboard focus in the preview during pointer gestures and Escape.
+        await RevealDocumentAsync(source.Path, _selectedElement.Span, focus: false);
+        if (_inspectorTab != "Designer")
         {
-            _editorTab = "xaml"; if (!keepDesigner) _inspectorTab = "Properties";
-            // Source selection can finish after the pointer gesture has started.
-            // Preserve preview keyboard focus so Escape and nudges reach the designer.
-            if (_xamlEditor != null) await _xamlEditor.RevealAsync(_selectedElement.Span, focus: false);
+            await ShowPaneAsync("properties", focus: false);
         }
-        else { if (!keepDesigner) _inspectorTab = "Resources"; _resourceEditor?.Reveal(source.Path, _selectedElement.Span, focus: false); }
         if (request != _designerSelectionRequest || !ReferenceEquals(root, Preview.Root)) return;
         _status = "Selected " + _selectedElement.Name + " · " + source.Path + " · source revision " + source.Version;
         StateHasChanged();
@@ -125,12 +122,13 @@ public partial class App
         var analysis = Compiler.Analyze(XamlSyntaxTree.Parse(documents["View.axaml"], "View.axaml"), documents["Code.cs"], resourceDocuments: resources, settings: ParseCompilerSettings(documents[CompilerSettingsPath]));
         if (!analysis.Success) throw new InvalidOperationException(string.Join("; ", analysis.Diagnostics.Where(diagnostic => diagnostic.Severity == "Error").Select(diagnostic => diagnostic.Message)));
     }
-    private Task<AvaloniaVisualNode> ShowTrustedCompilationAsync(BrowserCompilation result)
+    private async Task<AvaloniaVisualNode> ShowTrustedCompilationAsync(BrowserCompilation result)
     {
+        await ShowPaneAsync("preview", focus: false);
         if (!IsCompilationCurrent(result))
             throw new InvalidOperationException("Source changed after compilation. Run the current source again.");
         var revision = SourceRevision;
-        return Preview.ShowAsync(Compiler.Run(result), revision);
+        return await Preview.ShowAsync(Compiler.Run(result), revision);
     }
     private void CheckDesignerPreview()
     {

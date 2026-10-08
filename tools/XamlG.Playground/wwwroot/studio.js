@@ -181,10 +181,77 @@ export function waitForElement(id) {
     });
 }
 export function saveDockyardLayout(layout) {
-    try { localStorage.setItem('xamlg.dockyard.layout.v2', layout); } catch { }
+    try { localStorage.setItem('xamlg.dockyard.layout.v3', layout); } catch { }
 }
 export function loadDockyardLayout() {
-    try { return localStorage.getItem('xamlg.dockyard.layout.v2'); } catch { return null; }
+    try { return localStorage.getItem('xamlg.dockyard.layout.v3'); } catch { return null; }
+}
+
+// Layouts contain geometry and file identities only. A prior project's documents
+// must never be recreated from its layout, and all content uses registered templates.
+export function filterDockyardLayout(text, ids) {
+    if (typeof text !== 'string' || text.length > 4 * 1024 * 1024) throw new Error('Invalid workspace layout.');
+    const data = JSON.parse(text), allowed = new Set(ids);
+    const visit = node => {
+        if (!node || typeof node !== 'object') return node;
+        if (node.type === 'LayoutDocument' || node.type === 'LayoutAnchorable') {
+            if (!allowed.has(node.props?.ContentId)) return null;
+            if (node.props.ContentId === 'preview') { node.props.CanClose = false; node.props.CanHide = false; }
+        }
+        if (node.children) node.children = node.children.map(visit).filter(Boolean);
+        if (node.rootPanel) node.rootPanel = visit(node.rootPanel);
+        if (node.sides) for (const key of Object.keys(node.sides)) node.sides[key] = visit(node.sides[key]);
+        if (node.floatingWindows) node.floatingWindows = node.floatingWindows.map(visit).filter(node => node && node.children?.length);
+        if (node.hidden) node.hidden = node.hidden.map(visit).filter(Boolean);
+        return node;
+    };
+    visit(data.layout);
+    return JSON.stringify(data);
+}
+export function dockyardContents(manager) {
+    return [...manager.Layout.Descendents()].filter(item => item.ContentId).map(item =>
+        ({ id: item.ContentId, title: item.Title, active: item.IsActive, hidden: !!item.IsHidden }));
+}
+export function activateDockContent(manager, id, focus = true) {
+    const item = manager.Find(id);
+    if (!item) return false;
+    if (focus) return manager.Activate(item);
+    // Designer highlighting must not steal keyboard focus from an active gesture.
+    item.IsSelected = true;
+    return true;
+}
+export function reconcileDockDocuments(manager, ids, registered = []) {
+    const current = new Set(ids);
+    const obsolete = dockyardContents(manager).filter(item => /^(document|generated):/.test(item.id) && !current.has(item.id));
+    manager.Transaction('Retire removed documents', () => {
+        for (const item of obsolete) {
+            const model = manager.Find(item.id);
+            model?.Parent?.RemoveChild(model);
+        }
+    });
+    for (const id of new Set([...obsolete.map(item => item.id), ...registered.filter(id => !current.has(id))])) manager.ReleaseContent(id);
+}
+export function installDockyardWorkspace(manager, owner) {
+    let disposed = false;
+    const pending = new Set(), permitted = new Set();
+    const protect = operation => (_sender, args) => {
+        const item = args.Model, id = item?.ContentId;
+        if (!id || permitted.has(id) || !(/^(document|generated):/.test(id) || id === 'agent' || id === 'agent-access')) return;
+        args.Cancel = true;
+        if (pending.has(id) || disposed) return;
+        pending.add(id);
+        owner.invokeMethodAsync('PrepareDockContentClose', id).then(allowed => {
+            if (disposed || !allowed || manager.Find(id) !== item) return;
+            permitted.add(id);
+            try { manager[operation](item); } finally { permitted.delete(id); }
+        }).catch(error => console.error('Could not close workspace content', error)).finally(() => pending.delete(id));
+    };
+    const subscriptions = [manager.DocumentClosing.add(protect('Close')), manager.AnchorableClosing.add(protect('Close')),
+        manager.AnchorableHiding.add(protect('Hide')),
+        manager.ActiveContentChanged.add((_sender, args) => {
+            if (!disposed && args.Model?.ContentId) owner.invokeMethodAsync('DockContentActivated', args.Model.ContentId).catch(() => {});
+        })];
+    return { dispose() { disposed = true; for (const unsubscribe of subscriptions) unsubscribe(); } };
 }
 
 let automationOwner = null;
@@ -370,7 +437,7 @@ export function bindAgentThread(element, taskId, ownerId) {
     if (!position) {
         position = { follow: true, top: 0, anchor: null, offset: 0, expanded: new Set() };
         agentThreadPositions.set(taskId, position);
-        while (agentThreadPositions.size > 8) agentThreadPositions.delete(agentThreadPositions.keys().next().value);
+        while (agentThreadPositions.size > 16) agentThreadPositions.delete(agentThreadPositions.keys().next().value);
     }
     function remember() {
         if (element.dataset.taskId !== taskId || !element.clientHeight) return;
@@ -488,4 +555,33 @@ async function startAgentStream() {
     } catch (error) {
         if (!controller.signal.aborted) agentOwner?.invokeMethodAsync('AgentStreamError', 'The live stream ended. Task state remains available through refresh.').catch(() => {});
     }
+}
+
+export function installStudioShell() {
+    const menus = () => [...document.querySelectorAll('.studio-menubar > details')];
+    const close = except => { for (const menu of menus()) if (menu !== except) menu.open = false; };
+    const click = event => {
+        const target = event.target instanceof Element ? event.target : null;
+        const menu = target?.closest('.studio-menu');
+        if (target?.closest('summary') && menu) close(menu);
+        else if (!menu || target?.closest('button')) close();
+    };
+    const keydown = event => {
+        const target = event.target instanceof Element ? event.target : null;
+        const menu = target?.closest('.studio-menu');
+        if (!menu) return;
+        if (event.key === 'Escape') { menu.open = false; menu.querySelector('summary')?.focus(); event.preventDefault(); }
+        else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            menu.open = true;
+            const items = [...menu.querySelectorAll('button:not(:disabled), select:not(:disabled)')];
+            const index = items.indexOf(target), direction = event.key === 'ArrowDown' ? 1 : -1;
+            items[(index + direction + items.length) % items.length]?.focus(); event.preventDefault();
+        } else if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && target?.tagName !== 'SELECT') {
+            const all = menus(), index = all.indexOf(menu), next = all[(index + (event.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length];
+            const opened = menu.open; close(); next.open = opened; next.querySelector('summary')?.focus(); event.preventDefault();
+        }
+    };
+    document.addEventListener('click', click);
+    document.addEventListener('keydown', keydown);
+    return { dispose() { document.removeEventListener('click', click); document.removeEventListener('keydown', keydown); } };
 }

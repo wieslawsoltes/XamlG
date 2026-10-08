@@ -19,7 +19,6 @@ public partial class App
     private AvaloniaRuntimeInspector? _runtimeInspector;
     private object? _inspectedRoot;
     private bool _sharing;
-    private bool _automationVisible;
     private PermissionProfile _automationProfile = PermissionProfile.Ask;
     private AutomationReview? _automationReview;
     private TaskCompletionSource<bool>? _approval;
@@ -231,16 +230,7 @@ public partial class App
             {
                 CheckSourceRevision(args.ExpectedRevision); var text = Source(args.Path); var tree = XamlSyntaxTree.Parse(text, args.Path);
                 var element = tree.Root?.DescendantsAndSelf().SingleOrDefault(e => e.Span.Start == args.Offset) ?? throw new ArgumentException("Select an exact element start offset.");
-                var transaction = args.Operation switch
-                {
-                    DesignerOperation.SetProperty => XamlDesignerEdits.SetProperty(tree, element, args.Name ?? throw new ArgumentException("Property name required."), args.Value ?? ""),
-                    DesignerOperation.RemoveProperty => XamlDesignerEdits.RemoveProperty(tree, element, args.Name ?? throw new ArgumentException("Property name required.")),
-                    DesignerOperation.Insert => XamlDesignerEdits.InsertChild(tree, element, args.Value ?? throw new ArgumentException("Markup required."), args.Index),
-                    DesignerOperation.Remove => XamlDesignerEdits.RemoveElement(tree, element),
-                    DesignerOperation.RenameType => XamlDesignerEdits.RenameElement(tree, element, args.Name ?? throw new ArgumentException("Type name required.")),
-                    DesignerOperation.Reparent => XamlDesignerEdits.Reparent(tree, element, tree.Root!.DescendantsAndSelf().Single(e => e.Span.Start == args.ParentOffset), args.Index),
-                    _ => throw new ArgumentException("Unknown designer operation.")
-                };
+                var transaction = PlanDesignerEdit(tree, args);
                 if (tree.WithChanges(transaction.Changes, tree.Version).HasErrors) throw new ArgumentException("The edit would produce malformed XAML.");
                 RestoreWorkspace(_workspaceEdits.Apply(args.ExpectedRevision, [new(args.Path, text, null, transaction.Changes)], context.Caller + ": " + transaction.Description, candidate => ValidateWorkspace(candidate.Documents)));
                 return new { revision = SourceRevision };
@@ -282,16 +272,26 @@ public partial class App
                 return RuntimeInspector().Capture();
             });
         _automation.Add<NoArguments, object>("xamlg_layout_get", "Read the real Dockyard workspace layout.", AutomationScope.Layout, AutomationEffect.Read,
-            async (_, _) => new { layout = await _dock.SaveLayoutAsync() });
+            async (_, _) => new { layout = await _dock.SaveLayoutAsync(), panes = await DockContentsAsync(), tools = ToolPanes.Select(tool => new { tool.Id, tool.Title }), documents = SourceDocumentPaths.Select(path => new { id = DocumentId(path), path }) });
         _automation.Add<LayoutSetArguments, object>("xamlg_layout_set", "Restore a validated Dockyard layout with the current pane registry.", AutomationScope.Layout, AutomationEffect.Edit,
-            async (args, _) => { await _dock.LoadLayoutAsync(args.Layout); return new { layout = await _dock.SaveLayoutAsync() }; });
+            async (args, _) => { await LoadDockyardLayoutAsync(args.Layout); return new { layout = await _dock.SaveLayoutAsync() }; });
         _automation.Add<NoArguments, object>("xamlg_layout_reset", "Reset the Dockyard workspace to its default layout.", AutomationScope.Layout, AutomationEffect.Edit,
             async (_, _) => { await ResetDockyardAsync(); return new { layout = await _dock.SaveLayoutAsync() }; });
         _automation.Add<LayoutContentArguments, object>("xamlg_layout_content", "Activate, float, dock, hide or show an existing Dockyard pane.", AutomationScope.Layout, AutomationEffect.Edit,
             async (args, _) =>
             {
-                if (args.ContentId is not ("source" or "explorer" or "preview" or "inspector" or "problems" or "agent")) throw new ArgumentException("Unknown pane.");
-                await using var item = await _dock.FindAsync(args.ContentId);
+                var id = args.ContentId == "source" ? DocumentId(_activeDocumentPath) : args.ContentId == "inspector" ? "properties" : args.ContentId;
+                if (id is "agent" or "agent-access") throw new AutomationException("permission_denied", "Agent and access controls are owner-only tool windows.");
+                ReconcileSourceBuffers(); ReconcileGeneratedBuffers();
+                if (!AllowedDockIds().Contains(id, StringComparer.Ordinal)) throw new ArgumentException("Unknown pane or document identity. Read xamlg_layout_get for current identities.");
+                if (args.Operation is LayoutOperation.Activate or LayoutOperation.Show)
+                {
+                    if (_documentBuffers.TryGetValue(id, out var document)) await OpenDocumentAsync(document.Path, document.Generated);
+                    else await ShowPaneAsync(id);
+                    return new { layout = await _dock.SaveLayoutAsync() };
+                }
+                if ((await DockContentsAsync()).All(pane => pane.Id != id)) throw new InvalidOperationException("Open this content before moving it.");
+                await using var item = await _dock.FindAsync(id);
                 // Dockyard.Blazor 0.2.2 exposes Float (an in-page floating window).
                 // FloatInPage is a newer JavaScript convenience method, absent in this pin.
                 if (args.Operation == LayoutOperation.FloatInPage)
@@ -307,8 +307,22 @@ public partial class App
         Resource("xamlg://generated", "Generated C# files", "xamlg_generated_list");
         AddAutomationResources();
         AddBuildAutomation();
+        AddOperationPreviewAutomation();
         _automation.AddPrompt(new("repair", "Inspect and repair current compilation errors", "Read xamlg_project_get and xamlg_compiler_compile, inspect relevant current source, make revision-checked edits, and compile again. Report the actual diagnostic evidence."));
         _automation.AddPrompt(new("inspect-runtime", "Inspect the actual Avalonia preview", "Read xamlg_runtime_tree, inspect properties of relevant live handles, and correlate source provenance with XAML. Runtime revisions and source revisions are independent. Do not execute or mutate without permission."));
+        foreach (var tool in _automation.Tools)
+        {
+            var effects = new List<AutomationOperationEffect>();
+            if (tool.Effect != AutomationEffect.Read && (tool.Scope == AutomationScope.Project || tool.Name == "xamlg_project_restore"))
+                effects.AddRange(new[] { AutomationScope.Source, AutomationScope.Designer, AutomationScope.Compiler, AutomationScope.Layout }
+                    .Where(scope => scope != tool.Scope).Select(scope => new AutomationOperationEffect(scope, AutomationEffect.Edit)));
+            if (tool.Effect == AutomationEffect.Edit && tool.Scope is AutomationScope.Designer or AutomationScope.Compiler)
+                effects.Add(new(AutomationScope.Source, AutomationEffect.Edit));
+            if (tool.Name is "xamlg_runtime_object_inspect" or "xamlg_runtime_object_read") effects.Add(new(AutomationScope.Runtime, AutomationEffect.Execute));
+            var destructive = tool.Destructive || tool.Name is "xamlg_document_remove" or "xamlg_designer_edit" or "xamlg_project_restore" or "xamlg_project_undo" or "xamlg_project_redo";
+            _automation.SetEffects(tool.Name, destructive, effects);
+        }
+        _browserAgents = new(new BrowserAgentHost(this));
     }
 
     private void AddAutomation<T>(string suffix, string description, AutomationScope scope, AutomationEffect effect, Func<T, AutomationCallContext, object> execute) =>
@@ -402,7 +416,7 @@ public partial class App
     {
         _sharing = false; _approval?.TrySetResult(false);
         _automationLifetime.Cancel();
-        _buildArtifacts.Clear();
+        _buildArtifacts.ClearExceptPrincipals(["browser-agent"]);
     }
     private async Task SetAutomationSharing(Microsoft.AspNetCore.Components.ChangeEventArgs args)
     {
@@ -427,6 +441,10 @@ public partial class App
     }
     private async Task RetireAutomationWorkspaceAsync()
     {
+        _browserAgents.RetireWorkspace();
+        if (_agentWorkbench != null) await _agentWorkbench.ClosePanelAsync();
+        RetireDocumentBuffers();
+        _buildArtifacts.Clear();
         await DisconnectAutomationAsync();
         // Let cancelled operations leave the old project before installing its replacement.
         await _automationGate.WaitAsync();

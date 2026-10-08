@@ -81,7 +81,7 @@ test('HTTP MCP edits main and template resource source in one undo and rejects s
 test('owner designer workbench reviews plans and detects source conflicts while remote access is disabled', async ({ page }) => {
   await openStudio(page, false); await setSourceAndRun(page, canvas);
   await expect(call(page, 'xamlg_designer_state')).rejects.toThrow();
-  await page.getByRole('tab', { name: 'Designer', exact: true }).click();
+  await page.locator('[data-tab-id="designer"]').click();
   const designer = page.getByRole('region', { name: 'XAML visual designer', exact: true });
   for (const name of ['a', 'b']) await designer.locator('[aria-label="Designer controls"] label').filter({ hasText: `${name} · Border` }).getByRole('checkbox').check();
   await designer.getByRole('button', { name: 'Select in preview', exact: true }).click();
@@ -133,7 +133,7 @@ test('HTTP MCP read-only policy allows designer plans and runtime reads while de
     const args = { items: [{ objectId: target.objectId, bounds: { ...target.bounds, x: target.bounds.x + 8 } }], expectedSourceRevision: edit.revision, expectedRuntimeRevision: tree.revision };
     await page.getByTestId('agent-access').click();
     await page.getByLabel('Permission profile').selectOption('ReadOnly');
-    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.locator('.ad-anchorable-pane[aria-label="Agent access"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
     expect((await invoke('xamlg_designer_geometry_plan', args)).documents).toHaveLength(1);
     expect((await invoke('xamlg_runtime_properties', { objectId: target.objectId })).properties.length).toBeGreaterThan(0);
     await expect(invoke('xamlg_designer_geometry_apply', args)).rejects.toThrow(/permission|permit|denied|policy/i);

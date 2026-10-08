@@ -11,9 +11,9 @@ public partial class AgentWorkbench
     private bool _rememberNewAccount, _rememberAccount, _accountBusy;
     private AccountView? ActiveAccount => _state.ChatGpt?.Accounts.FirstOrDefault(account => account.Id == _state.ChatGpt.ActiveAccountId);
     private bool SigningIn => _state.ChatGpt?.SignIn?.Status is "waiting" or "exchanging";
-    private bool ProviderReady => _provider != ChatGptProvider || ActiveAccount is { SignedIn: true, PlanEnabled: true };
+    private bool ProviderReady => _connectionMode == "relay" ? !string.IsNullOrWhiteSpace(_relayToken) : IsDirect ? _acceptBrowserExposure && !string.IsNullOrWhiteSpace(_apiKey) : _provider != ChatGptProvider || ActiveAccount is { SignedIn: true, PlanEnabled: true };
     private static string ProviderLabel(string id) => id == ChatGptProvider ? "ChatGPT account · ChatGPT plan usage" : id + " · API key";
-    private void ProviderChanged() { _models = []; _model = ""; }
+    private void ProviderChanged() { _models = []; _model = ""; if (IsBrowser) ClearDirectCredentials(); }
     private void UpdateAccountState()
     {
         var current = _state.ChatGpt?.ActiveAccountId ?? "";
@@ -28,7 +28,7 @@ public partial class AgentWorkbench
     private async Task AccountActionAsync(Func<Task> action)
     {
         if (_accountBusy) return; _accountBusy = true; _error = null; _accountMessage = null;
-        try { await action(); await RefreshAsync(); }
+        try { await action(); await RefreshAfterCommandAsync(); }
         catch (Exception error) when (error is JSException or ArgumentException) { _error = error.Message; }
         finally { _accountBusy = false; }
     }

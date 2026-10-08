@@ -63,6 +63,12 @@ public sealed class AutomationArtifactStore : IDisposable
     {
         lock (_gate) { ExpireCore(); return _entries.TryGetValue(id, out var entry) ? entry.Bytes.ToArray() : throw Missing(); }
     }
+    /// <summary>Retire transport-owned artifacts while retaining independent local sessions.</summary>
+    public void ClearExceptPrincipals(IReadOnlyCollection<string> retainedPrincipals)
+    {
+        ArgumentNullException.ThrowIfNull(retainedPrincipals);
+        lock (_gate) foreach (var id in _entries.Where(pair => !retainedPrincipals.Contains(pair.Value.PrincipalId)).Select(pair => pair.Key).ToArray()) Remove(id);
+    }
     public void Clear() { lock (_gate) foreach (var id in _entries.Keys.ToArray()) Remove(id); }
     private void Expire() { lock (_gate) if (!_disposed) ExpireCore(); }
     private void ExpireCore() { foreach (var id in _entries.Values.Where(entry => entry.Metadata.ExpiresAt <= _time.GetUtcNow()).Select(entry => entry.Metadata.Id).ToArray()) Remove(id); }

@@ -1,1 +1,23 @@
 .authoring-backdrop{position:fixed;inset:0;z-index:100;background:#0007;display:grid;place-items:center;padding:16px}.authoring-dialog{width:min(600px,100%);max-height:85vh;overflow:auto;background:var(--panel,#20242e);color:var(--text,#e8ecf4);border:1px solid var(--line,#495064);border-radius:12px;box-shadow:0 18px 60px #0005;padding:20px}.authoring-dialog header,.authoring-dialog footer{display:flex;align-items:center;justify-content:space-between;gap:12px}.authoring-dialog h2{font-size:17px;margin:0}.authoring-dialog p{line-height:1.5;font-size:12px}.authoring-dialog label{display:grid;gap:8px;margin:16px 0;font-size:12px}.authoring-dialog input{padding:9px;border:1px solid var(--line);background:var(--bg,#151923);color:inherit;border-radius:4px}.authoring-dialog button{margin:4px 0;padding:7px 12px;border:1px solid var(--line);border-radius:4px}.rename-files{max-height:260px;overflow:auto;margin:12px 0}.rename-files article{padding:10px;border-top:1px solid var(--line);font-size:12px}.rename-files small{margin-left:10px}.rename-files code{overflow-wrap:anywhere}.source-action{display:block;width:100%;text-align:left}.authoring-dialog footer{margin-top:16px}.authoring-dialog small{font-size:10px;color:var(--muted)}.authoring-shortcuts{display:flex;gap:4px;align-items:center}.authoring-shortcuts button{font-size:11px;padding:4px 8px}.authoring-dialog .primary{background:var(--accent,#5261d8);color:white}html[data-theme=light] .authoring-dialog{background:#fff;color:#17213a}html[data-theme=light] .authoring-dialog input{background:#f4f6fb}
+
+/* File editors belong to native Dockyard documents; tool windows own inspectors. */
+.document-toolbar{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border);flex-shrink:0;min-width:0}
+.document-toolbar small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.document-toolbar button{padding:3px 7px;font-size:11px}
+.document-editor{flex:1;min-height:0;position:relative;display:flex;flex-direction:column}
+.document-editor>.code-editor{flex:1;min-height:0}
+.document-stale{margin:0;padding:5px 10px;font-size:11px;background:var(--surface-raised);color:var(--muted)}
+.file-path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workspace-tools{position:relative;font-size:12px}
+.workspace-tools summary{cursor:pointer;padding:6px 10px}
+.workspace-tools[open]>div{position:absolute;z-index:120;top:100%;right:0;min-width:180px;max-height:65vh;overflow:auto;background:var(--surface);border:1px solid var(--border);box-shadow:0 8px 24px #0005;padding:4px;display:grid}
+.workspace-tools button{text-align:left;border:0}
+.agent-access-panel{padding:14px;height:100%;overflow:auto;font-size:12px;box-sizing:border-box}
+.agent-access-panel label{display:flex;gap:8px;align-items:center;margin:10px 0;flex-wrap:wrap}
+.agent-access-panel input:not([type=checkbox]),.agent-access-panel select{flex:1;min-width:100px}
+.agent-access-panel pre{overflow:auto;max-height:260px}
+.agent-access-panel h2{margin:0 0 10px;font-size:14px}
+.agent-access-panel details{margin:10px 0}
+.generated-files{padding:8px}
+.inspection-path{display:flex;gap:8px;align-items:center;padding:6px 10px}
+.inspection-path select{flex:1;min-width:0}

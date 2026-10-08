@@ -64,6 +64,18 @@ using var geminiClient = (Environment.GetEnvironmentVariable("GEMINI_API_KEY") ?
         httpOptions: new() { BaseUrl = ProviderEndpoint("GEMINI_ENDPOINT", "https://generativelanguage.googleapis.com").AbsoluteUri.TrimEnd('/'), RetryOptions = new() { Attempts = 1 } },
         clientOptions: new() { HttpClientFactory = () => providerHttp }) : null;
 if (geminiClient != null) providers.Add(new GeminiAgentProvider(geminiClient));
+var relayConnections = new Dictionary<string, ProviderRelay.Connection>(StringComparer.Ordinal);
+foreach (var (id, variable, endpointVariable, endpoint) in new[]
+{
+    ("openai", "OPENAI_API_KEY", "OPENAI_ENDPOINT", "https://api.openai.com"),
+    ("anthropic", "ANTHROPIC_API_KEY", "ANTHROPIC_ENDPOINT", "https://api.anthropic.com"),
+    ("gemini", "GEMINI_API_KEY", "GEMINI_ENDPOINT", "https://generativelanguage.googleapis.com")
+})
+{
+    var key = Environment.GetEnvironmentVariable(variable) ?? (id == "gemini" ? Environment.GetEnvironmentVariable("GOOGLE_API_KEY") : null);
+    if (!string.IsNullOrWhiteSpace(key)) relayConnections.Add(id, new(key, ProviderEndpoint(endpointVariable, endpoint)));
+}
+var relay = new ProviderRelay(providerHttp, relayConnections);
 using var mcpTasks = new AutomationMcpTaskStore();
 ChatGptAccountManager? chatGpt = null; string? chatGptError = null;
 if (builder.Configuration.GetValue("chatgpt", true))
@@ -109,7 +121,8 @@ app.Use(async (context, next) =>
     { context.Response.StatusCode = 403; return; }
     var origin = context.Request.Headers.Origin.ToString();
     if (origin.Length != 0 && !origins.Contains(origin)) { context.Response.StatusCode = 403; return; }
-    if (context.Request.Path.StartsWithSegments("/agent") && origin.Length != 0)
+    var providerRelay = context.Request.Path.StartsWithSegments("/provider");
+    if ((context.Request.Path.StartsWithSegments("/agent") || providerRelay) && origin.Length != 0)
     {
         context.Response.Headers.AccessControlAllowOrigin = origin;
         context.Response.Headers.Vary = "Origin";
@@ -117,14 +130,14 @@ app.Use(async (context, next) =>
         context.Response.Headers.AccessControlAllowMethods = "GET,POST,OPTIONS";
         if (HttpMethods.IsOptions(context.Request.Method)) { context.Response.StatusCode = 204; return; }
     }
-    if (context.Request.Path.StartsWithSegments("/mcp") || context.Request.Path.StartsWithSegments("/agent"))
+    if (context.Request.Path.StartsWithSegments("/mcp") || context.Request.Path.StartsWithSegments("/agent") || providerRelay)
     {
         var supplied = context.Request.Headers.Authorization.ToString();
-        var isOwner = context.Request.Path.StartsWithSegments("/agent");
+        var isOwner = context.Request.Path.StartsWithSegments("/agent") || providerRelay;
         if (!EqualToken(supplied.StartsWith("Bearer ", StringComparison.Ordinal) ? supplied[7..] : "", isOwner ? ownerToken : clientToken))
         { context.Response.StatusCode = 401; return; }
         context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, isOwner ? "studio-owner" : "mcp-client")], "LocalToken"));
-        if (isOwner)
+        if (isOwner && !providerRelay)
         {
             if (!bridge.TryGetOwnerSession(context.Request.Headers["X-Xamlg-Owner-Session"].ToString(), out var ownerSession))
             { context.Response.StatusCode = 409; await context.Response.WriteAsJsonAsync(new { error = "Pair the browser before using the workbench. The owner session has ended." }); return; }
@@ -141,6 +154,8 @@ app.Use(async (context, next) =>
 });
 app.UseWebSockets();
 app.MapGet("/health", () => new { service = "xamlg-studio", connected = bridge.IsConnected });
+app.MapGet("/provider", (HttpContext context) => { context.Response.Headers.CacheControl = "no-store"; return Results.Json(new { providers = relayConnections.Keys.Order(StringComparer.Ordinal) }); });
+app.MapMethods("/provider/{provider}", ["GET", "POST"], (string provider, HttpContext context) => relay.SendAsync(provider, context));
 app.MapPost("/agent/{action}", async (string action, HttpContext context) =>
 {
     try
