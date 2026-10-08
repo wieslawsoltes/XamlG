@@ -233,7 +233,7 @@
                 <button class="primary" @onclick="RunAsync" disabled="@(!CanRun)">Run <AgentIcon Name="Arrow" /></button>
                 <button title="Resume a paused task" @onclick="ResumeAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || selected.Status != "paused" || selected.RetryAfterUtc > DateTimeOffset.UtcNow)">Resume</button>
                 <button aria-label="Queue follow-up" title="Queue follow-up" @onclick="QueueDraftAsync" disabled="@(selected.IsPreviousWorkspace || _queueBusy || string.IsNullOrWhiteSpace(_draft) || selected.Status is "cancelled" or "failed")"><AgentIcon Name="Queue" /><span class="agent-action-label">Queue</span></button>
-                <button class="agent-danger" aria-label="Stop &amp; revoke" title="Stop and revoke this run's permissions" @onclick='() => CommandAsync("stop", new { })' disabled="@(!_state.Tasks.Any(IsRunning))"><AgentIcon Name="Stop" /><span class="agent-action-label">Stop</span></button>
+                <button class="agent-danger" aria-label='@("Stop & revoke")' title="Stop and revoke this run's permissions" @onclick='() => CommandAsync("stop", new { })' disabled="@(!_state.Tasks.Any(IsRunning))"><AgentIcon Name="Stop" /><span class="agent-action-label">Stop</span></button>
                 <button aria-label="Compact context" title="Compact context" @onclick="ReviewCompaction" disabled="@(selected.IsPreviousWorkspace || AnyRunning)"><AgentIcon Name="Compact" /><span class="agent-action-label">Compact</span></button>
             </div>
             @if (!ProviderReady) { <button class="agent-composer-notice" @onclick='() => SelectSectionAsync("Connection")'>Complete provider access in Connection to run this task <AgentIcon Name="Arrow" /></button> }

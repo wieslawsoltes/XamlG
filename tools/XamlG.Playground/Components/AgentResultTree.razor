@@ -3,10 +3,10 @@
 @if (Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
 {
     <dl class="agent-result-fields">
-    @foreach (var field in Fields.Take(12))
+    @foreach (var field in Fields.Where((item, index) => index < 12 || Omitted(item) != null))
     {
         <div class="agent-result-field">
-        @if (field.Key is "$moreItems" or "$moreFields") { <dd class="agent-help">@(field.Value.ValueKind == JsonValueKind.Object ? field.Value.GetProperty(field.Key).ToString() : field.Value.ToString()) more entries in the full result</dd> }
+        @if (Omitted(field) is { } omitted) { <dd class="agent-help">@omitted more entries in the full result</dd> }
         else if (field.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
         {
             <dd><details class="agent-result-branch"><summary>@AgentEventCard.Humanize(field.Key)<span>@Description(field.Value)</span></summary>
@@ -20,7 +20,7 @@
         }
         </div>
     }
-    @if (Fields.Count() > 12) { <div><dd class="agent-help">@(Fields.Count() - 12) more entries in raw data</dd></div> }
+    @if (Fields.Count(item => Omitted(item) == null) is > 12 and var count) { <div><dd class="agent-help">@(count - 12) more entries in raw data</dd></div> }
     </dl>
 }
 else { <p>@Display(Value)</p> }
@@ -41,7 +41,20 @@ else { <p>@Display(Value)</p> }
         }
         return $"Item {index + 1}";
     }
-    private static string Description(JsonElement value) => value.ValueKind == JsonValueKind.Array ? $"{value.GetArrayLength()} items" : $"{value.EnumerateObject().Count()} fields";
+    private static int? Omitted(KeyValuePair<string, JsonElement> field)
+    {
+        if (field.Key is not ("$moreItems" or "$moreFields")) return null;
+        var value = field.Value;
+        if (value.ValueKind == JsonValueKind.Object && !value.TryGetProperty(field.Key, out value)) return null;
+        return value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var count) && count >= 0 ? count : null;
+    }
+    private static string Description(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Array)
+            return $"{value.EnumerateArray().Sum(item => Omitted(new("$moreItems", item)) ?? 1)} items";
+        var fields = value.EnumerateObject().ToArray();
+        return $"{fields.Sum(item => Omitted(new(item.Name, item.Value)) ?? 1)} fields";
+    }
     private static string Display(JsonElement value)
     {
         var text = value.ValueKind == JsonValueKind.Null ? "—" : value.ToString();
