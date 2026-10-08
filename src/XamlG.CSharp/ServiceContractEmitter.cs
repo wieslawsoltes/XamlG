@@ -71,6 +71,7 @@ internal sealed class ServiceContractEmitter
         {
             var namespaces = new NamespaceMapEmitter(_context);
             foreach (var factory in factories) namespaces.EmitFactory(writer, factory.Scope, factory.Name, "public");
+            new SharedRuntimeContextEmitter(_context.Document).Emit(writer, name);
         }
         writer.Close();
     }

@@ -35,13 +35,26 @@ public sealed class SharedServiceTests
         }
         var first = Build("First.axaml");
         var second = Build("Second.axaml");
-        foreach (var (root, ns) in new[] { (first, "First"), (second, secondNamespace) })
+        foreach (var (root, ns, path) in new[] { (first, "First", "First.axaml"), (second, secondNamespace, "Second.axaml") })
         {
             var captured = Assert.IsType<SharedServiceCapture>(root.Tag);
             Assert.Same(root, captured.Root.RootObject);
             Assert.Same(root, captured.Target.TargetObject);
             Assert.Equal(ns, Assert.Single(captured.Namespaces.XmlNamespaces["a"]).ClrNamespace);
+            Assert.Equal(fixture.Result.Documents.Single(document => document.Input.LogicalPath == path).Document.Options.BaseUri,
+                captured.Uri.BaseUri!.OriginalString);
+            Assert.Same(captured.Names, NameScope.GetNameScope(root));
         }
+        var firstCapture = Assert.IsType<SharedServiceCapture>(first.Tag);
+        var secondCapture = Assert.IsType<SharedServiceCapture>(second.Tag);
+        Assert.NotSame(firstCapture.Names, secondCapture.Names);
+        if (!differentNamespaces) Assert.Equal(firstCapture.Root.GetType(), secondCapture.Root.GetType());
+        firstCapture.Uri.BaseUri = new Uri("xamlg://changed/first");
+        Assert.NotEqual(firstCapture.Uri.BaseUri, secondCapture.Uri.BaseUri);
+        var rebuilt = Build("First.axaml");
+        var rebuiltCapture = Assert.IsType<SharedServiceCapture>(rebuilt.Tag);
+        Assert.NotEqual(firstCapture.Uri.BaseUri, rebuiltCapture.Uri.BaseUri);
+        Assert.NotSame(firstCapture.Names, rebuiltCapture.Names);
         var firstMap = Assert.IsType<SharedServiceCapture>(first.Tag).Namespaces.XmlNamespaces;
         var secondMap = Assert.IsType<SharedServiceCapture>(second.Tag).Namespaces.XmlNamespaces;
         Assert.NotSame(firstMap, secondMap);
@@ -78,12 +91,14 @@ public sealed class SharedServiceTests
 }
 
 public sealed record SharedServiceCapture(IRootObjectProvider Root, IProvideValueTarget Target,
-    IAvaloniaXamlIlXmlNamespaceInfoProvider Namespaces);
+    IAvaloniaXamlIlXmlNamespaceInfoProvider Namespaces, IUriContext Uri, INameScope Names);
 
 public sealed class SharedServiceCaptureExtension
 {
     public SharedServiceCapture ProvideValue(IServiceProvider services) => new(
         (IRootObjectProvider)services.GetService(typeof(IRootObjectProvider))!,
         (IProvideValueTarget)services.GetService(typeof(IProvideValueTarget))!,
-        (IAvaloniaXamlIlXmlNamespaceInfoProvider)services.GetService(typeof(IAvaloniaXamlIlXmlNamespaceInfoProvider))!);
+        (IAvaloniaXamlIlXmlNamespaceInfoProvider)services.GetService(typeof(IAvaloniaXamlIlXmlNamespaceInfoProvider))!,
+        (IUriContext)services.GetService(typeof(IUriContext))!,
+        (INameScope)services.GetService(typeof(INameScope))!);
 }
