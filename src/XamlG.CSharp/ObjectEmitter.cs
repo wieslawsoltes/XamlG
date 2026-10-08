@@ -17,13 +17,14 @@ internal sealed class ObjectEmitter
     {
         _context = context; _namespaces = new(context); _runtime = new(context, _namespaces);
         _values = new(context, this); _assignments = new(context, this, _values); _source = new(context);
-        _leaves = new(context, _values, _source);
+        _leaves = new(context, _values, _source, this);
     }
     public void EmitContext(string variable, string outer, string root) => _runtime.Create(variable, outer, root);
     public void RegisterName(string frame, string nameExpression, string value) => _runtime.RegisterName(frame, nameExpression, value);
     public void Complete(string frame, string root) => _runtime.Complete(frame, root);
     public void EmitNamespaceMaps() => _namespaces.Emit();
     public void EmitContextHelpers() { _leaves.EmitHelpers(); _runtime.EmitHelpers(); }
+    public bool TryEmitSharedDeferred(BoundDeferredExpression value, string incoming) => _leaves.TryEmitDeferred(value, incoming);
     public string ConstructRoot(BoundObject value, string parentContext) =>
         Construct(value, _runtime.Scope(parentContext, value.Scope), _context.RootVariable);
 

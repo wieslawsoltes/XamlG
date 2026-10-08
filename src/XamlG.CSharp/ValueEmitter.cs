@@ -141,7 +141,7 @@ internal sealed class ValueEmitter
         return values;
     }
 
-    private static SpecialType ConstantType(object? value) => value switch
+    internal static SpecialType ConstantType(object? value) => value switch
     {
         bool => SpecialType.System_Boolean, char => SpecialType.System_Char,
         string => SpecialType.System_String, byte => SpecialType.System_Byte,
@@ -173,19 +173,22 @@ internal sealed class ValueEmitter
         var incoming = _context.Temporary("incoming"); var root = _context.Temporary("ownerRoot");
         var returnType = deferred.FactoryReturnType?.CSharpName() ?? "object";
         writer.Open((deferred.UsesFunctionPointer ? "static " : string.Empty) + returnType + " " + name + "(" + CSharpNames.Provider + "? " + incoming + ")");
-        _objects.EmitDeferredContext(frame, parentFrame, incoming, deferred.UsesFunctionPointer);
-        writer.Open("try");
-        writer.Line("var " + root + " = (" + _context.Document.Root!.Type.CSharpName() + ")" + frame + ".RootObject!;");
-        var saved = _context.RootVariable; _context.RootVariable = root;
-        try
+        if (!_objects.TryEmitSharedDeferred(deferred, incoming))
         {
-            var content = Emit(deferred.Content, frame); var result = _context.Temporary("template");
-            writer.Line(returnType + " " + result + " = " + content + ";");
-            _objects.Complete(frame, result); writer.Line("return " + result + ";");
+            _objects.EmitDeferredContext(frame, parentFrame, incoming, deferred.UsesFunctionPointer);
+            writer.Open("try");
+            writer.Line("var " + root + " = (" + _context.Document.Root!.Type.CSharpName() + ")" + frame + ".RootObject!;");
+            var saved = _context.RootVariable; _context.RootVariable = root;
+            try
+            {
+                var content = Emit(deferred.Content, frame); var result = _context.Temporary("template");
+                writer.Line(returnType + " " + result + " = " + content + ";");
+                _objects.Complete(frame, result); writer.Line("return " + result + ";");
+            }
+            finally { _context.RootVariable = saved; }
+            writer.Close();
+            ConstructionFailureEmitter.Emit(_context, frame);
         }
-        finally { _context.RootVariable = saved; }
-        writer.Close();
-        ConstructionFailureEmitter.Emit(_context, frame);
         writer.Close();
         if (deferred.Customizer == null) return "(" + deferred.TargetType.CSharpName() + ")" + name;
         var factory = deferred.UsesFunctionPointer
