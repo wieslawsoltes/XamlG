@@ -40,7 +40,7 @@ dotnet test samples/ControlCatalog.Tests -c Release -p:AvsSkipBuildingLegacyTarg
 dotnet run --project samples/ControlCatalog.Desktop -c Release --no-build -- \
   --xamlg-validate artifacts/controlcatalog-validation/desktop-results.json
 dotnet publish samples/ControlCatalog.Browser -c Release -p:AvsSkipBuildingLegacyTargetFrameworks=True
-npm ci --prefix tools/XamlG.Playground
+npm install --prefix tools/XamlG.Playground
 npx --prefix tools/XamlG.Playground playwright install chromium
 python3 scripts/serve-playground.py \
   --directory samples/ControlCatalog.Browser/bin/Release/net10.0-browser/publish/wwwroot --port 8943
