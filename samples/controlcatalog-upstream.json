@@ -4130,8 +4130,9 @@
     "samples/MiniMvvm/MiniMvvm.csproj": "Use shared .NET 10 sample settings, the pinned Avalonia.Base dependency, and the copied reactive helpers.",
     "samples/ControlCatalog.Desktop/Program.cs": "Add an opt-in --xamlg-validate entry point that uses the actual desktop lifetime, renders every registered page/demo with each theme variant and writes machine-readable results.",
     "samples/ControlCatalog.Browser/wwwroot/main.js": "Expose the managed catalog validation entry point only when the xamlg-validate query parameter is present.",
-    "samples/ControlCatalog.Browser/Program.cs": "Report managed startup exceptions before rethrowing, register bundled Inter as the browser fallback, and map the browser Skia font list's unresolvable keyed Cascadia Mono face to that bundled font.",
+    "samples/ControlCatalog.Browser/Program.cs": "Report managed startup and dispatcher exceptions before rethrowing, register bundled Inter as the browser fallback, and map the browser Skia font list's unresolvable keyed Cascadia Mono face to that bundled font.",
     "samples/MiniMvvm/PropertyChangedExtensions.cs": "Make subscription disposal idempotent before notifying completion; upstream CombineLatest reenters disposal and otherwise overflows the stack when a generated ListBox page session is disposed.",
-    "samples/ControlCatalog/Pages/TabbedPage/FluidNavBar/FluidNavBar.cs": "Register non-constant styled property defaults at registration time; overriding metadata on the registering type fails with the pinned framework. Keep SelectedIndex generated and preserve style-priority semantics."
+    "samples/ControlCatalog/Pages/TabbedPage/FluidNavBar/FluidNavBar.cs": "Register non-constant styled property defaults at registration time; overriding metadata on the registering type fails with the pinned framework. Keep SelectedIndex generated and preserve style-priority semantics.",
+    "samples/ControlCatalog.Browser/EmbedSample.Browser.cs": "Do not append the asynchronously imported button after navigation has already disposed its JavaScript parent handle."
   }
 }

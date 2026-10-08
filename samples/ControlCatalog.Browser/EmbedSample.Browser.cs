@@ -30,7 +30,8 @@ public class EmbedSampleWeb : INativeDemoControl
             static async void AddButton(JSObject parent)
             {
                 await JSHost.ImportAsync("embed.js", "../embed.js");
-                EmbedInterop.AddAppButton(parent);
+                if (!parent.IsDisposed)
+                    EmbedInterop.AddAppButton(parent);
             } 
         }
     }

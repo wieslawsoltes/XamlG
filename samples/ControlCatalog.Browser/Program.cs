@@ -41,6 +41,7 @@ internal partial class Program
             .LogToTrace()
             .AfterSetup(_ =>
             {
+                Dispatcher.UIThread.UnhandledException += (_, error) => Console.Error.WriteLine(error.Exception);
                 ControlCatalog.Pages.EmbedSample.Implementation = new EmbedSampleWeb();
             })
             .StartBrowserAppAsync("out", options);
