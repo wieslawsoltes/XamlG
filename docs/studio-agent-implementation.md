@@ -205,8 +205,8 @@ survive pane reopening within this page; they are not saved in browser storage.
 
 The implementation-first pass has reached validation. On 2026-10-08 the complete
 native solution and integrated Playground build with warnings treated as errors.
-The native suite passes all 1,829 tests:
-251 core, 126 Tooling, 1,275 Avalonia, 69 automation/MCP/agent, 94 language-server
+The native suite passes all 1,860 tests:
+251 core, 126 Tooling, 1,306 Avalonia, 69 automation/MCP/agent, 94 language-server
 and 14 workspace tests. This includes 42 official-SDK provider transport cases.
 The expanded behavioral coverage and browser/package acceptance listed below are
 still required; passing the existing native suite does not complete those checks.
@@ -221,10 +221,30 @@ arguments, markup names/values and compiled paths. Encoded names/values and quot
 arguments retain complete raw XML ranges. The source-restore fixture now checks
 both stale comparison and stale workspace guards and refreshes before restoration.
 
+Runtime validation adds 31 tests against actual Avalonia controls and peers. They
+exercise keyboard/text editing, clicks, mouse/touch capture, wheel input, contact
+limits and reset; accessibility invoke/toggle/value/range/selection/scroll actions,
+virtual peer paging and relationships; and reference arguments and returned arrays.
+Object cases cover explicit interfaces, typed and read-only dictionaries, retained
+identity, independent absolute expiry, the 512-handle limit, GC release, cancelled
+or detached asynchronous results, observer limits/coalescing and cleanup. An additive
+constructor accepts the host's `TimeProvider` for deterministic lease expiry; the
+existing constructor continues to use the system clock.
+
+These tests exposed touch capture being checked against the mouse pointer: valid
+touch drags crossing the preview boundary were rejected, while capture moved outside
+the preview could still receive events. Each contact now checks its own capture and
+resets input if that capture leaves the inspected tree. A mouse capture cannot admit
+an unrelated touch outside the preview. Tests also exposed nested struct edits that
+only changed a boxed copy. Member edits now write back through writable value-type
+owners, including array/dictionary/nullable slots, and return the actual stored value
+after owner setters run. Read-only value owners reject edits before mutation;
+reference-valued children and stored boxes remain editable without replacing them.
+
 Remaining completion work:
 
-- Validate the newer runtime input, accessibility, retained-object/interface,
-  typed-dictionary and observer operations, including handle lifetime changes.
+- Complete browser/MCP acceptance for the runtime input, accessibility,
+  retained-object/interface, typed-dictionary and observer operations validated above.
 - Validate designer group geometry/arrangement, layout constraints, source
   provenance, cancellation and one-step undo in the real browser.
 - Expand acceptance for C# navigation/actions, operation/control/data-flow
@@ -363,8 +383,8 @@ runtime operations and result export. Owner UI actions use a separate local entr
 point with schema/revision checks; MCP and agent transports retain their normal
 permission gate. Source navigation validates the preview's source version and can
 reveal resource documents as well as the main XAML file. The new runtime APIs and
-browser UI compile; their native/browser acceptance tests remain deferred until
-feature implementation is complete.
+browser UI compile. The native behavioral tests recorded above pass; expanded
+browser/MCP acceptance remains pending.
 
 Full reference acceptance remains in progress: account-mode behavioral acceptance,
 expanded recovery coverage, and the corresponding UI, authoring and
@@ -400,10 +420,9 @@ expired references; local UI and MCP expose inventory and explicit release witho
 disposing application objects. Capacity exhaustion returns metadata and an explicit
 reference error rather than failing or replaying an already-completed method. The
 Runtime workbench includes retained-object navigation, public-interface selection,
-member paging and release controls. Targeted runtime-library and browser compilation
-passed without warnings or errors. Behavioral coverage remains deferred: verify
-GC retention/release, absolute expiry, origin removal, explicit interfaces and typed
-peer/text-range arguments during the final native/browser validation pass.
+member paging and release controls. Native acceptance now verifies GC retention and
+release, absolute expiry, origin removal, explicit interfaces, peer arguments and
+returned selection arrays. Browser integration acceptance remains pending.
 
 The designer now has path-aware and group selection, independent state revisions,
 grid/mode/cancel controls, source hit testing, target bounds/size constraints, and

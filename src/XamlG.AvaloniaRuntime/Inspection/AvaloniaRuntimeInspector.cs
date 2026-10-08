@@ -22,6 +22,7 @@ namespace XamlG.AvaloniaRuntime.Inspection;
 public sealed partial class AvaloniaRuntimeInspector : IDisposable
 {
     private readonly AvaloniaObject _root;
+    private readonly TimeProvider _timeProvider;
     private readonly ConditionalWeakTable<AvaloniaObject, ObjectIdentity> _identities = new();
     private readonly Dictionary<string, AvaloniaObject> _objects = new(StringComparer.Ordinal);
     private readonly Queue<RuntimeChange> _changes = new();
@@ -31,12 +32,17 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
     private bool _disposed;
 
     public AvaloniaRuntimeInspector(AvaloniaObject root, int maximumNodes = 10000, int maximumDepth = 128)
+        : this(root, TimeProvider.System, maximumNodes, maximumDepth) { }
+
+    /// <summary>Creates an inspector with the host's clock for retained-object lease expiry.</summary>
+    public AvaloniaRuntimeInspector(AvaloniaObject root, TimeProvider timeProvider, int maximumNodes = 10000, int maximumDepth = 128)
     {
         ArgumentNullException.ThrowIfNull(root);
+        ArgumentNullException.ThrowIfNull(timeProvider);
         Dispatcher.UIThread.VerifyAccess();
         if (maximumNodes is < 1 or > 100000 || maximumDepth is < 1 or > 512)
             throw new ArgumentOutOfRangeException(nameof(maximumNodes));
-        _root = root; MaximumNodes = maximumNodes; MaximumDepth = maximumDepth;
+        _root = root; _timeProvider = timeProvider; MaximumNodes = maximumNodes; MaximumDepth = maximumDepth;
     }
 
     public string SessionId { get; } = Guid.NewGuid().ToString("N");

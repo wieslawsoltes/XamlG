@@ -189,10 +189,33 @@ public sealed partial class AvaloniaRuntimeInspector
     {
         ValidatePath(path);
         if (path.Count == 0) throw new ArgumentException("Select a member below the root object.");
-        var parent = FollowPath(root, path.Take(path.Count - 1).ToArray()) ?? throw new InvalidOperationException("The parent member is null.");
+        var parent = root;
+        var writeBack = new List<(MemberAccessor Member, object Value)>();
+        for (var index = 0; index < path.Count - 1; index++)
+        {
+            var owner = FindMember(parent, path[index]);
+            parent = owner.Get() ?? throw new InvalidOperationException("The parent member is null.");
+            // Reflection boxes value-type properties and collection slots. Keep the
+            // writable chain so an edit reaches the application, not only that box.
+            // A reference-valued child can be edited without replacing its parent.
+            if (owner.Type.IsValueType) writeBack.Add((owner, parent));
+            else writeBack.Clear();
+        }
         var member = FindMember(parent, path[^1], ObjectInterface(parent, interfaceName));
         if (member.Set == null) throw new InvalidOperationException("The member is read-only.");
-        return member;
+        if (writeBack.Count == 0) return member;
+        if (writeBack.Any(owner => owner.Member.Set == null))
+            throw new InvalidOperationException("A value-type owner in this path is read-only; its edited value cannot be written back.");
+        return member with
+        {
+            Get = () => FollowPath(root, path, interfaceName),
+            Set = value =>
+            {
+                member.Set(value);
+                for (var index = writeBack.Count - 1; index >= 0; index--)
+                    writeBack[index].Member.Set!(writeBack[index].Value);
+            }
+        };
     }
     private static void ValidatePath(IReadOnlyList<string>? path)
     {

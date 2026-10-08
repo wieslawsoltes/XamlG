@@ -82,11 +82,9 @@ public sealed partial class AvaloniaRuntimeInspector
         };
         var flags = InputModifiers(modifiers);
         var target = InputTarget(objectId, expectedRevision); var (root, send) = InputRoute(target);
-        var point = InputPoint(target, root, x, y);
+        var point = InputPoint(target, root, x, y, _inputPointer?.Captured);
         _inputPointer ??= new(Pointer.GetNextFreeId(), PointerType.Mouse, true);
         _inputMouse ??= new(_inputPointer);
-        if (_inputPointer.Captured is Visual captured && !WithinRoot(captured))
-            throw new InvalidOperationException("The input pointer is captured outside the inspected tree. Reset input first.");
         var handled = false;
         void Dispatch(RawPointerEventType type)
         {
@@ -129,12 +127,17 @@ public sealed partial class AvaloniaRuntimeInspector
         if (action == RuntimeTouchAction.Begin ? _touchContacts.Contains(contactId) || _touchContacts.Count >= 16 : !_touchContacts.Contains(contactId))
             throw new InvalidOperationException("Begin a new contact (at most 16), or update/end an existing one.");
         var flags = InputModifiers(modifiers); var target = InputTarget(objectId, expectedRevision); var (root, send) = InputRoute(target);
-        var point = InputPoint(target, root, x, y); _inputTouch ??= new();
+        _inputTouch ??= new();
         var type = action switch { RuntimeTouchAction.Begin => RawPointerEventType.TouchBegin, RuntimeTouchAction.Move => RawPointerEventType.TouchUpdate,
             RuntimeTouchAction.End => RawPointerEventType.TouchEnd, _ => RawPointerEventType.TouchCancel };
+        var args = new RawPointerEventArgs(_inputTouch, InputTimestamp(), root, type, default(Point), flags) { RawPointerId = contactId };
+        // Capture belongs to this contact. Mouse capture must not authorize a new
+        // touch outside the preview, and captured touches may cross its bounds.
+        args.Position = InputPoint(target, root, x, y, _inputTouch.TryGetPointer(args)?.Captured);
         if (action == RuntimeTouchAction.Begin) _touchContacts.Add(contactId);
         if (action is RuntimeTouchAction.End or RuntimeTouchAction.Cancel) _touchContacts.Remove(contactId);
-        var args = new RawPointerEventArgs(_inputTouch, InputTimestamp(), root, type, point, flags) { RawPointerId = contactId }; send(args);
+        try { send(args); }
+        catch { DisposeInput(); throw; }
         Changed(objectId, "input", "touch:" + action, null);
         return new(Revision, args.Handled, objectId);
     }
@@ -167,13 +170,15 @@ public sealed partial class AvaloniaRuntimeInspector
         _inputTopLevel = topLevel;
         return (root, send);
     }
-    private Point InputPoint(Control target, IInputRoot inputRoot, double? x, double? y)
+    private Point InputPoint(Control target, IInputRoot inputRoot, double? x, double? y, IInputElement? captured)
     {
         var local = new Point(x ?? target.Bounds.Width / 2, y ?? target.Bounds.Height / 2);
         if (!double.IsFinite(local.X) || !double.IsFinite(local.Y) || Math.Abs(local.X) > 1000000 || Math.Abs(local.Y) > 1000000)
             throw new ArgumentException("Input coordinates must be finite and bounded.");
         var point = target.TranslatePoint(local, InputRootElement(inputRoot)) ?? throw new InvalidOperationException("The input target detached.");
-        if (_inputPointer?.Captured == null && InputRootElement(inputRoot).InputHitTest(point) is Visual hit && !WithinRoot(hit))
+        if (captured is Visual capture && !WithinRoot(capture))
+        { DisposeInput(); throw new InvalidOperationException("The input capture moved outside the inspected tree. Input was reset; inspect before retrying."); }
+        if (captured == null && InputRootElement(inputRoot).InputHitTest(point) is Visual hit && !WithinRoot(hit))
             throw new InvalidOperationException("This position hits outside the inspected tree. Leave design mode or choose a visible target.");
         return point;
     }

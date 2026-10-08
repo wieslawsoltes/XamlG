@@ -68,7 +68,7 @@ public sealed partial class AvaloniaRuntimeInspector
         value = null;
         if (_objects.TryGetValue(id, out var tree)) { value = tree; return true; }
         if (_accessibilityPeers.TryGetValue(id, out var peer)) { value = peer; return true; }
-        if (_objectHandles.TryGetValue(id, out var entry) && entry.ExpiresAt > DateTimeOffset.UtcNow && KnownObjectOrigin(entry.OriginId))
+        if (_objectHandles.TryGetValue(id, out var entry) && entry.ExpiresAt > _timeProvider.GetUtcNow() && KnownObjectOrigin(entry.OriginId))
         { value = entry.Value; return true; }
         return false;
     }
@@ -104,7 +104,7 @@ public sealed partial class AvaloniaRuntimeInspector
         if (_objectHandles.Count >= MaximumObjectHandles)
             return description with { ReferenceError = "The 512-object lease limit is reached. Release unneeded object handles and inspect again." };
         var objectId = SessionId + ":o" + ++_nextObjectHandle;
-        _objectHandles.Add(objectId, new(value, originId, DateTimeOffset.UtcNow + ObjectHandleLifetime));
+        _objectHandles.Add(objectId, new(value, originId, _timeProvider.GetUtcNow() + ObjectHandleLifetime));
         if (_objectHandleTimer == null)
         {
             _objectHandleTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
@@ -116,7 +116,7 @@ public sealed partial class AvaloniaRuntimeInspector
 
     private void ExpireObjectHandles()
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         foreach (var id in _objectHandles.Where(pair => pair.Value.ExpiresAt <= now).Select(pair => pair.Key).ToArray()) RetireObjectHandle(id);
     }
     private bool RetireObjectHandle(string id)
