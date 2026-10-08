@@ -19,7 +19,12 @@ internal static class CSharpNames
     }
     internal static string StableId(SHA256 hash, string value)
     {
-        var bytes = hash.ComputeHash(Encoding.UTF8.GetBytes(value));
+        var encoded = Encoding.UTF8.GetBytes(value);
+        return StableId(hash, encoded, encoded.Length);
+    }
+    internal static string StableId(SHA256 hash, byte[] encoded, int count)
+    {
+        var bytes = hash.ComputeHash(encoded, 0, count);
         const string digits = "0123456789abcdef";
         var characters = new char[24];
         for (var index = 0; index < 12; index++)

@@ -165,4 +165,30 @@ public sealed class EmissionTests
         Assert.True(firstSession.Apply(0, new[] { new XamlPropertyUpdate(node.Key, "Text", "changed") }).Applied);
         Assert.Equal("a:b😀", Property(secondItem, "Text")); Assert.Equal(0, secondSession.Revision);
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(4096)]
+    public void SourceFingerprintsKeepUtf8IdentityAcrossLargeAndSmallSubtrees(int repetitions)
+    {
+        var text = string.Concat(Enumerable.Repeat("π😀&amp;\r\n", repetitions));
+        var first = "<Item Text='" + text + "'/>";
+        var second = "<Item Text='終😀'/>";
+        var xaml = "<Panel " + Namespaces + ">" + first + second + "</Panel>";
+        using var code = CompiledXaml.Create(xaml, Model);
+        var root = code.Build();
+        Assert.True(XamlRuntimeSession.TryGet(root, out var session));
+        var children = (IList)Property(root, "Children")!;
+        Assert.Equal(Hash("global::Fixture.Panel\0" + xaml), session!.FindNode(root)!.Source!.Fingerprint);
+        foreach (var (index, source) in new[] { (0, first), (1, second) })
+        {
+            var info = session.FindNode(children[index]!)!.Source!;
+            Assert.Equal(Hash("global::Fixture.Item\0" + source), info.Fingerprint);
+            var attribute = source.Substring("<Item ".Length, source.Length - "<Item ".Length - "/>".Length);
+            Assert.Equal(Hash(attribute), info.Declarations["Text"]);
+        }
+        static string Hash(string value) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant()[..24];
+    }
 }
