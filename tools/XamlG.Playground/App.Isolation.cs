@@ -47,6 +47,7 @@ public partial class App
     }
     private async Task ResetIsolationAsync()
     {
+        CancelAutomaticUpdate();
         _isolationGeneration = checked(_isolationGeneration + 1);
         _isolationVisible = false;
         _busy = false;

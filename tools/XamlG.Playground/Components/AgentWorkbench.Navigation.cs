@@ -8,6 +8,8 @@ public partial class AgentWorkbench
     private static readonly string[] Sections = ["Conversation", "Connection", "Tasks", "Plan", "Changes", "Queue", "Permissions", "Tools", "Activity"];
     private string _section = "Connection", _toolFilter = "", _toolScope = "", _ruleTool = "", _ruleDecision = "ask";
     private string _agentActivityFilter = "";
+    private string? _renderedSection;
+    private Microsoft.AspNetCore.Components.ElementReference _contentElement;
     private bool _activityCurrentTask = true, _modelsBusy;
     private string? _deleteTaskId;
     private ToolView[] _toolCatalog = [];

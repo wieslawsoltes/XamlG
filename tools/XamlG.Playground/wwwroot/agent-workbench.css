@@ -7,7 +7,7 @@
     min-height: 0;
     min-width: 0;
     overflow: hidden;
-    container-type: inline-size;
+    container-type: size;
     color: var(--text);
     background: var(--panel);
     font-size: 12px;
@@ -38,7 +38,7 @@ html[data-theme=light] .agent-workbench { --agent-danger: #ab3347; --agent-succe
 .agent-workbench code { font-family: var(--mono, monospace); overflow-wrap: anywhere; }
 .agent-workbench a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .agent-icon { flex: 0 0 auto; vertical-align: middle; }
-.agent-heading { display: flex; align-items: center; gap: 9px; padding: 12px; flex: none; }
+.agent-heading { display: flex; align-items: center; gap: 9px; padding: 10px 12px; flex: none; }
 .agent-avatar, .agent-empty-icon { display: inline-flex; align-items: center; justify-content: center; color: var(--accent); border: 1px solid var(--line); border-radius: 10px; background: var(--raised); }
 .agent-avatar { width: 34px; height: 34px; flex: none; }
 .agent-avatar .agent-icon { width: 21px; height: 21px; }
@@ -50,7 +50,7 @@ html[data-theme=light] .agent-workbench { --agent-danger: #ab3347; --agent-succe
 .agent-workbench .agent-icon-button { width: 30px; padding: 6px; border-color: transparent; flex: none; }
 .agent-workbench .agent-stop, .agent-workbench .agent-danger { color: var(--agent-danger); }
 .agent-navigation { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 0 8px 8px; border-bottom: 1px solid var(--line); flex: none; }
-.agent-navigation button { justify-content: flex-start; min-width: 0; min-height: 31px; padding: 6px 7px; color: var(--muted); border-color: transparent; font-size: 11px; gap: 6px; }
+.agent-navigation button { justify-content: flex-start; min-width: 0; min-height: 28px; padding: 5px 7px; color: var(--muted); border-color: transparent; font-size: 11px; gap: 6px; }
 .agent-navigation .agent-icon { width: 14px; height: 14px; }
 .agent-navigation button[aria-pressed=true] { color: var(--accent); background: var(--raised); border-color: var(--line); }
 .agent-count { font-size: 9px; line-height: 15px; min-width: 15px; text-align: center; background: var(--panel-2); border-radius: 4px; margin-left: auto; padding: 0 3px; }
@@ -66,7 +66,7 @@ html[data-theme=light] .agent-workbench { --agent-danger: #ab3347; --agent-succe
 .agent-task-status p:empty { display: none; }
 .agent-status { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; background: var(--raised); border: 1px solid var(--line); color: var(--muted); border-radius: 5px; font-size: 10px; font-weight: 500; overflow-wrap: anywhere; }
 .agent-status[data-status=completed], .agent-status[data-status=ready] { color: var(--agent-success); }
-.agent-status[data-status=running], .agent-status[data-status=preparing], .agent-status[data-status=in_progress] { color: var(--accent); }
+.agent-status[data-status=running], .agent-status[data-status=preparing], .agent-status[data-status=inProgress] { color: var(--accent); }
 .agent-status[data-status=failed], .agent-status[data-status=cancelled] { color: var(--agent-danger); }
 .agent-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .agent-metrics dt { color: var(--muted); font-size: 10px; }
@@ -112,8 +112,12 @@ html[data-theme=light] .agent-workbench { --agent-danger: #ab3347; --agent-succe
 .agent-task-card strong, .agent-task-card small { display: block; overflow-wrap: anywhere; }
 .agent-task-card strong { font-size: 12px; font-weight: 550; margin-bottom: 4px; }
 .agent-task-card[aria-pressed=true] { border-color: var(--accent); box-shadow: inset 2px 0 var(--accent); }
-.agent-content.is-conversation { display: flex; flex-direction: column; padding: 0; overflow: hidden; scrollbar-gutter: auto; }
-.agent-section-conversation { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.agent-content.is-conversation { display: flex; flex-direction: column; padding: 0; overflow: auto; scrollbar-gutter: auto; }
+.agent-section-conversation { display: flex; flex-direction: column; min-height: 270px; flex: 1; }
+.agent-section-conversation:has(.agent-pending) { min-height: 440px; }
+.agent-thread-empty { padding: 12px 6px; }
+.agent-thread-empty h3 { margin: 0; font-size: 13px; }
+.agent-thread-empty p { font-size: 11px; margin: 6px 0 0; }
 .agent-thread-toolbar { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 4px; padding: 6px 10px; flex: none; border-bottom: 1px solid var(--line); }
 .agent-thread-toolbar button { font-size: 10px; min-height: 24px; padding: 4px 6px; border: 0; }
 .agent-thread { flex: 1 1 80px; min-height: 60px; overflow: auto; overscroll-behavior: contain; padding: 0 12px; scrollbar-gutter: stable; }
@@ -130,10 +134,11 @@ html[data-theme=light] .agent-workbench { --agent-danger: #ab3347; --agent-succe
 .agent-code-heading { display: flex; justify-content: space-between; align-items: center; padding: 5px 9px; color: var(--muted); font-size: 10px; background: var(--panel-2); }
 .agent-code-block pre { margin: 0; border-radius: 0; }
 .agent-pending-list { max-height: 45%; flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0 10px; }
+.agent-pending-list:has(.agent-pending) { min-height: 140px; }
 .agent-pending { border: 1px solid var(--accent); border-radius: 8px; padding: 12px; margin: 8px 0; background: var(--panel-2); }
 .agent-pending h3 { font-size: 13px; overflow-wrap: anywhere; }
 .agent-pending > button { margin: 4px 4px 0 0; }
-.agent-composer { flex: none; max-height: 50%; overflow: auto; margin: 8px; padding: 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; }
+.agent-composer { flex: none; margin: 8px; padding: 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; }
 .agent-composer label { margin: 0; font-size: 10px; color: var(--muted); }
 .agent-composer textarea { background: var(--panel); min-height: 62px; max-height: 180px; padding: 8px; }
 .agent-keyboard-hint { font-size: 9px; }
@@ -149,7 +154,7 @@ html[data-theme=light] .agent-workbench { --agent-danger: #ab3347; --agent-succe
 .agent-plan li { display: flex; gap: 12px; padding: 14px 0; counter-increment: agent-step; border-bottom: 1px solid var(--line); }
 .agent-plan li::before { content: counter(agent-step); display: grid; place-items: center; width: 25px; height: 25px; flex: none; border-radius: 50%; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); font-size: 11px; }
 .agent-plan li[data-status=completed]::before { content: '✓'; color: var(--agent-success); }
-.agent-plan li[data-status=in_progress]::before { color: var(--accent); border-color: var(--accent); }
+.agent-plan li[data-status=inProgress]::before { color: var(--accent); border-color: var(--accent); }
 .agent-plan li > div { min-width: 0; }
 .agent-plan p { margin: 7px 0 0; }
 .agent-queue-order { border-block: 1px solid var(--line); padding-block: 10px; }
@@ -212,4 +217,25 @@ html[data-theme=light] .agent-workbench { --agent-danger: #ab3347; --agent-succe
     .agent-task-context { padding-inline: 8px; }
     .agent-task-status summary { gap: 6px; }
     .agent-thread-toolbar button { padding-inline: 3px; font-size: 9px; }
+}
+
+.agent-section-connection .agent-card { padding:12px; }
+.agent-section-connection label { margin:10px 0; }
+@container (max-height: 460px) {
+    .agent-heading { padding: 6px 10px; }
+    .agent-navigation { display: flex; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 5px; scrollbar-width: thin; }
+    .agent-navigation button { flex: none; padding: 5px 7px; }
+    .agent-count { margin-left: 2px; }
+    .agent-task-context { padding-block: 4px; }
+    .agent-task-status summary { font-size: 9px; }
+    .agent-section-conversation { min-height: 210px; }
+    .agent-section-conversation:has(.agent-pending) { min-height: 370px; }
+    .agent-thread { min-height: 30px; }
+    .agent-thread-toolbar { padding-block: 3px; }
+    .agent-composer { padding: 8px; margin: 6px; }
+    .agent-composer-label, .agent-composer .agent-keyboard-hint { display: none; }
+    .agent-composer label { gap: 0; }
+    .agent-composer textarea { height: 48px; min-height: 48px; }
+    .agent-run-actions { margin-top: 8px; gap: 4px; }
+    .agent-run-actions button { min-height: 25px; padding-block: 4px; }
 }

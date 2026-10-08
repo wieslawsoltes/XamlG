@@ -21,5 +21,6 @@ public partial class App
         _result = null; _status = "C# source changed · compile to update XAML and Roslyn analysis";
         ReconcileSourceBuffers();
         await SaveDraftAsync();
+        ScheduleAutomaticUpdate();
     }
 }

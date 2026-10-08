@@ -13,7 +13,7 @@
     <nav class="agent-navigation" aria-label="Agent sections">
         @foreach (var section in Sections)
         {
-            <button aria-label="@section" aria-pressed="@PaneVisible(section)" @onclick="() => SelectSectionAsync(section)"><AgentIcon Name="@section" /><span>@section</span>@if (SectionCount(section) is > 0 and var count) { <span class="agent-count" aria-hidden="true">@count</span> }</button>
+            <button aria-label="@section" aria-pressed='@(PaneVisible(section) ? "true" : "false")' @onclick="() => SelectSectionAsync(section)"><AgentIcon Name="@section" /><span>@section</span>@if (SectionCount(section) is > 0 and var count) { <span class="agent-count" aria-hidden="true">@count</span> }</button>
         }
     </nav>
     @if (_connected && _state.Tasks.Length > 0)
@@ -34,14 +34,14 @@
             }
         </div>
     }
-    <div class="agent-content @(PaneVisible("Conversation") && Selected != null ? "is-conversation" : "")">
+    <div class="agent-content @(PaneVisible("Conversation") && Selected != null ? "is-conversation" : "")" @ref="_contentElement">
     <section class="agent-section agent-section-connection" hidden="@(!PaneVisible("Connection"))" aria-label="Agent connection settings">
     <div class="agent-section-heading"><div><h3>Connect your agent</h3><p>Choose where it runs and how to sign in.</p></div><AgentIcon Name="Connection" /></div>
     <div class="agent-card">
     <label>Agent connection <select aria-label="Agent connection" value="@_connectionMode" @onchange="ConnectionChangedAsync" disabled="@(AnyRunning || _modelsBusy || _runReview != null)">
         <option value="direct">Direct API · run in this browser</option><option value="relay">Local provider relay · API keys stay local</option><option value="companion">Paired companion · server and account agents</option>
     </select></label>
-    <p class="agent-help">@(IsDirect ? "Run with your provider API key directly in Studio. No companion or MCP pairing required." : IsBrowser ? "Run in Studio using provider keys stored in your local companion." : "Run agents in the companion, with API keys or your ChatGPT account.")</p>
+    <p class="agent-help">@(IsDirect ? "No companion required. Requests go directly to your provider." : IsBrowser ? "Run in Studio using provider keys stored in your local companion." : "Run agents in the companion, with API keys or your ChatGPT account.")</p>
     @if (!IsBrowser)
     {
         <div class="agent-inline-actions"><span class="agent-status">@(_connected ? "Companion connected" : "Companion not connected")</span><button @onclick="() => AccessRequested.InvokeAsync()">Open Agent access</button></div>
@@ -116,7 +116,7 @@
     </div>
     <div class="agent-card">
         <div class="agent-section-heading"><h4>Model</h4><span class="agent-status">@(_modelsBusy ? "Loading models…" : _models.Length > 0 ? $"{_models.Length} available" : "Choose a model")</span></div>
-        <label>Model <input @bind="_model" list="agent-models" placeholder="Enter or discover a model ID" /></label>
+        <label>Model <input @bind="_model" @bind:event="oninput" list="agent-models" placeholder="Enter or discover a model ID" /></label>
         <datalist id="agent-models">@foreach (var model in _models) { <option value="@model.Slug">@model.DisplayName</option> }</datalist>
         <div class="agent-inline-actions"><button @onclick="DiscoverModelsAsync" disabled="@(AnyRunning || _modelsBusy || string.IsNullOrEmpty(_provider) || !ProviderReady)">Discover models</button><span class="agent-help">@(ProviderReady ? "Or enter a model ID above." : "Complete provider access to discover models.")</span></div>
     </div>
@@ -133,7 +133,7 @@
             <div class="agent-task-list" aria-label="Task list">
                 @foreach (var task in _state.Tasks)
                 {
-                    <button class="agent-task-card" aria-pressed="@(task.Id == _selectedId)" @onclick="() => Select(task.Id)"><AgentIcon Name="Conversation" /><span><strong>@task.Name</strong><small>@task.ProviderId · @task.Model</small></span><span class="agent-status" data-status="@task.Status">@task.Status</span></button>
+                    <button class="agent-task-card" aria-pressed='@(task.Id == _selectedId ? "true" : "false")' @onclick="() => Select(task.Id)"><AgentIcon Name="Conversation" /><span><strong>@task.Name</strong><small>@task.ProviderId · @task.Model</small></span><span class="agent-status" data-status="@task.Status">@task.Status</span></button>
                 }
             </div>
         }
@@ -168,7 +168,7 @@
             <div class="agent-thread" role="log" tabindex="0" aria-label="Agent thread" aria-live="off" data-task-id="@selected.Id" @ref="_threadElement">
                 @if (!VisibleEvents.Any() && VisibleLiveText.Length == 0)
                 {
-                    <div class="agent-empty agent-thread-empty"><span class="agent-empty-icon"><AgentIcon Name="Conversation" /></span><h3>What would you like to build?</h3><p>Ask about the project, describe a change, or investigate a runtime issue.</p><p class="agent-help">Review permissions before each run. Tool requests appear here when they need your approval.</p></div>
+                    <div class="agent-empty agent-thread-empty"><h3>What would you like to build?</h3><p>Ask about the project, describe a change, or investigate a runtime issue.</p></div>
                 }
                 @foreach (var item in VisibleEvents)
                 {
@@ -219,7 +219,7 @@
             }
             </div>
             <div class="agent-composer">
-            <label>Message <textarea @ref="_composerElement" data-task-id="@selected.Id" data-can-submit="@(CanRun ? "true" : "false")" value="@_draft" @oninput="DraftChangedAsync" rows="3" maxlength="262144" placeholder="Describe the change or investigation" /></label>
+            <label><span class="agent-composer-label">Message</span><textarea aria-label="Message" @ref="_composerElement" data-task-id="@selected.Id" data-can-submit="@(CanRun ? "true" : "false")" value="@_draft" @oninput="DraftChangedAsync" rows="3" maxlength="262144" placeholder="Describe the change or investigation" /></label>
             <p class="agent-keyboard-hint"><kbd>Enter</kbd> review run <span>·</span> <kbd>Shift+Enter</kbd> new line</p>
             <div class="agent-run-actions">
                 <button class="primary" @onclick="RunAsync" disabled="@(!CanRun)">Run <AgentIcon Name="Arrow" /></button>
@@ -292,7 +292,7 @@
             @if (selected.Plan.Length > 0)
             {
                 <div class="agent-plan-progress"><span>@selected.Plan.Count(step => step.Status == "completed") of @selected.Plan.Length complete</span><progress value="@selected.Plan.Count(step => step.Status == "completed")" max="@selected.Plan.Length" aria-label="Plan progress"></progress></div>
-                <ol class="agent-plan">@foreach (var step in selected.Plan) { <li data-status="@step.Status"><div><strong class="agent-status" data-status="@step.Status">@step.Status.Replace('_', ' ')</strong><p>@step.Text</p></div></li> }</ol>
+                <ol class="agent-plan">@foreach (var step in selected.Plan) { <li data-status="@step.Status"><div><strong class="agent-status" data-status="@step.Status">@(step.Status == "inProgress" ? "in progress" : step.Status)</strong><p>@step.Text</p></div></li> }</ol>
             }
             @if (selected.Plan.Length == 0) { <div class="agent-empty"><span class="agent-empty-icon"><AgentIcon Name="Plan" /></span><h3>No plan yet</h3><p>The agent has not published a plan for this task. Ask it to plan the work in Conversation.</p><button @onclick='() => SelectSectionAsync("Conversation")'>Open conversation</button></div> }
             <p class="muted">Plan status is reported by the agent. Check its validation evidence in the conversation.</p>
@@ -448,7 +448,7 @@
             <label>New task name <input @bind="_name" maxlength="200" /></label>
             <label>Provider <select @bind="_provider" @bind:after="ProviderChanged">@foreach (var provider in _state.Providers) { <option value="@provider">@ProviderLabel(provider)</option> }</select></label>
             @if (_provider == ChatGptProvider) { <p>ChatGPT account: @(ActiveAccount?.Label ?? "Select and sign in to an account before creating this task").</p> }
-            <label>Model <input @bind="_model" /></label>
+            <label>Model <input @bind="_model" @bind:event="oninput" /></label>
             <textarea aria-label="Context handoff" @bind="_handoff" maxlength="262144" rows="16" />
             <footer><button @onclick="() => _handoff = null" disabled="@_handoffBusy">Cancel</button><button @onclick="CreateWithContextAsync" disabled="@(_handoffBusy || _state.Tasks.Length >= 8 || !ProviderReady || string.IsNullOrWhiteSpace(_model))">Create with reviewed context</button></footer>
         </section></div>

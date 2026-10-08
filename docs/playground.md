@@ -28,6 +28,17 @@ in the toolbar.
 
 Compile and Run capture current buffers instead of relying on delayed notifications. Unrelated renders do not overwrite pending edits. Minimal UTF-16-safe changes permit eligible local subtree reparsing with unchanged-node reuse. Parser-work counters are not an end-to-end complexity claim: text construction, indexing, project linking and binding have separate costs.
 
+**Auto compile** and **Auto preview** are on by default. Owner source edits compile
+after a 600 ms typing pause, then refresh the current preview mode when compilation
+succeeds. Invalid edits keep the last valid view. Use **Run → Automatic updates**
+to pause compilation or keep compilation on while pausing preview execution; the
+preview header also has an **Auto on/off** toggle. Preferences survive reloads.
+Manual Run remains available. Automatic updates include XAML, C#, project resources,
+compiler settings, source authoring commands and undo/redo. They preserve isolated
+mode, and pending updates retire when the workspace changes. Agent/MCP source edits
+do not schedule automatic execution; their runtime operations retain their own
+permission checks.
+
 Design mode provides group selection, real drag/eight-handle resize, snapping, aspect locking, keyboard nudging and cancellation. **Tools → Designer** adds source geometry previews, alignment, equal sizing and distribution. Property/structure commands and multi-document geometry edits use workspace transactions; see [design and reload](hot-reload.md).
 
 ## Code-behind factory identity
@@ -40,7 +51,7 @@ Authoring formatting, rename, code actions and token deltas are exposed through 
 
 The **Resources** tool manages reusable classless dictionaries/styles in the same project as `View.axaml`. It has a path selector, add/remove controls, links to source/generated documents and syntax inspection, and a complete three-document example. Source remains local to the browser. Adding/removing files changes the compilation's resource catalog; unresolved dependencies appear as source diagnostics, not runtime loader failures.
 
-Run emits the view, dictionaries, styles and all C# source files into one assembly. `ResourceInclude`, `StyleInclude` and `MergeResourceInclude` call compiled factories. Changing a source before its debounce timer fires is captured by the next Compile/Run. Export format version 3 includes resource text, additional C# files and current generated files; outdated output is omitted. Draft restoration accepts versions 1, 2 and 3 without executing source.
+Run emits the view, dictionaries, styles and all C# source files into one assembly. `ResourceInclude`, `StyleInclude` and `MergeResourceInclude` call compiled factories. Changing a source before its debounce timer fires is captured by the next Compile/Run. Export format version 4 includes resource text, additional C# files, compiler settings and current generated files; outdated output is omitted. Draft restoration accepts versions 1–4 and follows the automatic preview preference. Disable Auto preview before restoring a draft that should only be inspected.
 
 The **C# files** inspector adds, edits, moves and removes auxiliary `.cs` files.
 Models, custom controls and partial code-behind classes share the same Roslyn
@@ -101,7 +112,7 @@ on the dispatcher; every access checks the deadline. A full handle table reports
 
 ## Explicit execution modes
 
-**Run preview** executes trusted generated code in the editor tab for visual design, with the studio's browser-origin capabilities. Review code before using it.
+**Run preview** executes trusted generated code in the editor tab for visual design, with the studio's browser-origin capabilities. Auto preview uses this mode initially and follows the mode selected by the owner. Pause automatic preview when inspecting code that should not run.
 
 **Run isolated** emits the complete assembly as data and executes it inside a separate WebAssembly host in an iframe with `sandbox="allow-scripts"`, without `allow-same-origin`. The opaque-origin frame cannot access editor DOM/storage through same-origin APIs. A dedicated MessageChannel validates source/origin/nonce and bounds requests/responses. Content-security policy limits fetches to required assets.
 
@@ -134,6 +145,13 @@ Changes supports review, selective restoration and normal project Undo. Tasks ke
 separate drafts, queues, context and review state. The tool catalog is available
 inside the coding-agent panel. See the [agent guide](studio-agent-implementation.md#run-the-current-implementation)
 for account setup, limits, compaction and recovery.
+
+Fresh sessions open directly to Connection. Enter provider credentials, choose a
+model, and use **Continue to tasks** to start. Section badges show pending requests,
+tasks, plan steps, changes and queued messages. The task picker and compact status
+stay above the active panel; the message composer stays below the scrolling thread.
+Task cards, plan progress, permission groups, searchable tool metadata and the
+activity timeline adapt to docked and floating widths in both themes.
 
 ## Deployment and acceptance
 

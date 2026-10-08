@@ -130,6 +130,27 @@ export function setTheme(theme) {
   self.monaco?.editor.setTheme(theme === 'light' ? 'vs' : 'vs-dark');
 }
 export function loadTheme() { return localStorage.getItem('xamlg.theme') ?? 'dark'; }
+export function loadLiveUpdates() {
+  try {
+    const value = JSON.parse(localStorage.getItem('xamlg.live-updates'));
+    return { compile: typeof value?.compile === 'boolean' ? value.compile : true,
+      preview: typeof value?.preview === 'boolean' ? value.preview : true };
+  } catch { return { compile: true, preview: true }; }
+}
+export function saveLiveUpdates(compile, preview) {
+  try { localStorage.setItem('xamlg.live-updates', JSON.stringify({ compile, preview })); }
+  catch { /* The live session still works when browser storage is unavailable. */ }
+}
+export function resetAgentPanelScroll(content, section) {
+  if (!content?.isConnected) return;
+  content.scrollTop = 0;
+  const nav = content.closest('.agent-workbench')?.querySelector('.agent-navigation');
+  const button = [...(nav?.querySelectorAll('button') || [])].find(item => item.getAttribute('aria-label') === section);
+  if (!button) return;
+  const outer = nav.getBoundingClientRect(), inner = button.getBoundingClientRect();
+  if (inner.left < outer.left) nav.scrollLeft -= outer.left - inner.left;
+  else if (inner.right > outer.right) nav.scrollLeft += inner.right - outer.right;
+}
 export function saveDraft(xaml, code, resources = {}, codeFiles = {}, compilerOptions = null) {
   localStorage.setItem('xamlg.draft', JSON.stringify({ version: 4, xaml, code, resources, codeFiles, compilerOptions }));
 }

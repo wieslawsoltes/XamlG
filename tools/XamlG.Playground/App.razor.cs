@@ -44,6 +44,7 @@ public partial class App
             _shellHooks = await _module.InvokeAsync<IJSObjectReference>("installStudioShell");
             _theme = await _module.InvokeAsync<string>("loadTheme");
             await _module.InvokeVoidAsync("setTheme", _theme);
+            await LoadLiveUpdatesAsync();
             await Compiler.InitializeAsync((current, total) =>
             {
                 _status = $"Loading compiler metadata · {current} / {total}";
@@ -56,6 +57,7 @@ public partial class App
             await _module.InvokeVoidAsync("installAutomation", _automationReference);
             _status = "Ready · compile or run the project";
             await CompileSnapshotAsync();
+            await RefreshAutomaticPreviewAsync();
         }
         catch (Exception error) { Report(error); }
         if (!_disposed) StateHasChanged();
@@ -73,7 +75,11 @@ public partial class App
     {
         _code = text; _status = "Code changed · compile to update inspections"; await SaveDraftAsync();
     }
-    private Task CompileAsync() => CompileSnapshotAsync(captureEditors: true);
+    private Task CompileAsync()
+    {
+        CancelAutomaticUpdate();
+        return CompileSnapshotAsync(captureEditors: true);
+    }
     private async Task CompileSnapshotAsync(bool captureEditors = false)
     {
         if (!_ready || _busy) return;
@@ -127,6 +133,7 @@ public partial class App
         _selectedElement = null; _error = null; _result = null;
         ResetWorkspaceHistory();
         await CompileSnapshotAsync();
+        await RefreshAutomaticPreviewAsync();
     }
     private async Task SelectSyntaxAsync(XamlInspectionNode node)
     {
@@ -183,7 +190,8 @@ public partial class App
             RestoreWorkspace(_workspaceEdits.ReplaceAll(SourceRevision, documents, "Restore draft", recordHistory: false));
             ResetWorkspaceHistory();
             await CompileSnapshotAsync();
-            _status = "Draft restored without executing it · review the code before Run";
+            await RefreshAutomaticPreviewAsync();
+            if (!_autoCompile || !_autoPreview) _status = "Draft restored without executing it · review the code before Run";
         }
         catch (Exception error) { Report(error); }
     }
@@ -222,6 +230,7 @@ public partial class App
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+        CancelAutomaticUpdate();
         RetireDocumentBuffers();
         if (_dockHooks != null) { await _dockHooks.InvokeVoidAsync("dispose"); await _dockHooks.DisposeAsync(); }
         _dockReference?.Dispose();

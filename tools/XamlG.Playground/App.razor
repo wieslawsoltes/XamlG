@@ -33,6 +33,10 @@
                 <button @onclick="RunTrustedAsync" disabled="@(!_ready || _busy)">Run trusted preview</button>
                 <button @onclick="RunIsolatedAsync" disabled="@(!_ready || _busy)" data-testid="run-isolated">Run isolated</button>
                 <button @onclick="ResetIsolationAsync" disabled="@(!_isolationVisible)" data-testid="reset-isolation">Reset isolation</button>
+                <hr /><strong class="menu-caption">Automatic updates</strong>
+                <label class="studio-auto-option"><input type="checkbox" checked="@_autoCompile" @onchange="AutoCompileChangedAsync" /> Auto compile</label>
+                <label class="studio-auto-option"><input type="checkbox" checked="@_autoPreview" @onchange="AutoPreviewChangedAsync" disabled="@(!_autoCompile)" /> Auto preview</label>
+                <p class="studio-auto-help">Compile after typing pauses. Auto preview runs valid owner edits in the current preview mode.</p>
             </div></details>
             <details class="studio-menu"><summary>View</summary><div class="studio-menu-items">
                 <strong class="menu-caption">Documents</strong>
@@ -70,7 +74,7 @@
             <button class="file" @onclick='() => ShowPaneAsync("resources")'><span class="file-icon">＋</span> Manage resources <small>@Compiler.Resources.Snapshot.Count</small></button>
             <button class="file" @onclick='() => ShowPaneAsync("code-files")'><span class="file-icon">＋</span> Manage C# files <small>@Compiler.CodeFiles.Snapshot.Count</small></button>
             <div class="explorer-note"><span class="eyebrow">ONE COMPILER</span><p>Syntax → Roslyn symbols → typed operations → C#.</p><p>@PlaygroundExamples.All[_exampleIndex].Description</p></div>
-            <div class="trust-note">Run preview and Design execute trusted code in this tab. Run isolated uses a separate opaque-origin frame. Compilation never sends source to a server.</div>
+            <div class="trust-note">Auto preview and Design execute trusted code in this tab. Pause automatic updates from Run. Run isolated uses a separate opaque-origin frame. Compilation never sends source to a server.</div>
         </aside>
     </BrowserTemplate>
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("document")" Context="pane">
@@ -112,6 +116,7 @@
         <section class="dock-preview">
             <div class="preview-heading">
                 <h2>@(_isolationVisible ? "ISOLATED PREVIEW" : "LIVE PREVIEW") <span class="badge subtle">AVALONIA</span></h2>
+                <button class="preview-auto-toggle" aria-pressed='@(_autoCompile && _autoPreview ? "true" : "false")' @onclick="() => AutoPreviewChangedAsync(new ChangeEventArgs { Value = !_autoPreview })" disabled="@(!_autoCompile)" title="Refresh the preview automatically after owner edits compile">Auto @(_autoCompile && _autoPreview ? "on" : "off")</button>
                 <DesignerCommands Enabled="_designMode" Disabled="@(_busy || _isolationVisible || Preview.Root == null)" Toggle="ToggleDesignMode" />
                 <button @onclick="RefreshCurrentVisualsAsync" disabled="@(!_previewShown)" title="Refresh the realized visual tree">↻ Inspect</button>
             </div>

@@ -37,6 +37,11 @@ public partial class AgentWorkbench
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_module != null && _renderedSection != _section)
+        {
+            _renderedSection = _section;
+            await _module.InvokeVoidAsync("resetAgentPanelScroll", _contentElement, _section);
+        }
         if (_focusRunReview) { _focusRunReview = false; await _runReviewCancel.FocusAsync(); }
         if (_module != null && _connected && Selected != null)
         {
