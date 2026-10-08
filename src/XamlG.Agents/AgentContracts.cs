@@ -75,6 +75,14 @@ public interface IAgentProviderSession
 {
     CancellationToken GetSessionLifetime();
 }
+
+/// <summary>Lossless, private continuation storage. This data must never appear in public transcripts.</summary>
+public interface IAgentProviderState
+{
+    string? AccountIdentity => null;
+    JsonElement SaveNative(object native);
+    object RestoreNative(JsonElement native);
+}
 public sealed record AgentProviderFailure(int HttpStatus, string ResponseShape, string? RequestId = null, string? ErrorParameter = null);
 
 public sealed class AgentProviderException(string code, bool retryable, TimeSpan? retryAfter = null, bool? canResume = null)
@@ -113,6 +121,7 @@ public sealed record AgentLimits
 
 public sealed record AgentRunOptions
 {
+    public bool FullToolCatalog { get; init; }
     public AgentLimits Limits { get; init; } = new();
     public AutomationPolicy Policy { get; init; } = new();
     public TimeSpan LeaseDuration { get; init; } = TimeSpan.FromMinutes(10);
@@ -179,4 +188,6 @@ public sealed class AgentTask
     internal int PendingResultBytes;
     internal string? Goal;
     internal string? LatestRequest;
+    internal HashSet<string> EnabledTools { get; } = new(StringComparer.Ordinal);
+    internal string? ExecutingToolId;
 }

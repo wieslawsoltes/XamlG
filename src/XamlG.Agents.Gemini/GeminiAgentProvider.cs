@@ -8,8 +8,14 @@ namespace XamlG.Agents.Gemini;
 /// <summary>Official Google Gen AI SDK adapter with native parts and thought signatures
 /// preserved across function calls. Automatic SDK retries are disabled per generation;
 /// the harness accounts for each attempt and executes all local tools.</summary>
-public sealed class GeminiAgentProvider(Client client) : IAgentProvider
+public sealed class GeminiAgentProvider(Client client) : IAgentProvider, IAgentProviderState
 {
+    public JsonElement SaveNative(object native) => JsonSerializer.SerializeToElement(new { version = 1, message = (NativeMessage)native });
+    public object RestoreNative(JsonElement native)
+    {
+        if (native.GetProperty("version").GetInt32() != 1) throw new ArgumentException("Unsupported Gemini continuation version.");
+        return native.GetProperty("message").Deserialize<NativeMessage>() ?? throw new ArgumentException("Invalid Gemini continuation.");
+    }
     public string Id => "gemini";
 
     public async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken cancellationToken = default)

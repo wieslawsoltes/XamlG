@@ -31,6 +31,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
         var catalog = new AutomationCatalog();
         catalog.Add<PlanArguments, object>("xamlg_agent_plan", "Replace the task's revision-checked plan, with at most 12 steps and one in progress.", AutomationScope.Agent, AutomationEffect.Read, (_, _) => throw new InvalidOperationException());
         catalog.Add<AgentQuestion, object>("xamlg_agent_question", "Ask for task information. Answers never authorize tool operations.", AutomationScope.Agent, AutomationEffect.Read, (_, _) => throw new InvalidOperationException());
+        catalog.Add<ToolDiscoveryArguments, object>("xamlg_agent_tools", DiscoveryDescription, AutomationScope.Agent, AutomationEffect.Read, (_, _) => throw new InvalidOperationException());
         return catalog.Tools;
     }
     private long _sequence;
@@ -113,8 +114,9 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
             var checkpoint = workspace != null && (message != null || task.BeforeRun == null)
                 ? await CaptureWorkspaceAsync(lease.Token) : null;
             var local = LocalTools(task, askUser, lease.Token);
-            var tools = host.Tools.Concat(local.Tools).ToArray();
-            var catalog = tools.ToDictionary(t => t.Name, StringComparer.Ordinal);
+            var allTools = host.Tools.Concat(local.Tools).ToArray();
+            var tools = SelectTools(task, allTools, options.FullToolCatalog);
+            var catalog = allTools.ToDictionary(t => t.Name, StringComparer.Ordinal);
             lease.Token.ThrowIfCancellationRequested(); EnsureCurrentWorkspace(task);
             lock (task.Sync)
             {
@@ -130,6 +132,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 started = true; task.Status = AgentTaskStatus.Running; task.StatusReason = null;
             }
             if (message != null) Publish(task, "user", message);
+            await SaveSessionAsync(lease.Token);
             var budget = new RunBudget(); var calls = 0;
             while (true)
             {
@@ -137,6 +140,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 if (task.TotalTokens >= options.Limits.TotalTaskTokens) { Pause(task, "Task token budget reached."); return; }
                 if (task.PendingReply == null)
                 {
+                    tools = SelectTools(task, allTools, options.FullToolCatalog);
                     var request = new AgentRequest(task.Model, RunInstructions(options), task.Messages.ToArray(), tools, options.Limits.OutputTokensPerRequest);
                     task.NativeContextBytes = task.Provider.GetContextBytes(request);
                     if (NeedsCompaction(task, options) && options.AutomaticCompaction && task.Messages.Count > 1)
@@ -149,7 +153,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                     { Pause(task, "Request or retained task context limit reached. Compact context, delete unused tasks or raise the request limit."); return; }
                     if (options.Compaction.ModelContextWindowTokens > 0 && (task.NativeContextBytes + 3L) / 4 + options.Limits.OutputTokensPerRequest > options.Compaction.ModelContextWindowTokens)
                     { Pause(task, "Estimated input plus output reserve exceeds the configured model context window."); return; }
-                    var reply = await RequestProviderAsync(task, request, options, lease, budget);
+                    var reply = await RequestProviderAsync(task, request, options, lease, budget, contextBytes: task.NativeContextBytes);
                     if (reply == null) return;
                     lease.Token.ThrowIfCancellationRequested();
                     // Validate the entire batch before committing it or executing a single operation.
@@ -161,7 +165,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                             throw new AutomationException("invalid_response", "Unknown tool or missing call identity.");
                         AutomationSchema.Validate(tool.InputSchema, call.Arguments);
                     }
-                    task.Messages.Add(new(AgentMessageKind.Assistant, reply.Text, Native: reply.Native));
+                    lock (task.Sync) task.Messages.Add(new(AgentMessageKind.Assistant, reply.Text, Native: reply.Native));
                     task.NativeContextBytes = task.Provider.GetContextBytes(request with { Messages = task.Messages.ToArray() });
                     Publish(task, "assistant", reply.Text);
                     if (reply.ToolCalls.Count == 0)
@@ -170,6 +174,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                         task.Status = AgentTaskStatus.Completed; Publish(task, "completed", "Task response completed."); return;
                     }
                     task.PendingReply = reply; task.NextTool = 0;
+                    await SaveSessionAsync(lease.Token);
                 }
 
                 var pending = task.PendingReply;
@@ -200,7 +205,9 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                         if (answer == AgentApproval.Deny) throw new AutomationException("permission_denied", "Operation denied by the user.");
                         if (answer == AgentApproval.AllowToolForRun) lease.GrantTool(tool.Name);
                     }
-                    calls++; Publish(task, "tool_started", tool.Name, call.Id, tool.Name);
+                    calls++; task.ExecutingToolId = call.Id;
+                    if (tool.Effect != AutomationEffect.Read) await SaveSessionAsync(lease.Token);
+                    Publish(task, "tool_started", tool.Name, call.Id, tool.Name);
                     JsonElement result;
                     try
                     {
@@ -209,8 +216,8 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                     }
                     catch (OperationCanceledException)
                     {
-                        task.Messages.Add(new(AgentMessageKind.ToolResult, "{\"error\":\"Operation cancelled; effects may have occurred. Inspect current state before another operation.\"}", call.Id));
-                        task.NextTool++; throw;
+                        lock (task.Sync) { task.Messages.Add(new(AgentMessageKind.ToolResult, "{\"error\":\"Operation cancelled; effects may have occurred. Inspect current state before another operation.\"}", call.Id)); task.NextTool++; task.ExecutingToolId = null; }
+                        throw;
                     }
                     catch (Exception error) when (error is AutomationException or ArgumentException or InvalidOperationException or KeyNotFoundException)
                     { result = AutomationJson.Element(new { error = new { code = (error as AutomationException)?.Code ?? "operation_failed", message = error.Message } }); }
@@ -218,10 +225,12 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                     if (Encoding.UTF8.GetByteCount(text) > task.PendingResultBytes)
                         text = "{\"error\":\"Tool result exceeds the configured byte limit. Request smaller ranges. The operation ran and will not be replayed.\",\"omitted\":true}";
                     // Commit the result and cursor before observers or another provider request.
-                    task.Messages.Add(new(AgentMessageKind.ToolResult, text, call.Id)); task.NextTool++;
+                    lock (task.Sync) { task.Messages.Add(new(AgentMessageKind.ToolResult, text, call.Id)); task.NextTool++; task.ExecutingToolId = null; }
                     Publish(task, "tool_completed", text, call.Id, tool.Name);
+                    if (tool.Effect != AutomationEffect.Read) await SaveSessionAsync(lease.Token);
                 }
                 task.PendingReply = null; task.NextTool = 0;
+                await SaveSessionAsync(lease.Token);
             }
         }
         catch (OperationCanceledException) when (started) { task.Status = AgentTaskStatus.Cancelled; task.StatusReason = "Stopped, revoked or lease expired."; Publish(task, "cancelled", task.StatusReason); }
@@ -246,11 +255,13 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 catch (Exception error) when (error is not OutOfMemoryException)
                 { Publish(task, "changes_unavailable", "The source checkpoint could not be refreshed. Inspect the current project before restoring."); }
             }
-            _activeLease = null; _activeTaskId = null; _runGate.Release();
+            try { if (started) await SaveSessionAsync(); }
+            finally { _activeLease = null; _activeTaskId = null; _runGate.Release(); }
         }
     }
 
     private string RunInstructions(AgentRunOptions options) => options.Instructions +
+        (options.FullToolCatalog ? "" : "\nUse xamlg_agent_tools to search and enable additional IDE tools when needed. Enabled schemas arrive on the next request; discover tools before guessing names or arguments.") +
         "\nThe embedding host enforces this run's permission policy: " + JsonSerializer.Serialize(new { options.Policy, constraints = Constraints }, AutomationJson.Options) +
         "\nA denied operation ends the batch. Do not try a different operation to bypass a denied effect." +
         (options.Policy.Profile == PermissionProfile.Plan ? "\nThis is a planning run. Inspect and propose a plan; implementation requires a separately confirmed editing run." : "");
@@ -258,6 +269,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
     private AutomationCatalog LocalTools(AgentTask task, Func<AgentQuestion, CancellationToken, Task<string>>? askUser, CancellationToken token)
     {
         var catalog = new AutomationCatalog();
+        AddDiscoveryTool(catalog, task);
         catalog.Add<PlanArguments, object>("xamlg_agent_plan", "Replace this task's revision-checked plan. At most 12 steps and one in progress.", AutomationScope.Agent, AutomationEffect.Read,
             (args, _) =>
             {

@@ -12,8 +12,19 @@ namespace XamlG.Agents.OpenAI;
 /// encrypted content remain intact in memory and are never included in public transcripts.
 /// Construct SDK clients with server-side credentials and inject them into this adapter.
 /// </summary>
-public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelClient? models = null, bool chatGptPlan = false) : IAgentProvider
+public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelClient? models = null, bool chatGptPlan = false) : IAgentProvider, IAgentProviderState
 {
+    public JsonElement SaveNative(object native) => SaveContinuation(native);
+    public object RestoreNative(JsonElement native) => RestoreContinuation(native);
+    internal static JsonElement SaveContinuation(object native) => JsonSerializer.SerializeToElement(new
+    {
+        version = 1, items = ((ResponseItem[])native).Select(item => JsonDocument.Parse(ModelReaderWriter.Write(item).ToMemory()).RootElement.Clone()).ToArray()
+    });
+    internal static object RestoreContinuation(JsonElement native)
+    {
+        if (native.GetProperty("version").GetInt32() != 1) throw new ArgumentException("Unsupported OpenAI continuation version.");
+        return native.GetProperty("items").EnumerateArray().Select(item => ModelReaderWriter.Read<ResponseItem>(BinaryData.FromString(item.GetRawText()))!).ToArray();
+    }
     public string Id => "openai";
     public async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken cancellationToken = default)
     {

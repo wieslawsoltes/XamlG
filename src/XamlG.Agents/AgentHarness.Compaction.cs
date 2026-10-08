@@ -21,7 +21,7 @@ public sealed partial class AgentHarness
                 task.Provider is IAgentProviderSession session ? session.GetSessionLifetime() : default);
             using var lease = new AutomationLease(options.Policy, options.LeaseDuration, lifetime.Token);
             _activeLease = lease; _activeTaskId = id; task.Status = AgentTaskStatus.Running;
-            var tools = host.Tools.Concat(LocalTools(task, null, lease.Token).Tools).ToArray();
+            var tools = SelectTools(task, host.Tools.Concat(LocalTools(task, null, lease.Token).Tools).ToArray(), options.FullToolCatalog);
             var result = await CompactContextAsync(task, options, tools, lease, new());
             task.Status = status;
             if (result) task.StatusReason = null;

@@ -10,8 +10,14 @@ namespace XamlG.Agents.Anthropic;
 /// <summary>Messages API transport through the official Anthropic SDK. Native signed content
 /// stays in memory, separate from public text. Configure the injected client with MaxRetries=0
 /// so that the harness accounts for every request and owns retry/cancellation policy.</summary>
-public sealed class AnthropicAgentProvider(AnthropicClient client) : IAgentProvider
+public sealed class AnthropicAgentProvider(AnthropicClient client) : IAgentProvider, IAgentProviderState
 {
+    public JsonElement SaveNative(object native) => JsonSerializer.SerializeToElement(new { version = 1, message = ((NativeMessage)native).Message.RawData });
+    public object RestoreNative(JsonElement native)
+    {
+        if (native.GetProperty("version").GetInt32() != 1) throw new ArgumentException("Unsupported Anthropic continuation version.");
+        return new NativeMessage(MessageParam.FromRawUnchecked(native.GetProperty("message").EnumerateObject().ToDictionary(item => item.Name, item => item.Value.Clone())));
+    }
     public string Id => "anthropic";
 
     public async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken cancellationToken = default)
