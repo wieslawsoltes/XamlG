@@ -15,7 +15,7 @@ internal sealed class DynamicAddEmitter(EmissionContext context)
     {
         var key = receiver.CSharpName() + "\n" + collection?.Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) + "\n" + string.Join("\n", methods.Select(method => method.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
         if (_plans.TryGetValue(key, out var existing)) return existing.Name;
-        var name = "__XamlDynamicAdd_" + CSharpNames.StableId(key);
+        var name = "__XamlDynamicAdd_" + context.StableId(key);
         _plans.Add(key, (name, receiver, collection, methods));
         return name;
     }

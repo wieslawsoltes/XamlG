@@ -15,8 +15,19 @@ internal static class CSharpNames
     public static string Literal(string value) => SymbolDisplay.FormatLiteral(value, true);
     public static string StableId(string value)
     {
-        using var hash = SHA256.Create(); var bytes = hash.ComputeHash(Encoding.UTF8.GetBytes(value));
-        return string.Concat(bytes.Take(12).Select(b => b.ToString("x2", CultureInfo.InvariantCulture)));
+        using var hash = SHA256.Create(); return StableId(hash, value);
+    }
+    internal static string StableId(SHA256 hash, string value)
+    {
+        var bytes = hash.ComputeHash(Encoding.UTF8.GetBytes(value));
+        const string digits = "0123456789abcdef";
+        var characters = new char[24];
+        for (var index = 0; index < 12; index++)
+        {
+            characters[index * 2] = digits[bytes[index] >> 4];
+            characters[index * 2 + 1] = digits[bytes[index] & 15];
+        }
+        return new string(characters);
     }
     public static string Method(IMethodSymbol method) => Identifier(method.Name) + (method.IsGenericMethod ? "<" + string.Join(", ", method.TypeArguments.Select(t => t.CSharpName())) + ">" : string.Empty);
     public static string MemberTarget(ISymbol member, ITypeSymbol targetType, string target) =>

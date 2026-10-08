@@ -5,8 +5,9 @@ using XamlG.Compiler;
 using XamlG.Roslyn;
 using XamlG.Syntax;
 namespace XamlG.CSharp;
-internal sealed class EmissionContext
+internal sealed class EmissionContext : IDisposable
 {
+    private readonly System.Security.Cryptography.SHA256 _hash = System.Security.Cryptography.SHA256.Create();
     private int _temporary;
     private readonly Dictionary<ISymbol, string> _descriptors = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<IMethodSymbol, string> _initSetters = new(SymbolEqualityComparer.Default);
@@ -14,7 +15,7 @@ internal sealed class EmissionContext
     private readonly Dictionary<string, (int Index, string Type, string Get, string Set)> _propertyAccessors = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _frameNamespaces = new(StringComparer.Ordinal);
     public EmissionContext(BoundDocument document, CancellationToken cancellation)
-    { Document = document; Cancellation = cancellation; Diagnostics.AddRange(document.Diagnostics); Id = CSharpNames.StableId(document.Options.DocumentId ?? document.Syntax.Path); }
+    { Document = document; Cancellation = cancellation; Diagnostics.AddRange(document.Diagnostics); Id = StableId(document.Options.DocumentId ?? document.Syntax.Path); }
     public BoundDocument Document { get; }
     public string Id { get; }
     private ImmutableArray<NamedObjectField> _namedFields;
@@ -31,6 +32,8 @@ internal sealed class EmissionContext
     public string RootVariable { get; set; } = "__root";
     public string ServicesType => "__XamlGServices_" + Id;
     public string Temporary(string role) => "__" + role + _temporary++;
+    public string StableId(string value) => CSharpNames.StableId(_hash, value);
+    public void Dispose() => _hash.Dispose();
     public string? FrameNamespaces(string frame) => _frameNamespaces.TryGetValue(frame, out var map) ? map : null;
     public void SetFrameNamespaces(string frame, string map) => _frameNamespaces[frame] = map;
     public void InheritFrameNamespaces(string frame, string parent)

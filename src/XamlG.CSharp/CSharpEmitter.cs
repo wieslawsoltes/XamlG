@@ -12,7 +12,7 @@ public sealed class CSharpEmitter
 {
     public XamlEmissionResult Emit(BoundDocument document, CancellationToken cancellationToken = default)
     {
-        var context = new EmissionContext(document, cancellationToken);
+        using var context = new EmissionContext(document, cancellationToken);
         if (document.IsSkipped)
             return new(context.Id + ".xaml.g.cs", string.Empty, string.Empty, null, string.Empty,
                 context.Diagnostics.ToImmutableArray(), ImmutableArray<XamlSourceMapping>.Empty) { IsSkipped = true };

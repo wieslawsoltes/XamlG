@@ -159,7 +159,9 @@ public sealed class EmissionTests
         Assert.Equal(xaml.IndexOf("<Item", StringComparison.Ordinal), source.Start);
         Assert.Equal("<Item x:Name='named' Text='a:b😀'/>", xaml.Substring(source.Start, source.Length));
         Assert.Equal(node.Key, source.Identity); Assert.Null(firstSession.FindNode(first)!.Source!.Identity);
-        Assert.Equal(24, source.Fingerprint.Length); Assert.Equal(24, source.Declarations["Text"].Length);
+        Assert.Equal("e13e9ef631c2305222e120cd.xaml.g.cs", code.Emission.HintName);
+        Assert.Equal("2baf7e528ec8a4dbe9ee586c", source.Fingerprint);
+        Assert.Equal(24, source.Declarations["Text"].Length);
         Assert.True(firstSession.Apply(0, new[] { new XamlPropertyUpdate(node.Key, "Text", "changed") }).Applied);
         Assert.Equal("a:b😀", Property(secondItem, "Text")); Assert.Equal(0, secondSession.Revision);
     }
