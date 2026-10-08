@@ -22,6 +22,13 @@ internal sealed class ValueEmitter
         BoundNewExpression creation => creation.Arguments.Any(UsesFrame),
         BoundArrayExpression array => array.Values.Any(UsesFrame),
         BoundCollectionExpression collection => collection.Values.Any(UsesFrame),
+        BoundCallExpression call => call.Receiver != null && UsesFrame(call.Receiver) || call.Arguments.Any(UsesFrame),
+        BoundParameterExpression => false,
+        BoundPropertyAccessExpression property => UsesFrame(property.Receiver) || property.IndexArguments.Any(UsesFrame),
+        BoundFieldAccessExpression field => UsesFrame(field.Receiver),
+        BoundAssignmentExpression assignment => UsesFrame(assignment.Target) || UsesFrame(assignment.Value),
+        BoundMethodGroupExpression method => method.Receiver != null && UsesFrame(method.Receiver),
+        BoundLambdaExpression lambda => UsesFrame(lambda.Body),
         _ => true
     };
 
