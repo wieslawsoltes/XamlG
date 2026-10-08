@@ -43,6 +43,7 @@ internal sealed class ObjectEmitter
                 ? value.FactoryMethod.ContainingType.CSharpName() + "." + CSharpNames.Method(value.FactoryMethod) + "(" + string.Join(", ", arguments) + ")"
                 : "new " + value.Type.CSharpName() + "(" + string.Join(", ", arguments) + ")";
             writer.Line("var " + variable + " = " + creation + ";");
+            writer.Line(parentContext + ".Session.TrackConstruction(" + variable + ");");
             _source.EmitConstructed(value, variable);
         }
         var frame = _context.Temporary("context");

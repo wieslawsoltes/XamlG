@@ -128,7 +128,7 @@ internal sealed class AssignmentEmitter
     {
         if (member.StaticSetter is { } accessor)
         {
-            var arguments = new[] { target }.Concat(accessor.Descriptors.Select(field => field.ContainingType.CSharpName() + "." + CSharpNames.Identifier(field.Name))).Concat(new[] { value });
+            var arguments = new[] { target }.Concat(accessor.Descriptors.Select(field => field.Member.ContainingType.CSharpName() + "." + CSharpNames.Identifier(field.GeneratedMemberName ?? field.Member.Name))).Concat(new[] { value });
             return accessor.Method.ContainingType.CSharpName() + "." + CSharpNames.Method(accessor.Method) + "(" + string.Join(", ", arguments) + ")";
         }
         if (member.Setter?.IsInitOnly == true) return _context.InitSetter(member.Setter) + "(" + (member.Setter.ContainingType.IsValueType ? "ref " : string.Empty) + target + ", " + value + ")";

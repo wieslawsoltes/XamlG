@@ -11,6 +11,7 @@ public sealed class XamlRuntimeSession : IDisposable
     private readonly Dictionary<object, string> _instances = new(XamlObjectIdentityComparer.Instance);
     private readonly Dictionary<(string Node, string Member), XamlRuntimeProperty> _properties = new();
     private readonly List<Action> _cleanup = new();
+    private readonly HashSet<XamlRuntimeSession> _constructedSessions = new();
     private readonly int _threadId = Thread.CurrentThread.ManagedThreadId;
     private bool _disposed;
     private bool _applying;
@@ -28,10 +29,19 @@ public sealed class XamlRuntimeSession : IDisposable
         CheckThread();
         if (Sessions.TryGetValue(root, out var previous) && !ReferenceEquals(previous, this))
         {
-            if (!XamlConstructionScope.AdoptPreviousSession(root, this, previous)) previous.Dispose();
+            if (!_constructedSessions.Contains(previous) && !XamlConstructionScope.AdoptPreviousSession(root, this, previous)) previous.Dispose();
             Sessions.Remove(root);
         }
         if (!Sessions.TryGetValue(root, out _)) Sessions.Add(root, this);
+    }
+    /// <summary>Owns initialization performed by a newly constructed child. A deferred
+    /// factory may subsequently attach its own session to that same child without retiring
+    /// the resources and bindings installed by its constructor.</summary>
+    public void TrackConstruction(object instance)
+    {
+        CheckThread();
+        if (TryGet(instance, out var session) && !ReferenceEquals(session, this) && _constructedSessions.Add(session!))
+            TrackCleanup(session!.Dispose);
     }
     public void Register(string key, object instance, string? parentKey)
     {
@@ -99,7 +109,7 @@ public sealed class XamlRuntimeSession : IDisposable
         var errors = new List<Exception>();
         for (var i = _cleanup.Count - 1; i >= 0; i--)
             try { _cleanup[i](); } catch (Exception error) { errors.Add(error); }
-        _cleanup.Clear(); _properties.Clear(); _instances.Clear(); _nodes.Clear();
+        _cleanup.Clear(); _constructedSessions.Clear(); _properties.Clear(); _instances.Clear(); _nodes.Clear();
         if (errors.Count != 0) throw new AggregateException("Generated event cleanup failed.", errors);
     }
     private void CheckThread()

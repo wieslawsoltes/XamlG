@@ -7,12 +7,12 @@ namespace XamlG.Frameworks.Avalonia.Styling;
 
 internal static class AvaloniaTemplatePriority
 {
-    public static BoundMember Apply(BindingContext context, BoundMember member, IFieldSymbol field)
+    public static BoundMember Apply(BindingContext context, BoundMember member, ITypeSymbol fieldType)
     {
         // Upstream resolves implicit content after the registered-property transform;
         // only explicit registered assignments acquire the priority-aware setter.
         if (!member.CanWrite || !HasPrioritySetter(context, member) ||
-            field.Type is not INamedTypeSymbol { TypeArguments.Length: 1 } property ||
+            fieldType is not INamedTypeSymbol { TypeArguments.Length: 1 } property ||
             !SymbolEqualityComparer.Default.Equals(property.TypeArguments[0], member.ValueType)) return member;
         var method = context.Types.Find(AvaloniaRegisteredSetterMetadata.Adapter)?.GetMembers(AvaloniaRegisteredSetterMetadata.AssignTemplate)
             .OfType<IMethodSymbol>().SingleOrDefault(candidate => candidate.IsStatic && candidate.Arity == 1 && candidate.Parameters.Length == 3 &&
@@ -23,11 +23,11 @@ internal static class AvaloniaTemplatePriority
             context.Report("XG3002", "Template-priority assignment requires the matching XamlG.AvaloniaRuntime contract.", member.Span);
             return member;
         }
-        return member with { StaticSetter = new(method.Construct(member.ValueType), ImmutableArray.Create(field)) };
+        return member with { StaticSetter = new(method.Construct(member.ValueType), ImmutableArray.Create((BoundStaticExpression)member.TargetDescriptor!)) };
     }
 
     public static bool HasPrioritySetter(BindingContext context, BoundMember member) =>
-        !member.IsImplicitContent && member.TargetDescriptor is BoundStaticExpression { Member: IFieldSymbol { Type: INamedTypeSymbol property } } &&
+        !member.IsImplicitContent && member.TargetDescriptor is BoundStaticExpression { Type: INamedTypeSymbol property } &&
         (property.HasMetadataName(AvaloniaRegisteredSetterMetadata.StyledProperty) || property.HasMetadataName(AvaloniaRegisteredSetterMetadata.AttachedProperty)) &&
         context.Ancestors.Any(ancestor => AvaloniaStyleScope.IsTemplate(ancestor.Type) ||
             ancestor.Annotations.TryGet(AvaloniaStyleAnnotations.DetachedTemplateTarget, out _) ||

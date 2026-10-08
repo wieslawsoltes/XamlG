@@ -28,7 +28,7 @@ internal sealed class ValueEmitter
                 return "typeof(" + handle.Method.ContainingType.CSharpName() + ").GetMethod(" + CSharpNames.Literal(handle.Method.Name) +
                     ", global::System.Reflection.BindingFlags.Public | global::System.Reflection.BindingFlags.NonPublic | global::System.Reflection.BindingFlags.Instance | global::System.Reflection.BindingFlags.Static | global::System.Reflection.BindingFlags.DeclaredOnly, null, new global::System.Type[] { " +
                     string.Join(", ", handle.Method.Parameters.Select(parameter => "typeof(" + parameter.Type.CSharpName() + ")")) + " }, null)!.MethodHandle";
-            case BoundStaticExpression field: return field.Member.ContainingType.CSharpName() + "." + CSharpNames.Identifier(field.Member.Name);
+            case BoundStaticExpression field: return field.Member.ContainingType.CSharpName() + "." + CSharpNames.Identifier(field.GeneratedMemberName ?? field.Member.Name);
             case BoundParameterExpression or BoundLambdaExpression or BoundPropertyAccessExpression or BoundFieldAccessExpression or BoundAssignmentExpression or BoundMethodGroupExpression:
                 return new FunctionalExpressionEmitter(_context, this).Emit(value, frame);
             case BoundServiceExpression service:
@@ -65,6 +65,8 @@ internal sealed class ValueEmitter
                 new SourceInfoEmitter(_context).EmitConstructed(located, sourceSpan);
                 return located;
             case BoundCallExpression call:
+                if (call.RuntimeDependency != null)
+                    return new PreservedCallEmitter(_context, this).Emit(call, frame);
                 var receiver = call.Method.IsStatic ? call.Method.ContainingType.CSharpName() : call.Receiver == null ? _context.RootVariable : "(" + Emit(call.Receiver, frame) + ")";
                 if (!call.Method.IsStatic && call.Receiver != null && !call.Arguments.IsEmpty)
                 {
