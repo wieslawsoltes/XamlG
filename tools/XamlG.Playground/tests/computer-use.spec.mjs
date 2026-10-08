@@ -30,10 +30,12 @@ for (const isolated of [false, true]) test(`MCP computer workflow returns real i
   try {
     await mcp.call('xamlg_computer_viewport', { width: 600, height: 480 });
     const observed = await mcp.rpc('tools/call', { name: 'xamlg_computer_observe', arguments: { maximumWidth: 300, maximumHeight: 240 } });
-    expect(observed.isError).not.toBe(true);
+    expect(observed.isError, JSON.stringify(observed.structuredContent)).not.toBe(true);
     const image = observed.content.find(part => part.type === 'image');
     expect(image.mimeType).toBe('image/png');
     const png = Buffer.from(image.data, 'base64');
+    expect(png.length).toBeGreaterThan(1000);
+    await test.info().attach('mcp-observation.png', { body: png, contentType: 'image/png' });
     expect([...png.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
     expect(png.readUInt32BE(16)).toBe(300); expect(png.readUInt32BE(20)).toBe(240);
     expect(JSON.stringify(observed.structuredContent)).not.toContain(image.data);

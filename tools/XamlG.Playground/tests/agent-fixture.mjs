@@ -61,19 +61,33 @@ export async function withAgentWorkbench({ page, request, baseURL }, handle, exe
   environment.OPENAI_ENDPOINT = `http://127.0.0.1:${fixture.address().port}/v1`;
   const origin = new URL(baseURL).origin;
   const stateDirectory = await mkdtemp(join(tmpdir(), 'xamlg-agent-state-'));
-  const host = spawn(process.env.XAMLG_TEST_DOTNET || 'dotnet', [process.env.XAMLG_TEST_HOST_DLL,
+  const hostArgs = [process.env.XAMLG_TEST_HOST_DLL,
     `--port=${port}`, `--agent-store=${stateDirectory}`, ...(options.accountStore ? [`--chatgpt-store=${options.accountStore}`, `--chatgpt-auth-origin=http://127.0.0.1:${fixture.address().port}/`,
       `--chatgpt-api-endpoint=http://127.0.0.1:${fixture.address().port}/v1/`] : ['--chatgpt=false']),
-    ...(origin === 'https://wieslawsoltes.github.io' ? [] : [`--origins=${origin}`])],
-    { env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
+    ...(origin === 'https://wieslawsoltes.github.io' ? [] : [`--origins=${origin}`])];
   let log = '';
-  host.stdout.on('data', data => { log += data; }); host.stderr.on('data', data => { log += data; });
-  try {
+  const launch = () => {
+    const child = spawn(process.env.XAMLG_TEST_DOTNET || 'dotnet', hostArgs, { env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout.on('data', data => { log += data; }); child.stderr.on('data', data => { log += data; });
+    return child;
+  };
+  let host = launch();
+  const waitReady = async () => {
     await expect.poll(async () => {
       if (host.exitCode != null) throw new Error(log);
       try { const result = await request.get(`http://127.0.0.1:${port}/health`); try { return result.ok(); } finally { await result.dispose(); } }
       catch { return false; }
     }).toBe(true);
+  };
+  const stopHost = async () => {
+    if (host.exitCode != null || host.signalCode != null) return;
+    host.kill('SIGTERM');
+    await Promise.race([once(host, 'exit'), new Promise(resolve => setTimeout(resolve, 5000))]);
+    if (host.exitCode === null && host.signalCode === null) { host.kill('SIGKILL'); await once(host, 'exit'); }
+  };
+  const restartHost = async () => { await stopHost(); host = launch(); await waitReady(); };
+  try {
+    await waitReady();
     await openStudio(page);
     await page.getByTestId('agent-access').click();
     await page.getByLabel('Companion WebSocket').fill(`ws://127.0.0.1:${port}/bridge`);
@@ -86,7 +100,7 @@ export async function withAgentWorkbench({ page, request, baseURL }, handle, exe
     await agentSection(pane, 'Connection');
     await pane.getByLabel('Agent connection', { exact: true }).selectOption('companion');
     await expect(pane.getByLabel('Provider', { exact: true })).toHaveValue(options.accountStore ? 'openai-chatgpt' : 'openai');
-    await execute({ page, pane, requests, api: (action, args) => agentRequest(page, action, args) });
+    await execute({ page, pane, requests, restartHost, api: (action, args) => agentRequest(page, action, args) });
     expect(failures).toEqual([]); expect(errors).toEqual([]);
   } catch (error) {
     await test.info().attach('workbench-before-cleanup', { body: await page.getByRole('region', { name: 'Coding agent workbench' }).innerText().catch(() => 'Unavailable'), contentType: 'text/plain' });
@@ -97,9 +111,7 @@ export async function withAgentWorkbench({ page, request, baseURL }, handle, exe
       await page.unrouteAll({ behavior: 'ignoreErrors' }).catch(error => { if (!page.isClosed()) throw error; });
     } finally {
       // A timed-out browser page must not prevent isolated host/server cleanup.
-      host.kill('SIGTERM');
-      await Promise.race([once(host, 'exit'), new Promise(resolve => setTimeout(resolve, 5000))]);
-      if (host.exitCode === null) { host.kill('SIGKILL'); await once(host, 'exit'); }
+      await stopHost();
       fixture.closeAllConnections(); await new Promise(resolve => fixture.close(resolve));
       await rm(stateDirectory, { recursive: true, force: true });
     }
