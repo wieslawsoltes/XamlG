@@ -43,9 +43,7 @@ public static class CatalogValidation
             show(new PageNavigationHost { Page = shell });
             await Task.Delay(100);
             // MainView applies the system variant on Loaded. Select the test variant afterwards.
-            Application.Current!.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
-            ((FluentTheme)Application.Current.Resources["FluentTheme"]!).DensityStyle =
-                compact ? DensityStyle.Compact : DensityStyle.Normal;
+            ApplyVariant(dark, compact);
             foreach (var item in CatalogCases.All(shell))
             {
                 var visuals = 0;
@@ -54,6 +52,10 @@ public static class CatalogValidation
                 {
                     var control = item.Create();
                     await navigation.ReplaceAsync(control as Page ?? new ContentPage { Content = control, Header = item.Name }, null);
+                    // Settings initializes its selector to the system variant. Restore the
+                    // requested matrix configuration after page initialization, before rendering.
+                    await Task.Delay(25);
+                    ApplyVariant(dark, compact);
                     // Allow the real platform's layout/render loop to process the newly selected page.
                     for (var attempt = 0; attempt < 40; attempt++)
                     {
@@ -64,6 +66,7 @@ public static class CatalogValidation
                     visuals = control.GetVisualDescendants().Count();
                     if (control.Bounds.Width <= 0 || control.Bounds.Height <= 0 || visuals == 0)
                         throw new InvalidOperationException("The selected sample has no realized layout or visual content.");
+                    VerifyConfiguration(shell, control, theme, dark, compact);
                     VerifyBindings(control);
                 }
                 catch (Exception exception) { error = exception.ToString(); }
@@ -78,6 +81,25 @@ public static class CatalogValidation
 
     public static string Serialize(List<CatalogValidationResult> results) =>
         JsonSerializer.Serialize(results, CatalogValidationJsonContext.Default.ListCatalogValidationResult);
+
+    public static void ApplyVariant(bool dark, bool compact)
+    {
+        Application.Current!.RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
+        ((FluentTheme)Application.Current.Resources["FluentTheme"]!).DensityStyle =
+            compact ? DensityStyle.Compact : DensityStyle.Normal;
+    }
+
+    public static void VerifyConfiguration(MainView shell, Control page, CatalogTheme theme, bool dark, bool compact)
+    {
+        var app = Application.Current!;
+        var variant = dark ? ThemeVariant.Dark : ThemeVariant.Light;
+        var density = compact ? DensityStyle.Compact : DensityStyle.Normal;
+        if (App.CurrentTheme != theme || app.RequestedThemeVariant != variant ||
+            shell.ActualThemeVariant != variant || page.ActualThemeVariant != variant ||
+            ((FluentTheme)app.Resources["FluentTheme"]!).DensityStyle != density)
+            throw new InvalidOperationException($"Expected {theme}/{variant}/{density}; actual theme {App.CurrentTheme}, " +
+                $"application {app.RequestedThemeVariant}, shell {shell.ActualThemeVariant}, page {page.ActualThemeVariant}.");
+    }
 
     public static void VerifyBindings(Control control)
     {

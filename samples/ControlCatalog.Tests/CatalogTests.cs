@@ -133,12 +133,15 @@ public sealed class CatalogTests
                     Dispatcher.UIThread.RunJobs();
                     await Task.Delay(20, TestContext.Current.CancellationToken);
                     Dispatcher.UIThread.RunJobs();
+                    CatalogValidation.ApplyVariant(dark, compact);
+                    Dispatcher.UIThread.RunJobs();
                     using var frame = window.CaptureRenderedFrame();
                     Assert.NotNull(frame);
                     Assert.True(frame.PixelSize.Width > 0 && frame.PixelSize.Height > 0);
                     Assert.True(control.Bounds.Width > 0 && control.Bounds.Height > 0, item.Name + " has no layout.");
                     var visuals = control.GetVisualDescendants().Count();
                     Assert.True(visuals > 0, item.Name + " has no realized visual content.");
+                    CatalogValidation.VerifyConfiguration(shell, control, theme, dark, compact);
                     CatalogValidation.VerifyBindings(control);
                     var file = string.Concat(item.Name.Select(c => char.IsLetterOrDigit(c) ? c : '_')) + ".png";
                     frame.Save(Path.Combine(output, file), new PngBitmapEncoderOptions());

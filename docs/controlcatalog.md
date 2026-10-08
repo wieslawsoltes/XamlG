@@ -52,6 +52,8 @@ Set `XAMLG_CATALOG_RESULTS` to select the headless screenshot/report directory. 
 
 These checks validate construction, layout, realized templates and rendering across the complete catalog registry. Native embedding, GPU support, file dialogs, clipboard and external links depend on the host; rendering their pages does not certify every platform-specific operation. Headless rendering cannot substitute for the real desktop and published WebAssembly runs.
 
+The Settings page applies its saved theme variant during initialization. The drivers restore the requested matrix variant after each page initializes and assert the actual shell/page variant, selected theme and density before recording a pass.
+
 The browser host retains Avalonia's generated OpenGL delegate signatures through trimming. Its function-pointer calls need these declarations when the WebAssembly SDK generates native-call stubs; otherwise the interpreter can abort when the OpenGL lease demo renders.
 
 ## Compilation benchmark
