@@ -71,4 +71,22 @@ public sealed class RuntimeTests
         session.RegisterProperty("root", "Value", () => value, replacement => value = replacement);
         Assert.False(session.Apply(0, new[] { new XamlPropertyUpdate("root", "Value", "bad") }).Applied); Assert.Equal(1, value);
     }
+    private sealed class AccessorTarget { public int Value { get; set; } }
+    [Fact]
+    public void SharedAccessorsKeepTargetsIndependentAndRollBackFailedBatches()
+    {
+        var types = new[] { typeof(int) };
+        var accessor = new XamlPropertyTable(types, static (target, _) => ((AccessorTarget)target).Value,
+            static (target, _, value) => { ((AccessorTarget)target).Value = (int)value!; if ((int)value == 99) throw new InvalidOperationException("Rejected"); });
+        types[0] = typeof(string);
+        var first = new AccessorTarget { Value = 1 }; var second = new AccessorTarget { Value = 2 };
+        using var session = new XamlRuntimeSession();
+        accessor.Register(session, "first", "Value", first, 0);
+        accessor.Register(session, "second", "Value", second, 0);
+        Assert.False(session.Apply(0, new[] { new XamlPropertyUpdate("first", "Value", 8), new XamlPropertyUpdate("second", "Value", 99) }).Applied);
+        Assert.Equal(1, first.Value); Assert.Equal(2, second.Value); Assert.Equal(0, session.Revision);
+        Assert.False(session.Apply(0, new[] { new XamlPropertyUpdate("first", "Value", "bad") }).Applied);
+        Assert.True(session.Apply(0, new[] { new XamlPropertyUpdate("first", "Value", 8) }).Applied);
+        Assert.Equal(8, first.Value); Assert.Equal(2, second.Value);
+    }
 }

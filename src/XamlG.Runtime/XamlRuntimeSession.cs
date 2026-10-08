@@ -64,7 +64,12 @@ public sealed class XamlRuntimeSession : IDisposable
     }
     public void RegisterProperty<T>(string key, string member, Func<T> getter, Action<T> setter)
     {
-        CheckThread(); _properties[(key, member)] = new(typeof(T), () => getter(), value => setter((T)value!));
+        CheckThread(); _properties[(key, member)] = new XamlDelegateProperty<T>(getter, setter);
+    }
+    internal void RegisterProperty(string key, string member, XamlRuntimeProperty property)
+    {
+        CheckThread();
+        _properties[(key, member)] = property;
     }
     public void TrackCleanup(Action action)
     {

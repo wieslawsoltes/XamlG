@@ -33,7 +33,17 @@ internal sealed class AssignmentEmitter
                     Set(set.Member, owner.Type, target, value);
                     if (set.RegisterName) _objects.RegisterName(frame, value, target);
                     if (set.Member.Getter != null && set.Member.Setter != null && !set.Member.Setter.IsInitOnly)
-                        writer.Line(frame + ".Session.RegisterProperty<" + set.Member.ValueType.CSharpName() + ">(" + CSharpNames.Literal(owner.Key) + ", " + CSharpNames.Literal(set.Member.Name) + ", () => " + Get(set.Member, owner.Type, target) + ", __value => { " + SetExpression(set.Member, owner.Type, target, "__value") + "; });");
+                    {
+                        if (owner.Type.IsReferenceType)
+                        {
+                            var receiver = "((" + owner.Type.CSharpName() + ")__target)";
+                            writer.Line(_context.PropertyRegistration(set.Member.ValueType,
+                                Get(set.Member, owner.Type, receiver), SetExpression(set.Member, owner.Type, receiver, "(" + set.Member.ValueType.CSharpName() + ")__value!"),
+                                frame + ".Session, " + CSharpNames.Literal(owner.Key) + ", " + CSharpNames.Literal(set.Member.Name) + ", " + target));
+                        }
+                        else
+                            writer.Line(frame + ".Session.RegisterProperty<" + set.Member.ValueType.CSharpName() + ">(" + CSharpNames.Literal(owner.Key) + ", " + CSharpNames.Literal(set.Member.Name) + ", () => " + Get(set.Member, owner.Type, target) + ", __value => { " + SetExpression(set.Member, owner.Type, target, "__value") + "; });");
+                    }
                 }
                 if (set.Value is BoundObjectExpression child) _objects.Emit(child.Object, valueFrame, null, Assign); else Assign(_values.Emit(set.Value, valueFrame));
                 break;

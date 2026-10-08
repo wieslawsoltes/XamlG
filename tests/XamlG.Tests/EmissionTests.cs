@@ -127,6 +127,22 @@ public sealed class EmissionTests
         Assert.True(session.Apply(0, new[] { new XamlPropertyUpdate(node.Key, "Title", "after") }).Applied); Assert.Equal("after", Property(root, "Title"));
     }
     [Fact]
+    public void SharedPropertyDispatchPreservesMemberTypesAndTargets()
+    {
+        using var code = CompiledXaml.Create("<Panel " + Namespaces + " Title='before' Count='1' Value='{x:Null}'><Item Text='child' Number='2'/></Panel>", Model);
+        var root = code.Build(); var child = ((IList)Property(root, "Children")!)[0]!;
+        Assert.True(XamlRuntimeSession.TryGet(root, out var session));
+        var rootKey = session!.FindNode(root)!.Key; var childKey = session.FindNode(child)!.Key;
+        Assert.False(session.Apply(0, new[] { new XamlPropertyUpdate(rootKey, "Count", "invalid") }).Applied);
+        Assert.True(session.Apply(0, new[] {
+            new XamlPropertyUpdate(rootKey, "Title", "after"), new XamlPropertyUpdate(rootKey, "Count", 3),
+            new XamlPropertyUpdate(rootKey, "Value", child), new XamlPropertyUpdate(childKey, "Text", null),
+            new XamlPropertyUpdate(childKey, "Number", 4)
+        }).Applied);
+        Assert.Equal("after", Property(root, "Title")); Assert.Equal(3, Property(root, "Count"));
+        Assert.Same(child, Property(root, "Value")); Assert.Null(Property(child, "Text")); Assert.Equal(4, Property(child, "Number"));
+    }
+    [Fact]
     public void SourceMetadataIsSharedWithoutSharingInstancesOrMutationState()
     {
         var xaml = "<Panel " + Namespaces + "><Item x:Name='named' Text='a:b😀'/></Panel>";

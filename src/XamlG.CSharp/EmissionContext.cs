@@ -11,6 +11,7 @@ internal sealed class EmissionContext
     private readonly Dictionary<ISymbol, string> _descriptors = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<IMethodSymbol, string> _initSetters = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<string, int> _sourceRecords = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (int Index, string Type, string Get, string Set)> _propertyAccessors = new(StringComparer.Ordinal);
     public EmissionContext(BoundDocument document, CancellationToken cancellation)
     { Document = document; Cancellation = cancellation; Diagnostics.AddRange(document.Diagnostics); Id = CSharpNames.StableId(document.Options.DocumentId ?? document.Syntax.Path); }
     public BoundDocument Document { get; }
@@ -55,8 +56,35 @@ internal sealed class EmissionContext
         { index = _sourceRecords.Count; _sourceRecords.Add(record, index); }
         return "__source_" + Id + "[" + index + "]";
     }
+    public string PropertyRegistration(ITypeSymbol value, string get, string set, string arguments)
+    {
+        var type = value.TypeKind == TypeKind.Dynamic ? "object" : value.CSharpName();
+        var key = type + "\0" + get + "\0" + set;
+        if (!_propertyAccessors.TryGetValue(key, out var accessor))
+        {
+            accessor = (_propertyAccessors.Count, type, get, set);
+            _propertyAccessors.Add(key, accessor);
+        }
+        return "__properties_" + Id + ".Register(" + arguments + ", " + accessor.Index + ");";
+    }
     public void EmitMetadataHelpers()
     {
+        if (_propertyAccessors.Count != 0)
+        {
+            var accessors = _propertyAccessors.Values.OrderBy(accessor => accessor.Index).ToArray();
+            Writer.Line("private static readonly global::XamlG.Runtime.XamlPropertyTable __properties_" + Id + " = new(new global::System.Type[] { " +
+                string.Join(", ", accessors.Select(accessor => "typeof(" + accessor.Type + ")")) + " }, __GetProperty_" + Id + ", __SetProperty_" + Id + ");");
+            Writer.Open("private static object? __GetProperty_" + Id + "(object __target, int __index)");
+            Writer.Open("switch (__index)");
+            foreach (var accessor in accessors) Writer.Line("case " + accessor.Index + ": return " + accessor.Get + ";");
+            Writer.Line("default: throw new global::System.ArgumentOutOfRangeException(nameof(__index));");
+            Writer.Close(); Writer.Close();
+            Writer.Open("private static void __SetProperty_" + Id + "(object __target, int __index, object? __value)");
+            Writer.Open("switch (__index)");
+            foreach (var accessor in accessors) Writer.Line("case " + accessor.Index + ": " + accessor.Set + "; return;");
+            Writer.Line("default: throw new global::System.ArgumentOutOfRangeException(nameof(__index));");
+            Writer.Close(); Writer.Close();
+        }
         if (_sourceRecords.Count != 0)
         {
             Writer.Line("private static readonly global::XamlG.Runtime.XamlSourceInfoTable __source_" + Id + " = new(" +
