@@ -58,14 +58,12 @@ internal sealed class ValueEmitter
                 return frame + ".ResolveName<" + (reference.Type?.CSharpName() ?? "object") + ">(" + CSharpNames.Literal(reference.Name) + ")";
             case BoundObjectExpression obj: return _objects.Emit(obj.Object, frame, null, null);
             case BoundArrayExpression array:
-                var arrayLocal = _context.Temporary("array");
-                _context.Writer.Line("var " + arrayLocal + " = " + ArrayCreation(array) + ";");
+                var arrayLocal = _context.Locals.Declare(array.ArrayType.CSharpName(), ArrayCreation(array), "array", inferred: true);
                 for (var index = 0; index < array.Values.Length; index++)
                     _context.Writer.Line(arrayLocal + "[" + index + "] = " + Emit(array.Values[index], frame) + ";");
                 return arrayLocal;
             case BoundCollectionExpression collection:
-                var collectionLocal = _context.Temporary("collection");
-                _context.Writer.Line("var " + collectionLocal + " = new " + collection.Constructor.ContainingType.CSharpName() + "();");
+                var collectionLocal = _context.Locals.Declare(collection.Constructor.ContainingType.CSharpName(), "new " + collection.Constructor.ContainingType.CSharpName() + "()", "collection", inferred: true);
                 if (collection.Capacity.SetMethod!.IsInitOnly)
                     _context.Writer.Line(_context.InitSetter(collection.Capacity.SetMethod) + "(" + collectionLocal + ", " + collection.Values.Length + ");");
                 else
@@ -80,8 +78,7 @@ internal sealed class ValueEmitter
             case BoundNewExpression creation:
                 var constructed = "new " + creation.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", EmitArguments(creation.Constructor, creation.Arguments, frame)) + ")";
                 if (creation.SuppressSourceInfo || creation.SourceInfoSpan is not { } sourceSpan || creation.Constructor.ContainingType.IsValueType || _context.Document.Runtime.SourceInfo == null) return constructed;
-                var located = _context.Temporary("literal");
-                _context.Writer.Line("var " + located + " = " + constructed + ";");
+                var located = _context.Locals.Declare(creation.Constructor.ContainingType.CSharpName(), constructed, "literal", inferred: true);
                 new SourceInfoEmitter(_context).EmitConstructed(located, sourceSpan);
                 return located;
             case BoundCallExpression call:
@@ -90,8 +87,7 @@ internal sealed class ValueEmitter
                 var receiver = call.Method.IsStatic ? call.Method.ContainingType.CSharpName() : call.Receiver == null ? _context.RootVariable : "(" + Emit(call.Receiver, frame) + ")";
                 if (!call.Method.IsStatic && call.Receiver != null && !call.Arguments.IsEmpty)
                 {
-                    var local = _context.Temporary("receiver");
-                    _context.Writer.Line((call.Receiver.Type ?? call.Method.ContainingType).CSharpName() + " " + local + " = " + receiver + ";");
+                    var local = _context.Locals.Declare((call.Receiver.Type ?? call.Method.ContainingType).CSharpName(), receiver, "receiver");
                     receiver = local;
                 }
                 return receiver + "." + CSharpNames.Method(call.Method) + "(" + string.Join(", ", EmitArguments(call.Method, call.Arguments, frame)) + ")";
@@ -122,8 +118,7 @@ internal sealed class ValueEmitter
 
     private string Convert(BoundExpression expression, INamedTypeSymbol converter, ITypeSymbol resultType, string frame, Func<string> value)
     {
-        var local = _context.Temporary("converter");
-        _context.Writer.Line("var " + local + " = new " + converter.CSharpName() + "();");
+        var local = _context.Locals.Declare(converter.CSharpName(), "new " + converter.CSharpName() + "()", "converter", inferred: true);
         if (!expression.SuppressSourceInfo && _context.Document.Runtime.SourceInfo != null)
             new SourceInfoEmitter(_context).EmitConstructed(local, expression.SourceInfoSpan ?? BoundSourceInfo.ValueLocation(_context.Document.Syntax, expression.Span));
         return "((" + resultType.CSharpName() + ")" + local + ".ConvertFrom(" + frame + ", " + CSharpNames.InvariantCulture + ", " + value() + ")!)";
@@ -135,8 +130,7 @@ internal sealed class ValueEmitter
         for (var index = 0; index < arguments.Length; index++)
         {
             var value = Emit(arguments[index], frame);
-            var local = _context.Temporary("argument");
-            _context.Writer.Line(method.Parameters[index].Type.CSharpName() + " " + local + " = " + value + ";");
+            var local = _context.Locals.Declare(method.Parameters[index].Type.CSharpName(), value, "argument");
             values[index] = local;
         }
         return values;

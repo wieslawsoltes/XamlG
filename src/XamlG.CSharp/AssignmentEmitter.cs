@@ -10,6 +10,7 @@ internal sealed class AssignmentEmitter
     public AssignmentEmitter(EmissionContext context, ObjectEmitter objects, ValueEmitter values) { _context = context; _objects = objects; _values = values; }
     public void Emit(BoundAssignment assignment, BoundObject owner, string target, string frame)
     {
+        using var temporaries = _context.Locals.EnterAssignment();
         if (BoundTraversal.Expressions(assignment).Any(BoundTraversal.ContainsReference))
         { _context.Writer.Open(frame + ".Defer(() =>"); EmitCore(assignment, owner, target, frame); _context.Writer.Close(");"); }
         else EmitCore(assignment, owner, target, frame);
@@ -26,8 +27,7 @@ internal sealed class AssignmentEmitter
                 {
                     if (set.RegisterName)
                     {
-                        var name = _context.Temporary("name");
-                        writer.Line("string " + name + " = ((string)(" + value + "))!;");
+                        var name = _context.Locals.Declare("string", "((string)(" + value + "))!", "name");
                         value = name;
                     }
                     Set(set.Member, owner.Type, target, value);
@@ -54,13 +54,12 @@ internal sealed class AssignmentEmitter
                 {
                     valueFrame = ForTarget(add.Collection, target, frame);
                     if (add.Alternatives.IsDefaultOrEmpty)
-                    { receiver = _context.Temporary("collection"); writer.Line("var " + receiver + " = " + Get(add.Collection, owner.Type, target) + ";"); }
+                    { receiver = _context.Locals.Declare(add.Collection.Getter!.ReturnType.CSharpName(), Get(add.Collection, owner.Type, target), "collection", inferred: true); }
                 }
                 var arguments = new List<string>();
                 for (var i = 0; i < add.Arguments.Length - 1; i++)
                 {
-                    var argument = _context.Temporary("argument");
-                    writer.Line(add.AddMethod.Parameters[i].Type.CSharpName() + " " + argument + " = " + _values.Emit(add.Arguments[i], valueFrame) + ";");
+                    var argument = _context.Locals.Declare(add.AddMethod.Parameters[i].Type.CSharpName(), _values.Emit(add.Arguments[i], valueFrame), "argument");
                     arguments.Add(argument);
                 }
                 var last = add.Arguments[add.Arguments.Length - 1];
@@ -68,8 +67,7 @@ internal sealed class AssignmentEmitter
                 {
                     if (add.PostCall != null)
                     {
-                        var local = _context.Temporary("item");
-                        writer.Line(add.AddMethod.Parameters[add.Arguments.Length - 1].Type.CSharpName() + " " + local + " = " + value + ";");
+                        var local = _context.Locals.Declare(add.AddMethod.Parameters[add.Arguments.Length - 1].Type.CSharpName(), value, "item");
                         value = local;
                     }
                     var inputs = string.Join(", ", arguments.Concat(new[] { value }).Select((input, index) =>
@@ -132,11 +130,11 @@ internal sealed class AssignmentEmitter
             // A framework descriptor may execute user code even when the value does not
             // consume target services. Retain its evaluation before evaluating the value.
             if (member.TargetDescriptor is { } expression)
-                _context.Writer.Line("object? " + _context.Temporary("descriptorValue") + " = " + _values.Emit(expression, parent) + ";");
+                _context.Locals.Declare("object?", _values.Emit(expression, parent), "descriptorValue");
             return parent;
         }
         var descriptor = member.TargetDescriptor == null ? _context.Descriptor(member) : _values.Emit(member.TargetDescriptor, parent);
-        var frame = _context.Temporary("target"); _context.Writer.Line("var " + frame + " = " + parent + ".ForTarget(" + target + ", " + descriptor + ");");
+        var frame = _context.Locals.Declare(CSharpNames.Context, parent + ".ForTarget(" + target + ", " + descriptor + ")", "target", inferred: true);
         _context.InheritFrameNamespaces(frame, parent); return frame;
     }
     internal static string Get(BoundMember member, ITypeSymbol targetType, string target) => member.Kind == BoundMemberKind.AttachedProperty ? member.Getter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Getter) + "(" + target + ")" : CSharpNames.MemberTarget(member.Symbol, targetType, target) + "." + CSharpNames.Identifier(member.Name);

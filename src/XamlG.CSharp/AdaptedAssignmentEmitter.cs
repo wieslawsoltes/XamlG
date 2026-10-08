@@ -9,8 +9,7 @@ internal sealed class AdaptedAssignmentEmitter(EmissionContext context, ValueEmi
         Action<BoundMember, string, string> set)
     {
         var writer = context.Writer;
-        var value = context.Temporary("adapted");
-        writer.Line("object? " + value + " = " + values.Emit(assignment.Value, valueFrame) + ";");
+        var value = context.Locals.Declare("object?", values.Emit(assignment.Value, valueFrame), "adapted");
         if (assignment.RuntimeDispatcher is { } dispatcher)
         {
             var descriptor = assignment.Member.TargetDescriptor == null

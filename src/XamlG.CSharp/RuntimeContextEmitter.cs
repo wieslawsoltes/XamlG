@@ -79,8 +79,7 @@ internal sealed class RuntimeContextEmitter
     {
         var map = _namespaces.GetMap(namespaces);
         if (map == "null" || _context.FrameNamespaces(parent) == map) return parent;
-        var frame = _context.Temporary("scope");
-        _context.Writer.Line("var " + frame + " = " + parent + ".WithNamespaces(" + map + ");");
+        var frame = _context.Locals.Declare(CSharpNames.Context, parent + ".WithNamespaces(" + map + ")", "scope", inferred: true);
         _context.SetFrameNamespaces(frame, map);
         return frame;
     }

@@ -27,14 +27,15 @@ internal sealed class ObjectEmitter
     public string ConstructRoot(BoundObject value, string parentContext) =>
         Construct(value, _runtime.Scope(parentContext, value.Scope), _context.RootVariable);
 
-    private string Construct(BoundObject value, string parentContext, string variable, bool track = true)
+    private string Construct(BoundObject value, string parentContext, string? variable, bool track = true)
     {
         var arguments = value.Arguments.IsDefaultOrEmpty ? Array.Empty<string>() :
             _values.EmitArguments(value.FactoryMethod ?? value.Constructor!, value.Arguments, parentContext);
         var creation = value.FactoryMethod != null
             ? value.FactoryMethod.ContainingType.CSharpName() + "." + CSharpNames.Method(value.FactoryMethod) + "(" + string.Join(", ", arguments) + ")"
             : "new " + value.Type.CSharpName() + "(" + string.Join(", ", arguments) + ")";
-        _context.Writer.Line("var " + variable + " = " + creation + ";");
+        if (variable == null) variable = _context.Locals.Declare((value.FactoryMethod?.ReturnType ?? value.Type).CSharpName(), creation, "object", inferred: true);
+        else _context.Writer.Line("var " + variable + " = " + creation + ";");
         if (track) _context.Writer.Line(parentContext + ".Session.TrackConstruction(" + variable + ");");
         _source.EmitConstructed(value, variable);
         return variable;
@@ -56,14 +57,11 @@ internal sealed class ObjectEmitter
         parentContext = _runtime.Scope(parentContext, value.Scope);
         if (existing == null && consume == null && initialize == null && _leaves.CanShare(value))
             return _leaves.Emit(value, parentContext);
-        var variable = existing ?? (value.IsRoot ? _context.RootVariable : _context.Temporary("object"));
         // Framework source-info setters can execute user code and must remain after
         // tracking but before node registration. Preserve that sequence when enabled.
         var trackWithFrame = existing == null && !value.IsRoot && _context.Document.Runtime.SourceInfo == null;
-        if (existing == null)
-            Construct(value, parentContext, variable, track: !trackWithFrame);
-        var frame = _context.Temporary("context");
-        writer.Line("var " + frame + " = " + parentContext + (value.IsRoot ? ".PushRoot(" : trackWithFrame ? ".PushConstructed(" : ".Push(") + variable + ", " + CSharpNames.Literal(value.Key) + ", " + _source.Get(value) + ");");
+        var variable = existing ?? Construct(value, parentContext, value.IsRoot ? _context.RootVariable : null, track: !trackWithFrame);
+        var frame = _context.Locals.Declare(CSharpNames.Context, parentContext + (value.IsRoot ? ".PushRoot(" : trackWithFrame ? ".PushConstructed(" : ".Push(") + variable + ", " + CSharpNames.Literal(value.Key) + ", " + _source.Get(value) + ")", "context", inferred: true);
         _context.InheritFrameNamespaces(frame, parentContext);
         if (value.Name != null)
         {

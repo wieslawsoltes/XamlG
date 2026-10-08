@@ -29,6 +29,8 @@ internal sealed class EmissionContext : IDisposable
     private DynamicAddEmitter? _dynamicAdds;
     public DynamicAddEmitter DynamicAdds => _dynamicAdds ??= new(this);
     public CSharpWriter Writer { get; } = new();
+    private TemporaryLocalPool? _locals;
+    public TemporaryLocalPool Locals => _locals ??= new(this);
     public List<XamlDiagnostic> Diagnostics { get; } = new();
     public List<XamlSourceMapping> Mappings { get; } = new();
     public string RootVariable { get; set; } = "__root";
@@ -60,7 +62,7 @@ internal sealed class EmissionContext : IDisposable
     public string? FrameNamespaces(string frame) => _frameNamespaces.TryGetValue(frame, out var map) ? map : null;
     public void SetFrameNamespaces(string frame, string map) => _frameNamespaces[frame] = map;
     public void InheritFrameNamespaces(string frame, string parent)
-    { if (FrameNamespaces(parent) is { } map) SetFrameNamespaces(frame, map); }
+    { if (FrameNamespaces(parent) is { } map) SetFrameNamespaces(frame, map); else _frameNamespaces.Remove(frame); }
     public void Map(TextSpan span, Action emit)
     {
         Cancellation.ThrowIfCancellationRequested();

@@ -26,10 +26,8 @@ internal sealed class LeafConstructionEmitter(EmissionContext context, ValueEmit
             _factories.Add(key, factory);
         }
         var arguments = values.EmitArguments(constructor, value.Arguments, frame);
-        var variable = context.Temporary("object");
-        context.Writer.Line("var " + variable + " = " + factory.Name + "(" + frame + ", " + CSharpNames.Literal(value.Key) +
-            ", " + source.Index(value) + (arguments.Length == 0 ? string.Empty : ", " + string.Join(", ", arguments)) + ");");
-        return variable;
+        return context.Locals.Declare(value.Type.CSharpName(), factory.Name + "(" + frame + ", " + CSharpNames.Literal(value.Key) +
+            ", " + source.Index(value) + (arguments.Length == 0 ? string.Empty : ", " + string.Join(", ", arguments)) + ")", "object", inferred: true);
     }
 
     public void EmitHelpers()
