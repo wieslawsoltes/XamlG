@@ -67,7 +67,10 @@ public sealed partial class AvaloniaRuntimeInspector
 
     public RuntimeInputResult SendPointer(string objectId, RuntimePointerAction action, long expectedRevision,
         double? x = null, double? y = null, string button = "Left", IReadOnlyList<string>? modifiers = null,
-        double deltaX = 0, double deltaY = 0, bool requireTargetHit = false)
+        double deltaX = 0, double deltaY = 0) => SendPointer(objectId, action, expectedRevision, x, y, button, modifiers, deltaX, deltaY, requireTargetHit: false);
+
+    private RuntimeInputResult SendPointer(string objectId, RuntimePointerAction action, long expectedRevision,
+        double? x, double? y, string button, IReadOnlyList<string>? modifiers, double deltaX, double deltaY, bool requireTargetHit)
     {
         if (!Enum.IsDefined(action) || !double.IsFinite(deltaX) || !double.IsFinite(deltaY) || Math.Abs(deltaX) > 10000 || Math.Abs(deltaY) > 10000)
             throw new ArgumentException("Invalid pointer action or wheel delta.");
@@ -122,7 +125,10 @@ public sealed partial class AvaloniaRuntimeInspector
     }
 
     public RuntimeInputResult SendTouch(string objectId, long contactId, RuntimeTouchAction action, double x, double y,
-        long expectedRevision, IReadOnlyList<string>? modifiers = null, bool requireTargetHit = false)
+        long expectedRevision, IReadOnlyList<string>? modifiers = null) => SendTouch(objectId, contactId, action, x, y, expectedRevision, modifiers, requireTargetHit: false);
+
+    private RuntimeInputResult SendTouch(string objectId, long contactId, RuntimeTouchAction action, double x, double y,
+        long expectedRevision, IReadOnlyList<string>? modifiers, bool requireTargetHit)
     {
         if (contactId is < 1 or > 1000000 || !Enum.IsDefined(action)) throw new ArgumentException("Invalid touch contact or action.");
         if (action == RuntimeTouchAction.Begin ? _touchContacts.Contains(contactId) || _touchContacts.Count >= 16 : !_touchContacts.Contains(contactId))

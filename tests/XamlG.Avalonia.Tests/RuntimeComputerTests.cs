@@ -218,6 +218,33 @@ public sealed class RuntimeComputerTests
         finally { window.Close(); }
     }
 
+    [AvaloniaTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Refreshed_gestures_require_releasing_previous_capture_and_can_reset_it_explicitly(bool touch)
+    {
+        var clock = new TextBlock { Text = "12:00" };
+        var button = new Button { Name = "target", Content = "Go" }; var clicks = 0;
+        button.Click += (_, _) => clicks++;
+        var root = new StackPanel { Children = { clock, button } }; var window = Show(root);
+        try
+        {
+            using var inspector = new AvaloniaRuntimeInspector(root);
+            var frame = inspector.ObserveComputer(new(Screenshot: false)).Observation;
+            var begin = new ComputerAction(touch ? ComputerActionKind.Touch : ComputerActionKind.Down, new(Name: "target"), ContactId: 1);
+            var end = new ComputerAction(touch ? ComputerActionKind.Touch : ComputerActionKind.Up, new(Name: "target"), ContactId: 1, TouchAction: RuntimeTouchAction.End);
+            var held = await inspector.ComputerActionsAsync(new(frame.FrameId, frame.Revision, [begin], Screenshot: false), TestContext.Current.CancellationToken);
+            Assert.Null(held.Error); frame = held.Capture.Observation; clock.Text = "12:01";
+            var rejection = await Assert.ThrowsAsync<InvalidOperationException>(() => inspector.ComputerActionsAsync(new(frame.FrameId, frame.Revision,
+                [begin, end], Screenshot: false, RefreshTargets: true), TestContext.Current.CancellationToken));
+            Assert.Contains("held input", rejection.Message); Assert.Equal(0, clicks);
+            var result = await inspector.ComputerActionsAsync(new(frame.FrameId, frame.Revision,
+                [new(ComputerActionKind.Reset), begin, end], Screenshot: false, RefreshTargets: true), TestContext.Current.CancellationToken);
+            Assert.Null(result.Error); Assert.Equal(3, result.Completed.Count); Assert.Equal(1, clicks); Assert.False(button.IsPressed);
+        }
+        finally { window.Close(); }
+    }
+
     private sealed class EqualDataContext
     {
         public override bool Equals(object? obj) => obj is EqualDataContext;
