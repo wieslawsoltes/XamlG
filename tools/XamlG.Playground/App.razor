@@ -250,7 +250,14 @@
     <main class="dockyard-workspace" aria-label="Docking workspace">
         <DockingManager @ref="_dock" Theme="@_theme" Ready="InitializeDockyardAsync" Changed="DockyardChangedAsync" Style="height:100%;width:100%" />
     </main>
-    <footer class="statusbar"><span><i class="@(_error == null ? "success-dot" : "error-dot")"></i>@_status</span><span>@Compiler.ReferenceCount references <span class="status-divider">│</span> UTF-16 <span class="status-divider">│</span> Roslyn · .NET 10</span></footer>
+    <footer class="statusbar">
+        <span><i class="@(_error == null ? "success-dot" : "error-dot")"></i><span class="status-message" title="@_status">@_status</span></span>
+        @if (_startupFailed)
+        {
+            <button class="startup-retry" @onclick="InitializeStudioAsync" disabled="@_initializing" data-testid="retry-startup">Retry loading</button>
+        }
+        <span>@Compiler.ReferenceCount references <span class="status-divider">│</span> UTF-16 <span class="status-divider">│</span> Roslyn · .NET 10</span>
+    </footer>
 </div>
 
 @if (_automationReview != null)

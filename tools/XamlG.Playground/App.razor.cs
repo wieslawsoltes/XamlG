@@ -32,35 +32,56 @@ public partial class App
     private bool _busy;
     private bool _previewShown;
     private bool _disposed;
+    private bool _initializing, _startupFailed;
+    private readonly CancellationTokenSource _startupCancellation = new();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         await ReconcileDockDocumentsAsync();
         await RevealDocumentBuffersAsync();
-        if (!firstRender) return;
+        if (firstRender) await InitializeStudioAsync();
+    }
+    private async Task InitializeStudioAsync()
+    {
+        if (_initializing || _ready || _disposed) return;
+        _initializing = true; _error = null;
+        var cancellationToken = _startupCancellation.Token;
+        _status = "Loading compiler metadata…";
+        StateHasChanged();
         try
         {
-            _module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
-            _shellHooks = await _module.InvokeAsync<IJSObjectReference>("installStudioShell");
+            _module ??= await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+            _shellHooks ??= await _module.InvokeAsync<IJSObjectReference>("installStudioShell");
             _theme = await _module.InvokeAsync<string>("loadTheme");
             await _module.InvokeVoidAsync("setTheme", _theme);
             await LoadLiveUpdatesAsync();
             await Compiler.InitializeAsync((current, total) =>
             {
+                if (_disposed) return;
                 _status = $"Loading compiler metadata · {current} / {total}";
                 _ = InvokeAsync(StateHasChanged);
-            });
+            }, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             await _module.InvokeVoidAsync("waitForElement", "avalonia-preview");
             await Preview.InitializeAsync("avalonia-preview", new Uri(Navigation.BaseUri));
-            _ready = true;
-            _automationReference = DotNetObjectReference.Create(this);
+            _automationReference ??= DotNetObjectReference.Create(this);
             await _module.InvokeVoidAsync("installAutomation", _automationReference);
+            cancellationToken.ThrowIfCancellationRequested();
+            _ready = true; _startupFailed = false;
             _status = "Ready · compile or run the project";
-            await CompileSnapshotAsync();
+            await CompileSnapshotAsync(captureEditors: true);
             await RefreshAutomaticPreviewAsync();
         }
-        catch (Exception error) { Report(error); }
-        if (!_disposed) StateHasChanged();
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            if (!_disposed)
+            {
+                Report(error); _startupFailed = !_ready;
+                if (_startupFailed) _status = "Could not finish loading Studio · check the connection and retry";
+            }
+        }
+        finally { _initializing = false; if (!_disposed) StateHasChanged(); }
     }
     private void UpdateXaml(string text)
     {
@@ -230,6 +251,8 @@ public partial class App
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+        _startupCancellation.Cancel();
+        _startupCancellation.Dispose();
         CancelAutomaticUpdate();
         RetireDocumentBuffers();
         if (_dockHooks != null) { await _dockHooks.InvokeVoidAsync("dispose"); await _dockHooks.DisposeAsync(); }

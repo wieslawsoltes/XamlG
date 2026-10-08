@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Net;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.CodeAnalysis;
@@ -48,7 +49,7 @@ public sealed class BrowserCompilerService(HttpClient http)
     public async Task InitializeAsync(Action<int, int>? progress = null, CancellationToken cancellationToken = default)
     {
         if (IsReady) return;
-        var manifest = await http.GetStringAsync("references/index.txt", cancellationToken);
+        var manifest = await ReadMetadataAsync("references/index.txt", (content, token) => content.ReadAsStringAsync(token), cancellationToken);
         var names = manifest.TrimStart('\uFEFF').Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.Ordinal).ToArray();
         if (names.Length is 0 or > 1024 || names.Any(n => !n.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || Path.GetFileName(n) != n || n.Contains('\\')))
             throw new InvalidDataException("The compiler metadata manifest is invalid.");
@@ -60,7 +61,7 @@ public sealed class BrowserCompilerService(HttpClient http)
             await throttle.WaitAsync(cancellationToken);
             try
             {
-                var bytes = await http.GetByteArrayAsync("references/" + Uri.EscapeDataString(name), cancellationToken);
+                var bytes = await ReadMetadataAsync("references/" + Uri.EscapeDataString(name), (content, token) => content.ReadAsByteArrayAsync(token), cancellationToken);
                 if (bytes.Length > 64 * 1024 * 1024) throw new InvalidDataException("A metadata image exceeds the configured size limit.");
                 references[index] = MetadataReference.CreateFromImage(ImmutableArray.Create(bytes), filePath: name);
                 progress?.Invoke(Interlocked.Increment(ref completed), names.Length);
@@ -69,6 +70,35 @@ public sealed class BrowserCompilerService(HttpClient http)
         }));
         _references = references.ToImmutableArray();
     }
+
+    // Only these idempotent, same-origin metadata downloads retry. Provider
+    // requests and IDE operations retain their independent recovery policies.
+    private async Task<T> ReadMetadataAsync<T>(string path, Func<HttpContent, CancellationToken, Task<T>> read, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            var delay = TimeSpan.FromMilliseconds(500 * (attempt + 1));
+            try
+            {
+                using var response = await http.GetAsync(path, cancellationToken);
+                if (response.IsSuccessStatusCode) return await read(response.Content, cancellationToken);
+                var retryAfter = response.Headers.RetryAfter?.Delta ??
+                    (response.Headers.RetryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : TimeSpan.Zero);
+                if (attempt >= 2 || !IsTransientMetadataStatus(response.StatusCode) || retryAfter > TimeSpan.FromSeconds(15))
+                    throw new HttpRequestException($"Could not download compiler metadata '{path}' (HTTP {(int)response.StatusCode}).", null, response.StatusCode);
+                if (retryAfter > delay) delay = retryAfter;
+            }
+            catch (HttpRequestException error) when (error.StatusCode == null && attempt < 2 && !cancellationToken.IsCancellationRequested)
+            {
+                // A transport failure before a usable response can also recover.
+            }
+            await Task.Delay(delay, cancellationToken);
+        }
+    }
+
+    private static bool IsTransientMetadataStatus(HttpStatusCode status) => status is
+        HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests or HttpStatusCode.InternalServerError or
+        HttpStatusCode.BadGateway or HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout;
 
     public BrowserCompilation Analyze(string xaml, string code, string framework = "Avalonia", CancellationToken cancellationToken = default) =>
         Analyze(XamlSyntaxTree.Parse(xaml, "View.axaml", cancellationToken), code, framework, cancellationToken);
