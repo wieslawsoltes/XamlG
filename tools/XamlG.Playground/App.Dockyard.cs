@@ -52,7 +52,7 @@ public partial class App
                     await _dock.Module.SetAsync(parent, tool.Side == "Bottom" ? "DockHeight" : "DockWidth", tool.Id == "explorer" ? 210 : tool.Id == "preview" ? 450 : 280);
                 }
             }
-            await using var module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+            await using var module = await JavaScript.InvokeAsync<IJSObjectReference>("xamlgBoot.importModule", "studio.js");
             await module.InvokeVoidAsync("activateDockContent", manager, "preview", true);
             await module.InvokeVoidAsync("activateDockContent", manager, "problems", true);
             await module.InvokeVoidAsync("activateDockContent", manager, DocumentId("View.axaml"), true);

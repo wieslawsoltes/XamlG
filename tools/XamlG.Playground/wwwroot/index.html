@@ -11,8 +11,28 @@
   <link rel="stylesheet" href="dockyard-studio.css" />
 </head>
 <body>
-  <div id="app"><div class="boot"><div class="brand-mark">X</div><h1>XamlG</h1><p>Loading the compiler studio…</p><progress></progress></div></div>
+  <div id="app"><div class="boot"><div class="brand-mark">X</div><h1>XamlG</h1><p id="boot-status" role="status">Loading the compiler studio…</p><progress></progress></div></div>
   <div id="blazor-error-ui">The studio encountered an error. <a href="">Reload the page</a><button class="dismiss" aria-label="Dismiss">×</button></div>
-  <script src="_framework/blazor.webassembly.js"></script>
+  <script type="module">
+    try {
+      let startup;
+      for (let attempt = 0; ; attempt++) {
+        const url = new URL('startup.js', document.baseURI);
+        if (attempt) url.searchParams.set('startup-retry', String(attempt));
+        try { startup = await import(url.href); break; }
+        catch (error) {
+          if (!(error instanceof TypeError) || attempt >= 2) throw error;
+          await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+        }
+      }
+      await startup.startStudio();
+    } catch (error) {
+      const status = document.getElementById('boot-status');
+      if (status) status.textContent = 'Could not load Studio. Check the connection and reload the page.';
+      document.querySelector('.boot progress')?.remove();
+      document.getElementById('blazor-error-ui').style.display = 'block';
+      console.error(error);
+    }
+  </script>
 </body>
 </html>

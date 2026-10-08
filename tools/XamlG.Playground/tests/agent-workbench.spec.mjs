@@ -198,7 +198,7 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await expect(review).toContainText('Saved queued follow-up');
     await expect(review.getByRole('button', { name: 'Confirm run', exact: true })).toBeDisabled();
     await expect(page.evaluate(async ({ taskId, queuedId }) => {
-      const studio = await import('./studio.js');
+      const studio = await window.xamlgBoot.importModule('studio.js');
       const state = await studio.agentRequest('state', {});
       const task = state.tasks.find(item => item.id === taskId);
       return studio.agentRequest('run', { id: taskId, message: null, options: { policy: { profile: 'fullAccess' } },
@@ -209,7 +209,7 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await agentSection(workbench, 'Queue');
     await workbench.getByRole('button', { name: 'Send selected message', exact: true }).click();
     await page.evaluate(async ({ taskId, queuedId }) => {
-      const studio = await import('./studio.js');
+      const studio = await window.xamlgBoot.importModule('studio.js');
       const state = await studio.agentRequest('state', {});
       const task = state.tasks.find(item => item.id === taskId);
       await studio.agentRequest('queue_edit', { id: taskId, messageId: queuedId, text: 'Reviewed after concurrent queue edit', expectedRevision: task.queue.revision });

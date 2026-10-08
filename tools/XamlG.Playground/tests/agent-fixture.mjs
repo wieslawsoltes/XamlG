@@ -7,7 +7,7 @@ import { openStudio } from './live-preview.mjs';
 
 const expect = baseExpect.configure({ timeout: 15000 });
 export const agentRequest = (page, action, args = {}) => page.evaluate(async ({ action, args }) =>
-  (await import('./studio.js')).agentRequest(action, args), { action, args });
+  (await window.xamlgBoot.importModule('studio.js')).agentRequest(action, args), { action, args });
 
 export function sendAgentEvent(response, event) {
   if (!response.headersSent) response.setHeader('Content-Type', 'text/event-stream');

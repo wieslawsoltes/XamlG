@@ -1,5 +1,5 @@
-import { installCSharpLanguage } from './csharp-language.js';
-import { SourceBuffer } from './source-buffer.js';
+const { installCSharpLanguage } = await (globalThis.xamlgBoot?.importModule('csharp-language.js') ?? import('./csharp-language.js'));
+const { SourceBuffer } = await (globalThis.xamlgBoot?.importModule('source-buffer.js') ?? import('./source-buffer.js'));
 let monacoPromise;
 const editors = new Map();
 let sequence = 0;

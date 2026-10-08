@@ -157,7 +157,7 @@ test('historical pages, expanded tools and reading positions survive late respon
       await reviewAgentRun(page, pane, 'History task public request.'); await completedTask(api, first);
       // Populate retained public history through real queue operations, without paying for more model turns.
       await page.evaluate(async id => {
-        const studio = await import('./studio.js');
+        const studio = await window.xamlgBoot.importModule('studio.js');
         let queue = await studio.agentRequest('queue', { id, text: 'Never sent queue message' });
         for (let i = 0; i < 125; i++) queue = await studio.agentRequest('queue_edit', { id, messageId: queue.messages[0].id,
           expectedRevision: queue.revision, text: `Never sent queue message ${i}` });

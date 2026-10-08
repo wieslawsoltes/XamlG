@@ -29,7 +29,7 @@ public sealed class EditorInteropModule(IJSRuntime javaScript) : IAsyncDisposabl
 
     private async Task<IJSObjectReference> ImportAsync()
     {
-        _sourceModule = await javaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+        _sourceModule = await javaScript.InvokeAsync<IJSObjectReference>("xamlgBoot.importModule", "studio.js");
         return await _sourceModule.InvokeAsync<IJSObjectReference>("createEditorInterop");
     }
 

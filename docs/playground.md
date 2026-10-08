@@ -19,6 +19,14 @@ attempts, with bounded backoff and `Retry-After` support. Permanent errors and s
 delays above 15 seconds stop automatic retries. If loading fails, **Retry loading**
 starts it again without reloading the page or discarding source edits.
 
+The initial browser runtime also limits parallel downloads and enables the .NET
+loader's bounded retry policy, including in isolated previews. Studio's JavaScript
+modules share a loader that retries failed downloads up to three times without
+creating separate editor or agent registries. A failure before the application
+starts shows **Reload the page**; compiler metadata failures after startup use
+**Retry loading** and preserve the active editor buffers. Runtime integrity checks
+and the isolated preview's credential and content-security restrictions still apply.
+
 ## Source, semantics and pixels
 
 The studio includes XAML/C# editors, compiler/generated-C# diagnostics, source mappings, syntax and typed-operation inspection, realized visual trees, property/structure editing, undo/redo, project drafts/export and responsive dark/light themes.

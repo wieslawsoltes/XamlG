@@ -52,7 +52,7 @@ public partial class AgentWorkbench
         }
         else if (_module != null) await _module.InvokeVoidAsync("releaseAgentViews", _ownerId);
         if (!firstRender) return;
-        _module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+        _module = await JavaScript.InvokeAsync<IJSObjectReference>("xamlgBoot.importModule", "studio.js");
         await LoadNumericPreferencesAsync();
         _reference = DotNetObjectReference.Create(this);
         _connectionMode = _rememberedConnectionMode ?? (await _module.InvokeAsync<bool>("agentConnected") ? "companion" : "direct");

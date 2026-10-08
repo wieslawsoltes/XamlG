@@ -1,6 +1,6 @@
 // Roslyn runs in this browser. Providers are registered once and resolve their owning
 // editor at invocation time, so docking/disposal cannot transfer a callback to a new file.
-import { SourceBuffer } from './source-buffer.js';
+const { SourceBuffer } = await (globalThis.xamlgBoot?.importModule('source-buffer.js') ?? import('./source-buffer.js'));
 let installed = false;
 export function installCSharpLanguage(monaco, editors) {
   if (installed) return;
