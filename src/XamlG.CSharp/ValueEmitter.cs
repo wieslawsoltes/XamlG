@@ -12,6 +12,19 @@ internal sealed class ValueEmitter
     private readonly ObjectEmitter _objects;
     public ValueEmitter(EmissionContext context, ObjectEmitter objects) { _context = context; _objects = objects; }
 
+    // Only expressions whose complete lowering is independent of target services may
+    // reuse the enclosing frame. Keep extension, object, deferred and custom IR conservative.
+    internal static bool UsesFrame(BoundExpression value) => value switch
+    {
+        BoundConstantExpression or BoundEnumExpression or BoundTypeExpression or BoundMethodHandleExpression or
+            BoundStaticExpression or BoundParseExpression => false,
+        BoundCastExpression cast => UsesFrame(cast.Value),
+        BoundNewExpression creation => creation.Arguments.Any(UsesFrame),
+        BoundArrayExpression array => array.Values.Any(UsesFrame),
+        BoundCollectionExpression collection => collection.Values.Any(UsesFrame),
+        _ => true
+    };
+
     public string Emit(BoundExpression value, string frame)
     {
         _context.Cancellation.ThrowIfCancellationRequested();

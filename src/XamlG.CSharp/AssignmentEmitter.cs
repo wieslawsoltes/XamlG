@@ -21,7 +21,7 @@ internal sealed class AssignmentEmitter
         {
             case BoundSetAssignment set:
             {
-                var valueFrame = ForTarget(set.Member, target, frame);
+                var valueFrame = ForTarget(set.Member, target, frame, ValueEmitter.UsesFrame(set.Value));
                 void Assign(string value)
                 {
                     if (set.RegisterName)
@@ -128,8 +128,16 @@ internal sealed class AssignmentEmitter
         _context.Writer.Line(helper + "(" + target + ", " + value + ");");
     }
 
-    private string ForTarget(BoundMember member, string target, string parent)
+    private string ForTarget(BoundMember member, string target, string parent, bool required = true)
     {
+        if (!required)
+        {
+            // A framework descriptor may execute user code even when the value does not
+            // consume target services. Retain its evaluation before evaluating the value.
+            if (member.TargetDescriptor is { } expression)
+                _context.Writer.Line("object? " + _context.Temporary("descriptorValue") + " = " + _values.Emit(expression, parent) + ";");
+            return parent;
+        }
         var descriptor = member.TargetDescriptor == null ? _context.Descriptor(member) : _values.Emit(member.TargetDescriptor, parent);
         var frame = _context.Temporary("target"); _context.Writer.Line("var " + frame + " = " + parent + ".ForTarget(" + target + ", " + descriptor + ");");
         _context.InheritFrameNamespaces(frame, parent); return frame;
