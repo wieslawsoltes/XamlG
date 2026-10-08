@@ -47,6 +47,7 @@ public static class AvaloniaFrameworkProfile
             },
             Runtime = new XamlRuntimeConfiguration
             {
+                UseTypeDescriptorStubs = true,
                 SourceInfo = createSourceInfo ? new("Avalonia.Markup.Xaml.Diagnostics.XamlSourceInfo", "SetXamlSourceInfo") : null,
                 RootServiceProviderFactory = new(AvaloniaMetadata.RuntimeHelpers, "CreateRootServiceProviderV3"),
                 InnerServiceProviderFactory = new(AvaloniaMetadata.RuntimeHelpers, "CreateInnerServiceProviderV1"),

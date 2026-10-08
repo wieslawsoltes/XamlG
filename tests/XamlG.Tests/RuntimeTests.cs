@@ -27,6 +27,26 @@ public sealed class RuntimeTests
         Assert.Equal(firstFrame.Parents.Reverse(), firstFrame.DirectParentsStack);
     }
     [Fact]
+    public void UriMutationIsSharedWithinConstructionButIsolatedAcrossDeferredScopes()
+    {
+        var original = new Uri("https://original.example/");
+        var updated = new Uri("https://updated.example/");
+        var deferredUri = new Uri("https://deferred.example/");
+        var context = new XamlRuntimeContext(baseUri: original);
+        var first = context.Push(new object(), "first").ForTarget(new object(), "Text");
+        var second = context.Push(new object(), "second");
+        first.BaseUri = updated;
+        Assert.Same(updated, second.BaseUri);
+        var deferred = second.CreateDeferredScope();
+        Assert.Same(updated, deferred.BaseUri);
+        deferred.ForTarget(new object(), "Text").BaseUri = deferredUri;
+        Assert.Same(deferredUri, deferred.BaseUri);
+        Assert.Same(updated, context.BaseUri);
+        first.BaseUri = null;
+        Assert.Null(second.BaseUri);
+        Assert.Same(deferredUri, deferred.BaseUri);
+    }
+    [Fact]
     public void ForwardNameFixupsRunAtCompletion()
     {
         var context = new XamlRuntimeContext(); var expected = new object(); object? actual = null;

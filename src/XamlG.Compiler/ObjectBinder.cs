@@ -17,9 +17,12 @@ public sealed class ObjectBinder
         var scope = parentScope.Push(syntax);
         var type = overrideType ?? _context.ResolveType(syntax.Name, scope, syntax.NameSpan, scope.Directive(syntax, "TypeArguments")?.Value);
         if (type == null) return null;
+        if (_context.Types.Configuration.MarkupExtensionSuffix is { Length: > 0 } suffix && type.Name.EndsWith(suffix, StringComparison.Ordinal) &&
+            _context.Types.MarkupExtensionMethod(type) == null)
+        { _context.Report("XG1009", $"'{type}' was resolved as a markup extension but has no supported provider method.", syntax.NameSpan); return null; }
         if (type.IsAbstract && !isRoot) { _context.Report("XG1006", $"Cannot instantiate abstract type '{type}'.", syntax.NameSpan); return null; }
-        if (_context.Types.GetDeclaredContentProperties(type).Length > 1)
-            _context.Report("XG1026", $"Type '{type}' declares more than one content property.", syntax.NameSpan);
+        if (_context.Types.GetContentPropertyError(type) is { } contentError)
+            _context.Report("XG1026", contentError, syntax.NameSpan);
         var nameAttribute = _context.Profile.NameDirectiveProperty == null ? scope.Directive(syntax, "Name") : null;
         var key = nameAttribute == null ? _context.NewObjectKey() : "s" + nameScope + ":" + nameAttribute.Value;
         var builder = new ObjectBindingBuilder(type, syntax, scope, key, isRoot, nameScope);

@@ -46,7 +46,7 @@ internal sealed class ObjectEmitter
             _source.EmitConstructed(value, variable);
         }
         var frame = _context.Temporary("context");
-        writer.Line("var " + frame + " = " + parentContext + ".Push(" + variable + ", " + CSharpNames.Literal(value.Key) + ");");
+        writer.Line("var " + frame + " = " + parentContext + (value.IsRoot ? ".PushRoot(" : ".Push(") + variable + ", " + CSharpNames.Literal(value.Key) + ");");
         _source.Emit(value, frame);
         if (value.Name != null)
         {
