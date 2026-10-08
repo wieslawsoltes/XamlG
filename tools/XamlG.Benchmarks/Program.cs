@@ -93,7 +93,7 @@ Console.WriteLine(JsonSerializer.Serialize(new
     operatingSystem = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
     architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
     samples, documentCount, controlsPerDocument,
-    allocationScope = "current thread",
+    allocationScope = "all process threads (includes concurrent document compilation)",
     correctness = "All generated documents compile; each measured invocation has no generator errors.",
     measurements
 }, new JsonSerializerOptions { WriteIndented = true }));
@@ -106,11 +106,11 @@ Measurement Measure<T>(string name, Func<T> action, Action<T> validate)
     for (var index = 0; index < samples; index++)
     {
         GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
-        var allocated = GC.GetAllocatedBytesForCurrentThread();
+        var allocated = GC.GetTotalAllocatedBytes(precise: true);
         var start = Stopwatch.GetTimestamp();
         var result = action();
         times[index] = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
-        allocations[index] = GC.GetAllocatedBytesForCurrentThread() - allocated;
+        allocations[index] = GC.GetTotalAllocatedBytes(precise: true) - allocated;
         validate(result);
     }
     Array.Sort(times); Array.Sort(allocations);
