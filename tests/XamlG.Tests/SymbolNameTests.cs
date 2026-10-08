@@ -67,4 +67,27 @@ public sealed class SymbolNameTests
             Assert.Null(second.Find("Before")); Assert.NotNull(second.Find("After"));
         }
     }
+
+    [Fact]
+    public void InitializationMetadataKeepsInheritanceOverridesAndFrameworkConfigurationsSeparate()
+    {
+        const string source = "[XamlG.Runtime.UsableDuringInitialization(true)] public class Base {} " +
+            "public class Inherited : Base {} [XamlG.Runtime.UsableDuringInitialization(false)] public class Disabled : Base {}";
+        var compilation = CompilationFactory.Create(source);
+        Assert.DoesNotContain(compilation.GetDiagnostics(), diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
+        var configured = new RoslynTypeSystem(compilation);
+        var unconfigured = new RoslynTypeSystem(compilation, new XamlTypeSystemConfiguration
+            { UsableDuringInitializationAttributes = [] });
+        var inherited = compilation.GetTypeByMetadataName("Inherited")!;
+        var disabled = compilation.GetTypeByMetadataName("Disabled")!;
+        Parallel.For(0, 64, _ =>
+        {
+            Assert.True(configured.IsUsableDuringInitialization(inherited));
+            Assert.False(configured.IsUsableDuringInitialization(disabled));
+            Assert.False(unconfigured.IsUsableDuringInitialization(inherited));
+        });
+        var replacement = new RoslynTypeSystem(CompilationFactory.Create("public class Base {} public class Inherited : Base {}"));
+        Assert.False(replacement.IsUsableDuringInitialization(replacement.Find("Inherited")!));
+        Assert.True(configured.IsUsableDuringInitialization(inherited));
+    }
 }

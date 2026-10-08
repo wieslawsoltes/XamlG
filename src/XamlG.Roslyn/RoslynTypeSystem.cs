@@ -15,6 +15,7 @@ public sealed class RoslynTypeSystem
     private readonly ConcurrentDictionary<INamedTypeSymbol, ImmutableArray<IPropertySymbol>> _declaredContentProperties = new(SymbolEqualityComparer.Default);
     private readonly ConcurrentDictionary<INamedTypeSymbol, IPropertySymbol?> _contentProperties = new(SymbolEqualityComparer.Default);
     private readonly ConcurrentDictionary<INamedTypeSymbol, string?> _contentErrors = new(SymbolEqualityComparer.Default);
+    private readonly ConcurrentDictionary<ITypeSymbol, bool> _usableDuringInitialization = new(SymbolEqualityComparer.Default);
     private readonly ImmutableArray<IAssemblySymbol> _assemblies;
     public RoslynTypeSystem(CSharpCompilation compilation, XamlTypeSystemConfiguration? configuration = null)
     {
@@ -132,7 +133,9 @@ public sealed class RoslynTypeSystem
         for (var current = type as INamedTypeSymbol; current != null; current = current.BaseType) if (current.HasAttribute(names)) return true;
         return false;
     }
-    public bool IsUsableDuringInitialization(ITypeSymbol type)
+    public bool IsUsableDuringInitialization(ITypeSymbol type) => _usableDuringInitialization.TryGetValue(type, out var usable)
+        ? usable : _usableDuringInitialization.GetOrAdd(type, ReadUsableDuringInitialization);
+    private bool ReadUsableDuringInitialization(ITypeSymbol type)
     {
         for (var current = type as INamedTypeSymbol; current != null; current = current.BaseType)
             foreach (var attribute in current.GetAttributes())
