@@ -11,12 +11,14 @@
   const boot = document.createElement('script');
   boot.src = new URL('_framework/blazor.webassembly.js', base).href;
   boot.setAttribute('autostart', 'false');
-  boot.onload = () => Blazor.start({
-    configureRuntime: dotnet => dotnet.withConfig({ maxParallelDownloads: 8, enableDownloadRetry: true }),
-    loadBootResource: (type, name, uri, integrity) => {
-    if (type === 'dotnetjs') return uri;
-    return fetch(uri, { credentials: 'omit', cache: 'no-store', integrity });
-  }}).catch(() => { document.getElementById('app').textContent = 'The isolated runtime could not be loaded. Reset the preview to try again.'; });
+  boot.onload = async () => {
+    try {
+      const { runtimeOptions } = await import(new URL('startup.js', base).href);
+      await Blazor.start(runtimeOptions(true));
+    } catch {
+      document.getElementById('app').textContent = 'The isolated runtime could not be loaded. Reset the preview to try again.';
+    }
+  };
   boot.onerror = () => { document.getElementById('app').textContent = 'The isolated runtime could not be loaded.'; };
   document.body.appendChild(boot);
 })();

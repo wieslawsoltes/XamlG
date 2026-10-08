@@ -61,7 +61,34 @@ async function loadBlazor() {
 export async function startStudio() {
   globalThis.xamlgBoot = { importModule };
   await Promise.all([loadBlazor(), importModule('studio.js')]);
-  await Blazor.start({
-    configureRuntime: dotnet => dotnet.withConfig({ maxParallelDownloads: 8, enableDownloadRetry: true })
-  });
+  await Blazor.start(runtimeOptions());
+}
+
+export function runtimeOptions(isolated = false) {
+  return {
+    // Retry inside the resource promise: the native retry path exposes failed
+    // intermediate fetch promises as unhandled browser errors. Keep one policy.
+    configureRuntime: dotnet => dotnet.withConfig({ maxParallelDownloads: 8, enableDownloadRetry: false }),
+    loadBootResource: (type, name, uri, integrity) => type === 'dotnetjs' ? uri : downloadResource(uri, {
+      credentials: isolated ? 'omit' : 'same-origin', cache: isolated ? 'no-store' : 'no-cache', integrity
+    })
+  };
+}
+
+async function downloadResource(uri, options) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await fetch(uri, options);
+      if (response.ok) return response;
+      await response.body?.cancel();
+      const error = new Error(`Could not download a runtime resource (HTTP ${response.status}).`);
+      error.retryable = [408, 429, 500, 502, 503, 504].includes(response.status);
+      throw error;
+    } catch (error) {
+      // Fetch rejects network and integrity failures with TypeError. Integrity
+      // remains browser-enforced on every attempt; invalid bytes never execute.
+      if (attempt >= 2 || !(error instanceof TypeError || error.retryable)) throw error;
+      await pause(attempt);
+    }
+  }
 }

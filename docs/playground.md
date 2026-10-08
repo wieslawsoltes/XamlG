@@ -19,8 +19,8 @@ attempts, with bounded backoff and `Retry-After` support. Permanent errors and s
 delays above 15 seconds stop automatic retries. If loading fails, **Retry loading**
 starts it again without reloading the page or discarding source edits.
 
-The initial browser runtime also limits parallel downloads and enables the .NET
-loader's bounded retry policy, including in isolated previews. Studio's JavaScript
+The initial browser runtime also limits parallel downloads and retries transient
+failures through its boot-resource hook, including in isolated previews. Studio's JavaScript
 modules share a loader that retries failed downloads up to three times without
 creating separate editor or agent registries. A failure before the application
 starts shows **Reload the page**; compiler metadata failures after startup use

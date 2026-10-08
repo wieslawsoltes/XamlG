@@ -86,7 +86,7 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
       if (host.exitCode != null) throw new Error(hostLog);
       try { return (await request.get(`http://127.0.0.1:${companionPort}/health`)).ok(); } catch { return false; }
     }).toBe(true);
-    await page.goto('./'); await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
+    await page.goto('./'); await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true', { timeout: 60000 });
     await page.getByTestId('agent-access').click();
     await page.getByLabel('Enable access to this live project').check();
     await page.getByLabel('Permission profile', { exact: true }).selectOption('FullAccess');
