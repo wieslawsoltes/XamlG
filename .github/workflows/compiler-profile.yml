@@ -1,0 +1,45 @@
+name: Compiler profiling
+on:
+  pull_request:
+    paths: ['src/**', 'samples/**', 'scripts/profile-controlcatalog.py', 'scripts/prepare-controlcatalog.py', 'tools/XamlG.TraceAnalysis/**', 'Directory.*', '.github/workflows/compiler-profile.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: compiler-profile-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.401
+            8.0.x
+      - name: Prepare pinned catalog sources and profiler
+        run: |
+          python3 scripts/prepare-controlcatalog.py
+          dotnet tool install dotnet-trace --tool-path artifacts/profile-tools --version 9.0.661903
+          dotnet build tools/XamlG.TraceAnalysis -c Release -p:NuGetAudit=false -warnaserror
+      - name: Profile generation, C# compilation and analysis for all three projects
+        run: python3 scripts/profile-controlcatalog.py --dotnet-trace artifacts/profile-tools/dotnet-trace
+      - name: Summarize allocations and garbage collection
+        if: ${{ !cancelled() }}
+        run: |
+          for project in Avalonia.Themes.Simple Avalonia.Themes.Fluent ControlCatalog; do
+            trace="artifacts/controlcatalog-profile/$project/compiler.nettrace"
+            if [ -f "$trace" ]; then
+              dotnet tools/XamlG.TraceAnalysis/bin/Release/net10.0/XamlG.TraceAnalysis.dll "$trace" > "artifacts/controlcatalog-profile/$project/gc.json"
+            fi
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compiler-profile
+          path: artifacts/controlcatalog-profile
+          retention-days: 14
