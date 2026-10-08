@@ -54,34 +54,55 @@ namespace ControlCatalog.Pages
         private readonly Stopwatch _clock = Stopwatch.StartNew();
         private bool _animating;
 
-        [GeneratedStyledProperty]
-        public partial IReadOnlyList<FluidNavItem> Items { get; set; }
+        public static readonly StyledProperty<IReadOnlyList<FluidNavItem>> ItemsProperty =
+            AvaloniaProperty.Register<FluidNavBar, IReadOnlyList<FluidNavItem>>(nameof(Items), Array.Empty<FluidNavItem>());
+
+        public IReadOnlyList<FluidNavItem> Items
+        {
+            get => GetValue(ItemsProperty);
+            set => SetValue(ItemsProperty, value);
+        }
 
         [GeneratedStyledProperty]
         public partial int SelectedIndex { get; set; }
 
-        [GeneratedStyledProperty]
-        public partial Color BarColor { get; set; }
+        public static readonly StyledProperty<Color> BarColorProperty =
+            AvaloniaProperty.Register<FluidNavBar, Color>(nameof(BarColor), Colors.White);
 
-        [GeneratedStyledProperty]
-        public partial Color ButtonColor { get; set; }
+        public Color BarColor
+        {
+            get => GetValue(BarColorProperty);
+            set => SetValue(BarColorProperty, value);
+        }
 
-        [GeneratedStyledProperty]
-        public partial Color ActiveIconColor { get; set; }
+        public static readonly StyledProperty<Color> ButtonColorProperty =
+            AvaloniaProperty.Register<FluidNavBar, Color>(nameof(ButtonColor), Colors.White);
 
-        [GeneratedStyledProperty]
-        public partial Color InactiveIconColor { get; set; }
+        public Color ButtonColor
+        {
+            get => GetValue(ButtonColorProperty);
+            set => SetValue(ButtonColorProperty, value);
+        }
+
+        public static readonly StyledProperty<Color> ActiveIconColorProperty =
+            AvaloniaProperty.Register<FluidNavBar, Color>(nameof(ActiveIconColor), Colors.Black);
+
+        public Color ActiveIconColor
+        {
+            get => GetValue(ActiveIconColorProperty);
+            set => SetValue(ActiveIconColorProperty, value);
+        }
+
+        public static readonly StyledProperty<Color> InactiveIconColorProperty =
+            AvaloniaProperty.Register<FluidNavBar, Color>(nameof(InactiveIconColor), Color.FromArgb(140, 120, 120, 120));
+
+        public Color InactiveIconColor
+        {
+            get => GetValue(InactiveIconColorProperty);
+            set => SetValue(InactiveIconColorProperty, value);
+        }
 
         public event EventHandler<int>? SelectionChanged;
-
-        static FluidNavBar()
-        {
-            ItemsProperty.OverrideDefaultValue<FluidNavBar>([]);
-            BarColorProperty.OverrideDefaultValue<FluidNavBar>(Colors.White);
-            ButtonColorProperty.OverrideDefaultValue<FluidNavBar>(Colors.White);
-            ActiveIconColorProperty.OverrideDefaultValue<FluidNavBar>(Colors.Black);
-            InactiveIconColorProperty.OverrideDefaultValue<FluidNavBar>(Color.FromArgb(140, 120, 120, 120));
-        }
 
         public FluidNavBar()
         {

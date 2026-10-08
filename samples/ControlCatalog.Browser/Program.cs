@@ -9,6 +9,7 @@ using Avalonia.Browser;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Logging;
+using Avalonia.Media;
 using Avalonia.Rendering;
 using Avalonia.Threading;
 using ControlCatalog;
@@ -79,7 +80,9 @@ internal partial class Program
     // }
     
     public static AppBuilder BuildAvaloniaApp()
-           => AppBuilder.Configure<App>();
+           => AppBuilder.Configure<App>()
+               .WithInterFont()
+               .With(new FontManagerOptions { DefaultFamilyName = "fonts:Inter#Inter" });
 
     private static BrowserPlatformOptions? ParseArgs(string[] args)
     {
