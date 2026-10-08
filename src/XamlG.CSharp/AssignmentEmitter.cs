@@ -131,7 +131,8 @@ internal sealed class AssignmentEmitter
     private string ForTarget(BoundMember member, string target, string parent)
     {
         var descriptor = member.TargetDescriptor == null ? _context.Descriptor(member) : _values.Emit(member.TargetDescriptor, parent);
-        var frame = _context.Temporary("target"); _context.Writer.Line("var " + frame + " = " + parent + ".ForTarget(" + target + ", " + descriptor + ");"); return frame;
+        var frame = _context.Temporary("target"); _context.Writer.Line("var " + frame + " = " + parent + ".ForTarget(" + target + ", " + descriptor + ");");
+        _context.InheritFrameNamespaces(frame, parent); return frame;
     }
     internal static string Get(BoundMember member, ITypeSymbol targetType, string target) => member.Kind == BoundMemberKind.AttachedProperty ? member.Getter!.ContainingType.CSharpName() + "." + CSharpNames.Method(member.Getter) + "(" + target + ")" : CSharpNames.MemberTarget(member.Symbol, targetType, target) + "." + CSharpNames.Identifier(member.Name);
     private string SetExpression(BoundMember member, ITypeSymbol targetType, string target, string value)

@@ -43,6 +43,7 @@ internal sealed class RuntimeContextEmitter
             ? "static __compiled => " + innerFactory.ContainingType.CSharpName() + "." + CSharpNames.Method(innerFactory) + "(__compiled)" : "null";
         var namespaces = _namespaces.GetMap(_context.Document.Root!.Scope);
         writer.Line("var " + variable + " = new " + CSharpNames.Context + "(" + outer + ", " + root + ", " + baseUri + ", " + services + ", " + inner + ", " + namespaces + ", useTypeDescriptorStubs: " + (_context.Document.Profile.Runtime.UseTypeDescriptorStubs ? "true" : "false") + ");");
+        _context.SetFrameNamespaces(variable, namespaces);
         InitializeNameScope(variable, outer);
     }
 
@@ -58,9 +59,10 @@ internal sealed class RuntimeContextEmitter
     public string Scope(string parent, NamespaceScope namespaces)
     {
         var map = _namespaces.GetMap(namespaces);
-        if (map == "null") return parent;
+        if (map == "null" || _context.FrameNamespaces(parent) == map) return parent;
         var frame = _context.Temporary("scope");
         _context.Writer.Line("var " + frame + " = " + parent + ".WithNamespaces(" + map + ");");
+        _context.SetFrameNamespaces(frame, map);
         return frame;
     }
 

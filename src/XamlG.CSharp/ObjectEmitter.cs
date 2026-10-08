@@ -43,6 +43,7 @@ internal sealed class ObjectEmitter
         else
         {
             _context.Writer.Line("var " + variable + " = " + parent + ".CreateDeferredScope(" + incoming + ");");
+            _context.InheritFrameNamespaces(variable, parent);
             _runtime.InitializeNameScope(variable, incoming);
         }
     }
@@ -55,6 +56,7 @@ internal sealed class ObjectEmitter
             Construct(value, parentContext, variable);
         var frame = _context.Temporary("context");
         writer.Line("var " + frame + " = " + parentContext + (value.IsRoot ? ".PushRoot(" : ".Push(") + variable + ", " + CSharpNames.Literal(value.Key) + ");");
+        _context.InheritFrameNamespaces(frame, parentContext);
         _source.Emit(value, frame);
         if (value.Name != null)
         {

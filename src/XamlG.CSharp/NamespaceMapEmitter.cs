@@ -10,17 +10,19 @@ internal sealed class NamespaceMapEmitter
 {
     private readonly EmissionContext _context;
     private readonly Dictionary<string, (string Name, NamespaceScope Scope)> _maps = new(StringComparer.Ordinal);
+    private readonly Dictionary<NamespaceScope, string> _scopeMaps = new();
 
     public NamespaceMapEmitter(EmissionContext context) => _context = context;
 
     public string GetMap(NamespaceScope scope)
     {
         if (!_context.Document.Runtime.Services.Any(s => s.Mapping.Kind == XamlServiceKind.XmlNamespaces)) return "null";
+        if (_scopeMaps.TryGetValue(scope, out var cached)) return cached;
         var key = string.Join("\n", scope.Bindings.Where(p => scope.DeclaredPrefixes.Contains(p.Key)).OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value));
-        if (_maps.TryGetValue(key, out var existing)) return existing.Name;
+        if (_maps.TryGetValue(key, out var existing)) return _scopeMaps[scope] = existing.Name;
         var name = "__namespaces_" + _context.Id + "_" + _maps.Count;
         _maps.Add(key, (name, scope));
-        return name;
+        return _scopeMaps[scope] = name;
     }
 
     public void Emit()

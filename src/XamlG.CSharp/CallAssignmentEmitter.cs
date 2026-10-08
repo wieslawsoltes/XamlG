@@ -20,6 +20,7 @@ internal sealed class CallAssignmentEmitter(EmissionContext context, ValueEmitte
             var local = context.Temporary("callTarget");
             writer.Line("var " + local + " = " + frame + ".ForTarget(" + target + ", " +
                 values.Emit(assignment.TargetDescriptor, frame) + ");");
+            context.InheritFrameNamespaces(local, frame);
             frame = local;
         }
         var arguments = new List<string>();
