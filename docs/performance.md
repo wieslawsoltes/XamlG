@@ -13,6 +13,22 @@ Scenarios cover a fresh Roslyn compilation and driver, a fresh driver over an ex
 
 For the complete ControlCatalog and Simple/Fluent theme comparison against XamlX, use [the project compilation benchmark](controlcatalog.md#compilation-benchmark). Its target includes the cost of compiling generated C#; the microbenchmark in this document excludes that cost.
 
+## Profiling the complete compiler
+
+`scripts/profile-controlcatalog.py` captures the real Csc invocation for Simple, Fluent and ControlCatalog, runs it in fresh processes with every generator and analyzer retained, and then collects a separate EventPipe trace. Prepare the pinned sources with `scripts/prepare-controlcatalog.py` first. Install `dotnet-trace` 9 or later; the validated version is 9.0.661903.
+
+```sh
+dotnet tool install dotnet-trace --tool-path artifacts/profile-tools --version 9.0.661903
+python3 scripts/profile-controlcatalog.py --dotnet-trace artifacts/profile-tools/dotnet-trace
+dotnet build tools/XamlG.TraceAnalysis -c Release -warnaserror
+dotnet tools/XamlG.TraceAnalysis/bin/Release/net10.0/XamlG.TraceAnalysis.dll \
+  artifacts/controlcatalog-profile/Avalonia.Themes.Simple/compiler.nettrace
+```
+
+Use `--dotnet`, `--projects`, `--iterations` and `--output` to select the SDK, workload and an empty output directory. The default is three unprofiled Csc runs per project. `--skip-prepare` requires already restored and built dependencies for the current revision. The tool retains the actual assembly name, response file, generated C#, analyzer reports, process CPU/wall measurements, managed stack summaries, Speedscope profiles and allocation/GC traces. No analyzer is disabled. It records any tracked changes; use a clean committed revision for published comparisons.
+
+The sampled managed thread-time profile includes waits and GC, sums concurrent threads and has overlapping inclusive frames. It is not an on-CPU profile. Allocation ticks estimate allocated bytes and attribute each interval to the sampled type; they do not count every allocation. Trace timings include profiling overhead. The unprofiled Csc runs include generation, generated C# compilation and analysis, but exclude MSBuild. Use the separate XamlX benchmark for the accepted added-XAML-cost metric and report full rebuild time alongside it.
+
 ## Compilation-scoped metadata caching
 
 The compatibility review found repeated scans for provider methods and declared/inherited content properties, including negative lookups for ordinary controls. The type system now retains these immutable results within one Roslyn compilation and framework configuration. Generator environment creation also no longer constructs an unused second type system. Changing the C# compilation creates a new environment; the generator regression checks provider removal and restoration after cached positive and negative results.
