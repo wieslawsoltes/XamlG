@@ -6,24 +6,24 @@ Roslyn-reported generation time and captured-C# compilation are reported
 separately. The target is **not met**. See [measurement methodology](performance.md)
 and [PR #14](https://github.com/wieslawsoltes/XamlG/pull/14) for current results.
 
-The [CI checkpoint for `c504074`](https://github.com/wieslawsoltes/XamlG/actions/runs/37927420677)
+The [latest completed CI acceptance checkpoint, `8cae121`](https://github.com/wieslawsoltes/XamlG/actions/runs/37937829548)
 uses three forced Release rebuilds per compiler/project with SDK 10.0.401 and
 normal analyzers. Complete catalog validation passes, including the trimmed
 browser host, but the performance target fails for all three projects:
 
 | Project | XamlX added cost | XamlG added cost | G/X added cost | Required XamlG cost |
 | --- | ---: | ---: | ---: | ---: |
-| Simple | 2.796s | 7.373s | 2.64× | ≤1.398s |
-| Fluent | 3.887s | 11.853s | 3.05× | ≤1.944s |
-| ControlCatalog | 8.448s | 17.639s | 2.09× | ≤4.224s |
+| Simple | 1.496s | 3.337s | 2.23× | ≤0.748s |
+| Fluent | 2.171s | 5.268s | 2.43× | ≤1.086s |
+| ControlCatalog | 4.860s | 9.119s | 1.88× | ≤2.430s |
 
-The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37927420454)
-reports generation at 1.207/1.599/2.958 seconds and captured-C# compilation at
-4.806/7.053/14.587 seconds for Simple/Fluent/ControlCatalog. These use a different
+The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37937829665)
+reports generation at 1.444/1.863/3.548 seconds and captured-C# compilation at
+5.800/8.906/16.074 seconds for Simple/Fluent/ControlCatalog. These use a different
 runner and are not additive phase costs. Compilation and analysis of the
 generated program remain the larger cost. Both runs use PR merge checkout
-`cd5c83c51b6e42ca69c606c8ab351826a81da2a8`; all 390 XamlG-generated source hashes
-match the local `c504074` snapshot. The local experiments below use
+`09dba3096a5707bc2f29279e2c8ce756774ca4f1`; all 390 XamlG-generated source hashes
+match the local `8cae121` implementation. The local experiments below use
 separately identified snapshots and do not establish the acceptance target.
 
 ## Structural findings
@@ -892,3 +892,137 @@ processors, normal analyzers and no overlapping owned builds/tests. Host load
 varied. The prototype was rejected; no runtime or full-host validation was
 claimed. Sources, DLLs, provenance and raw results are archived in
 `collection-shape-generator/` and `collection-shape-phases/`.
+
+
+### Shared typed property assignments
+
+Implementation `8cae121` extends shared property operations to values that require
+construction, enum/static references, services, user conversions or other
+non-scalar expressions. The caller still evaluates the descriptor and value in
+the original position. An ordinary typed helper performs the selected CLR setter
+and registers its editing accessor. Its parameter has exactly the property's
+type, retaining C# assignment conversions, including constant narrowing and
+nullable wrapping. Child construction and early/late consumption retain the
+original emitter path.
+
+Only accessible instance properties with ordinary matching getters/setters are
+shared. Names, init-only and custom setters, dynamic values and private accessors
+keep their existing path. Complete helper bodies participate in shared-table
+identity so edits and helper-owner removal invalidate dependent emissions.
+There is no interpreter, instruction stream, delegate factory or runtime member
+lookup in this path.
+
+| Project | Generated C# bytes before → after | IL bytes before → after | Helpers / call sites |
+| --- | ---: | ---: | ---: |
+| Simple | 6,914,186 → 6,793,938 | 572,351 → 538,053 | 40 / 3,183 |
+| Fluent | 10,426,442 → 10,234,711 | 845,612 → 791,600 | 42 / 4,984 |
+| ControlCatalog | 23,009,668 → 22,478,903 | 2,611,729 → 2,450,013 | 142 / 14,556 |
+
+The total reduction is 842,744 C# bytes and 250,026 IL bytes (6.2%). IL counts
+cover complete assemblies, including handwritten code. Local-slot and exception
+region counts are unchanged; method counts increase by the helper counts. All
+390 generated files compile, with zero remaining runtime `Parse` call sites.
+
+Three alternating fresh real-Csc pairs compare the frozen b2a16a6 generator and
+the typed-setter candidate. SDK 10.0.401, macOS ARM64, two reported processors
+and normal analyzers match the preceding local protocol. Owned builds/tests do
+not overlap timings; other host load varies. Baseline source hashes match the
+previous construction-helper snapshot exactly.
+
+| Project | Generation before → after | Full Csc CPU before → after | Captured C# CPU before → after |
+| --- | ---: | ---: | ---: |
+| Simple | 1.390s → 1.221s | 11.491s → 11.688s | 7.460s → 8.838s |
+| Fluent | 1.194s → 1.284s | 12.770s → 14.551s | 13.087s → 12.893s |
+| ControlCatalog | 2.628s → 3.058s | 27.806s → 27.356s | 27.431s → 20.557s |
+
+Full-Csc wall medians are 6.766→5.471, 6.316→7.204 and 11.971→11.865 seconds;
+captured-C# wall medians are 3.021→3.589, 4.230→4.668 and 12.113→7.693 seconds.
+Catalog captured CPU improves about 25%, but full CPU improves only about 2%.
+Simple captured CPU and Fluent full CPU increase. Generation increases in Fluent
+and the catalog. **These mixed results establish a source/IL reduction, not an
+overall compiler speedup or a pass against XamlX.** Captured compilation and
+Roslyn generator timing remain independent, nonadditive measurements.
+
+All 2,446 native tests pass with warnings treated as errors and no failures or
+skips: 486 core, 1,525 Avalonia, 169 tooling, 94 language-server, 158 automation
+and 14 workspace cases. The 34 added cases exercise evaluation order, descriptor,
+conversion/constructor/setter failures, virtual dispatch, boxing, constant
+narrowing, enums, nullable values, dynamic fallback, target services, early/late
+consumption, cleanup, live editing and incremental helper-layout/ownership
+changes. The executable public-parser inventory remains green.
+
+The 14 pinned-source tests also pass, including the parser inventory against the
+newer FlexBasis/font-variation APIs. All 1,188 cases pass on each of headless,
+actual desktop and trimmed browser hosts. Both desktop build and browser
+publication pass with warnings treated as errors and normal analysis. A fresh
+capture using the post-commit generator verifies that all 390 generated source
+hashes are identical to the measured candidate; DLL hashes change because builds
+embed the new commit in AssemblyInformationalVersion.
+
+Three fresh alternating runtime pairs compare the actual before/after assemblies,
+using one cold bundle, 30 warmups and five blocks of 30 bundles. Every root session
+is disposed. With default tiered compilation:
+
+| Runtime workload | Cold CPU before → after | Warm CPU/bundle before → after | Cold bytes before → after | Warm bytes/bundle, both |
+| --- | ---: | ---: | ---: | ---: |
+| Three catalog pages | 29.602ms → 32.857ms | 0.2239ms → 0.2287ms | 334,112 → 334,112 | 142,515 |
+| Fluent construction | 60.920ms → 62.431ms | 1.7713ms → 1.9431ms | 1,891,880 → 1,891,880 | 771,492 |
+| Fluent plus eight resources | 67.832ms → 69.886ms | 2.1310ms → 2.0626ms | 1,985,848 → 1,998,184 | 813,089 |
+
+A separate controlled run disables tiered compilation, preserving the same
+protocol and fresh processes:
+
+| Runtime workload | Cold CPU before → after | Warm CPU/bundle before → after | Cold bytes before → after | Warm bytes/bundle, both |
+| --- | ---: | ---: | ---: | ---: |
+| Three catalog pages | 101.385ms → 105.005ms | 0.0833ms → 0.0929ms | 383,184 → 383,184 | 142,491 |
+| Fluent construction | 221.597ms → 204.885ms | 1.4615ms → 1.4842ms | 1,891,904 → 1,904,240 | 771,492 |
+| Fluent plus eight resources | 184.756ms → 234.376ms | 1.3554ms → 1.2889ms | 1,998,216 → 1,998,216 | 813,089 |
+
+Warm allocations remain identical in all scenarios/configurations. Cold
+allocations vary by a fixed 12,336 bytes in some runs: in the controlled Fluent
+construction run this occurs in one of three baseline processes and two of three
+candidate processes; in default resource resolution it occurs in two candidate
+processes. These medians do not establish a consistent per-build allocation
+increase or identify its cause. Runtime CPU is mixed, including slower warm
+catalog/Fluent construction and slower controlled cold resource resolution.
+The results do not establish a runtime speedup. Raw results and rebuildable
+probes are in `property-assignment-runtime-probe/` and
+`property-assignment-runtime-optimized/`.
+
+Reproducible sources, frozen generator assemblies, raw compiler logs, source
+hashes and phase summaries are retained in `property-assignment-generator/` and
+`property-assignment-phases/` under `artifacts/controlcatalog-performance/`.
+
+
+The completed [8cae121 CI catalog run](https://github.com/wieslawsoltes/XamlG/actions/runs/37937829548)
+passes the same complete catalog validation and reports the following acceptance
+measurements on Linux x64, SDK 10.0.401, clean merge checkout
+`09dba3096a5707bc2f29279e2c8ce756774ca4f1`:
+
+| Project | XamlX / XamlG rebuild | XamlX / XamlG compiler tasks | Common C# | XamlX / XamlG added cost | G/X added cost |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Simple | 4.478s / 6.760s | 2.660s / 4.477s | 1.140s | 1.496s / 3.337s | 2.23× |
+| Fluent | 5.342s / 8.786s | 3.453s / 6.543s | 1.275s | 2.171s / 5.268s | 2.43× |
+| ControlCatalog | 10.275s / 14.955s | 8.078s / 12.372s | 3.253s | 4.860s / 9.119s | 1.88× |
+
+The 2× target still fails for all three projects. Compiler-task totals are
+medians of per-run sums; individual stage medians and added-cost differences are
+computed separately and need not sum to those totals. These are three sequential
+forced Release rebuilds per compiler/project, with normal analyzers, dependencies
+prebuilt, one MSBuild worker and fresh compiler processes. CI runners differ
+between revisions, so comparison with older CI runs is not a paired experiment.
+
+The independent [8cae121 compiler profile](https://github.com/wieslawsoltes/XamlG/actions/runs/37937829665)
+confirms all 390 generated source hashes against the local measured candidate.
+Generation/full-Csc/captured-C# wall medians are 1.444/7.517/5.800 seconds for
+Simple, 1.863/10.639/8.906 for Fluent and 3.548/19.172/16.074 for the catalog.
+These remain independent, nonadditive measurements. Catalog allocation sampling
+estimates 2.10 GB over the profiled compiler process, with no lost events.
+Nearest XamlG-frame attribution includes 130.8 MB below migration-analyzer
+compilation start, 80.4 MB below CSharpWriter.Line, 57.4 MB below ToString,
+19.3 MB below object traversal, 19.2 MB below temporary declaration and 18.4 MB
+below assignment-expression traversal. Attribution includes allocations in called
+Roslyn/runtime code; it does not mean the analyzer itself allocates 130.8 MB.
+Managed thread-time samples include waits/GC and are not on-CPU timings.
+Raw CI artifacts and source verification are in `ci-8cae121-catalog/` and
+`ci-8cae121-profile/`.

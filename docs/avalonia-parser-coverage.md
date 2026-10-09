@@ -104,6 +104,13 @@ separately; parser coverage is not evidence that the 2× compilation target is m
 
 ## Validation checkpoint
 
+The inventory remains green at `8cae121`: all 2,446 native tests and 14
+pinned-source tests pass, together with all 1,188 catalog cases on each of the
+headless, actual desktop and trimmed browser hosts. All 390 generated workload
+files contain zero runtime `Parse` call sites. Independent CI source captures
+match the locally measured generated files byte for byte. The generation and
+compilation measurements remain separate; the 2× XamlX target is still unmet.
+
 At implementation `49fce1a`, all 2,385 native tests pass with warnings treated as
 errors: 425 core, 1,525 Avalonia, 169 tooling, 94 language-server, 158 automation
 and 14 workspace tests. No tests failed or were skipped.
