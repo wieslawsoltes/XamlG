@@ -104,6 +104,12 @@ separately; parser coverage is not evidence that the 2× compilation target is m
 
 ## Validation checkpoint
 
+At `ee13421`, all 2,452 native tests, 14 pinned-source tests and 1,188 cases on
+each of the headless, actual desktop and trimmed browser hosts pass. The parser
+inventory still covers 49 public parser types, and all 390 captured workload
+files compile with zero runtime `Parse` call sites. The local-lifetime change
+reduces catalog source and IL; it does not establish the 2× XamlX target.
+
 The inventory remains green at `8cae121`: all 2,446 native tests and 14
 pinned-source tests pass, together with all 1,188 catalog cases on each of the
 headless, actual desktop and trimmed browser hosts. All 390 generated workload

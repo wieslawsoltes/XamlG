@@ -6,7 +6,7 @@ Roslyn-reported generation time and captured-C# compilation are reported
 separately. The target is **not met**. See [measurement methodology](performance.md)
 and [PR #14](https://github.com/wieslawsoltes/XamlG/pull/14) for current results.
 
-The [latest completed CI acceptance checkpoint, `8cae121`](https://github.com/wieslawsoltes/XamlG/actions/runs/37937829548)
+The [previously verified CI acceptance checkpoint, `8cae121`](https://github.com/wieslawsoltes/XamlG/actions/runs/37937829548)
 uses three forced Release rebuilds per compiler/project with SDK 10.0.401 and
 normal analyzers. Complete catalog validation passes, including the trimmed
 browser host, but the performance target fails for all three projects:
@@ -26,6 +26,14 @@ generated program remain the larger cost. Both runs use PR merge checkout
 match the local `8cae121` implementation. The local experiments below use
 separately identified snapshots and do not establish the acceptance target.
 
+The newest local round, `ee13421`, narrows the temporary-local lifetime guard to
+individual assignments and fixes collection-descriptor captures. Together with
+`c4f9243`, it also completes nested name-reference fixups before attaching the
+runtime session. [The measurements below](#assignment-lifetime-analysis) show
+smaller catalog source/IL and lower catalog compiler CPU in three alternating
+pairs. Theme output is unchanged and timings remain mixed. Independent CI
+acceptance for this revision is pending; the 2× target is not established.
+
 ## Structural findings
 
 The comparison uses Avalonia `a9429a328057befa287ffb5e981f58b86a86eda0` and its
@@ -34,7 +42,7 @@ XamlX submodule `d7e37ca63dc9b13cdc95ca165938d4904fa0eddf`.
 | Finding | Direct C# implementation |
 | --- | --- |
 | XamlX's `NewObjectEmitter` evaluates arguments directly on the IL stack. | Emit exact scalar literals directly. Keep typed temporaries for other arguments to preserve overload selection and conversion timing. A broader expression-suffix trial reduced source but did not consistently improve compilation. |
-| XamlX pools typed temporary locals. | Reuse a typed local after its assignment lifetime ends, within its declaration scope. Exclude closure-sensitive and custom raw-code documents. |
+| XamlX pools typed temporary locals. | Reuse a typed local after its assignment lifetime ends, within its declaration scope. Protect assignments containing captures and their ancestors; retain the document-wide fallback for custom raw code. |
 | Context setup is shared in the IL backend. | Share generated context creation, namescope initialization and completion, with fresh instances and document-specific namespace data. |
 | Resource aliases repeat the same small construction and deferred-lifetime body. | Share ordinary typed construction and deferred markup helpers; pass each occurrence's constants, node key and source index. Preserve initialization, services, editing registration and failure cleanup. |
 | Avalonia's color intrinsic evaluates its public parser during compilation and emits a packed value. | Use the copied, private color parser in the generator; emit `Color.FromUInt32` or a fresh brush constructor with numeric arguments. HSL/HSV literals use numeric constructors. |
@@ -1026,3 +1034,95 @@ Roslyn/runtime code; it does not mean the analyzer itself allocates 130.8 MB.
 Managed thread-time samples include waits/GC and are not on-CPU timings.
 Raw CI artifacts and source verification are in `ci-8cae121-catalog/` and
 `ci-8cae121-profile/`.
+
+
+## Assignment lifetime analysis
+
+At `ee13421`, a capture no longer disables temporary reuse for the entire
+XAML document. An emission-local analysis propagates capture hazards through
+containing assignments and objects. Safe siblings reuse locals of the same type
+within their declaration scope. Events, reference fixups, nonstatic lambdas,
+captured deferred factories and value-type property closures retain their
+variables. Trusted raw code retains the document-wide fallback. The analysis
+uses reference identity, avoiding structural hashing of bound record subtrees.
+
+The descriptor scan now includes collection and event descriptors. A regression
+with a collection descriptor that retains its owner frame fails in both single-
+document and project compilation against the old guard: the first child observes
+the last child's parent. Both cases pass with the new analysis. Mixed-sibling
+cases additionally exercise retained providers, references, event cleanup and
+live property updates, and compare local-slot counts against the raw-code guard.
+
+The separate runtime fix in `c4f9243` drains nested deferred assignments before
+publishing the root session. Constructing a deferred child can enqueue another
+reference assignment; the old single batch silently left it pending. New tests
+check FIFO completion across batches, exactly-once execution, later additions,
+and propagation of nested failures without attaching an incomplete root. Both
+new tests fail against the old runtime and pass against the fix.
+
+Three alternating fresh real-Csc pairs compare the frozen `8cae121` generator
+with the assignment-lifetime implementation, using SDK 10.0.401, macOS ARM64,
+two reported processors and normal analyzers. Both variants reference the same
+current pinned runtime, including the nested-reference fix. Owned builds,
+validation runs and runtime probes do not overlap compiler timings.
+
+| Project | Generation before → after | Full Csc CPU before → after | Captured C# CPU before → after |
+| --- | ---: | ---: | ---: |
+| Simple | 0.891s → 0.829s | 9.118s → 7.691s | 7.176s → 8.155s |
+| Fluent | 1.456s → 1.492s | 15.379s → 16.394s | 12.368s → 12.160s |
+| ControlCatalog | 2.447s → 2.292s | 28.146s → 24.374s | 24.412s → 22.757s |
+
+Full-Csc wall medians are 3.702→3.682, 6.976→6.974 and 11.521→9.563 seconds;
+captured-C# wall medians are 2.852→3.584, 4.457→4.828 and 11.096→10.062
+seconds. Generation is Roslyn-reported elapsed time; CPU is user plus system
+time. Captured compilation retains other generators and analyzers. These
+independent phases are nonadditive. Catalog full-Csc CPU is 13.4% lower and
+captured-C# CPU 6.8% lower in this comparison. The theme results are mixed,
+including variation when compiling identical captured source. These local
+measurements do not establish an overall speedup or the XamlX acceptance target.
+
+| Project | Generated C# bytes before → after | Local slots before → after | IL bytes before → after |
+| --- | ---: | ---: | ---: |
+| Simple | 6,793,938 → 6,793,938 | 7,919 → 7,919 | 538,053 → 538,053 |
+| Fluent | 10,234,711 → 10,234,711 | 11,404 → 11,404 | 791,600 → 791,600 |
+| ControlCatalog | 22,478,903 → 22,240,442 | 43,121 → 30,363 | 2,450,013 → 2,376,340 |
+
+All 170 theme files are byte-identical; 104 of 220 catalog files change. The
+catalog saves 238,461 source bytes, 12,758 local slots (29.6%) and 73,673 IL bytes
+(3.0%). Method and exception-region counts remain unchanged in all three
+assemblies. Counts cover complete assemblies, including handwritten C#.
+
+The default-tiering runtime probe uses three alternating fresh-process pairs
+per scenario, one cold construction bundle, 30 warmups and five blocks of 30
+bundles. Every root session is disposed, and the resource scenario checks all
+eight requested resources on every build.
+
+| Scenario | Cold CPU ms before → after | Warm CPU ms/bundle before → after | Cold allocated bytes, both | Warm allocated bytes/bundle, both |
+| --- | ---: | ---: | ---: | ---: |
+| Three catalog pages | 55.469 → 42.530 | 0.288233 → 0.268233 | 334,104 | 142,515 |
+| Fluent construction | 71.619 → 73.759 | 1.983500 → 2.116167 | 1,891,864 | 771,492 |
+| Fluent plus eight resources | 94.997 → 82.485 | 2.485300 → 2.216933 | 1,985,824 | 813,089 |
+
+Cold values are medians; warm values are medians of per-process block medians.
+Allocations match in every corresponding warm block; catalog block values
+range from 142,506 to 142,860 bytes in both variants. One baseline catalog cold
+process allocates 383,304 bytes; the other baseline and candidate cold processes
+allocate 334,104 bytes. Identical cold medians therefore do not mean identical
+cold runs. Runtime CPU remains mixed, including variation in unchanged theme
+code, so this is not a general runtime-speed claim.
+
+Validation passes all 2,452 native tests, 14 pinned-source tests and 1,188 cases
+on each of the headless, actual desktop and trimmed browser hosts, with warnings
+treated as errors. The public parser-discovery inventory remains at 49 types;
+all 390 workload source files compile and contain zero runtime `Parse` call
+sites. The prior macOS CI timeout in MCP resource notification delivery did not
+recur in the fresh `c4f9243` run; compiler assertions were not involved.
+
+Local evidence is under `artifacts/controlcatalog-performance/assignment-local-*`:
+frozen generator DLL/source hashes, original Csc responses and logs, all timing
+samples, source hashes, assembly IL statistics, rebuildable runtime probes and
+host/native validation results. Obsolete generated outputs and profiles from
+older rounds were removed during the requested disk cleanup; their compact
+summaries, logs and experiment sources remain. An initial capture failed because
+an old output directory was absent; no timings from that failed capture are
+included. The harness now recreates its output directories.
