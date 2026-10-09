@@ -6,6 +6,24 @@ Roslyn-reported generation time and captured-C# compilation are reported
 separately. The target is **not met**. See [measurement methodology](performance.md)
 and [PR #14](https://github.com/wieslawsoltes/XamlG/pull/14) for current results.
 
+The [CI checkpoint for `0bec59d`](https://github.com/wieslawsoltes/XamlG/actions/runs/37894747753)
+uses three forced Release rebuilds per compiler/project with SDK 10.0.401 and
+normal analyzers. All catalog validation stages pass, but the performance target
+fails for all three projects:
+
+| Project | XamlX added cost | XamlG added cost | G/X added cost | Required XamlG cost |
+| --- | ---: | ---: | ---: | ---: |
+| Simple | 1.823s | 4.970s | 2.73× | ≤0.912s |
+| Fluent | 2.649s | 7.859s | 2.97× | ≤1.325s |
+| ControlCatalog | 6.543s | 12.421s | 1.90× | ≤3.272s |
+
+The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37894747733)
+reports generation at 0.878/1.096/1.655 seconds and captured-C# compilation at
+3.351/4.445/9.764 seconds for Simple/Fluent/ControlCatalog. These use a different
+runner and are not additive phase costs. Compilation and analysis of the
+generated program remain the larger cost. Later type-name allocation changes
+preserve all 390 generated files; their local measurements are recorded below.
+
 ## Structural findings
 
 The comparison uses Avalonia `a9429a328057befa287ffb5e981f58b86a86eda0` and its
