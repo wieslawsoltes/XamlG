@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Text.Json;
 
 namespace XamlG.IntelligentUI;
 
@@ -13,13 +12,14 @@ public static class UiCompositeCatalog
     {
         var common = UiCatalog.Default.Components["Separator"].Properties;
         var text = new UiProperty(UiPropertyKind.Text);
+        var boolean = new UiProperty(UiPropertyKind.Boolean);
         var number = new UiProperty(UiPropertyKind.Number, -1000000, 1000000);
         var space = new UiProperty(UiPropertyKind.Integer, 0, 32);
         var result = ImmutableDictionary.CreateBuilder<string, UiComponent>(StringComparer.Ordinal);
         void Add(string name, int children = 0, string? content = null, string[]? childTypes = null,
-            params (string Name, UiProperty Property)[] properties)
+            bool action = false, params (string Name, UiProperty Property)[] properties)
             => result.Add(name, new("ui:" + name, common.SetItems(properties.Select(p => new KeyValuePair<string, UiProperty>(p.Name, p.Property))),
-                children, content, ChildTypes: childTypes?.Select(type => "ui:" + type).ToArray()));
+                children, content, SupportsAction: action, ChildTypes: childTypes?.Select(type => "ui:" + type).ToArray()));
         Add("Heading", content: "Text", properties: [("Text", text), ("Level", new(UiPropertyKind.Integer, 1, 6))]);
         Add("Paragraph", content: "Text", properties: [("Text", text)]);
         Add("Badge", content: "Text", properties: [("Text", text)]);
@@ -33,8 +33,14 @@ public static class UiCompositeCatalog
         foreach (var name in new[] { "BarChart", "LineChart", "ScatterChart" })
             Add(name, 128, childTypes: ["DataPoint"], properties:
             [("Title", text), ("Minimum", number), ("Maximum", number), ("PlotWidth", new(UiPropertyKind.Number, 120, 4000)),
-             ("PlotHeight", new(UiPropertyKind.Number, 80, 2000)), ("Accent", new(UiPropertyKind.Color)), ("ShowLegend", new(UiPropertyKind.Boolean))]);
+             ("PlotHeight", new(UiPropertyKind.Number, 80, 2000)), ("Accent", new(UiPropertyKind.Color)), ("ShowLegend", boolean)]);
         Add("DataPoint", properties: [("Label", text), ("Value", number), ("X", number)]);
+        Add("Form", 512, properties: [("Title", text), ("Description", text), ("Gap", space),
+            ("IsValid", boolean), ("ErrorText", text), ("ShowErrors", boolean)]);
+        Add("Field", 1, properties: [("Label", text), ("HelpText", text), ("IsRequired", boolean),
+            ("IsValid", boolean), ("ErrorText", text), ("ShowErrors", boolean)]);
+        Add("SubmitButton", 1, content: "Content", action: true, properties: [("Content", text)]);
+        Add("ValidationSummary", properties: [("Title", text)]);
         return result.ToImmutable();
     }
 

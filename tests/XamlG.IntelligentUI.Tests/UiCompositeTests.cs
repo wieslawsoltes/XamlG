@@ -15,7 +15,7 @@ public sealed class UiCompositeTests
     public void Composite_catalog_is_separate_from_native_control_contract()
     {
         Assert.Equal(42, UiCatalog.Default.Components.Count);
-        Assert.Equal(14, UiCompositeCatalog.Components.Count);
+        Assert.Equal(18, UiCompositeCatalog.Components.Count);
         Assert.All(UiCompositeCatalog.Components.Values, component => Assert.StartsWith("ui:", component.Name));
     }
 
@@ -32,6 +32,7 @@ public sealed class UiCompositeTests
             <ui:BarChart><ui:DataPoint Label="A" Value="-3"/><ui:DataPoint Label="B" Value="4"/></ui:BarChart>
             <ui:LineChart><ui:DataPoint Value="2" X="10"/><ui:DataPoint Value="5" X="20"/></ui:LineChart>
             <ui:ScatterChart><ui:DataPoint Value="3"/></ui:ScatterChart>
+            <ui:Form><ui:Field Label="Name"><TextBox Text="Example"/></ui:Field><ui:ValidationSummary/><ui:SubmitButton Content="Submit"/></ui:Form>
             """), "owner");
         var nodes = UiSessionStore.Flatten(snapshot.Roots).ToArray();
         Assert.All(nodes, node => Assert.True(UiAvaloniaCatalog.Default.Registrations.ContainsKey(node.Type), node.Type));

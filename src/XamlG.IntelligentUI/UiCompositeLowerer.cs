@@ -76,6 +76,10 @@ internal sealed partial class UiCompositeLowerer(UiCatalog catalog, UiLimits lim
             case "ui:KeyValue": return KeyValue(node);
             case "ui:CodeBlock": return CodeBlock(node);
             case "ui:Table": return Table(node);
+            case "ui:Form": return Form(node);
+            case "ui:Field": return Field(node);
+            case "ui:SubmitButton": return SubmitButton(node);
+            case "ui:ValidationSummary": return ValidationSummary(node);
             case "ui:BarChart": case "ui:LineChart": case "ui:ScatterChart": return Chart(node);
             default: throw new UiException("invalid_content", node.Type + " must occur inside its declared parent component.");
         }
