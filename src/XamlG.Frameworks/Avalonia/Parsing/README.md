@@ -4,7 +4,8 @@ The original files were imported unchanged from Avalonia commit
 `a9429a328057befa287ffb5e981f58b86a86eda0`: colors in `5e53e44` and animation
 parsers/tokenizer in `5e70673`, keyboard/cursor parsers in `74204d1`, and
 font-feature/shadow parsers and bracket splitter in `3b92450`, and the transform
-operation parser in `697d6c0`.
+operation parser in `697d6c0`, and the remaining numeric/font parsers in
+`0cb9dbd`.
 `upstream.json` records their original paths and SHA-256 hashes.
 The MIT license and original color-conversion notices are retained.
 
@@ -97,3 +98,27 @@ Transform-operation adaptations:
 - Compare both accepted values and interpolation against public framework parsing
   and XamlX, including keyed source metadata. Generated applications contain no
   parser calls or dependency on the private recorder.
+
+Additional numeric and font adaptations:
+
+- Keep the copied `Parse` methods for pixel points/sizes, 3D vectors, relative
+  scalars/rectangles and matrices; replace unrelated rendering/math APIs with
+  private numeric value holders. Resolve relative units by public enum names.
+- Keep all nine matrix components for `Transform.Parse` lowering. This differs
+  deliberately from the upstream Matrix XAML intrinsic, which keeps six affine
+  components. Partial optional perspective input retains the parser's behavior.
+- Retain flex-basis validation and its distinct percentage/absolute numeric styles.
+  Replace span range syntax and numeric overloads with .NET Standard equivalents.
+- Keep OpenType tag padding, truncation and byte conversion, and the Unicode
+  range regular expression, wildcard handling and segment order. Adapt only the
+  character membership overload for .NET Standard.
+- Retain font-variation grammar, duplicate-axis replacement and tag sorting. Drop
+  runtime-only equality, hash caching and formatting from the private parsed
+  holder. Generated code calls the public constructors and the shared `Empty`
+  value; nonempty settings and mutable matrix transforms remain fresh.
+- Suppress object source-info callbacks that the original Parse calls did not
+  produce, while preserving keyed resource locations. Invalid parser input is
+  reported during compilation with the source span and original parser message.
+- Test packaged APIs against their public parsers and XamlX under a non-invariant
+  current culture. Flex basis and font variations are additionally tested in
+  ControlCatalog.Tests against the newer pinned source build that supplies them.

@@ -1,12 +1,12 @@
-﻿namespace Avalonia.Controls
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Determines how <see cref="FlexBasis"/> affects the size of the flex item
     /// </summary>
-    public enum FlexBasisKind
+    internal enum FlexBasisKind
     {
         /// <summary>
-        /// Uses the measured Width and Height of the <see cref="FlexPanel"/> to determine the initial size of the item.
+        /// Uses the measured Width and Height of the flex panel to determine the initial size of the item.
         /// </summary>
         Auto,
 

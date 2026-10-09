@@ -1,13 +1,13 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
-namespace Avalonia.Media
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// The <see cref="UnicodeRange"/> descripes a set of Unicode characters.
     /// </summary>
-    public readonly record struct UnicodeRange
+    internal readonly record struct UnicodeRange
     {
         public readonly static UnicodeRange Default = Parse("0-10FFFD");
 
@@ -102,7 +102,7 @@ namespace Avalonia.Media
         }
     }
 
-    public readonly record struct UnicodeRangeSegment
+    internal readonly record struct UnicodeRangeSegment
     {
         private static readonly Regex s_regex = new Regex(@"^(?:[uU]\+)?(?:([0-9a-fA-F](?:[0-9a-fA-F?]{1,5})?))$", RegexOptions.Compiled);
 
@@ -163,7 +163,7 @@ namespace Avalonia.Media
                             throw new FormatException("Could not parse specified Unicode range segment.");
                         }
 
-                        if (!single.Value.Contains('?'))
+                        if (single.Value.IndexOf('?') < 0)
                         {
                             start = int.Parse(single.Groups[1].Value, System.Globalization.NumberStyles.HexNumber);
                             end = start;

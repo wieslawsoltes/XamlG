@@ -1,8 +1,8 @@
-﻿using System;
+using System;
 
-namespace Avalonia.Media.Fonts
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
-    public readonly record struct OpenTypeTag
+    internal readonly record struct OpenTypeTag
     {
         internal static readonly OpenTypeTag None = new OpenTypeTag(0, 0, 0, 0);
         internal static readonly OpenTypeTag Max = new OpenTypeTag(byte.MaxValue, byte.MaxValue, byte.MaxValue, byte.MaxValue);

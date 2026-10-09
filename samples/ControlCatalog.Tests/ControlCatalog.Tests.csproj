@@ -6,6 +6,9 @@
   <ItemGroup>
     <None Update="components.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../ControlCatalog/ControlCatalog.csproj" />
+    <ProjectReference Include="../../src/XamlG.CSharp/XamlG.CSharp.csproj" />
+    <ProjectReference Include="../../src/XamlG.Frameworks/XamlG.Frameworks.csproj" />
+    <Compile Include="../../tests/XamlG.Avalonia.Tests/ResourceProjectFixture.cs" Link="ResourceProjectFixture.cs" />
     <ProjectReference Include="$(ControlCatalogAvaloniaRoot)/src/Headless/Avalonia.Headless.XUnit/Avalonia.Headless.XUnit.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />

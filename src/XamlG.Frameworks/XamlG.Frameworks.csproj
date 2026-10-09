@@ -6,17 +6,5 @@
   <ItemGroup>
     <ProjectReference Include="../XamlG.Compiler/XamlG.Compiler.csproj" />
     <None Update="Avalonia/Parsing/LICENSE.md" Pack="true" PackagePath="licenses/Avalonia/" />
-    <!-- Pristine parser imports are enabled when adapted in the following commit. -->
-    <Compile Remove="Avalonia/Parsing/PixelPoint.cs" />
-    <Compile Remove="Avalonia/Parsing/PixelSize.cs" />
-    <Compile Remove="Avalonia/Parsing/RelativeScalar.cs" />
-    <Compile Remove="Avalonia/Parsing/RelativeRect.cs" />
-    <Compile Remove="Avalonia/Parsing/Vector3D.cs" />
-    <Compile Remove="Avalonia/Parsing/Matrix.cs" />
-    <Compile Remove="Avalonia/Parsing/FlexBasis.cs" />
-    <Compile Remove="Avalonia/Parsing/FlexBasisKind.cs" />
-    <Compile Remove="Avalonia/Parsing/UnicodeRange.cs" />
-    <Compile Remove="Avalonia/Parsing/OpenTypeTag.cs" />
-    <Compile Remove="Avalonia/Parsing/FontVariationSettings.cs" />
   </ItemGroup>
 </Project>

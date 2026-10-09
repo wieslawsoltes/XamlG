@@ -1,13 +1,13 @@
-﻿using System;
+using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
-namespace Avalonia.Controls
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Specifies the initial size of a flex item.
     /// </summary>
-    public readonly partial struct FlexBasis : IEquatable<FlexBasis>
+    internal readonly partial struct FlexBasis : IEquatable<FlexBasis>
     {
         /// <summary>
         /// Gets the value of the <see cref="FlexBasis"/>. The meaning of this value depends on the <see cref="FlexBasisKind"/>
@@ -101,7 +101,7 @@ namespace Avalonia.Controls
             {
                 return Auto;
             }
-            else if (span.EndsWith("%") && double.TryParse(span[..^1], NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var val))
+            else if (span.EndsWith("%".AsSpan(), StringComparison.Ordinal) && SpanHelpers.TryParseDouble(span.Slice(0, span.Length - 1), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var val))
             {
                 return new FlexBasis(val / 100, FlexBasisKind.Relative);
             }
