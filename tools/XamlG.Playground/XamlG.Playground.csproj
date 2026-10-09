@@ -27,8 +27,6 @@
     <PackageReference Include="Avalonia.Fonts.Inter" />
     <PackageReference Include="Avalonia.Themes.Simple" />
   </ItemGroup>
-  <!-- Reference assemblies are deliberately separate from executable browser assemblies. Roslyn
-       consumes these metadata images without loading user code into the compiler. -->
   <Target Name="PublishCompilerMetadata" AfterTargets="Publish" DependsOnTargets="ResolveReferences">
     <ItemGroup>
       <CompilerMetadata Include="@(ReferencePath)" Condition="'%(ReferencePath.Extension)' == '.dll'" />
@@ -36,5 +34,14 @@
     <MakeDir Directories="$(PublishDir)wwwroot/references" />
     <Copy SourceFiles="@(CompilerMetadata)" DestinationFiles="@(CompilerMetadata->'$(PublishDir)wwwroot/references/%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <WriteLinesToFile File="$(PublishDir)wwwroot/references/index.txt" Lines="@(CompilerMetadata->'%(Filename)%(Extension)')" Overwrite="true" Encoding="UTF-8" />
+  </Target>
+  <!-- The execution worker receives only published runtime/compiler bytes. A manifest avoids
+       arbitrary path discovery or network access from evaluated code. -->
+  <Target Name="PublishIsolatedExecutionInventory" AfterTargets="Publish" DependsOnTargets="PublishCompilerMetadata">
+    <ItemGroup>
+      <_ExecutionFramework Include="$(PublishDir)wwwroot/_framework/**/*.js;$(PublishDir)wwwroot/_framework/**/*.wasm;$(PublishDir)wwwroot/_framework/**/*.dll;$(PublishDir)wwwroot/_framework/**/*.dat;$(PublishDir)wwwroot/_framework/**/*.json" />
+      <_ExecutionMetadata Include="$(PublishDir)wwwroot/references/*.dll;$(PublishDir)wwwroot/references/index.txt" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(PublishDir)wwwroot/ui-execution-assets.txt" Lines="@(_ExecutionFramework->'_framework/%(RecursiveDir)%(Filename)%(Extension)');@(_ExecutionMetadata->'references/%(Filename)%(Extension)')" Overwrite="true" Encoding="UTF-8" />
   </Target>
 </Project>
