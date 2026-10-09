@@ -1,10 +1,28 @@
 @inject NavigationManager Navigation
-@if (new Uri(Navigation.Uri).AbsolutePath.EndsWith("/sandbox.html", StringComparison.Ordinal))
+@inject IJSRuntime JavaScript
+@if (_initialized)
 {
-    <SandboxFrame />
+    @if (_mode is "mcp" or "execution")
+    {
+        <IntelligentUiGuest Mode="@_mode" />
+    }
+    else if (new Uri(Navigation.Uri).AbsolutePath.EndsWith("/sandbox.html", StringComparison.Ordinal))
+    {
+        <SandboxFrame />
+    }
+    else
+    {
+        <App />
+        <IntelligentUiWorkspacePanel />
+    }
 }
-else
-{
-    <App />
-    <IntelligentUiWorkspacePanel />
+@code {
+    private bool _initialized;
+    private string? _mode;
+    protected override async Task OnInitializedAsync()
+    {
+        // Read the trusted boot document, never infer guest mode from a model-supplied tool result.
+        _mode = await JavaScript.InvokeAsync<string?>("document.documentElement.getAttribute", "data-xamlg-ui-mode");
+        _initialized = true;
+    }
 }

@@ -26,6 +26,7 @@
                 { <details @key="snapshot.SessionId"><summary>@snapshot.Id</summary><pre>@snapshot.FallbackMarkdown</pre></details> }
             }
             <p>Restore replaces current cards only after validating the complete archive. Save and forget reject changes made by another tab; reload does not silently overwrite them.</p>
+            <UiCSharpPreview @key="Workspace.WorkspaceId" />
         </section>
     }
 </aside>
@@ -92,7 +93,6 @@
     });
     private Task ForgetAsync() => RunAsync(async (_, identity, token) =>
     {
-        // Read-before-delete establishes a version without importing source or executing anything.
         if (!_loaded) { var saved = await _storage.ReadAsync(identity, token); _version = saved?.Version; _loaded = true; }
         if (_version != null) await _storage.DeleteAsync(identity, _version, token);
         _version = null; _savedGeneration = -1; _consent = false;

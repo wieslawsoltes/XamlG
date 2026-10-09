@@ -16,7 +16,9 @@ public partial class App
         _intelligentUiAutomation = new(_automation, _intelligentUi);
         _intelligentUiData = new(_automation, _intelligentUi, captureAuthorizedResult: tool =>
             tool.Scope is AutomationScope.Source or AutomationScope.Compiler or AutomationScope.Project);
-        IntelligentUiWorkspace.Attach(_intelligentUi, () => _browserAgents.WorkspaceIdentity.ToString(), WithIntelligentUiWorkspaceAsync);
+        var proposals = new UiCSharpProposals(_intelligentUi); proposals.Register(_automation);
+        UiNativeAppResource.Register(_automation, _intelligentUi, new Uri(Navigation.BaseUri));
+        IntelligentUiWorkspace.Attach(_intelligentUi, proposals, () => _browserAgents.WorkspaceIdentity.ToString(), WithIntelligentUiWorkspaceAsync);
     }
     private void DisposeIntelligentUi()
     {
