@@ -22,32 +22,33 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - name: Capture reproducible source
-        run: |
-          mkdir -p artifacts/intelligent-ui
-          git archive --format=tar.gz -o artifacts/intelligent-ui/source.tar.gz HEAD
-      - uses: actions/upload-artifact@v4
-        with:
-          name: intelligent-ui-source
-          path: artifacts/intelligent-ui/source.tar.gz
-          retention-days: 3
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
       - name: Restore public dependencies
         run: dotnet restore XamlG.slnx
-      - name: Capture offline validation dependencies
+      - name: Capture bounded offline validation dependencies
         if: github.head_ref == 'codex/intelligent-ui'
+        shell: bash
         run: |
-          tar -C "$DOTNET_ROOT" -czf artifacts/intelligent-ui/dotnet.tar.gz .
-          tar -C "$HOME/.nuget/packages" -czf artifacts/intelligent-ui/packages.tar.gz .
+          mkdir -p artifacts/intelligent-ui
+          cd "$DOTNET_ROOT"
+          shopt -s nullglob
+          tar -czf "$GITHUB_WORKSPACE/artifacts/intelligent-ui/sdk.tar.gz" dotnet LICENSE.txt ThirdPartyNotices.txt sdk/10.0.401 host/fxr/10.* shared/Microsoft.NETCore.App/10.* shared/Microsoft.AspNetCore.App/10.* packs/Microsoft.NETCore.App.Ref/10.* packs/Microsoft.NETCore.App.Host.linux-x64/10.* packs/Microsoft.AspNetCore.App.Ref/10.* packs/NETStandard.Library.Ref
+          cd "$HOME/.nuget/packages"
+          tar -czf "$GITHUB_WORKSPACE/artifacts/intelligent-ui/packages.tar.gz" .
       - uses: actions/upload-artifact@v4
         if: github.head_ref == 'codex/intelligent-ui'
         with:
-          name: intelligent-ui-public-toolchain
-          path: |
-            artifacts/intelligent-ui/dotnet.tar.gz
-            artifacts/intelligent-ui/packages.tar.gz
+          name: intelligent-ui-sdk
+          path: artifacts/intelligent-ui/sdk.tar.gz
+          retention-days: 1
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        if: github.head_ref == 'codex/intelligent-ui'
+        with:
+          name: intelligent-ui-packages
+          path: artifacts/intelligent-ui/packages.tar.gz
           retention-days: 1
           compression-level: 0
       - name: Build native contracts
