@@ -32,17 +32,15 @@ internal sealed class ServiceContractEmitter
             }
         }
         var factories = scopes.Select((entry, index) => (entry.Key, Name: "CreateNamespaces" + index, Scope: entry.Value)).ToArray();
-        var identity = new CSharpWriter();
+        // Hash the body we will actually emit. Keep its type name fixed and put
+        // the identity in the namespace, avoiding a second namespace-map/context
+        // emission and any replacement inside user-provided namespace literals.
+        var identity = new CSharpWriter { Indent = 1 };
         Write(identity, "Services", "internal", factories);
-        var name = "Services_" + _context.StableId(identity.ToString());
-        var ns = _context.Document.Options.GeneratedNamespace + ".Services";
-        var writer = new CSharpWriter();
-        writer.Line("#nullable enable annotations");
-        writer.Line("#nullable disable warnings");
-        writer.Open("namespace " + ns);
-        Write(writer, name, "internal", factories);
-        writer.Close();
-        return new("global::" + ns + "." + name, writer.ToString(),
+        var body = identity.ToString();
+        var ns = _context.Document.Options.GeneratedNamespace + ".Services_" + _context.StableId(body);
+        var source = "#nullable enable annotations\n#nullable disable warnings\nnamespace " + ns + "\n{\n" + body + "}\n";
+        return new("global::" + ns + ".Services", source,
             factories.ToImmutableDictionary(factory => factory.Key, factory => factory.Name, StringComparer.Ordinal));
     }
 
