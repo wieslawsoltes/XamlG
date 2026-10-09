@@ -14,7 +14,7 @@ public sealed class UiFormInteractionTests
           <ui:SubmitButton ui:Key="submit" ui:Action="send" Content="Submit"/>
         </ui:Form>
         """, J(new { name = value }), Actions: [new("send", "message", Text: "Submitted")]);
-    private static UiFormCall Call(UiSnapshot snapshot, string? field = null) => new(snapshot.Id, snapshot.Revision, snapshot.StateRevision, "/form", field);
+    private static UiFormCall Call(UiSnapshot snapshot, string? input = null) => new(snapshot.Id, snapshot.Revision, snapshot.StateRevision, "/form", input);
     private static UiFormInteraction Form(UiSessionStore store) => Assert.Single(store.ReadForms("signup", "owner"));
 
     [Fact]
@@ -33,7 +33,6 @@ public sealed class UiFormInteractionTests
         Assert.Equal("", reset.State.GetProperty("name").GetString());
         Assert.False(Form(store).IsDirty); Assert.False(Form(store).IsTouched); Assert.False(Form(store).Submitted);
     }
-
     [Fact]
     public void Submission_reveals_errors_and_returns_the_first_invalid_input_without_an_action()
     {
@@ -48,7 +47,6 @@ public sealed class UiFormInteractionTests
         Assert.NotNull(submit.Action); Assert.Null(submit.FocusKey);
         Assert.Equal("message", store.PrepareAction(submit.Action!, "owner").Kind);
     }
-
     [Fact]
     public async Task Async_validation_is_required_before_direct_actions_and_preserves_dirty_history()
     {
@@ -57,7 +55,7 @@ public sealed class UiFormInteractionTests
         var initial = store.Publish(Request(validator: "remote", value: "Ada"), "owner");
         Assert.Equal("invalid_form", Assert.Throws<UiException>(() => store.PrepareAction(new("signup", initial.Revision, 0, "/submit"), "owner")).Code);
         var submission = store.SubmitForm(Call(initial), "owner"); Assert.True(submission.RequiresValidation);
-        var validated = await store.ValidateFormAsync(Call(submission.Snapshot), "owner");
+        var validated = await store.ValidateFormAsync(Call(submission.Snapshot), "owner", TestContext.Current.CancellationToken);
         Assert.Equal(1, calls); Assert.True(Form(store).IsValid); Assert.False(Form(store).Pending);
         var action = store.SubmitForm(Call(validated), "owner").Action; Assert.NotNull(action);
         Assert.Equal("message", store.PrepareAction(action!, "owner").Kind);
@@ -65,33 +63,52 @@ public sealed class UiFormInteractionTests
         Assert.False(Form(store).Validated); Assert.True(Form(store).IsDirty); Assert.False(Form(store).IsValid);
         Assert.Equal("invalid_form", Assert.Throws<UiException>(() => store.PrepareAction(new("signup", changed.Revision, changed.StateRevision, "/submit"), "owner")).Code);
     }
-
     [Fact]
     public async Task Delayed_validation_cannot_publish_over_new_input()
     {
         var store = new UiSessionStore(); var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         store.RegisterFormValidator("remote", (_, _) => new(completion.Task));
         var initial = store.Publish(Request(validator: "remote", value: "Ada"), "owner");
-        var running = store.ValidateFormAsync(Call(initial), "owner");
+        var running = store.ValidateFormAsync(Call(initial), "owner", TestContext.Current.CancellationToken);
         var pending = store.Read("signup", "owner"); Assert.True(Form(store).Pending);
         var next = store.ChangeState(new("signup", pending.Revision, pending.StateRevision, "name", J("Grace")), "owner");
         completion.SetResult(null);
         Assert.Equal("revision_conflict", (await Assert.ThrowsAsync<UiException>(() => running)).Code);
         Assert.Same(next, store.Read("signup", "owner")); Assert.False(Form(store).Pending); Assert.False(Form(store).Validated);
     }
-
+    [Fact]
+    public async Task Touch_during_validation_is_preserved_without_stranding_pending_state()
+    {
+        var store = new UiSessionStore(); var completion = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        store.RegisterFormValidator("remote", (_, _) => new(completion.Task));
+        var initial = store.Publish(Request(validator: "remote", value: "Ada"), "owner");
+        var running = store.ValidateFormAsync(Call(initial), "owner", TestContext.Current.CancellationToken);
+        store.TouchForm(Call(store.Read("signup", "owner"), "/name"), "owner");
+        completion.SetResult(null); await running;
+        Assert.True(Form(store).IsTouched); Assert.True(Form(store).IsValid); Assert.False(Form(store).Pending);
+    }
+    [Fact]
+    public async Task Failed_async_validation_can_be_explicitly_retried_without_editing_the_values()
+    {
+        var store = new UiSessionStore(); var attempts = 0;
+        store.RegisterFormValidator("remote", (_, _) => ValueTask.FromResult<string?>(++attempts == 1 ? "Try again" : null));
+        var initial = store.Publish(Request(validator: "remote", value: "Ada"), "owner");
+        var failed = await store.ValidateFormAsync(Call(initial), "owner", TestContext.Current.CancellationToken);
+        var retry = store.SubmitForm(Call(failed), "owner"); Assert.True(retry.RequiresValidation); Assert.Null(retry.Action);
+        await store.ValidateFormAsync(Call(retry.Snapshot), "owner", TestContext.Current.CancellationToken);
+        Assert.True(Form(store).IsValid); Assert.Equal(2, attempts);
+    }
     [Fact]
     public async Task Validator_errors_timeouts_and_missing_registrations_fail_closed()
     {
         var store = new UiSessionStore();
         var initial = store.Publish(Request(validator: "remote", value: "Ada"), "owner");
-        Assert.Equal("unknown_validator", (await Assert.ThrowsAsync<UiException>(() => store.ValidateFormAsync(Call(initial), "owner"))).Code);
+        Assert.Equal("unknown_validator", (await Assert.ThrowsAsync<UiException>(() => store.ValidateFormAsync(Call(initial), "owner", TestContext.Current.CancellationToken))).Code);
         store.RegisterFormValidator("remote", async (_, token) => { await Task.Delay(Timeout.InfiniteTimeSpan, token); return null; });
-        var result = await store.ValidateFormAsync(Call(initial), "owner", timeout: TimeSpan.FromMilliseconds(20));
+        var result = await store.ValidateFormAsync(Call(initial), "owner", TestContext.Current.CancellationToken, TimeSpan.FromMilliseconds(20));
         Assert.False(Form(store).Pending); Assert.False(Form(store).IsValid); Assert.NotNull(Form(store).AsyncError);
         Assert.Contains("timed out", result.FallbackMarkdown);
     }
-
     [Fact]
     public void Form_interactions_require_the_owner_and_both_revisions()
     {
