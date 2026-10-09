@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Threading;
 using XamlG.Syntax;
+using XamlG.Internal;
 
 namespace XamlG.Frameworks.Avalonia.Styling;
 
@@ -24,19 +25,21 @@ public static class AvaloniaContainerQueryParser
             {
                 if (position == text.Length) break;
                 while (position < text.Length && (char.IsLetter(text[position]) || text[position] == '-')) position++;
-                var name = text.Substring(start, position - start);
-                if (name is not ("width" or "height" or "min-width" or "max-width" or "min-height" or "max-height"))
+                var name = text.AsSpan(start, position - start);
+                if (!(name.SequenceEqual("width".AsSpan()) || name.SequenceEqual("height".AsSpan()) ||
+                    name.SequenceEqual("min-width".AsSpan()) || name.SequenceEqual("max-width".AsSpan()) ||
+                    name.SequenceEqual("min-height".AsSpan()) || name.SequenceEqual("max-height".AsSpan())))
                     return Error("Expected width, height, min-width, max-width, min-height or max-height.", start);
                 if (position == text.Length || text[position++] != ':') return Error("Expected ':' after the query feature.", position);
                 while (position < text.Length && char.IsWhiteSpace(text[position])) position++;
                 var numberStart = position;
                 while (position < text.Length && char.IsDigit(text[position])) position++;
-                if (position == numberStart || !double.TryParse(text.Substring(numberStart, position - numberStart), NumberStyles.None, CultureInfo.InvariantCulture, out var number))
+                if (position == numberStart || !SpanNumberParser.TryParseDouble(text.AsSpan(numberStart, position - numberStart), NumberStyles.None, CultureInfo.InvariantCulture, out var number))
                     return Error("Expected a nonnegative integer query value.", numberStart);
                 // Avalonia 12.1.3 lowers bare 'height' as max-height. Keep the pinned
                 // compiler's observable behavior; the differential suite guards this.
-                var comparison = name == "width" ? "Equals" : name.StartsWith("min-", StringComparison.Ordinal) ? "GreaterThanOrEquals" : "LessThanOrEquals";
-                steps.Add(new(name.EndsWith("width", StringComparison.Ordinal) ? ContainerQueryStepKind.Width : ContainerQueryStepKind.Height,
+                var comparison = name.SequenceEqual("width".AsSpan()) ? "Equals" : name.StartsWith("min-".AsSpan(), StringComparison.Ordinal) ? "GreaterThanOrEquals" : "LessThanOrEquals";
+                steps.Add(new(name.EndsWith("width".AsSpan(), StringComparison.Ordinal) ? ContainerQueryStepKind.Width : ContainerQueryStepKind.Height,
                     comparison, number, new(span.Start + start, position - start)));
                 feature = false;
             }
@@ -49,7 +52,7 @@ public static class AvaloniaContainerQueryParser
             else
             {
                 while (position < text.Length && !char.IsWhiteSpace(text[position])) position++;
-                if (text.Substring(start, position - start) != "and") return Error("Expected 'and' or ',' between query features.", start);
+                if (!text.AsSpan(start, position - start).SequenceEqual("and".AsSpan())) return Error("Expected 'and' or ',' between query features.", start);
                 steps.Add(new(ContainerQueryStepKind.And, string.Empty, 0, new(span.Start + start, position - start)));
                 feature = true;
             }

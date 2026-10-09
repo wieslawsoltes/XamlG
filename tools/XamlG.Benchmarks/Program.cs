@@ -7,6 +7,12 @@ using XamlG.Frameworks.Avalonia;
 using XamlG.Generator;
 using XamlG.Roslyn;
 
+if (args.FirstOrDefault() == "--scaling")
+{
+    CompilerScalingBenchmarks.Run(args.Length > 1 ? int.Parse(args[1]) : 5);
+    return;
+}
+
 var samples = args.Length > 0 ? int.Parse(args[0]) : 9;
 var documentCount = args.Length > 1 ? int.Parse(args[1]) : 32;
 var controlsPerDocument = args.Length > 2 ? int.Parse(args[2]) : 24;

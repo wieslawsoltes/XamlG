@@ -11,15 +11,13 @@ internal sealed class CallAssignmentEmitter(EmissionContext context, ValueEmitte
         var writer = context.Writer;
         if (assignment.TargetMember is { } member)
         {
-            var receiver = context.Temporary("callReceiver");
-            writer.Line("var " + receiver + " = " + AssignmentEmitter.Get(member, ownerType, target) + ";");
+            var receiver = context.Locals.Declare(member.Getter!.ReturnType.CSharpName(), AssignmentEmitter.Get(member, ownerType, target), "callReceiver", inferred: true);
             target = receiver;
         }
         if (assignment.TargetDescriptor != null)
         {
-            var local = context.Temporary("callTarget");
-            writer.Line("var " + local + " = " + frame + ".ForTarget(" + target + ", " +
-                values.Emit(assignment.TargetDescriptor, frame) + ");");
+            var local = context.Locals.Declare(CSharpNames.Context, frame + ".ForTarget(" + target + ", " +
+                values.Emit(assignment.TargetDescriptor, frame) + ")", "callTarget", inferred: true);
             context.InheritFrameNamespaces(local, frame);
             frame = local;
         }
@@ -27,11 +25,10 @@ internal sealed class CallAssignmentEmitter(EmissionContext context, ValueEmitte
         for (var index = 0; index < assignment.Arguments.Length; index++)
         {
             var parameterIndex = index + (assignment.IncludeTarget ? 1 : 0);
-            var local = context.Temporary("argument");
             var expression = index == assignment.Arguments.Length - 1
                 ? values.EmitInitialized(assignment.Arguments[index], frame, assignment.ValueInitializers, arguments)
                 : values.Emit(assignment.Arguments[index], frame);
-            writer.Line(assignment.Method.Parameters[parameterIndex].Type.CSharpName() + " " + local + " = " + expression + ";");
+            var local = context.Locals.Declare(assignment.Method.Parameters[parameterIndex].Type.CSharpName(), expression, "argument");
             arguments.Add(local);
         }
         var inputs = assignment.IncludeTarget ? new[] { target }.Concat(arguments) : arguments;

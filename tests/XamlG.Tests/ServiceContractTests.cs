@@ -90,6 +90,17 @@ public sealed class ServiceContractTests
         Assert.Equal("Second", Property(((IList)Property(root, "Children")!)[0]!, "Namespace"));
     }
     [Fact]
+    public void SiblingTemporaryReuseRestoresTheParentNamespaceMap()
+    {
+        const string xaml = "<Panel xmlns='clr-namespace:ContractFixture' xmlns:vm='clr-namespace:First'>" +
+            "<Panel xmlns:vm='clr-namespace:Second' Namespace='{Namespace}'/>" +
+            "<Panel Namespace='{Namespace}'/><Panel xmlns:vm='clr-namespace:Third' Namespace='{Namespace}'/>" +
+            "<Panel Namespace='{Namespace}'/></Panel>";
+        using var code = CompiledXaml.Create(xaml, Model, Profile);
+        var children = ((IList)Property(code.Build(), "Children")!).Cast<object>();
+        Assert.Equal(new[] { "Second", "First", "Third", "First" }, children.Select(child => Property(child, "Namespace")));
+    }
+    [Fact]
     public void DeferredFactoriesAndSiblingsKeepTheirLexicalNamespaces()
     {
         const string extra = "namespace ContractFixture { public class Template { [Content, DeferredContent] public Func<IServiceProvider,object> Content {get;set;} } }";

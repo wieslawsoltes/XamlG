@@ -4,6 +4,8 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlG.Compiler;
 using XamlG.CSharp;
+using XamlG.CSharp.Integration;
+using XamlG.CSharp.Resources;
 using XamlG.Runtime;
 using XamlG.Syntax;
 using Xunit;
@@ -21,11 +23,21 @@ internal sealed class CompiledXaml : IDisposable
     public Assembly Assembly { get; }
     public XamlEmissionResult Emission { get; }
     public object Build(IServiceProvider? services = null) => Assembly.GetType(Emission.FactoryMetadataName)!.GetMethod(Emission.BuildMethodName!)!.Invoke(null, new object?[] { services })!;
-    public static CompiledXaml Create(string xaml, string model, XamlFrameworkProfile? profile = null)
+    public static CompiledXaml Create(string xaml, string model, XamlFrameworkProfile? profile = null, bool shareAcrossDocuments = false)
     {
         var compilation = CompilationFactory.Create(model).WithOptions(new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
         if (!compilation.References.OfType<PortableExecutableReference>().Any(r => r.FilePath == typeof(XamlRuntimeContext).Assembly.Location))
             compilation = compilation.AddReferences(MetadataReference.CreateFromFile(typeof(XamlRuntimeContext).Assembly.Location));
+        if (shareAcrossDocuments)
+        {
+            var inputs = new[] { "Test.axaml", "Other.axaml" }.Select(path => new XamlProjectDocument(XamlSyntaxTree.Parse(xaml, path), path));
+            var project = new XamlProjectCompiler().Compile(inputs, compilation, profile);
+            Assert.True(project.Success, string.Join(Environment.NewLine, project.Documents.SelectMany(document => document.Output.Diagnostics)));
+            using var stream = new MemoryStream();
+            var emitted = XamlCSharpCompilation.AddGeneratedSources(compilation, project).Emit(stream);
+            Assert.True(emitted.Success, string.Join(Environment.NewLine, emitted.Diagnostics));
+            return new(project.Documents.Single(document => document.Input.LogicalPath == "Test.axaml").Output, stream.ToArray());
+        }
         var document = new XamlCompiler().Bind(XamlSyntaxTree.Parse(xaml, "Test.axaml"), compilation, profile);
         Assert.True(document.Success, string.Join(Environment.NewLine, document.Diagnostics));
         var emission = new CSharpEmitter().Emit(document);

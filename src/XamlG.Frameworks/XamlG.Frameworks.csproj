@@ -5,5 +5,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../XamlG.Compiler/XamlG.Compiler.csproj" />
+    <Compile Include="../Shared/SpanNumberParser.cs" Link="Compatibility/SpanNumberParser.cs" />
+    <Compile Include="../Shared/SpanSplitEnumerator.cs" Link="Compatibility/SpanSplitEnumerator.cs" />
+    <None Update="Avalonia/Parsing/LICENSE.md" Pack="true" PackagePath="licenses/Avalonia/" />
   </ItemGroup>
 </Project>

@@ -50,7 +50,7 @@ The default `csharp-pure` interpreter uses Roslyn syntax trees without compiling
 The full C# backend is separate and opt-in. `UiCSharpExpressionCompiler` compiles genuine Roslyn expressions or statement bodies against host-supplied metadata references. Full C# uses real `JsonElement` APIs, for example:
 
 ```csharp
-{ 
+{
     var count = state.GetProperty("n").GetInt32();
     int Square(int value) => value * value;
     return Enumerable.Range(1, count).Select(Square).Sum().ToString();

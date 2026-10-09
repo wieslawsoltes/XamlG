@@ -87,6 +87,32 @@ public sealed class SyntaxTests
         Assert.Empty(errors); Assert.Equal(2, type!.Arguments.Length); Assert.True(type.Arguments[1].Arguments[0].Nullable);
     }
     [Fact]
+    public void SimpleTypeNamesAndFallbackGrammarRetainTheirSourceSpans()
+    {
+        foreach (var text in new[] { "Button", "a:Button", "A.B", "A+B", "A`1", "名" })
+        {
+            var errors = new List<XamlDiagnostic>();
+            var type = XamlTypeNameParser.Parse(text, new(17, text.Length), errors.Add)!;
+            Assert.Empty(errors); Assert.Equal(text, type.Name); Assert.Empty(type.Arguments); Assert.False(type.Nullable);
+            Assert.Equal(new TextSpan(17, text.Length), type.Span);
+            Assert.Equal(type, Assert.Single(XamlTypeNameParser.ParseList(text, new(17, text.Length), errors.Add)));
+        }
+        foreach (var (text, offset, length, nullable) in new[] { ("  Foo  ", 2, 5, false), ("Foo?  ", 0, 4, true), ("\u2003Foo\u00a0", 1, 4, false) })
+        {
+            var errors = new List<XamlDiagnostic>();
+            var type = XamlTypeNameParser.Parse(text, new(17, text.Length), errors.Add)!;
+            Assert.Empty(errors); Assert.Equal("Foo", type.Name); Assert.Equal(nullable, type.Nullable);
+            Assert.Equal(new TextSpan(17 + offset, length), type.Span);
+        }
+        foreach (var text in new[] { "", " ", "Foo Bar", "Foo??", "Foo,", "Foo)", "Foo()" })
+        {
+            var errors = new List<XamlDiagnostic>();
+            Assert.Null(XamlTypeNameParser.Parse(text, new(17, text.Length), errors.Add));
+            Assert.Contains(errors, diagnostic => diagnostic.Code == "XG0011");
+        }
+    }
+
+    [Fact]
     public void LineMapUsesUtf16AndRecognizesCrLf()
     { var map = new SourceLineMap("a\r\nb\nc"); Assert.Equal(new SourceLinePosition(1, 0), map.GetPosition(3)); Assert.Equal(5, map.GetOffset(new(2, 0))); }
 }

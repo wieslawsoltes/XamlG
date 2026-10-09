@@ -106,7 +106,7 @@ public sealed class BindingPathParser
                 {
                     _position++; var typeStart = _position;
                     while (_position < _text.Length && _text[_position] != ')') _position++;
-                    var type = _text.Substring(typeStart, _position - typeStart).Trim();
+                    var type = _text.AsSpan(typeStart, _position - typeStart).Trim().ToString();
                     if (!Take(')') || type.Length == 0) { Error("An explicit cast requires a type name."); break; }
                     Read(depth + 1, true);
                     if (!Take(')')) { Error("Unclosed cast expression."); break; }
@@ -116,7 +116,7 @@ public sealed class BindingPathParser
                 {
                     var bodyStart = _position;
                     while (_position < _text.Length && _text[_position] != ')') _position++;
-                    var body = _text.Substring(bodyStart, _position - bodyStart).Trim();
+                    var body = _text.AsSpan(bodyStart, _position - bodyStart).Trim().ToString();
                     if (!Take(')') || body.Length == 0) { Error("Unclosed attached-property or cast expression."); break; }
                     _segments.Add(new(body.Contains('.') ? BindingPathKind.AttachedProperty : BindingPathKind.Cast, body, Span(start)));
                 }
@@ -151,7 +151,7 @@ public sealed class BindingPathParser
             else if (c is '\'' or '"') quote = c;
             else if (c == separator || c == ']')
             {
-                var argument = _text.Substring(start, _position - start).Trim();
+                var argument = _text.AsSpan(start, _position - start).Trim().ToString();
                 if (argument.Length == 0) { Error("An indexer argument cannot be empty."); return result.ToImmutable(); }
                 result.Add(argument); _position++;
                 if (c == ']') return result.ToImmutable();

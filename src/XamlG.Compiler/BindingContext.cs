@@ -66,6 +66,13 @@ public sealed class BindingContext
     private XamlTypeNameSyntax SourceSpans(XamlTypeNameSyntax parsed, string text, TextSpan span)
     {
         if (span.End > Syntax.Text.Length) return parsed;
+        // Type syntax already uses source-relative offsets. Ordinary names need no
+        // decoded map, and approximate element spans often start with '<', not a name.
+        if (span.Length >= text.Length && string.CompareOrdinal(Syntax.Text, span.Start, text, 0, text.Length) == 0)
+            return parsed;
+        if (span.Length != 0 && text.Length != 0 && Syntax.Text[span.Start] != text[0] &&
+            Syntax.Text[span.Start] is not ('&' or '\r' or '\n' or '\t'))
+            return parsed;
         XamlDecodedTextMap map;
         try { map = XamlDecodedTextMap.Create(Syntax.Text, span); }
         catch (ArgumentException) { return parsed; } // Approximate diagnostic spans need not be complete XML values.

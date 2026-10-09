@@ -4,6 +4,51 @@ namespace XamlG.Tests;
 public sealed class RuntimeTests
 {
     [Fact]
+    public void ConstructedFramesPreserveMetadataAndOwnConstructorSessions()
+    {
+        var root = new object(); var child = new object();
+        var context = new XamlRuntimeContext();
+        using var owner = context.Session;
+        var constructor = new XamlRuntimeSession(); var released = 0;
+        constructor.TrackCleanup(() => released++); constructor.Attach(child);
+        var parent = context.PushRoot(root, "root").ForTarget(root, "Content");
+        var source = new XamlSourceInfo("View.xaml", 4, 9, "child", "fingerprint");
+        var frame = parent.PushConstructed(child, "child", source);
+        Assert.Same(root, frame.RootObject); Assert.Same(root, frame.TargetObject);
+        Assert.Equal("Content", frame.TargetProperty); Assert.Equal("child", frame.NodeKey);
+        Assert.Equal(new[] { child, root }, frame.Parents);
+        Assert.Same(source, owner.FindNode(child)!.Source);
+        Assert.Equal("root", owner.FindNode(child)!.ParentKey);
+        Assert.False(constructor.IsDisposed);
+        context.Complete(root); owner.Dispose(); owner.Dispose();
+        Assert.True(constructor.IsDisposed); Assert.Equal(1, released);
+    }
+
+    [Fact]
+    public void DuplicateConstructedNodesStillOwnCleanupInTheCorrectDeferredScope()
+    {
+        var context = new XamlRuntimeContext();
+        using var outer = context.Session;
+        var parent = context.PushRoot(new object(), "outer");
+        var deferred = parent.CreateDeferredScope();
+        using var owner = deferred.Session;
+        var released = new List<string>();
+        object Child(string name)
+        {
+            var child = new object(); var constructor = new XamlRuntimeSession();
+            constructor.TrackCleanup(() => released.Add(name)); constructor.Attach(child);
+            return child;
+        }
+        var first = Child("first"); var second = Child("second");
+        deferred.PushConstructed(first, "child", null);
+        var failure = Assert.Throws<InvalidOperationException>(() => deferred.PushConstructed(second, "child", null));
+        owner.DisposeAfterConstructionFailure(failure);
+        Assert.Equal(new[] { "second", "first" }, released);
+        Assert.False(outer.IsDisposed);
+        Assert.Null(outer.FindNode(first)); Assert.Null(outer.FindNode(second));
+    }
+
+    [Fact]
     public void FramesPreserveTargetsAndParentOrder()
     {
         var root = new object(); var child = new object(); var context = new XamlRuntimeContext(root: root);
@@ -71,6 +116,58 @@ public sealed class RuntimeTests
         var context = new XamlRuntimeContext(); var expected = new object(); object? actual = null;
         context.Defer(() => actual = context.ResolveName<object>("later")); context.RegisterName("later", expected); context.Complete(new object());
         Assert.Same(expected, actual);
+    }
+    [Fact]
+    public void NestedNameFixupsFinishInQueueOrderBeforePublishingTheRoot()
+    {
+        var context = new XamlRuntimeContext(); var root = new object(); var target = new object();
+        using var session = context.Session;
+        var calls = new List<int>(); object? resolved = null;
+        void Record(int value)
+        {
+            Assert.False(XamlRuntimeSession.TryGet(root, out _));
+            calls.Add(value);
+        }
+        context.Defer(() =>
+        {
+            Record(1);
+            context.Defer(() =>
+            {
+                Record(3); resolved = context.ResolveName<object>("later");
+                context.Defer(() => Record(5));
+            });
+        });
+        context.Defer(() =>
+        {
+            Record(2); context.RegisterName("later", target);
+            context.Defer(() => Record(4));
+        });
+        context.Complete(root);
+        Assert.Equal(new[] { 1, 2, 3, 4, 5 }, calls);
+        Assert.Same(target, resolved);
+        Assert.True(XamlRuntimeSession.TryGet(root, out var attached)); Assert.Same(session, attached);
+        context.Complete(root);
+        Assert.Equal(5, calls.Count);
+        context.Defer(() => { calls.Add(6); context.Defer(() => calls.Add(7)); });
+        context.Complete(root); context.Complete(root);
+        Assert.Equal(new[] { 1, 2, 3, 4, 5, 6, 7 }, calls);
+    }
+    [Fact]
+    public void NestedNameFixupFailureStopsCompletionWithoutPublishingTheRoot()
+    {
+        var context = new XamlRuntimeContext(); var root = new object();
+        using var session = context.Session;
+        var failure = new InvalidOperationException("Reference assignment rejected");
+        var calls = new List<int>();
+        context.Defer(() =>
+        {
+            calls.Add(1);
+            context.Defer(() => { calls.Add(2); throw failure; });
+            context.Defer(() => calls.Add(3));
+        });
+        Assert.Same(failure, Assert.Throws<InvalidOperationException>(() => context.Complete(root)));
+        Assert.Equal(new[] { 1, 2 }, calls);
+        Assert.False(XamlRuntimeSession.TryGet(root, out _));
     }
     [Fact]
     public void PropertyBatchIsRevisionCheckedAndRollbackSafe()

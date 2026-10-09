@@ -152,7 +152,7 @@ internal sealed class CompiledBindingPathBinder(BindingContext context, Namespac
             if (builder == null) return null;
         }
         var path = _expressions.Call(builder, "Build", syntax.Span);
-        return path == null ? null : new(path, type, writable);
+        return path == null ? null : new(CompiledBindingPathCache.Wrap(context, path), type, writable);
     }
 
     private BoundExpression? Property(BoundExpression builder, BindingAccessor accessor, BindingPathSegment segment) => segment.AcceptsNull

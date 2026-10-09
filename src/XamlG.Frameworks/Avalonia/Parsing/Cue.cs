@@ -1,0 +1,63 @@
+using System;
+using System.ComponentModel;
+using System.Globalization;
+
+namespace XamlG.Frameworks.Avalonia.Parsing
+{
+    /// <summary>
+    /// Determines the time index for a <see cref="KeyFrame"/>. 
+    /// </summary>
+    internal readonly record struct Cue : IEquatable<Cue>, IEquatable<double>
+    {
+        /// <summary>
+        /// The normalized percent value, ranging from 0.0 to 1.0
+        /// </summary>
+        public double CueValue { get; }
+
+        /// <summary>
+        /// Sets a new <see cref="Cue"/> object.
+        /// </summary>
+        /// <param name="value"></param>
+        public Cue(double value)
+        {
+            if (value <= 1 && value >= 0)
+                CueValue = value;
+            else
+                throw new ArgumentException($"This cue object's value should be within or equal to 0.0 and 1.0");
+        }
+
+        /// <summary>
+        /// Parses a string to a <see cref="Cue"/> object.
+        /// </summary>
+        public static Cue Parse(string value, CultureInfo? culture)
+        {
+            var v = value.AsSpan();
+
+            if (value.EndsWith("%", StringComparison.Ordinal))
+            {
+                v = v.TrimEnd('%');
+            }
+
+            if (XamlG.Internal.SpanNumberParser.TryParseDouble(v, NumberStyles.Float, culture, out double res))
+            {
+                return new Cue(res / 100d);
+            }
+            else
+            {
+                throw new FormatException($"Invalid Cue string \"{value}\"");
+            }
+        }
+
+        /// <summary>
+        /// Checks for equality between a <see cref="Cue"/>
+        /// and a <see cref="double"/> value.
+        /// </summary>
+        /// <param name="other"></param>
+        /// <returns></returns>
+        public bool Equals(double other)
+        {
+            return CueValue == other;
+        }
+    }
+
+}

@@ -8,7 +8,11 @@ public sealed record BoundSourceInfo(IMethodSymbol Constructor, IMethodSymbol Ob
 {
     public static TextSpan ValueLocation(XamlSyntaxTree syntax, TextSpan span)
     {
-        var element = syntax.FindElement(span.Start);
+        // FindElement includes end positions for editor cursors. At adjacent
+        // elements, query inside the opening token so the previous sibling's
+        // inclusive end cannot claim this value's location.
+        var position = span.Length > 1 && span.Start < syntax.Text.Length && syntax.Text[span.Start] == '<' ? span.Start + 1 : span.Start;
+        var element = syntax.FindElement(position);
         var attribute = element?.Attributes.FirstOrDefault(item => item.ValueSpan.Start <= span.Start && span.Start < item.ValueSpan.End);
         if (attribute != null) return attribute.NameSpan;
         if (element?.Children.OfType<XamlTextSyntax>().FirstOrDefault() is { } text)

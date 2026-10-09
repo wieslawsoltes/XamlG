@@ -1,1 +1,1 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework></PropertyGroup><ItemGroup><ProjectReference Include="../XamlG.Roslyn/XamlG.Roslyn.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>netstandard2.0</TargetFramework></PropertyGroup><ItemGroup><ProjectReference Include="../XamlG.Roslyn/XamlG.Roslyn.csproj" /><Compile Include="../Shared/SpanSplitEnumerator.cs" Link="Compatibility/SpanSplitEnumerator.cs" /></ItemGroup></Project>

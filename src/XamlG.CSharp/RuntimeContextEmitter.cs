@@ -20,6 +20,15 @@ internal sealed class RuntimeContextEmitter
 
     public void Create(string variable, string outer, string root, bool deferred = false)
     {
+        if (_context.SharedServices is { } shared)
+        {
+            var namespaces = _namespaces.GetMap(_context.Document.Root!.Scope);
+            var uri = _context.Document.Options.BaseUri is { } value ? CSharpNames.Literal(value) : "null";
+            _context.Writer.Line("var " + variable + " = " + shared.TypeName + ".CreateContext(" + outer + ", " + root +
+                ", " + uri + ", " + namespaces + ", " + (deferred ? "true" : "false") + ", " + (root == "null" ? "false" : "true") + ");");
+            _context.SetFrameNamespaces(variable, namespaces);
+            return;
+        }
         var key = (deferred, root != "null");
         if (!_factories.TryGetValue(key, out var factory))
             _factories.Add(key, factory = "__XamlGCreateContext_" + _context.Id + "_" + _factories.Count);
@@ -62,6 +71,11 @@ internal sealed class RuntimeContextEmitter
     public void InitializeNameScope(string frame, string provider)
     {
         if (_context.Document.Runtime.NameScope == null) return;
+        if (_context.SharedServices is { } shared)
+        {
+            _context.Writer.Line(shared.TypeName + ".InitializeNameScope(" + frame + ", " + provider + ");");
+            return;
+        }
         _nameScope = true;
         _context.Writer.Line("__XamlGInitializeNameScope_" + _context.Id + "(" + frame + ", " + provider + ");");
     }
@@ -79,8 +93,7 @@ internal sealed class RuntimeContextEmitter
     {
         var map = _namespaces.GetMap(namespaces);
         if (map == "null" || _context.FrameNamespaces(parent) == map) return parent;
-        var frame = _context.Temporary("scope");
-        _context.Writer.Line("var " + frame + " = " + parent + ".WithNamespaces(" + map + ");");
+        var frame = _context.Locals.Declare(CSharpNames.Context, parent + ".WithNamespaces(" + map + ")", "scope", inferred: true);
         _context.SetFrameNamespaces(frame, map);
         return frame;
     }
@@ -94,6 +107,11 @@ internal sealed class RuntimeContextEmitter
 
     public void Complete(string frame, string root)
     {
+        if (_context.SharedServices is { } shared)
+        {
+            _context.Writer.Line(shared.TypeName + ".Complete(" + frame + ", " + root + ");");
+            return;
+        }
         _complete = true;
         _context.Writer.Line("__XamlGCompleteContext_" + _context.Id + "(" + frame + ", " + root + ");");
     }

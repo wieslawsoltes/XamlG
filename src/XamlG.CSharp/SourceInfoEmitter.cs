@@ -24,13 +24,14 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
             (position.Character + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + ");");
     }
 
-    public string Get(BoundObject value) => context.SourceInfoTable + "[" + Index(value) + "]";
+    public string Get(BoundObject value) => context.SourceInfoTable + "[" +
+        (context.ConstructionParameters?.SourceIndex(value) ?? Index(value).ToString(System.Globalization.CultureInfo.InvariantCulture)) + "]";
 
     public int Index(BoundObject value)
     {
         var syntax = context.Document.Syntax;
         var span = Clamp(value.Syntax.Span, syntax.Text.Length);
-        var fingerprint = context.StableId(value.Type.CSharpName() + "\0" + syntax.Text.Substring(span.Start, span.Length));
+        var fingerprint = context.StableId(value.Type.CSharpName(), syntax.Text, span);
         var declarations = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var assignment in value.Assignments)
         {
@@ -43,7 +44,7 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
             };
             if (member == null) continue;
             var source = Clamp(assignment.Span, syntax.Text.Length);
-            var digest = context.StableId(syntax.Text.Substring(source.Start, source.Length));
+            var digest = context.StableId(syntax.Text, source);
             declarations[member] = declarations.TryGetValue(member, out var previous) ? context.StableId(previous + digest) : digest;
         }
         var record = new System.Text.StringBuilder();

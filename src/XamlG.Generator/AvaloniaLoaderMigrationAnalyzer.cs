@@ -30,11 +30,22 @@ public sealed class AvaloniaLoaderMigrationAnalyzer : DiagnosticAnalyzer
             if (!options.Enabled) return;
             var loader = start.Compilation.GetTypeByMetadataName(AvaloniaMetadata.Loader);
             if (loader == null) return;
-            var optOuts = GeneratorCompilationOptOuts.Read((CSharpCompilation)start.Compilation, start.Options, options, start.CancellationToken);
-            if (optOuts.AllDocuments) return;
+            // A fully intercepted project needs no opt-out scan. In particular, do
+            // not reparse every XAML input and bind generated assembly metadata just
+            // to discover that none of its loader calls require a diagnostic.
+            var optOuts = new Lazy<GeneratorCompilationOptOuts>(() => GeneratorCompilationOptOuts.Read(
+                (CSharpCompilation)start.Compilation, start.Options, options, start.CancellationToken));
             start.RegisterSyntaxNodeAction(nodeContext =>
             {
                 var invocation = (InvocationExpressionSyntax)nodeContext.Node;
+                var name = invocation.Expression switch
+                {
+                    SimpleNameSyntax simple => simple,
+                    MemberAccessExpressionSyntax access => access.Name,
+                    MemberBindingExpressionSyntax binding => binding.Name,
+                    _ => null
+                };
+                if (name != null && name.Identifier.ValueText != AvaloniaMetadata.Load) return;
                 if (nodeContext.SemanticModel.GetSymbolInfo(invocation, nodeContext.CancellationToken).Symbol is not IMethodSymbol method ||
                     method.Name != AvaloniaMetadata.Load || !SymbolEqualityComparer.Default.Equals(method.ContainingType, loader)) return;
 
@@ -43,11 +54,14 @@ public sealed class AvaloniaLoaderMigrationAnalyzer : DiagnosticAnalyzer
                 // would incorrectly accept uncovered or malformed interception attempts.
                 if (nodeContext.SemanticModel.GetInterceptorMethod(invocation, nodeContext.CancellationToken) != null) return;
 
+                var exclusions = optOuts.Value;
+                if (exclusions.AllDocuments) return;
+
                 if (method.ReturnsVoid && nodeContext.SemanticModel.GetOperation(invocation, nodeContext.CancellationToken) is IInvocationOperation operation &&
                     operation.Arguments.FirstOrDefault(argument => argument.Parameter?.Ordinal == method.Parameters.Length - 1)?.Value is { } value)
                 {
                     while (value is IConversionOperation conversion) value = conversion.Operand;
-                    if (value.Type != null && optOuts.Classes.Contains(value.Type)) return;
+                    if (value.Type != null && exclusions.Classes.Contains(value.Type)) return;
                 }
 
                 nodeContext.ReportDiagnostic(Diagnostic.Create(LoaderCall, invocation.GetLocation(), method.ToDisplayString()));

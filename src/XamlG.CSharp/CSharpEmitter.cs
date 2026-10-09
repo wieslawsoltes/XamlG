@@ -14,10 +14,11 @@ public sealed class CSharpEmitter
         => Emit(document, cancellationToken, shareServices: false);
 
     internal XamlEmissionResult Emit(BoundDocument document, CancellationToken cancellationToken, bool shareServices,
-        SharedPropertyTables? sharedProperties = null)
+        SharedPropertyTables? sharedProperties = null, bool exportResources = false)
     {
         using var context = new EmissionContext(document, cancellationToken);
         context.SharedProperties = sharedProperties;
+        context.ShareCachedValues = shareServices;
         if (document.IsSkipped)
             return new(context.Id + ".xaml.g.cs", string.Empty, string.Empty, null, string.Empty,
                 context.Diagnostics.ToImmutableArray(), ImmutableArray<XamlSourceMapping>.Empty) { IsSkipped = true };
@@ -44,6 +45,8 @@ public sealed class CSharpEmitter
         context.UsePropertyAliases = namespaceName.Length != 0;
         if (context.UsePropertyAliases && sharedProperties != null)
             foreach (var (alias, source) in sharedProperties.Sources) writer.Line("using " + alias + " = " + source.TypeName + ";");
+        var constructionAliasPosition = writer.Position;
+        var constructionAliasIndent = writer.Indent;
         var containers = new Stack<INamedTypeSymbol>();
         for (var type = augment ? document.ClassSymbol : null; type != null; type = type.ContainingType) containers.Push(type);
         var nesting = containers.Count;
@@ -104,9 +107,11 @@ public sealed class CSharpEmitter
             ComponentInitializationEmitter.Emit(context, populate);
         flow.EmitContextHelpers(); flow.EmitNamespaceMaps();
         new ServiceContractEmitter(context).Emit();
-        context.DynamicSetters.Emit(); context.DynamicAdds.Emit(); context.EmitMetadataHelpers();
+        context.DynamicSetters.Emit(); context.DynamicAdds.Emit(); context.CachedExpressions.EmitHelpers(flow); context.EmitMetadataHelpers();
         if (nesting == 0) writer.Close(); else for (var i = 0; i < nesting; i++) writer.Close();
         if (namespaceName.Length != 0) writer.Close();
+        context.ConstructionFactories.InsertAlias(constructionAliasPosition, constructionAliasIndent);
+        if (exportResources) XamlResourceExports.Emit(context, typeName, build);
         return new(context.Id + ".xaml.g.cs", writer.ToString(), typeName, build, populate,
             context.Diagnostics.ToImmutableArray(), context.Mappings.ToImmutableArray())
             {
@@ -116,6 +121,8 @@ public sealed class CSharpEmitter
                     ? ImmutableArray.Create(new SharedGeneratedSource(services.TypeName, services.Source))
                     : ImmutableArray<SharedGeneratedSource>.Empty)
                     .AddRange(sharedProperties?.Sources.Select(entry => entry.Source) ?? Enumerable.Empty<SharedGeneratedSource>())
+                    .AddRange(context.ConstructionFactories.Sources)
+                    .AddRange(context.CachedExpressions.SharedSources)
             };
     }
 }

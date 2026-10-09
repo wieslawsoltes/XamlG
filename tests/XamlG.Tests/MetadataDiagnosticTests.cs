@@ -41,4 +41,52 @@ public sealed class MetadataDiagnosticTests
         foreach (var diagnostic in document.Diagnostics)
             Assert.Contains(xaml.Substring(diagnostic.Span.Start, diagnostic.Span.Length), new[] { "Old", "Removed", "Future" });
     }
+
+    [Fact]
+    public void CachedDescriptionsKeepEachOccurrenceLocationAcrossConcurrentDocuments()
+    {
+        var compilation = CompilationFactory.Create("""
+            namespace Metadata;
+            public class View {
+                public System.Collections.Generic.List<View> Children { get; } = new();
+                [System.Obsolete("Use Current", DiagnosticId = "OLD100")]
+                public int Old { get; set; }
+            }
+            """);
+        Parallel.For(0, 16, index =>
+        {
+            var source = new string(' ', index) + "<View xmlns='clr-namespace:Metadata'><View.Children>" +
+                string.Concat(Enumerable.Repeat("<View Old='1'/>", 20)) + "</View.Children></View>";
+            var document = new XamlCompiler().Bind(XamlSyntaxTree.Parse(source, index + ".xaml"), compilation);
+            Assert.True(document.Success);
+            Assert.Equal(20, document.Diagnostics.Length);
+            Assert.Equal(20, document.Diagnostics.Select(diagnostic => diagnostic.Span.Start).Distinct().Count());
+            foreach (var diagnostic in document.Diagnostics)
+            {
+                Assert.Equal("OLD100", diagnostic.Code);
+                Assert.Equal("'View.Old' is obsolete: Use Current", diagnostic.Message);
+                Assert.Equal("Old", source.Substring(diagnostic.Span.Start, diagnostic.Span.Length));
+            }
+        });
+    }
+
+    [Fact]
+    public void SameNamedSymbolsFromDifferentCompilationsDoNotShareMetadata()
+    {
+        const string model = "namespace Metadata; public class View { ATTRIBUTE public int Value { get; set; } }";
+        var current = CompilationFactory.Create(model.Replace("ATTRIBUTE", "", StringComparison.Ordinal));
+        var old = CompilationFactory.Create(model.Replace("ATTRIBUTE", "[System.Obsolete(\"Removed\", true)]", StringComparison.Ordinal));
+        var preview = CompilationFactory.Create(model.Replace("ATTRIBUTE", "[System.Diagnostics.CodeAnalysis.Experimental(\"PREVIEW100\")]", StringComparison.Ordinal));
+        var syntax = XamlSyntaxTree.Parse("<View xmlns='clr-namespace:Metadata' Value='1'/>");
+        for (var iteration = 0; iteration < 3; iteration++)
+        {
+            Assert.Empty(new XamlCompiler().Bind(syntax, current).Diagnostics);
+            var removed = Assert.Single(new XamlCompiler().Bind(syntax, old).Diagnostics);
+            Assert.Equal("XG2001", removed.Code);
+            Assert.Equal(XamlSeverity.Error, removed.Severity);
+            var experimental = Assert.Single(new XamlCompiler().Bind(syntax, preview).Diagnostics);
+            Assert.Equal("PREVIEW100", experimental.Code);
+            Assert.Equal(XamlSeverity.Warning, experimental.Severity);
+        }
+    }
 }

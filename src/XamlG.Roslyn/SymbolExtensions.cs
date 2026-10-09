@@ -10,21 +10,34 @@ public static class SymbolExtensions
     // Symbols are immutable. Weak keys keep repeated formatting off the binding/emission
     // hot path without retaining compilations across generator or language-server updates.
     private static readonly ConditionalWeakTable<ITypeSymbol, Name> CSharpNames = new();
-    private static readonly ConditionalWeakTable<ISymbol, Name> MetadataNames = new();
+    private static readonly ConditionalWeakTable<ISymbol, MetadataNameEntry> MetadataNames = new();
     private static readonly ConditionalWeakTable<ITypeSymbol, MemberCache> MemberLists = new();
     private sealed class Name(string value) { public string Value { get; } = value; }
-    public static string CSharpName(this ITypeSymbol type) => CSharpNames.GetValue(type, static type => new(type.ToDisplayString(TypeFormat))).Value;
-    public static string MetadataName(this ISymbol symbol) => MetadataNames.GetValue(symbol, static symbol => new(FormatMetadataName(symbol))).Value;
-    private static string FormatMetadataName(ISymbol symbol)
+    private sealed class MetadataNameEntry(ISymbol symbol)
     {
-        if (symbol is INamedTypeSymbol type && type.ContainingType != null) return type.ContainingType.MetadataName() + "+" + type.MetadataName;
-        var ns = symbol.ContainingNamespace; return ns == null || ns.IsGlobalNamespace ? symbol.MetadataName : ns.ToDisplayString() + "." + symbol.MetadataName;
+        // Roslyn can allocate a new arity-suffixed string on every MetadataName
+        // access. Negative probes need this short name but rarely the full name.
+        public string Local { get; } = symbol.MetadataName;
+        private string? _qualified;
+        public string Qualified => _qualified ??= FormatMetadataName(symbol, Local);
+    }
+    public static string CSharpName(this ITypeSymbol type) => CSharpNames.GetValue(type, static type => new(type.ToDisplayString(TypeFormat))).Value;
+    public static string MetadataName(this ISymbol symbol) => MetadataNames.GetValue(symbol, static symbol => new(symbol)).Qualified;
+    private static string FormatMetadataName(ISymbol symbol, string local)
+    {
+        if (symbol is INamedTypeSymbol type && type.ContainingType != null) return type.ContainingType.MetadataName() + "+" + local;
+        var ns = symbol.ContainingNamespace; return ns == null || ns.IsGlobalNamespace ? local : ns.ToDisplayString() + "." + local;
     }
     public static bool HasMetadataName(this ISymbol symbol, string name)
     {
-        var definition = symbol.OriginalDefinition;
-        return name != null && name.EndsWith(definition.MetadataName, StringComparison.Ordinal) &&
-            string.Equals(definition.MetadataName(), name, StringComparison.Ordinal);
+        if (name == null) return false;
+        // Constructed named types (including their containing types) keep the
+        // definition's metadata names. Avoid creating OriginalDefinition wrappers
+        // for positive probes as well as the much more frequent negative probes.
+        var definition = symbol is INamedTypeSymbol ? symbol : symbol.OriginalDefinition;
+        var cached = MetadataNames.GetValue(definition, static symbol => new(symbol));
+        return name.EndsWith(cached.Local, StringComparison.Ordinal) &&
+            string.Equals(cached.Qualified, name, StringComparison.Ordinal);
     }
     public static bool HasAttribute(this ISymbol symbol, IEnumerable<string> names)
     {

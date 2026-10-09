@@ -1,4 +1,5 @@
 using Microsoft.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using XamlG.Roslyn;
 using Xunit;
 
@@ -20,6 +21,77 @@ public sealed class SymbolNameTests
             Assert.False(inner.HasMetadataName("wrong.Outer`1+Inner`1"));
             Assert.False(inner.HasMetadataName("event.Inner`1"));
         });
+    }
+
+    [Fact]
+    public void ConstructedAndNullableMetadataChecksMatchTheirDefinitions()
+    {
+        var compilation = CompilationFactory.Create("""
+            #nullable enable
+            public class Holder<T> {
+                public System.Collections.Generic.Dictionary<string, T?>? Map;
+                public (int Number, string? Text) Pair;
+                public T[]? Array;
+                public T? Value;
+                public nint Integer;
+            }
+            """);
+        var holder = compilation.GetTypeByMetadataName("Holder`1")!;
+        var types = holder.GetMembers().OfType<IFieldSymbol>().Select(field => field.Type)
+            .Concat(holder.Construct(compilation.GetSpecialType(SpecialType.System_Int32)).GetMembers().OfType<IFieldSymbol>().Select(field => field.Type))
+            .Concat(new ITypeSymbol[] { holder, holder.ConstructUnboundGenericType() }).ToArray();
+        Parallel.ForEach(types, type =>
+        {
+            var expected = type.OriginalDefinition.MetadataName();
+            Assert.True(type.HasMetadataName(expected));
+            Assert.False(type.HasMetadataName("Different." + expected));
+            Assert.False(type.HasMetadataName(expected + "Different"));
+        });
+    }
+
+    [Fact]
+    public void NegativeGenericProbesCanBeFollowedByConcurrentQualifiedLookups()
+    {
+        var compilation = CompilationFactory.Create("namespace First { public class Item<T> {} } namespace Second { public class Item<T> {} }");
+        var symbols = new[] { "First", "Second" }.Select(ns =>
+            compilation.GetTypeByMetadataName(ns + ".Item`1")!.Construct(compilation.GetSpecialType(SpecialType.System_Int32))).ToArray();
+        foreach (var symbol in symbols)
+        {
+            Assert.False(symbol.HasMetadataName("Missing"));
+            Assert.False(symbol.HasMetadataName(null!));
+        }
+        Parallel.For(0, 64, index =>
+        {
+            var symbol = symbols[index % symbols.Length];
+            var expected = symbol.ContainingNamespace.Name + ".Item`1";
+            Assert.True(symbol.HasMetadataName(expected));
+            Assert.Equal(expected, symbol.MetadataName());
+            Assert.False(symbol.HasMetadataName("Other.Item`1"));
+            Assert.False(symbol.HasMetadataName("Item`1"));
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void MetadataProbeCacheDoesNotRetainCompilations(bool qualified)
+    {
+        var compilation = ProbeTemporaryCompilation(qualified);
+        for (var attempt = 0; attempt < 5 && compilation.IsAlive; attempt++)
+        {
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+        }
+        Assert.False(compilation.IsAlive);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference ProbeTemporaryCompilation(bool qualified)
+    {
+        var compilation = CompilationFactory.Create("namespace Temporary { public class Item<T> {} }");
+        var symbol = compilation.GetTypeByMetadataName("Temporary.Item`1")!.Construct(compilation.GetSpecialType(SpecialType.System_Int32));
+        Assert.False(symbol.HasMetadataName("Missing"));
+        if (qualified) Assert.True(symbol.HasMetadataName("Temporary.Item`1"));
+        return new WeakReference(compilation);
     }
 
     [Fact]
