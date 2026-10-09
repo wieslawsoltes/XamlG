@@ -50,6 +50,7 @@ internal static class CSharpNames
         float number => float.IsNaN(number) ? "global::System.Single.NaN" : float.IsPositiveInfinity(number) ? "global::System.Single.PositiveInfinity" : float.IsNegativeInfinity(number) ? "global::System.Single.NegativeInfinity" : number.ToString("R", CultureInfo.InvariantCulture) + "F",
         double number => double.IsNaN(number) ? "global::System.Double.NaN" : double.IsPositiveInfinity(number) ? "global::System.Double.PositiveInfinity" : double.IsNegativeInfinity(number) ? "global::System.Double.NegativeInfinity" : number.ToString("R", CultureInfo.InvariantCulture) + "D",
         decimal number => Decimal(number),
+        DateTime date => "new global::System.DateTime(" + date.Ticks.ToString(CultureInfo.InvariantCulture) + "L, global::System.DateTimeKind." + date.Kind + ")",
         _ => throw new ArgumentException("Only CLR scalar constants may reach the source emitter.", nameof(value))
     };
 
