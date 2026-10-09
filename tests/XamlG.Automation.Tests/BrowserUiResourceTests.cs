@@ -43,7 +43,9 @@ public sealed class BrowserUiResourceTests
             catalog.AddResource(new(uri, "Native", "Native resource", "text/html;profile=mcp-app",
                 Metadata: AutomationJson.Element(new { ui = new { csp = new { frameDomains = new[] { "https://example.test" } } } })), _ => ValueTask.FromResult("<html>Native</html>"));
             await SendAsync(browser, new BrowserCatalog(catalog.Tools, catalog.Resources, catalog.Prompts, "workspace-identity"), token);
-            var lease = await ReadAsync(browser, token); Assert.Equal("ownerLease", lease.GetProperty("kind").GetString());
+            var ready = await ReadAsync(browser, token);
+            Assert.Equal("ready", ready.GetProperty("kind").GetString());
+            Assert.Equal(64, ready.GetProperty("ownerSession").GetString()!.Length);
             Assert.Equal("text/html;profile=mcp-app", Assert.Single(bridge.Resources).MimeType);
             Assert.NotNull(Assert.Single(bridge.Resources).Metadata);
             await using var client = await McpClient.CreateAsync(new HttpClientTransport(new() { Endpoint = new(host.Urls.Single() + "/mcp") }),
@@ -53,8 +55,9 @@ public sealed class BrowserUiResourceTests
             Assert.Equal("text/html;profile=mcp-app", resource.MimeType);
             var read = client.ReadResourceAsync(uri, cancellationToken: token);
             var call = await ReadAsync(browser, token);
+            Assert.Equal("request", call.GetProperty("kind").GetString());
             Assert.Equal("resource", call.GetProperty("method").GetString());
-            await SendAsync(browser, new { id = call.GetProperty("id").GetString(), result = "<html>Native</html>" }, token);
+            await SendAsync(browser, new { id = call.GetProperty("id").GetInt64(), result = "<html>Native</html>" }, token);
             var content = Assert.IsType<TextResourceContents>(Assert.Single((await read).Contents));
             Assert.Equal("text/html;profile=mcp-app", content.MimeType);
             Assert.Equal("https://example.test", content.Meta!["ui"]!["csp"]!["frameDomains"]![0]!.GetValue<string>());
