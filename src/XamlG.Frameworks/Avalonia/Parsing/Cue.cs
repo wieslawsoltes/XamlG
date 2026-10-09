@@ -31,14 +31,14 @@ namespace XamlG.Frameworks.Avalonia.Parsing
         /// </summary>
         public static Cue Parse(string value, CultureInfo? culture)
         {
-            string v = value;
+            var v = value.AsSpan();
 
             if (value.EndsWith("%", StringComparison.Ordinal))
             {
                 v = v.TrimEnd('%');
             }
 
-            if (double.TryParse(v, NumberStyles.Float, culture, out double res))
+            if (XamlG.Internal.SpanNumberParser.TryParseDouble(v, NumberStyles.Float, culture, out double res))
             {
                 return new Cue(res / 100d);
             }

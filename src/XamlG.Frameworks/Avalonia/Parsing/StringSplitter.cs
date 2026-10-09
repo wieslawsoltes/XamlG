@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 
 namespace XamlG.Frameworks.Avalonia.Parsing;
 
@@ -46,65 +45,10 @@ internal static class StringSplitter
         if (s is null)
             return [];
 
-        var span = s.AsSpan();
-
-        var ranges = new List<(int start, int length)>();
-        int depth = 0;
-        int segStart = 0;
-
-        bool removeEmptyEntries = options.HasFlag(StringSplitOptions.RemoveEmptyEntries);
-        bool trimEntries = options.HasFlag((StringSplitOptions)2);
-
-        for (int i = 0; i < span.Length; i++)
-        {
-            char ch = span[i];
-            if (ch == openingBracket)
-                depth++;
-            else if (ch == closingBracket)
-            {
-                if (depth <= 0)
-                    throw new FormatException($"Unmatched closing bracket '{closingBracket}' at position {i}.");
-                depth--;
-            }
-            else if (separators.IndexOf(ch) >= 0)
-            {
-                if (depth != 0)
-                    continue;
-                ProcessSegment(segStart, i - 1);
-                segStart = i + 1;
-            }
-        }
-
-        if (depth != 0)
-            throw new FormatException($"Unmatched opening bracket '{openingBracket}' in input string.");
-        // last segment
-        ProcessSegment(segStart, span.Length - 1);
-
-        if (ranges.Count == 0)
-            return [];
-
-        var result = new string[ranges.Count];
-        for (int i = 0; i < ranges.Count; i++)
-        {
-            var r = ranges[i];
-            result[i] = s.Substring(r.start, r.length);
-        }
-
+        var parts = new BracketSplitEnumerator(s.AsSpan(), separators, openingBracket, closingBracket, options);
+        var result = new string[parts.Count];
+        var index = 0;
+        foreach (var part in parts) result[index++] = part.ToString();
         return result;
-
-        void ProcessSegment(int start, int end)
-        {
-            if (trimEntries)
-            {
-                while (start <= end && char.IsWhiteSpace(s[start]))
-                    start++;
-                while (end >= start && char.IsWhiteSpace(s[end]))
-                    end--;
-            }
-
-            int length = end - start + 1;
-            if (length > 0 || !removeEmptyEntries)
-                ranges.Add((start, length));
-        }
     }
 }

@@ -159,3 +159,28 @@ Decoration adaptations:
 - A shared inventory test discovers public string Parse methods in both supported
   framework builds. Every inventoried literal must bind and compile into C# with
   no direct Parse call. Detailed suites cover the grammar and runtime behavior.
+
+
+Span adaptations after the original parser imports:
+
+- Keep the compiler assemblies on `netstandard2.0`. `SpanNumberParser` binds the
+  current host's exact numeric span overloads to typed delegates once. Hosts
+  without those overloads retain the original BCL string parser. There is no
+  per-token reflection or replacement floating-point implementation.
+- Keep CSS color components, numeric tokens, geometry arguments, transform units,
+  font-variation pairs, OpenType tags and shadow components as spans. Bracket
+  validation still precedes element parsing. Named colors retain the existing
+  dictionary for owned strings and use length buckets for span lookup.
+- Replace the Unicode-range and font-feature regular expressions with span
+  scanners. Preserve wildcard rules, the regex's final-LF behavior, Unicode word
+  and decimal-digit categories, optional ranges, overflow defaults, exception
+  messages, and constructor semantics. Differential tests compare more than
+  15,000 accepted and rejected inputs with the public framework implementation.
+- Cache typed enum names for common span tokens. Numeric/flags forms retain the
+  BCL fallback, preserving its width, overflow and failure rules. Key aliases
+  are compared directly without a temporary lowercase string.
+- Keep strings at actual ownership/API boundaries: parsed names/values stored in
+  the model, diagnostics, Roslyn lookup and public extension contracts. The
+  culture-sensitive iteration-count normalization and uncommon BCL enum forms
+  remain explicit compatibility paths. Public parser behavior, fresh objects and
+  generated typed C# remain unchanged.

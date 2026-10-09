@@ -164,7 +164,7 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                 (s[0] == 'r' || s[0] == 'R') &&
                 (s[1] == 'g' || s[1] == 'G') &&
                 (s[2] == 'b' || s[2] == 'B') &&
-                TryParseCssFormat(s, out color))
+                TryParseCssFormat(s.AsSpan(), out color))
             {
                 return true;
             }
@@ -220,9 +220,6 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                 return true;
             }
 
-            // At this point all parsing uses strings
-            var str = s.ToString();
-
             // Note: The length checks are also an important optimization.
             // The shortest possible CSS format is "rbg(0,0,0)", Length = 10.
 
@@ -230,7 +227,7 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                 (s[0] == 'r' || s[0] == 'R') &&
                 (s[1] == 'g' || s[1] == 'G') &&
                 (s[2] == 'b' || s[2] == 'B') &&
-                TryParseCssFormat(str, out color))
+                TryParseCssFormat(s, out color))
             {
                 return true;
             }
@@ -239,7 +236,7 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                 (s[0] == 'h' || s[0] == 'H') &&
                 (s[1] == 's' || s[1] == 'S') &&
                 (s[2] == 'l' || s[2] == 'L') &&
-                HslColor.TryParse(str, out HslColor hslColor))
+                HslColor.TryParse(s, out HslColor hslColor))
             {
                 color = hslColor.ToRgb();
                 return true;
@@ -249,13 +246,13 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                 (s[0] == 'h' || s[0] == 'H') &&
                 (s[1] == 's' || s[1] == 'S') &&
                 (s[2] == 'v' || s[2] == 'V') &&
-                HsvColor.TryParse(str, out HsvColor hsvColor))
+                HsvColor.TryParse(s, out HsvColor hsvColor))
             {
                 color = hsvColor.ToRgb();
                 return true;
             }
 
-            var knownColor = KnownColors.GetKnownColor(str);
+            var knownColor = KnownColors.GetKnownColor(s);
 
             if (knownColor != KnownColor.None)
             {
@@ -326,39 +323,34 @@ namespace XamlG.Frameworks.Avalonia.Parsing
         /// <summary>
         /// Parses the given string representing a CSS color value into a new <see cref="Color"/>.
         /// </summary>
-        private static bool TryParseCssFormat(string? s, out Color color)
+        private static bool TryParseCssFormat(ReadOnlySpan<char> s, out Color color)
         {
             bool prefixMatched = false;
 
             color = default;
 
-            if (s is null)
-            {
-                return false;
-            }
-
-            string workingString = s.Trim();
+            var workingString = s.Trim();
 
             if (workingString.Length == 0 ||
-                workingString.IndexOf(",", StringComparison.Ordinal) < 0)
+                workingString.IndexOf(',') < 0)
             {
                 return false;
             }
 
             if (workingString.Length >= 11 &&
-                workingString.StartsWith("rgba(", StringComparison.OrdinalIgnoreCase) &&
-                workingString.EndsWith(")", StringComparison.Ordinal))
+                workingString.StartsWith("rgba(".AsSpan(), StringComparison.OrdinalIgnoreCase) &&
+                workingString.EndsWith(")".AsSpan(), StringComparison.Ordinal))
             {
-                workingString = workingString.Substring(5, workingString.Length - 6);
+                workingString = workingString.Slice(5, workingString.Length - 6);
                 prefixMatched = true;
             }
 
             if (prefixMatched == false &&
                 workingString.Length >= 10 &&
-                workingString.StartsWith("rgb(", StringComparison.OrdinalIgnoreCase) &&
-                workingString.EndsWith(")", StringComparison.Ordinal))
+                workingString.StartsWith("rgb(".AsSpan(), StringComparison.OrdinalIgnoreCase) &&
+                workingString.EndsWith(")".AsSpan(), StringComparison.Ordinal))
             {
-                workingString = workingString.Substring(4, workingString.Length - 5);
+                workingString = workingString.Slice(4, workingString.Length - 5);
                 prefixMatched = true;
             }
 
@@ -367,13 +359,13 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                 return false;
             }
 
-            string[] components = workingString.Split(',');
+            var components = new ColorComponents(workingString);
 
             if (components.Length == 3) // RGB
             {
-                if (InternalTryParseByte(components[0].AsSpan(), out byte red) &&
-                    InternalTryParseByte(components[1].AsSpan(), out byte green) &&
-                    InternalTryParseByte(components[2].AsSpan(), out byte blue))
+                if (InternalTryParseByte(components[0], out byte red) &&
+                    InternalTryParseByte(components[1], out byte green) &&
+                    InternalTryParseByte(components[2], out byte blue))
                 {
                     color = new Color(0xFF, red, green, blue);
                     return true;
@@ -381,10 +373,10 @@ namespace XamlG.Frameworks.Avalonia.Parsing
             }
             else if (components.Length == 4) // RGBA
             {
-                if (InternalTryParseByte(components[0].AsSpan(), out byte red) &&
-                    InternalTryParseByte(components[1].AsSpan(), out byte green) &&
-                    InternalTryParseByte(components[2].AsSpan(), out byte blue) &&
-                    InternalTryParseDouble(components[3].AsSpan(), out double alpha))
+                if (InternalTryParseByte(components[0], out byte red) &&
+                    InternalTryParseByte(components[1], out byte green) &&
+                    InternalTryParseByte(components[2], out byte blue) &&
+                    InternalTryParseDouble(components[3], out double alpha))
                 {
                     color = new Color((byte)Math.Round(alpha * 255.0), red, green, blue);
                     return true;

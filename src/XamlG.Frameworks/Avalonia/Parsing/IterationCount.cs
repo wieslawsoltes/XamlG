@@ -163,7 +163,7 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                 if (s.StartsWith("-"))
                     throw new InvalidCastException("IterationCount can't be a negative number.");
 
-                var value = ulong.Parse(s, CultureInfo.InvariantCulture);
+                var value = XamlG.Internal.SpanNumberParser.ParseUInt64(s.AsSpan(), CultureInfo.InvariantCulture);
 
                 return new IterationCount(value);
             }

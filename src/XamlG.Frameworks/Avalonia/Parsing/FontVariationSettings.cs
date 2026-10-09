@@ -71,9 +71,9 @@ internal sealed class FontVariationSettings
 
         var variations = new List<FontVariation>();
 
-        foreach (var part in s.Split(','))
+        foreach (var part in new XamlG.Internal.SpanSplitEnumerator(s.AsSpan(), ','))
         {
-            var pair = part.AsSpan().Trim();
+            var pair = part.Trim();
 
             if (pair.IsEmpty)
             {
@@ -109,7 +109,7 @@ internal sealed class FontVariationSettings
                     $"Invalid font variation value '{valueText.ToString()}' for axis '{tagText.ToString()}'.");
             }
 
-            variations.Add(new FontVariation(OpenTypeTag.Parse(tagText.ToString()), value));
+            variations.Add(new FontVariation(OpenTypeTag.Parse(tagText), value));
         }
 
         return variations.Count == 0 ? Empty : new FontVariationSettings(variations);

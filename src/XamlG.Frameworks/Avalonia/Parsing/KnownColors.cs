@@ -7,6 +7,7 @@ namespace XamlG.Frameworks.Avalonia.Parsing
     internal static partial class KnownColors
     {
         private static readonly IReadOnlyDictionary<string, KnownColor> _knownColorNames;
+        private static readonly Dictionary<int, KeyValuePair<string, KnownColor>[]> _spanNames;
         private static readonly IReadOnlyDictionary<uint, string> _knownColors;
 #if !BUILDTASK
         private static readonly Dictionary<KnownColor, IImmutableSolidColorBrush> _knownBrushes;
@@ -40,6 +41,8 @@ namespace XamlG.Frameworks.Avalonia.Parsing
             }
 
             _knownColorNames = knownColorNames;
+            _spanNames = knownColorNames.GroupBy(pair => pair.Key.Length)
+                .ToDictionary(group => group.Key, group => group.ToArray());
             _knownColors = knownColors;
             
 #if !BUILDTASK
@@ -96,6 +99,14 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                 return color;
             }
 
+            return KnownColor.None;
+        }
+
+        public static KnownColor GetKnownColor(ReadOnlySpan<char> s)
+        {
+            if (_spanNames.TryGetValue(s.Length, out var candidates))
+                foreach (var candidate in candidates)
+                    if (s.Equals(candidate.Key.AsSpan(), StringComparison.OrdinalIgnoreCase)) return candidate.Value;
             return KnownColor.None;
         }
 

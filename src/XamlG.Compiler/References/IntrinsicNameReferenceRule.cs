@@ -21,7 +21,7 @@ public sealed class IntrinsicNameReferenceRule : IXamlNameReferenceRule
             {
                 if (!Reference(occurrence.Syntax.Name)) continue;
                 var argument = occurrence.Syntax.Arguments.FirstOrDefault(a => a.Name is null or "Name");
-                if (argument?.ValueSpan is not { } span || occurrence.SourceMap.Text.Substring(span.Start, span.Length) != argument.Value) continue;
+                if (argument?.ValueSpan is not { } span || !occurrence.SourceMap.Text.AsSpan(span.Start, span.Length).SequenceEqual(argument.Value.AsSpan())) continue;
                 yield return new(argument.Value, occurrence.SourceMap.ToSource(span));
             }
     }

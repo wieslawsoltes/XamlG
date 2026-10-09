@@ -251,7 +251,7 @@ namespace XamlG.Frameworks.Avalonia.Parsing
             var span = _s.Slice(0, len);
 
 #if NETSTANDARD2_0
-            if (!float.TryParse(span.ToString(), NumberStyles.Number, CultureInfo.InvariantCulture, out res))
+            if (!XamlG.Internal.SpanNumberParser.TryParseFloat(span, NumberStyles.Number, CultureInfo.InvariantCulture, out res))
                 return false;
 #else
             if (!float.TryParse(span, NumberStyles.Number, CultureInfo.InvariantCulture, out res))
@@ -293,7 +293,7 @@ namespace XamlG.Frameworks.Avalonia.Parsing
             var span = _s.Slice(0, len);
 
 #if NETSTANDARD2_0
-            if (!double.TryParse(span.ToString(), NumberStyles.Number, CultureInfo.InvariantCulture, out res))
+            if (!XamlG.Internal.SpanNumberParser.TryParseDouble(span, NumberStyles.Number, CultureInfo.InvariantCulture, out res))
                 return false;
 #else
             if (!double.TryParse(span, NumberStyles.Number, CultureInfo.InvariantCulture, out res))

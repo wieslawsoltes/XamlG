@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Text.RegularExpressions;
+using System.Globalization;
+using XamlG.Internal;
 
 namespace XamlG.Frameworks.Avalonia.Parsing
 {
@@ -70,42 +71,25 @@ namespace XamlG.Frameworks.Avalonia.Parsing
         /// <param name="s">The string to parse.</param>
         /// <returns>The parsed <see cref="UnicodeRange"/>.</returns>
         /// <exception cref="FormatException"></exception>
-        public static UnicodeRange Parse(string s)
+        public static UnicodeRange Parse(string s) => Parse(s.AsSpan());
+
+        public static UnicodeRange Parse(ReadOnlySpan<char> s)
         {
-            if (string.IsNullOrEmpty(s))
-            {
-                throw new FormatException("Could not parse specified Unicode range.");
-            }
-
-            var parts = s.Split(',');
-
-            var length = parts.Length;
-
-            if(length == 0)
-            {
-                throw new FormatException("Could not parse specified Unicode range.");
-            }
-
-            if(length == 1)
-            {
-                return new UnicodeRange(UnicodeRangeSegment.Parse(parts[0]));
-            }
-
-            var segments = new UnicodeRangeSegment[length];
-
-            for (int i = 0; i < length; i++)
-            {
-                segments[i] = UnicodeRangeSegment.Parse(parts[i].Trim());
-            }
-
+            if (s.IsEmpty) throw new FormatException("Could not parse specified Unicode range.");
+            var count = 1;
+            foreach (var c in s) if (c == ',') count++;
+            // Upstream trims segments only for the multiple-segment form.
+            if (count == 1) return new UnicodeRange(UnicodeRangeSegment.Parse(s));
+            var segments = new UnicodeRangeSegment[count];
+            var index = 0;
+            foreach (var part in new SpanSplitEnumerator(s, ','))
+                segments[index++] = UnicodeRangeSegment.Parse(part.Trim());
             return new UnicodeRange(segments);
         }
     }
 
     internal readonly record struct UnicodeRangeSegment
     {
-        private static readonly Regex s_regex = new Regex(@"^(?:[uU]\+)?(?:([0-9a-fA-F](?:[0-9a-fA-F?]{1,5})?))$", RegexOptions.Compiled);
-
         public UnicodeRangeSegment(int start, int end)
         {
             Start = start;
@@ -140,60 +124,53 @@ namespace XamlG.Frameworks.Avalonia.Parsing
         /// <param name="s">The string to parse.</param>
         /// <returns>The parsed <see cref="UnicodeRangeSegment"/>.</returns>
         /// <exception cref="FormatException"></exception>
-        public static UnicodeRangeSegment Parse(string s)
+        public static UnicodeRangeSegment Parse(string s) => Parse(s.AsSpan());
+
+        public static UnicodeRangeSegment Parse(ReadOnlySpan<char> s)
         {
-            if (string.IsNullOrEmpty(s))
+            var separator = s.IndexOf('-');
+            if (separator < 0)
             {
-                throw new FormatException("Could not parse specified Unicode range segment.");
+                if (!TryParseToken(s, out var start, out var end)) throw Invalid();
+                return new UnicodeRangeSegment(start, end);
             }
-
-            var parts = s.Split('-');
-
-            int start, end;
-
-            switch (parts.Length)
-            {
-                case 1:
-                    {
-                        //e.g. U+20, U+3F U+30??
-                        var single = s_regex.Match(parts[0]);
-
-                        if (!single.Success)
-                        {
-                            throw new FormatException("Could not parse specified Unicode range segment.");
-                        }
-
-                        if (single.Value.IndexOf('?') < 0)
-                        {
-                            start = int.Parse(single.Groups[1].Value, System.Globalization.NumberStyles.HexNumber);
-                            end = start;
-                        }
-                        else
-                        {
-                            start = int.Parse(single.Groups[1].Value.Replace('?', '0'), System.Globalization.NumberStyles.HexNumber);
-                            end = int.Parse(single.Groups[1].Value.Replace('?', 'F'), System.Globalization.NumberStyles.HexNumber);
-                        }
-                        break;
-                    }
-                case 2:
-                    {
-                        var first = s_regex.Match(parts[0]);
-                        var second = s_regex.Match(parts[1]);
-
-                        if (!first.Success || !second.Success)
-                        {
-                            throw new FormatException("Could not parse specified Unicode range segment.");
-                        }
-
-                        start = int.Parse(first.Groups[1].Value, System.Globalization.NumberStyles.HexNumber);
-                        end = int.Parse(second.Groups[1].Value, System.Globalization.NumberStyles.HexNumber);
-                        break;
-                    }
-                default:
-                    throw new FormatException("Could not parse specified Unicode range segment.");
-            }
-
-            return new UnicodeRangeSegment(start, end);
+            // Validate both tokens before parsing their values, as the regex version does.
+            var first = s.Slice(0, separator);
+            var second = s.Slice(separator + 1);
+            if (!TryParseToken(first, out var firstStart, out _) ||
+                !TryParseToken(second, out var secondStart, out _)) throw Invalid();
+            if (first.IndexOf('?') >= 0) ThrowWildcardNumber(first);
+            if (second.IndexOf('?') >= 0) ThrowWildcardNumber(second);
+            return new UnicodeRangeSegment(firstStart, secondStart);
         }
+
+        private static bool TryParseToken(ReadOnlySpan<char> token, out int start, out int end)
+        {
+            start = end = 0;
+            // The original regex's '$' accepts exactly one final LF.
+            if (!token.IsEmpty && token[token.Length - 1] == '\n') token = token.Slice(0, token.Length - 1);
+            if (token.Length >= 2 && (token[0] == 'u' || token[0] == 'U') && token[1] == '+') token = token.Slice(2);
+            if (token.IsEmpty || token.Length > 6) return false;
+            for (var i = 0; i < token.Length; i++)
+            {
+                var c = token[i];
+                var digit = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 :
+                    c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+                if (digit < 0 && !(i > 0 && c == '?')) return false;
+                start = (start << 4) | (digit < 0 ? 0 : digit);
+                end = (end << 4) | (digit < 0 ? 15 : digit);
+            }
+            return true;
+        }
+
+        private static void ThrowWildcardNumber(ReadOnlySpan<char> token)
+        {
+            if (token[token.Length - 1] == '\n') token = token.Slice(0, token.Length - 1);
+            if (token.Length >= 2 && token[1] == '+') token = token.Slice(2);
+            // Retain the host's numeric exception text for invalid wildcard endpoints.
+            _ = int.Parse(token.ToString(), NumberStyles.HexNumber);
+        }
+
+        private static FormatException Invalid() => new FormatException("Could not parse specified Unicode range segment.");
     }
 }

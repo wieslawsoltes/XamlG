@@ -121,29 +121,16 @@ namespace XamlG.Frameworks.Avalonia.Parsing
         /// <returns>A new <see cref="BoxShadows"/> collection.</returns>
         public static BoxShadows Parse(string s)
         {
-            var sp = StringSplitter.SplitRespectingBrackets(
-                s, Separator, OpeningParenthesis, ClosingParenthesis,
-                StringSplitOptions.RemoveEmptyEntries);
-            if (sp.Length == 0
-                || (sp.Length == 1 &&
-                    (string.IsNullOrWhiteSpace(sp[0])
-                     || sp[0] == "none")))
-            {
+            if (s == null) return new BoxShadows();
+            var parts = new BracketSplitEnumerator(s.AsSpan(), ",".AsSpan(),
+                OpeningParenthesis, ClosingParenthesis, StringSplitOptions.RemoveEmptyEntries);
+            if (!parts.MoveNext() || parts.Count == 1 &&
+                (parts.Current.Trim().IsEmpty || parts.Current.SequenceEqual("none".AsSpan())))
                 return new BoxShadows();
-            }
-
-            var first = BoxShadow.Parse(sp[0]);
-            if (sp.Length == 1)
-            {
-                return new BoxShadows(first);
-            }
-
-            var rest = new BoxShadow[sp.Length - 1];
-            for (var c = 0; c < rest.Length; c++)
-            {
-                rest[c] = BoxShadow.Parse(sp[c + 1]);
-            }
-
+            var first = BoxShadow.Parse(parts.Current);
+            if (parts.Count == 1) return new BoxShadows(first);
+            var rest = new BoxShadow[parts.Count - 1];
+            for (var index = 0; parts.MoveNext(); index++) rest[index] = BoxShadow.Parse(parts.Current);
             return new BoxShadows(first, rest);
         }
 

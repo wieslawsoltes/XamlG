@@ -25,7 +25,7 @@ public static class XamlMarkupScanner
             yield return new(syntax, map);
             foreach (var argument in syntax.Arguments.Reverse())
                 if (argument.ValueSpan is { } span && argument.Value.StartsWith("{", StringComparison.Ordinal) &&
-                    map.Text.Substring(span.Start, span.Length) == argument.Value)
+                    map.Text.AsSpan(span.Start, span.Length).SequenceEqual(argument.Value.AsSpan()))
                     pending.Push((argument.Value, span.Start, depth + 1));
         }
     }

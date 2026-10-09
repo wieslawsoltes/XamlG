@@ -117,7 +117,7 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                     part = part.Slice(0, unitIndex);
                 }
 
-                var value = double.Parse(part.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture);
+                var value = XamlG.Internal.SpanNumberParser.ParseDouble(part, NumberStyles.Float, CultureInfo.InvariantCulture);
 
                 return new UnitValue(unit, value);
             }

@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Roslyn;
 using XamlG.Syntax;
+using XamlG.Internal;
 
 namespace XamlG.Compiler;
 
@@ -24,10 +25,15 @@ internal static class RuntimeNamespaceResolver
             }
             else if (uri.StartsWith("clr-namespace:", StringComparison.Ordinal))
             {
-                var parts = uri.Substring(14).Split(';');
-                var assembly = parts.Skip(1).FirstOrDefault(p => p.StartsWith("assembly=", StringComparison.Ordinal))?.Substring(9)
-                    ?? context.Types.Configuration.DefaultAssemblyName ?? context.Types.Compilation.AssemblyName;
-                mappings.Add(new(uri, parts[0], assembly));
+                var parts = new SpanSplitEnumerator(uri.AsSpan(14), ';');
+                parts.MoveNext();
+                var ns = parts.Current.ToString();
+                string? assembly = null;
+                while (parts.MoveNext())
+                    if (parts.Current.StartsWith("assembly=".AsSpan(), StringComparison.Ordinal))
+                    { assembly = parts.Current.Slice(9).ToString(); break; }
+                assembly ??= context.Types.Configuration.DefaultAssemblyName ?? context.Types.Compilation.AssemblyName;
+                mappings.Add(new(uri, ns, assembly));
             }
             else if (uri.StartsWith("using:", StringComparison.Ordinal))
             {

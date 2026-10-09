@@ -105,7 +105,7 @@ namespace XamlG.Frameworks.Avalonia.Parsing
             {
                 return new FlexBasis(val / 100, FlexBasisKind.Relative);
             }
-            else if (double.TryParse(str, NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
+            else if (XamlG.Internal.SpanNumberParser.TryParseDouble(str.AsSpan(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value))
             {
                 return new FlexBasis(value, FlexBasisKind.Absolute);
             }

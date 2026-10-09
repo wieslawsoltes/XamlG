@@ -61,7 +61,7 @@ internal sealed class XamlParser
         }
         if (_text[_position] == '<') return ParseElement(depth);
         while (_position < _text.Length && _text[_position] != '<') _position++;
-        return new XamlTextSyntax(XmlEntityDecoder.Decode(_text.Substring(start, _position - start), start, AddDiagnostic, false), false, new(start, _position - start));
+        return new XamlTextSyntax(XmlEntityDecoder.Decode(_text.AsSpan(start, _position - start), start, AddDiagnostic, false), false, new(start, _position - start));
     }
     private XamlElementSyntax ParseElement(int depth)
     {
@@ -95,7 +95,7 @@ internal sealed class XamlParser
                 if (_position == _text.Length || _text[_position] != quote) Report("XG0005", "Unterminated attribute value.", valueStart, _position - valueStart);
             }
             var valueSpan = new TextSpan(valueStart, _position - valueStart);
-            var value = XmlEntityDecoder.Decode(_text.Substring(valueStart, valueSpan.Length), valueStart, AddDiagnostic, true);
+            var value = XmlEntityDecoder.Decode(_text.AsSpan(valueStart, valueSpan.Length), valueStart, AddDiagnostic, true);
             if (quote != '\0' && _position < _text.Length && _text[_position] == quote) _position++;
             attributes.Add(new(attributeName, value, attributeNameSpan, valueSpan, new(attributeStart, _position - attributeStart), quote == '\0' ? '"' : quote));
         }

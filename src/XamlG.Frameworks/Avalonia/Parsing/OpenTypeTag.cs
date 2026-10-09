@@ -25,21 +25,13 @@ namespace XamlG.Frameworks.Avalonia.Parsing
             _value = (uint)((c1 << 24) | (c2 << 16) | (c3 << 8) | c4);
         }
 
-        public static OpenTypeTag Parse(string tag)
+        public static OpenTypeTag Parse(string tag) => Parse(tag.AsSpan());
+
+        public static OpenTypeTag Parse(ReadOnlySpan<char> tag)
         {
-            if (string.IsNullOrEmpty(tag))
-                return None;
-
-            var realTag = new char[4];
-
-            var len = Math.Min(4, tag.Length);
-            var i = 0;
-            for (; i < len; i++)
-                realTag[i] = tag[i];
-            for (; i < 4; i++)
-                realTag[i] = ' ';
-
-            return new OpenTypeTag(realTag[0], realTag[1], realTag[2], realTag[3]);
+            if (tag.IsEmpty) return None;
+            return new OpenTypeTag(tag[0], tag.Length > 1 ? tag[1] : ' ',
+                tag.Length > 2 ? tag[2] : ' ', tag.Length > 3 ? tag[3] : ' ');
         }
 
         public override string ToString()

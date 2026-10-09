@@ -107,42 +107,6 @@ namespace XamlG.Frameworks.Avalonia.Parsing
             }
         }
 
-        struct ArrayReader
-        {
-            private int _index;
-            private readonly string[] _arr;
-
-            public ArrayReader(string[] arr)
-            {
-                _arr = arr;
-                _index = 0;
-            }
-
-            public bool TryReadString(out string? s)
-            {
-                s = null;
-                if (_index >= _arr.Length)
-                {
-                    return false;
-                }
-
-                s = _arr[_index];
-                _index++;
-
-                return true;
-            }
-
-            public string ReadString()
-            {
-                if (!TryReadString(out var rv))
-                {
-                    throw new FormatException();
-                }
-
-                return rv!;
-            }
-        }
-
         /// <inheritdoc/>
         public override string ToString()
         {
@@ -199,69 +163,37 @@ namespace XamlG.Frameworks.Avalonia.Parsing
         /// <returns>A new <see cref="BoxShadow"/></returns>
         public static BoxShadow Parse(string s)
         {
-            if (s == null)
-            {
-                throw new ArgumentNullException();
-            }
+            if (s == null) throw new ArgumentNullException();
+            return Parse(s.AsSpan());
+        }
 
-            if (s.Length == 0)
-            {
-                throw new FormatException();
-            }
-
-            var p = StringSplitter.SplitRespectingBrackets(
-                s, s_Separator,
-                OpeningParenthesis, ClosingParenthesis,
-                StringSplitOptions.RemoveEmptyEntries);
-            if (p.Length == 1 && p[0] == "none")
-            {
-                return default;
-            }
-
-            if (p.Length < 3 || p.Length > 6)
-            {
-                throw new FormatException();
-            }
-
-            bool inset = false;
-
-            var tokenizer = new ArrayReader(p);
-
-            string firstToken = tokenizer.ReadString();
-            if (firstToken == "inset")
-            {
-                inset = true;
-                firstToken = tokenizer.ReadString();
-            }
-
-            var offsetX = double.Parse(firstToken, CultureInfo.InvariantCulture);
-            var offsetY = double.Parse(tokenizer.ReadString(), CultureInfo.InvariantCulture);
-            double blur = 0;
-            double spread = 0;
-
-            tokenizer.TryReadString(out var token3);
-            tokenizer.TryReadString(out var token4);
-            tokenizer.TryReadString(out var token5);
-
-            if (token4 != null)
-            {
-                blur = double.Parse(token3!, CultureInfo.InvariantCulture);
-            }
-
-            if (token5 != null)
-            {
-                spread = double.Parse(token4!, CultureInfo.InvariantCulture);
-            }
-
-            var color = Color.Parse(token5 ?? token4 ?? token3!);
+        public static BoxShadow Parse(ReadOnlySpan<char> s)
+        {
+            if (s.IsEmpty) throw new FormatException();
+            var parts = new BracketSplitEnumerator(s, s_Separator,
+                OpeningParenthesis, ClosingParenthesis, StringSplitOptions.RemoveEmptyEntries);
+            parts.MoveNext();
+            var first = parts.Current;
+            if (parts.Count == 1 && first.SequenceEqual("none".AsSpan())) return default;
+            if (parts.Count < 3 || parts.Count > 6) throw new FormatException();
+            var inset = first.SequenceEqual("inset".AsSpan());
+            if (inset) { parts.MoveNext(); first = parts.Current; }
+            var offsetX = first.ParseDouble(CultureInfo.InvariantCulture);
+            parts.MoveNext();
+            var offsetY = parts.Current.ParseDouble(CultureInfo.InvariantCulture);
+            if (!parts.MoveNext()) throw new ArgumentNullException("s");
+            var token3 = parts.Current;
+            var has4 = parts.MoveNext();
+            var token4 = parts.Current;
+            var has5 = parts.MoveNext();
+            var token5 = parts.Current;
+            var blur = has4 ? token3.ParseDouble(CultureInfo.InvariantCulture) : 0;
+            var spread = has5 ? token4.ParseDouble(CultureInfo.InvariantCulture) : 0;
+            var color = Color.Parse(has5 ? token5 : has4 ? token4 : token3);
             return new BoxShadow
             {
-                IsInset = inset,
-                OffsetX = offsetX,
-                OffsetY = offsetY,
-                Blur = blur,
-                Spread = spread,
-                Color = color
+                IsInset = inset, OffsetX = offsetX, OffsetY = offsetY,
+                Blur = blur, Spread = spread, Color = color
             };
         }
 

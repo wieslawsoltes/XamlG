@@ -327,20 +327,18 @@ namespace XamlG.Frameworks.Avalonia.Parsing
         /// <param name="hslColor">The parsed <see cref="HslColor"/>.</param>
         /// <returns>True if parsing was successful; otherwise, false.</returns>
         public static bool TryParse(string? s, out HslColor hslColor)
+            => TryParse(s.AsSpan(), out hslColor);
+
+        public static bool TryParse(ReadOnlySpan<char> s, out HslColor hslColor)
         {
             bool prefixMatched = false;
 
             hslColor = default;
 
-            if (s is null)
-            {
-                return false;
-            }
-
-            string workingString = s.Trim();
+            var workingString = s.Trim();
 
             if (workingString.Length == 0 ||
-                workingString.IndexOf(",", StringComparison.Ordinal) < 0)
+                workingString.IndexOf(',') < 0)
             {
                 return false;
             }
@@ -349,19 +347,19 @@ namespace XamlG.Frameworks.Avalonia.Parsing
             // The shortest possible format is "hsl(0,0,0)", Length = 10.
 
             if (workingString.Length >= 11 &&
-                workingString.StartsWith("hsla(", StringComparison.OrdinalIgnoreCase) &&
-                workingString.EndsWith(")", StringComparison.Ordinal))
+                workingString.StartsWith("hsla(".AsSpan(), StringComparison.OrdinalIgnoreCase) &&
+                workingString.EndsWith(")".AsSpan(), StringComparison.Ordinal))
             {
-                workingString = workingString.Substring(5, workingString.Length - 6);
+                workingString = workingString.Slice(5, workingString.Length - 6);
                 prefixMatched = true;
             }
 
             if (prefixMatched == false &&
                 workingString.Length >= 10 &&
-                workingString.StartsWith("hsl(", StringComparison.OrdinalIgnoreCase) &&
-                workingString.EndsWith(")", StringComparison.Ordinal))
+                workingString.StartsWith("hsl(".AsSpan(), StringComparison.OrdinalIgnoreCase) &&
+                workingString.EndsWith(")".AsSpan(), StringComparison.Ordinal))
             {
-                workingString = workingString.Substring(4, workingString.Length - 5);
+                workingString = workingString.Slice(4, workingString.Length - 5);
                 prefixMatched = true;
             }
 
@@ -370,13 +368,13 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                 return false;
             }
 
-            string[] components = workingString.Split(',');
+            var components = new ColorComponents(workingString);
 
             if (components.Length == 3) // HSL
             {
-                if (components[0].AsSpan().TryParseDouble(NumberStyles.Number, CultureInfo.InvariantCulture, out double hue) &&
-                    TryInternalParse(components[1].AsSpan(), out double saturation) &&
-                    TryInternalParse(components[2].AsSpan(), out double lightness))
+                if (components[0].TryParseDouble(NumberStyles.Number, CultureInfo.InvariantCulture, out double hue) &&
+                    TryInternalParse(components[1], out double saturation) &&
+                    TryInternalParse(components[2], out double lightness))
                 {
                     hslColor = new HslColor(1.0, hue, saturation, lightness);
                     return true;
@@ -384,10 +382,10 @@ namespace XamlG.Frameworks.Avalonia.Parsing
             }
             else if (components.Length == 4) // HSLA
             {
-                if (components[0].AsSpan().TryParseDouble(NumberStyles.Number, CultureInfo.InvariantCulture, out double hue) &&
-                    TryInternalParse(components[1].AsSpan(), out double saturation) &&
-                    TryInternalParse(components[2].AsSpan(), out double lightness) &&
-                    TryInternalParse(components[3].AsSpan(), out double alpha))
+                if (components[0].TryParseDouble(NumberStyles.Number, CultureInfo.InvariantCulture, out double hue) &&
+                    TryInternalParse(components[1], out double saturation) &&
+                    TryInternalParse(components[2], out double lightness) &&
+                    TryInternalParse(components[3], out double alpha))
                 {
                     hslColor = new HslColor(alpha, hue, saturation, lightness);
                     return true;

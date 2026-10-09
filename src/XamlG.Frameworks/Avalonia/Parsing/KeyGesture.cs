@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Globalization;
 
 namespace XamlG.Frameworks.Avalonia.Parsing
 {
@@ -9,11 +7,6 @@ namespace XamlG.Frameworks.Avalonia.Parsing
     /// </summary>
     internal sealed class KeyGesture : IEquatable<KeyGesture>
     {
-        private static readonly Dictionary<string, Key> s_keySynonyms = new Dictionary<string, Key>
-        {
-            { "+", Key.OemPlus }, { "-", Key.OemMinus }, { ".", Key.OemPeriod }, { ",", Key.OemComma }
-        };
-
         public KeyGesture(Key key, KeyModifiers modifiers = KeyModifiers.None)
         {
             Key = key;
@@ -76,7 +69,7 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                 {
                     var partSpan = gesture.AsSpan(cstart, c - cstart).Trim();
 
-                    if (!TryParseKey(partSpan.ToString(), out key))
+                    if (!TryParseKey(partSpan, out key))
                     {
                         keyModifiers |= ParseModifier(partSpan);
                     }
@@ -89,13 +82,15 @@ namespace XamlG.Frameworks.Avalonia.Parsing
         }
 
         // TODO: Move that to external key parser
-        private static bool TryParseKey(string keyStr, out Key key)
+        private static bool TryParseKey(ReadOnlySpan<char> keyStr, out Key key)
         {
             key = Key.None;
-            if (s_keySynonyms.TryGetValue(keyStr.ToLower(CultureInfo.InvariantCulture), out key))
-                return true;
-
-            if (Enum.TryParse(keyStr, true, out key))
+            if (keyStr.Length == 1)
+            {
+                key = keyStr[0] switch { '+' => Key.OemPlus, '-' => Key.OemMinus, '.' => Key.OemPeriod, ',' => Key.OemComma, _ => Key.None };
+                if (key != Key.None) return true;
+            }
+            if (SpanHelpers.TryParseEnum(keyStr, true, out key))
                 return true;
 
             return false;
@@ -115,6 +110,7 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                 return KeyModifiers.Meta;
             }
 
+            if (SpanHelpers.TryParseEnum<KeyModifiers>(modifier, true, out var value)) return value;
             return (KeyModifiers)Enum.Parse(typeof(KeyModifiers), modifier.ToString(), true);
         }
 

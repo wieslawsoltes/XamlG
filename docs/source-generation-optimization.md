@@ -1352,3 +1352,38 @@ coverage for laziness, source mappings, live editing, evaluation order and
 cleanup remains. Smaller source and IL alone are not acceptance criteria.
 Compact CI evidence is retained in
 `artifacts/controlcatalog-performance/ci-222f0d2-comparison`.
+
+
+## Span parser modernization
+
+The compiler and generator still target `netstandard2.0`. Numeric span parsing
+uses cached typed delegates to the current host's BCL overloads, falling back to
+that host's string API when needed. It preserves culture, numeric styles,
+overflow, negative zero and rounding; it does not implement a new floating-point
+parser or invoke reflection per token.
+
+XML decoding now accepts source slices, copies unescaped text once and uses a
+small stack buffer or a pooled buffer for escaped text. Decoded source maps share
+entity parsing without constructing per-entity strings. Markup arguments avoid
+intermediate quoted/trimmed strings, and source comparisons use span equality.
+Namespace/list tokenization, selector coefficients and container-query numbers
+also avoid temporary substrings where their consuming APIs permit it.
+
+The private Avalonia parsers keep color, font, geometry, transform and shadow
+tokens as spans. Unicode/font-feature scanners preserve the copied grammar,
+including unusual accepted forms and failure text. Differential tests compare
+more than 15,000 font inputs with public Avalonia; numeric tests compare exact
+bits against host BCL results under three cultures. Warm numeric, CSS/named
+color and named-enum parsing tests allocate zero token strings on .NET 10.
+
+Normal native validation passes **2,760 tests** with no failures or skips and
+warnings treated as errors. Full theme/catalog host validation and a paired
+compiler comparison are pending for this checkpoint. No end-to-end speedup or
+XamlX parity is claimed from the allocation tests alone. Generated-C# compilation
+remains separately measured with normal analyzers.
+
+Further compiler work will use complete pipeline profiles, allocation samples
+and depth/width scaling measurements to select cache and traversal changes.
+Caches must respect compilation identity, framework configuration, concurrency,
+document invalidation and symbol lifetimes; changing APIs alone is not evidence
+of better total compiler performance.

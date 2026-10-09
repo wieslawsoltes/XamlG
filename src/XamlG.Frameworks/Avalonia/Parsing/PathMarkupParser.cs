@@ -567,7 +567,7 @@ namespace XamlG.Frameworks.Avalonia.Parsing
                 throw new InvalidDataException("Invalid double value");
             }
 
-            return double.Parse(doubleValue.ToString(), CultureInfo.InvariantCulture);
+            return doubleValue.ParseDouble(CultureInfo.InvariantCulture);
         }
 
         private static Size ReadSize(ref ReadOnlySpan<char> span)
