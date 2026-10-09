@@ -12,6 +12,11 @@ internal static class XmlEntityDecoder
     internal static int FindEscape(ReadOnlySpan<char> text, bool attribute) =>
         text.IndexOfAny(attribute ? AttributeEscapes : TextEscapes);
 
+    // The decoder accepts at most 31 characters between '&' and ';'. Bound the
+    // search itself so repeated unterminated entities cannot rescan the suffix.
+    internal static int FindEntityEnd(ReadOnlySpan<char> afterAmpersand) =>
+        afterAmpersand.Slice(0, Math.Min(32, afterAmpersand.Length)).IndexOf(';');
+
     public static string Decode(ReadOnlySpan<char> text, int sourceStart, Action<XamlDiagnostic> report, bool attribute)
     {
         var firstEscape = FindEscape(text, attribute);
@@ -33,8 +38,8 @@ internal static class XmlEntityDecoder
                 }
                 if (attribute && (c == '\n' || c == '\t')) { output[written++] = ' '; continue; }
                 if (c != '&') { output[written++] = c; continue; }
-                var relativeEnd = text.Slice(i + 1).IndexOf(';');
-                if (relativeEnd < 0 || relativeEnd + 1 > 32)
+                var relativeEnd = FindEntityEnd(text.Slice(i + 1));
+                if (relativeEnd < 0)
                 {
                     report(new("XG0008", "Unterminated XML entity.", new(sourceStart + i, 1)));
                     output[written++] = c;

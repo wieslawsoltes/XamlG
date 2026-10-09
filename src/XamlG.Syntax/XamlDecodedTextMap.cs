@@ -32,8 +32,8 @@ public sealed class XamlDecodedTextMap
         {
             if (text[i] == '&')
             {
-                var relativeEnd = text.Slice(i + 1).IndexOf(';');
-                if (relativeEnd < 0 || relativeEnd + 1 > 32) throw new ArgumentException("Invalid XML entity in the source range.", nameof(source));
+                var relativeEnd = XmlEntityDecoder.FindEntityEnd(text.Slice(i + 1));
+                if (relativeEnd < 0) throw new ArgumentException("Invalid XML entity in the source range.", nameof(source));
                 var entity = text.Slice(i + 1, relativeEnd);
                 if (!XmlEntityDecoder.TryDecodeEntity(entity, out var scalar))
                     throw new ArgumentException("Invalid XML character entity.", nameof(entity));
