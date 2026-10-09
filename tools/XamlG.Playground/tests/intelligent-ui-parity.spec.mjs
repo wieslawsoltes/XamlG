@@ -1,6 +1,7 @@
 import { test, expect } from './studio-fixture.mjs';
 import { openStudio, connectMcp } from './live-preview.mjs';
 import { mountNativeUi, clickNativeTopButton } from './intelligent-ui-host.mjs';
+import './intelligent-ui-forms.cases.mjs';
 
 function topButtonCounter(request, id) {
   return { ...request, id, xaml: `<StackPanel xmlns="https://github.com/avaloniaui" xmlns:ui="urn:xamlg:intelligent-ui" Spacing="8">
@@ -37,7 +38,7 @@ test('rich dashboard renders real Avalonia, reacts to data state and retires whe
   test.setTimeout(240000); await openStudio(page); const mcp = await connectMcp(page, request); let app;
   try {
     const catalog = await mcp.call('xamlg_ui_catalog', {});
-    expect(catalog.composites).toHaveLength(14);
+    expect(catalog.composites).toHaveLength(18);
     const marker = await mcp.call('xamlg_ui_native_present', { ...catalog.dashboard, id: 'native-dashboard' });
     app = await mountNativeUi(context, mcp, marker);
     await expect(app.guest.locator('details')).toContainText('Alpha: 10');
