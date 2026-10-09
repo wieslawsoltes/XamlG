@@ -156,6 +156,31 @@
       "source": "src/Avalonia.Base/Media/FontVariationSettings.cs",
       "destination": "src/XamlG.Frameworks/Avalonia/Parsing/FontVariationSettings.cs",
       "sha256": "85704b8938574b6a3bec4648b0c6649ed217ed9236262cc6d5b9c18978fe8805"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/PathMarkupParser.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/PathMarkupParser.cs",
+      "sha256": "84c7386b5eb787811839c221b0003047073516e3381cc6942197a379528b466f"
+    },
+    {
+      "source": "src/Avalonia.Base/Platform/IGeometryContext.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/IGeometryContext.cs",
+      "sha256": "2d34516d31775ffacaeae5b702d1567941b05429b0f5dcd3487ddc363c2910ea"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/Effects/Effect.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Effect.cs",
+      "sha256": "4b29572ad987a43283d268c8c73148ffa6286752328a925d1c99ece684fedb86"
+    },
+    {
+      "source": "src/Avalonia.Base/Rendering/Composition/Expressions/TokenParser.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/TokenParser.cs",
+      "sha256": "ebd37c4ff87e4d9d304e35619f6c4547456c40f068dd40a993355aec110281e7"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/CacheMode.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/CacheMode.cs",
+      "sha256": "b39fee89f27950b31ac23acacb6df4bfaff64ee907dce6669a001ad8cce2c9cd"
     }
   ]
 }
