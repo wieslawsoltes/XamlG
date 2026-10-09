@@ -4,7 +4,7 @@ SDK and package versions are pinned in `global.json` and `Directory.Packages.pro
 
 ## Validation workflow ownership
 
-`eng/validation-workflows.json` is the authoritative inventory: eight pull-request workflows plus a separate Pages deployment workflow. `scripts/verify-workflow-inventory.py` checks the file inventory; it does not certify execution outcomes.
+`eng/validation-workflows.json` is the authoritative inventory: eight pull-request workflows, one optional diagnostic workflow and a separate Pages deployment workflow. `scripts/verify-workflow-inventory.py` checks the file inventory; it does not certify execution outcomes. Performance targets are canceled; correctness and integration validation remain required.
 
 | Workflow | Responsibility |
 | --- | --- |

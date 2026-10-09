@@ -1,41 +1,46 @@
 # Direct C# compilation optimization
 
-The acceptance target is parity: XamlG's added XAML compilation cost must be no
-greater than XamlX's, including compilation and analysis of generated C#. Full rebuild time,
-Roslyn-reported generation time and captured-C# compilation are reported
-separately. The target is **not met**. See [measurement methodology](performance.md)
-and [PR #14](https://github.com/wieslawsoltes/XamlG/pull/14) for current results.
+Performance optimization and the speed target were **canceled on October 9,
+2026**. Final acceptance covers compiler correctness, package integration and
+complete application validation. Benchmark/profile tools remain available on
+demand; no performance threshold blocks this work. The measurements below are
+retained as historical evidence, including regressions and unsuccessful trials.
+Full rebuild time, Roslyn-reported generation time and captured-C# compilation
+remain separate measurements. See [measurement methodology](performance.md)
+and [PR #14](https://github.com/wieslawsoltes/XamlG/pull/14) for validation status.
 
-The target changed from 2× faster to parity on October 9, 2026. Earlier experiment
-sections retain their original 2× assessments as historical results. The current
-benchmark gate requires an added-cost ratio of at most 1.0 for every project.
+Before cancellation, the target changed from 2× faster to parity on October 9,
+2026. Earlier sections retain their original assessments; neither speed target
+was achieved. The latest completed comparison below also predates cancellation.
 
-The [latest verified CI acceptance checkpoint, `45c8d72`](https://github.com/wieslawsoltes/XamlG/actions/runs/37975551125)
+The [latest verified CI acceptance checkpoint, `ca5bd00`](https://github.com/wieslawsoltes/XamlG/actions/runs/37987172701)
 uses three forced Release rebuilds per compiler/project with SDK 10.0.401 and
 normal analyzers. Complete catalog validation passes, including the trimmed
-browser host, but the performance target fails for all three projects:
+browser host; its timings exceeded the former target for all three projects:
 
 | Project | XamlX added cost | XamlG added cost | G/X added cost | Required XamlG cost |
 | --- | ---: | ---: | ---: | ---: |
-| Simple | 1.875s | 5.054s | 2.70× | ≤1.875s |
-| Fluent | 2.672s | 7.747s | 2.90× | ≤2.672s |
-| ControlCatalog | 6.443s | 11.465s | 1.78× | ≤6.443s |
+| Simple | 1.390s | 3.006s | 2.16× | ≤1.390s |
+| Fluent | 1.902s | 5.386s | 2.83× | ≤1.902s |
+| ControlCatalog | 4.522s | 7.672s | 1.70× | ≤4.522s |
 
-Full rebuild medians (XamlX/XamlG) are 5.451/9.324, 6.436/12.118 and
-13.457/18.980 seconds. Compiler-task totals are 3.314/6.487, 4.277/9.349 and
-10.808/15.819 seconds; common-C# baselines are 1.433, 1.602 and 4.354 seconds.
+Full rebuild medians (XamlX/XamlG) are 3.990/6.022, 4.743/8.571 and
+9.741/13.154 seconds. Compiler-task totals are 2.370/3.986, 3.079/6.544 and
+7.657/10.753 seconds; common-C# baselines are 0.980, 1.158 and 3.081 seconds.
 These totals and individual stage medians are computed separately and need not
 sum. This is a fresh CI comparison, not a paired measurement against older runs.
 
-The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37975551031)
-reports generation at 0.831/1.077/1.597 seconds and captured-C# compilation at
-3.092/4.464/9.647 seconds for Simple/Fluent/ControlCatalog. These use a different
-runner and are not additive phase costs. Compilation and analysis of the
-generated program remain the larger cost. Both runs use PR merge checkout
-`800ddc747bbce001c203565376b674876d184bdb`; all 390 XamlG-generated source hashes
-match the local `7283eb5` implementation. These measurements precede deferred
-literal construction sharing at `222f0d2`. The local experiments below use
-separately identified snapshots and do not establish the acceptance target.
+The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37987172731)
+reports generation at 1.693/2.275/4.088 seconds and captured-C# compilation at
+6.981/10.321/18.565 seconds for Simple/Fluent/ControlCatalog. Full Csc takes
+9.024/13.139/21.800 seconds. Captured-C# runs still compile ordinary project
+sources and retain other generators and normal analyzers. These independent
+measurements are not additive phase costs. The profile uses PR merge checkout
+`871cbe60e6275d84c5a3b408b82e3cd01d61bb48`; all 390 XamlG-generated source hashes
+match `8356d1f`. Compilation and analysis remain the larger cost, even with
+XamlG's output already generated. No speedup against an earlier checkpoint is
+inferred from different runners. The local experiments below use separately
+identified snapshots and do not establish the acceptance target.
 
 The assignment-lifetime round, `ee13421`, narrows the temporary-local lifetime
 guard to individual assignments and fixes collection-descriptor captures.
@@ -98,8 +103,9 @@ construction path. The corresponding Fluent assembly has 10.5% fewer IL bytes
 (1,032,505 → 923,806), 31.5% fewer local slots (19,414 → 13,293), and 1,021 fewer
 exception handlers (1,951 → 930).
 
-Trimming dataflow is the largest reported analyzer contributor in the current
-profile. The [upstream analyzer](https://github.com/dotnet/runtime/blob/main/src/tools/illink/src/ILLink.RoslynAnalyzer/DynamicallyAccessedMembersAnalyzer.cs)
+Trimming dataflow is the largest reported analyzer contributor in the theme
+profiles; the normal catalog Csc command does not load ILLink. The
+[upstream analyzer](https://github.com/dotnet/runtime/blob/main/src/tools/illink/src/ILLink.RoslynAnalyzer/DynamicallyAccessedMembersAnalyzer.cs)
 analyzes generated operation blocks, and its
 [local dataflow engine](https://github.com/dotnet/runtime/blob/main/src/tools/illink/src/ILLink.RoslynAnalyzer/DataFlow/LocalDataFlowAnalysis.cs)
 iterates over reachable local functions until state converges. This supports
@@ -1414,7 +1420,8 @@ Repeated source-element lookup and metadata inspection also appear in the
 profiles. The resulting changes are:
 
 - Bound-object traversal uses one iterator and an explicit stack of existing
-  expressions. Work is O(nodes + edges), instead of forwarding each result
+  expressions. Work is linear in visited occurrences and edges, including
+  repeated visits to shared objects, instead of forwarding each result
   through every ancestor iterator. Constructor arguments, assignments, choice
   branches, descriptors, post-calls and optional deferred content retain order.
 - Each immutable syntax tree lazily owns a source-element interval index.
@@ -1459,7 +1466,57 @@ The 31 focused tests pass, covering every composite bound-expression kind,
 20,000 levels of nesting, source lookup differential tests, concurrent edits,
 XML recovery limits and cross-compilation diagnostic isolation. Full native
 validation passes **2,784 tests** with no failures or skips and warnings treated
-as errors. Host and paired compiler validation for this round is pending.
+as errors. All **1,188 cases on each headless, actual desktop and trimmed-browser
+host pass**, together with 14 catalog tests against the pinned Avalonia sources.
+The [six-pair comparison against `8356d1f`](https://github.com/wieslawsoltes/XamlG/actions/runs/37987203163)
+completes 72 fresh Csc runs with all 390 generated files unchanged:
+
+| Project | Generation before → after | Full Csc CPU before → after | Captured-C# CPU before → after |
+| --- | ---: | ---: | ---: |
+| Simple | 1.941 → 1.902 s | 22.404 → 22.544 s | 19.508 → 19.507 s |
+| Fluent | 2.710 → 2.642 s | 35.538 → 37.146 s | 31.012 → 31.726 s |
+| ControlCatalog | 5.669 → 5.576 s | 56.662 → 57.238 s | 48.136 → 48.996 s |
+
+Generation medians improve by 1.6–2.5%, but full-Csc CPU does not improve.
+Catalog CPU increases in all six full pairs (0.3–1.5%); Fluent increases in five
+of six. Captured-C# CPU also varies despite identical output, so this experiment
+cannot attribute those changes to source structure. The scaling and allocation
+fixes are retained for their demonstrated cases, without an end-to-end speedup
+claim. The independent acceptance/profile results at the top of this document
+also missed the former parity target. A repeat was canceled when performance
+work ended; no further optimization is part of final acceptance.
 Compact local evidence is under `artifacts/controlcatalog-performance/` in
 `compiler-modernization-profile`, `compiler-scaling-comparison` and
 `metadata-profile`; the source-generator chain remains `netstandard2.0`.
+
+## Cached Avalonia hierarchy classification
+
+A native running-thread CPU profile of the complete catalog compiler at
+`ca5bd00` samples 35,511 CPU milliseconds across threads. Binding accounts for
+6,642 inclusive milliseconds and C# emission for 957; these are overlapping
+profile frames, not wall-time phases. `AvaloniaStyleScope.Is` accounts for 297
+inclusive milliseconds from repeated base-class/interface scans. The successful
+capture compiles all 220 catalog-generated files unchanged from `8356d1f`.
+
+Classification now builds a set of metadata names once per type, covering the
+type itself, its base classes and all implemented interfaces. Repeated queries
+cost expected O(1) instead of O(base depth + interface count). The cache has weak
+symbol keys and immutable published string sets; it does not retain compilation
+snapshots. Two tests compare the original algorithm under concurrent queries and
+verify isolation between compilations with the same type names but different
+hierarchies, including generic/nested types, arrays, interfaces and error symbols.
+Full native validation passes **2,786 tests**, with no failures or skips and
+warnings treated as errors. All **1,188 cases on each headless, actual desktop
+and trimmed-browser host pass**, together with 14 catalog tests. This completes
+the local validation of the existing changes; final PR checks validate the
+committed merge candidate independently.
+
+Three alternating diagnostic process pairs use the same executable and frozen
+baseline/candidate assemblies, with two processors and tiering disabled only
+for this probe. At depth 16, mixed positive/negative queries decrease from
+967 to 39 ns per query, with 56 to zero allocated bytes. At depth 64 they change
+from 2,721 to 30 ns. Self-only hits are mixed (22 to 33 ns at depth 64); the
+optimization targets repeated hierarchy scans. These are warm microbenchmarks:
+they exclude the first set construction and do not establish a complete build
+speedup. Evidence and executable source are in
+`artifacts/controlcatalog-performance/hierarchy-profile`.

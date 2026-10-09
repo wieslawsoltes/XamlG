@@ -7,8 +7,8 @@
     "playground.yml",
     "release.yml",
     "controlcatalog.yml",
-    "compiler-profile.yml",
     "intelligent-ui.yml"
   ],
+  "diagnostic": ["compiler-profile.yml"],
   "deployment": ["pages.yml"]
 }

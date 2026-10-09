@@ -190,7 +190,7 @@ def main():
                         "All builds, restores, captures and warmups are outside timed runs. Normal analyzers remain enabled. "
                         "Captured C# replaces only XamlG with that variant's generated sources; other generators/analyzers remain. "
                         "Generation is Roslyn-reported elapsed time; compiler CPU is user plus system time. "
-                        "Phases are independent and nonadditive. This diagnoses changes between XamlG revisions, not the XamlX parity acceptance target.",
+                        "Phases are independent and nonadditive. This diagnoses changes between XamlG revisions, not the added-cost comparison with XamlX.",
               "projects": []}
     (output / "candidate.patch").write_bytes(subprocess.check_output(["git", "diff", "--binary", "HEAD"], cwd=ROOT))
     (output / "dotnet-info.txt").write_text(capture(dotnet, "--info") + "\n")

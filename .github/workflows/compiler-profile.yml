@@ -1,6 +1,5 @@
 name: Compiler profiling
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
       baseline_ref:
@@ -18,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   profile:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.baseline_ref == '' }}
+    if: ${{ inputs.baseline_ref == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:

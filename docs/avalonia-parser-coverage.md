@@ -1,5 +1,7 @@
 # Avalonia parser transform coverage
 
+Performance targets were canceled on October 9, 2026. The correctness and transformation coverage below remains required; historical performance assessments are retained as measurement records.
+
 The inventory covers the public string `Parse` methods in Avalonia.Base and
 Avalonia.Controls, the XamlX/Avalonia language intrinsics, and framework converter
 routes that select those parsers. The source pin is Avalonia
