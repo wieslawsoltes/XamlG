@@ -6,5 +6,8 @@
   <ItemGroup>
     <ProjectReference Include="../XamlG.Compiler/XamlG.Compiler.csproj" />
     <None Update="Avalonia/Parsing/LICENSE.md" Pack="true" PackagePath="licenses/Avalonia/" />
+    <!-- Pristine imports are enabled by the following adaptation commit. -->
+    <Compile Remove="Avalonia/Parsing/TextDecorationCollection.cs" />
+    <Compile Remove="Avalonia/Parsing/TextDecorationLocation.cs" />
   </ItemGroup>
 </Project>

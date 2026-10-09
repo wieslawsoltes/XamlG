@@ -181,6 +181,16 @@
       "source": "src/Avalonia.Base/Media/CacheMode.cs",
       "destination": "src/XamlG.Frameworks/Avalonia/Parsing/CacheMode.cs",
       "sha256": "b39fee89f27950b31ac23acacb6df4bfaff64ee907dce6669a001ad8cce2c9cd"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/TextDecorationCollection.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/TextDecorationCollection.cs",
+      "sha256": "52b7461ed34d02a37faaad4d336f174bf0e91363bc352206cfbfa273bfd86225"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/TextDecorationLocation.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/TextDecorationLocation.cs",
+      "sha256": "3a65aa30c1e4322a71fdbaf53ec616d454df9c911f92649b2cab960e92c799a3"
     }
   ]
 }
