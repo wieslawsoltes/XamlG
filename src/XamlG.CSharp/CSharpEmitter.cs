@@ -45,6 +45,8 @@ public sealed class CSharpEmitter
         context.UsePropertyAliases = namespaceName.Length != 0;
         if (context.UsePropertyAliases && sharedProperties != null)
             foreach (var (alias, source) in sharedProperties.Sources) writer.Line("using " + alias + " = " + source.TypeName + ";");
+        var constructionAliasPosition = writer.Position;
+        var constructionAliasIndent = writer.Indent;
         var containers = new Stack<INamedTypeSymbol>();
         for (var type = augment ? document.ClassSymbol : null; type != null; type = type.ContainingType) containers.Push(type);
         var nesting = containers.Count;
@@ -108,6 +110,7 @@ public sealed class CSharpEmitter
         context.DynamicSetters.Emit(); context.DynamicAdds.Emit(); context.CachedExpressions.EmitHelpers(flow); context.EmitMetadataHelpers();
         if (nesting == 0) writer.Close(); else for (var i = 0; i < nesting; i++) writer.Close();
         if (namespaceName.Length != 0) writer.Close();
+        context.ConstructionFactories.InsertAlias(constructionAliasPosition, constructionAliasIndent);
         if (exportResources) XamlResourceExports.Emit(context, typeName, build);
         return new(context.Id + ".xaml.g.cs", writer.ToString(), typeName, build, populate,
             context.Diagnostics.ToImmutableArray(), context.Mappings.ToImmutableArray())
@@ -118,6 +121,7 @@ public sealed class CSharpEmitter
                     ? ImmutableArray.Create(new SharedGeneratedSource(services.TypeName, services.Source))
                     : ImmutableArray<SharedGeneratedSource>.Empty)
                     .AddRange(sharedProperties?.Sources.Select(entry => entry.Source) ?? Enumerable.Empty<SharedGeneratedSource>())
+                    .AddRange(context.ConstructionFactories.Sources)
                     .AddRange(context.CachedExpressions.SharedSources)
             };
     }

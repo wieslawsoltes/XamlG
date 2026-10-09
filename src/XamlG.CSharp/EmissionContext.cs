@@ -31,6 +31,8 @@ internal sealed class EmissionContext : IDisposable
     private CachedExpressionEmitter? _cachedExpressions;
     public CachedExpressionEmitter CachedExpressions => _cachedExpressions ??= new(this);
     public bool ShareCachedValues { get; set; }
+    private ConstructionFactoryEmitter? _constructionFactories;
+    public ConstructionFactoryEmitter ConstructionFactories => _constructionFactories ??= new(this);
     public ConstructionParameters? ConstructionParameters { get; set; }
     public CSharpWriter Writer { get; } = new();
     private TemporaryLocalPool? _locals;

@@ -17,5 +17,6 @@ internal sealed class CSharpWriter
     public void Close(string suffix = "") { _scopes.Pop(); Indent--; Line("}" + suffix); }
     public void Prepend(string text) => _text.Insert(0, text);
     public void Append(string text) => _text.Append(text);
+    public void Insert(int position, string text) => _text.Insert(position, text);
     public override string ToString() => _text.ToString();
 }

@@ -20,14 +20,27 @@ internal sealed class TemporaryLocalPool(EmissionContext context)
 
     public string Declare(string type, string expression, string role, bool inferred = false)
     {
+        var (name, reused) = Reserve(type, role);
+        context.Writer.Line((reused ? string.Empty : (inferred ? "var" : type) + " ") + name + " = " + expression + ";");
+        return name;
+    }
+
+    public string OutArgument(string type, string role, out string name)
+    {
+        var reserved = Reserve(type, role);
+        name = reserved.Name;
+        return "out " + (reserved.Reused ? string.Empty : "var ") + name;
+    }
+
+    private (string Name, bool Reused) Reserve(string type, string role)
+    {
         // A branch-local declaration cannot be reused outside that branch, or by
         // another generated function, even when its assignment lifetime has ended.
         var key = (context.Writer.ScopeId, type);
         var reused = _depth != 0 && _available.TryGetValue(key, out var names) && names.Count != 0;
         var name = reused ? _available[key].Pop() : context.Temporary(role);
-        context.Writer.Line((reused ? string.Empty : (inferred ? "var" : type) + " ") + name + " = " + expression + ";");
         if (_depth != 0) _active.Add((key, name));
-        return name;
+        return (name, reused);
     }
 
     private void Release(int first)

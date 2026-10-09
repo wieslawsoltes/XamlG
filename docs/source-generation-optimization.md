@@ -6,23 +6,24 @@ Roslyn-reported generation time and captured-C# compilation are reported
 separately. The target is **not met**. See [measurement methodology](performance.md)
 and [PR #14](https://github.com/wieslawsoltes/XamlG/pull/14) for current results.
 
-The [CI checkpoint for `9e6517d`](https://github.com/wieslawsoltes/XamlG/actions/runs/37923053195)
+The [CI checkpoint for `c504074`](https://github.com/wieslawsoltes/XamlG/actions/runs/37927420677)
 uses three forced Release rebuilds per compiler/project with SDK 10.0.401 and
 normal analyzers. Complete catalog validation passes, including the trimmed
 browser host, but the performance target fails for all three projects:
 
 | Project | XamlX added cost | XamlG added cost | G/X added cost | Required XamlG cost |
 | --- | ---: | ---: | ---: | ---: |
-| Simple | 2.799s | 7.970s | 2.85× | ≤1.400s |
-| Fluent | 4.099s | 12.147s | 2.96× | ≤2.050s |
-| ControlCatalog | 8.674s | 17.457s | 2.01× | ≤4.337s |
+| Simple | 2.796s | 7.373s | 2.64× | ≤1.398s |
+| Fluent | 3.887s | 11.853s | 3.05× | ≤1.944s |
+| ControlCatalog | 8.448s | 17.639s | 2.09× | ≤4.224s |
 
-The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37923053179)
-reports generation at 0.829/1.092/1.669 seconds and captured-C# compilation at
-3.243/4.933/10.084 seconds for Simple/Fluent/ControlCatalog. These use a different
+The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37927420454)
+reports generation at 1.207/1.599/2.958 seconds and captured-C# compilation at
+4.806/7.053/14.587 seconds for Simple/Fluent/ControlCatalog. These use a different
 runner and are not additive phase costs. Compilation and analysis of the
 generated program remain the larger cost. Both runs use PR merge checkout
-`391bf627a2bf5d364b72fda5776f5fa77e5ae86e`; the local experiments below use
+`cd5c83c51b6e42ca69c606c8ab351826a81da2a8`; all 390 XamlG-generated source hashes
+match the local `c504074` snapshot. The local experiments below use
 separately identified snapshots and do not establish the acceptance target.
 
 ## Structural findings
@@ -721,3 +722,124 @@ skips: 436 core, 1,525 Avalonia, 169 tooling, 94 language-server, 158 automation
 and 14 workspace tests. All three complete project captures compile with normal
 analysis. Generated application sources match the `9e6517d` version already
 validated across all 1,188 cases on each host; runtime source is unchanged.
+
+The completed `c504074` CI runs use clean merge checkout
+`cd5c83c51b6e42ca69c606c8ab351826a81da2a8`. All eight workflows pass, including
+[complete catalog validation and the benchmark](https://github.com/wieslawsoltes/XamlG/actions/runs/37927420677)
+and [browser-editor acceptance](https://github.com/wieslawsoltes/XamlG/actions/runs/37927420325).
+The catalog workflow passes all 1,188 cases on each host. Its three sequential
+forced Release rebuilds per compiler/project report:
+
+| Project | XamlX rebuild | XamlG rebuild | XamlX compiler tasks | XamlG compiler tasks | Common C# | XamlX added cost | XamlG added cost | G/X added cost |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Simple | 7.621s | 12.911s | 4.820s | 9.403s | 2.030s | 2.796s | 7.373s | 2.64× |
+| Fluent | 9.122s | 17.792s | 6.285s | 14.251s | 2.398s | 3.887s | 11.853s | 3.05× |
+| ControlCatalog | 17.722s | 27.581s | 14.425s | 23.616s | 5.977s | 8.448s | 17.639s | 2.09× |
+
+The [separate profile run](https://github.com/wieslawsoltes/XamlG/actions/runs/37927420454)
+reports generation at 1.207/1.599/2.958 seconds, full Csc at
+6.313/9.515/16.812 seconds, and captured C# plus analyzers at
+4.806/7.053/14.587 seconds for Simple/Fluent/catalog. All 390 XamlG-generated
+source hashes match the local `c504074` snapshot. These phases are not additive,
+and different CI runners do not form a paired before/after experiment. The
+added-cost target still fails in all three projects.
+
+## Shared construction and frame registration
+
+Parameterless construction, construction ownership and source-node registration
+now share ordinary typed methods across documents. Each helper calls the
+original public constructor, then `PushConstructed`, and optionally `BeginInit`.
+Source-table indexing stays after construction. Named fields and namescope
+registration remain before `BeginInit`; early collection insertion, assignments,
+`EndInit` and final consumption keep their original order. Roots, factory methods,
+generic/non-public types and custom framework source-info callbacks keep the
+existing path. No interpreter, reflection-based constructor or delegate factory
+is introduced.
+
+The helper returns the frame and writes the constructed instance through a typed
+`out` argument. That argument uses the existing temporary pool's scope and
+capture checks. Complete helper bodies determine shared identities, and the
+project publisher moves definitions when their owning document is edited or
+removed. A document-local namespace alias shortens calls; source mappings are
+adjusted before resource exports prepend their assembly attributes.
+
+The comparison starts at `c504074`. The frozen seven-assembly candidate is
+`construction-frame-generator/`; its source hashes match the implementation
+validated below. The three workloads use 121/123/211 helper definitions for
+2,901/4,104/10,445 construction sites respectively.
+
+| Project | Generated C# bytes before → after | IL bytes before → after | Remaining Parse calls |
+| --- | ---: | ---: | ---: |
+| Simple | 6,934,481 → 6,914,186 | 602,306 → 572,351 | 0 |
+| Fluent | 10,472,810 → 10,426,442 | 887,096 → 845,612 | 0 |
+| ControlCatalog | 23,731,818 → 23,009,668 | 2,787,812 → 2,611,729 | 0 |
+
+This removes 788,813 source bytes in total, including 722,150 bytes (3.0%) from
+the catalog, and 247,522 IL bytes (5.8%) across the complete assemblies. IL counts
+include common handwritten code. Method bodies increase by the helper counts;
+total local slots increase by one per assembly and exception-region counts are
+unchanged. All 390 XamlG-generated source files compile with normal analyzers.
+
+Three alternating fresh real-Csc pairs per project use SDK 10.0.401, macOS ARM64
+and two reported processors. Owned builds, tests and runtime probes finish before
+these timings; other host load varies. `construction-frame-phases/` retains the
+response files, generated sources/hashes, logs and measurements.
+
+| Project | Generation before → after | Full Csc CPU before → after | Captured C# CPU before → after |
+| --- | ---: | ---: | ---: |
+| Simple | 0.903s → 0.892s | 9.014s → 9.496s | 6.712s → 6.353s |
+| Fluent | 0.993s → 1.056s | 14.352s → 13.848s | 11.519s → 13.446s |
+| ControlCatalog | 2.122s → 1.787s | 26.833s → 26.633s | 25.039s → 24.429s |
+
+Full-Csc wall medians are 3.982→3.968, 5.504→6.481 and 11.245→13.501 seconds;
+captured-C# wall medians are 2.485→2.641, 4.062→5.163 and 10.407→10.658 seconds.
+The results are mixed: Simple full CPU and Fluent captured CPU increase. The
+retained result is smaller typed C# and IL, **not a demonstrated compiler speedup**
+or a pass against XamlX. Generation and captured compilation are independent,
+nonadditive measurements.
+
+The same fresh-process runtime protocol used for scalar sharing compares the
+actual `c504074` and candidate assemblies: three alternating pairs, one cold
+bundle, 30 warmups, then five blocks of 30 bundles, disposing every root session.
+With default tiered compilation, measurements are:
+
+| Runtime workload | Cold CPU before → after | Warm CPU/bundle before → after | Cold bytes, both | Warm bytes/bundle, both |
+| --- | ---: | ---: | ---: | ---: |
+| Three catalog pages | 36.386ms → 34.296ms | 0.2850ms → 0.2266ms | 334,112 | 142,515 |
+| Fluent construction | 89.811ms → 92.948ms | 2.3408ms → 2.7895ms | 1,891,880 | 771,492 |
+| Fluent plus eight resources | 106.175ms → 70.672ms | 3.1453ms → 1.9735ms | 1,985,848 | 813,089 |
+
+The warm Fluent-construction CPU increase is about 19%. A separate controlled
+comparison disables tiered compilation (`DOTNET_TieredCompilation=0`) so methods
+use optimized code from their first compilation. It uses fresh processes and
+the same repetitions; it is a different runtime configuration, not a replacement
+for the default-runtime result:
+
+| Runtime workload | Cold CPU before → after | Warm CPU/bundle before → after | Cold bytes, both | Warm bytes/bundle, both |
+| --- | ---: | ---: | ---: | ---: |
+| Three catalog pages | 88.410ms → 89.753ms | 0.0706ms → 0.0735ms | 383,184 | 142,491 |
+| Fluent construction | 125.774ms → 127.458ms | 0.9698ms → 0.9817ms | 1,891,904 | 771,492 |
+| Fluent plus eight resources | 142.377ms → 142.752ms | 1.0246ms → 1.0090ms | 1,998,216 | 813,089 |
+
+Allocations remain identical in every scenario/configuration. Optimized warm
+differences are small, but neither experiment establishes a universal runtime
+speedup. Rebuildable probes and raw results are in `construction-frame-runtime-probe/`
+and `construction-frame-runtime-optimized/`.
+
+A second prototype placed all helpers in one shared partial type per project.
+It passed the 16 focused tests but increased full compiler CPU in every project
+in a separate three-pair comparison against the first prototype. The
+Simple/Fluent/catalog full CPU medians were 11.938→12.152, 12.895→13.844 and
+26.414→32.747 seconds; captured CPU was 8.848→11.509, 11.588→10.862 and
+22.770→25.892 seconds. Fewer types did not establish a compilation benefit.
+That layout was rejected and the validated first prototype restored. Evidence
+is retained in `construction-flat-generator/` and `construction-flat-phases/`.
+
+All 2,412 native tests pass with warnings treated as errors and no failures or
+skips: 452 core, 1,525 Avalonia, 169 tooling, 94 language-server, 158 automation
+and 14 workspace tests. Sixteen new project-compiler cases exercise construction,
+initialization/setter/collection failures, cleanup, early consumption, both name
+representations, custom source callbacks, editing, source mappings and incremental
+helper ownership with one/four workers. The pinned suite passes all 14 tests,
+and all 1,188 catalog cases pass on each of headless, actual desktop and trimmed
+browser hosts. The exhaustive parser inventory remains green.

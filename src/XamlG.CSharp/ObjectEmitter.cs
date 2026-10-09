@@ -64,9 +64,14 @@ internal sealed class ObjectEmitter
         // Framework source-info setters can execute user code and must remain after
         // tracking but before node registration. Preserve that sequence when enabled.
         var trackWithFrame = existing == null && !value.IsRoot && _context.Document.Runtime.SourceInfo == null;
-        var variable = existing ?? Construct(value, parentContext, value.IsRoot ? _context.RootVariable : null, track: !trackWithFrame);
-        var frame = _context.Locals.Declare(CSharpNames.Context, parentContext + (value.IsRoot ? ".PushRoot(" : trackWithFrame ? ".PushConstructed(" : ".Push(") + variable + ", " +
-            (_context.ConstructionParameters?.Key(value) ?? CSharpNames.Literal(value.Key)) + ", " + _source.Get(value) + ")", "context", inferred: true);
+        string variable, frame;
+        var initialized = false;
+        if (existing != null || !_context.ConstructionFactories.TryEmit(value, parentContext, _source, out variable, out frame, out initialized))
+        {
+            variable = existing ?? Construct(value, parentContext, value.IsRoot ? _context.RootVariable : null, track: !trackWithFrame);
+            frame = _context.Locals.Declare(CSharpNames.Context, parentContext + (value.IsRoot ? ".PushRoot(" : trackWithFrame ? ".PushConstructed(" : ".Push(") + variable + ", " +
+                (_context.ConstructionParameters?.Key(value) ?? CSharpNames.Literal(value.Key)) + ", " + _source.Get(value) + ")", "context", inferred: true);
+        }
         _context.InheritFrameNamespaces(frame, parentContext);
         if (value.Name != null)
         {
@@ -76,7 +81,7 @@ internal sealed class ObjectEmitter
         if (_context.Document.ClassSymbol != null && _context.Document.CanAugmentClass && _context.Document.Options.GenerateNamedFields)
             foreach (var field in _context.NamedFields.Where(field => ReferenceEquals(field.Object, value)))
                 writer.Line(_context.RootVariable + "." + CSharpNames.Identifier(field.Name) + " = " + variable + ";");
-        if (value.SupportsInitialize) writer.Line("((global::System.ComponentModel.ISupportInitialize)" + variable + ").BeginInit();");
+        if (value.SupportsInitialize && !initialized) writer.Line("((global::System.ComponentModel.ISupportInitialize)" + variable + ").BeginInit();");
         initialize?.Invoke(variable);
         if (value.UsableDuringInitialization) consume?.Invoke(variable);
         foreach (var assignment in value.Assignments)
