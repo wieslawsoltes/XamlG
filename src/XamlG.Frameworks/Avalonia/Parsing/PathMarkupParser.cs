@@ -1,16 +1,15 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
+using System.Threading;
 using System.Globalization;
 using System.IO;
-using Avalonia.Platform;
 
-namespace Avalonia.Media
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Parses a path markup string.
     /// </summary>
-    public class PathMarkupParser : IDisposable
+    internal sealed class PathMarkupParser : IDisposable
     {
         private static readonly Dictionary<char, Command> s_commands =
             new Dictionary<char, Command>
@@ -28,7 +27,8 @@ namespace Avalonia.Media
                     { 'Z', Command.Close },
                 };
 
-        private IGeometryContext? _geometryContext;
+        private IGeometryContext _geometryContext;
+        private readonly CancellationToken _cancellation;
         private Point _currentPoint;
         private Point? _beginFigurePoint;
         private Point? _previousControlPoint;
@@ -40,7 +40,7 @@ namespace Avalonia.Media
         /// </summary>
         /// <param name="geometryContext">The geometry context.</param>
         /// <exception cref="ArgumentNullException">geometryContext</exception>
-        public PathMarkupParser(IGeometryContext geometryContext)
+        public PathMarkupParser(IGeometryContext geometryContext, CancellationToken cancellation = default)
         {
             if (geometryContext == null)
             {
@@ -48,6 +48,7 @@ namespace Avalonia.Media
             }
 
             _geometryContext = geometryContext;
+            _cancellation = cancellation;
         }
 
         private enum Command
@@ -71,7 +72,7 @@ namespace Avalonia.Media
             Dispose(true);
         }
 
-        protected virtual void Dispose(bool disposing)
+        private void Dispose(bool disposing)
         {
             if (_isDisposed)
             {
@@ -80,7 +81,7 @@ namespace Avalonia.Media
 
             if (disposing)
             {
-                _geometryContext = null;
+                _geometryContext = null!;
             }
 
             _isDisposed = true;
@@ -120,6 +121,7 @@ namespace Avalonia.Media
                         span = ReadSeparator(span);
                     }
 
+                    var lengthBeforeCommand = span.Length;
                     switch (command)
                     {
                         case Command.None:
@@ -161,6 +163,10 @@ namespace Avalonia.Media
                             throw new NotSupportedException("Unsupported command");
                     }
 
+                    // A close command followed by numbers consumes no input in
+                    // the upstream loop. Reject it instead of hanging compilation.
+                    if (span.Length == lengthBeforeCommand && PeekArgument(span))
+                        throw new InvalidDataException("Unexpected argument after path command.");
                     initialCommand = false;
                 } while (PeekArgument(span));
                 
@@ -607,9 +613,9 @@ namespace Avalonia.Media
             return true;
         }
 
-        [MemberNotNull(nameof(_geometryContext))]
         private void ThrowIfDisposed()
         {
+            _cancellation.ThrowIfCancellationRequested();
             if (_isDisposed || _geometryContext is null)
                 throw new ObjectDisposedException(nameof(PathMarkupParser));
         }

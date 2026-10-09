@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 
-namespace Avalonia.Rendering.Composition.Expressions
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Helper class for composition expression parser

@@ -35,6 +35,7 @@ internal static class BoundTraversal
         BoundCastExpression c => new[] { c.Value }, BoundArrayExpression a => a.Values,
         BoundNewExpression n => n.Arguments.Concat(n.Initializers.Select(initializer => initializer.Value)),
         BoundBuilderExpression b => new[] { b.Creation }.Concat(b.Calls.SelectMany(call => call.Arguments)),
+        BoundScopedInitializationExpression s => new[] { s.Creation }.Concat(s.Calls.SelectMany(call => call.Arguments)),
         BoundCollectionExpression c => c.Values,
         BoundCachedExpression c => new[] { c.Value },
         BoundValueConverterExpression c => new[] { c.Value },

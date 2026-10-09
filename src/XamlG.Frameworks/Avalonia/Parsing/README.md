@@ -5,7 +5,7 @@ The original files were imported unchanged from Avalonia commit
 parsers/tokenizer in `5e70673`, keyboard/cursor parsers in `74204d1`, and
 font-feature/shadow parsers and bracket splitter in `3b92450`, and the transform
 operation parser in `697d6c0`, and the remaining numeric/font parsers in
-`0cb9dbd`.
+`0cb9dbd`, and geometry/effect/cache parsers in `f71e556`.
 `upstream.json` records their original paths and SHA-256 hashes.
 The MIT license and original color-conversion notices are retained.
 
@@ -122,3 +122,28 @@ Additional numeric and font adaptations:
 - Test packaged APIs against their public parsers and XamlX under a non-invariant
   current culture. Flex basis and font variations are additionally tested in
   ControlCatalog.Tests against the newer pinned source build that supplies them.
+
+Geometry, effect and cache adaptations:
+
+- Retain the path parser's command grammar, relative-coordinate arithmetic,
+  control-point reflection, implicit repetitions, fill rules, arc flags and
+  open/closed figure behavior. Substitute private point/size holders and a
+  recording geometry context; generated code calls the public drawing methods.
+- Add cancellation checks. Reject a close command followed by unconsumed numeric
+  arguments, for which the upstream parser loops indefinitely. Malformed trailing
+  exponents also become source diagnostics instead of crashing the generator.
+- Emit scoped initialization in typed C#: construct the geometry, acquire its
+  disposable context, execute ordered calls, dispose, then return the geometry
+  or figures. All four public targets are covered: Geometry, StreamGeometry,
+  PathGeometry and PathFigures. PathGeometry/PathFigures use the public
+  PathGeometryContext constructor, matching their parsers on both framework
+  versions; older PathGeometry.Open does not populate Figures.
+- Keep effect tokenization and color parsing unchanged. Replace rendering and
+  animation types with private parsed records. Generated effects use fresh
+  public ImmutableBlurEffect/ImmutableDropShadowEffect constructors.
+- Keep the cache-mode parser's exact, case-sensitive BitmapCache spelling and
+  generate a fresh public BitmapCache constructor call.
+- Test geometry bounds, contour length, fill/stroke containment with real Skia,
+  complete figure/segment values, XamlX source metadata, every command family,
+  malformed input and fresh objects. Portable backend tests also cover scope
+  disposal after failures, value-type scope mutation and target services.

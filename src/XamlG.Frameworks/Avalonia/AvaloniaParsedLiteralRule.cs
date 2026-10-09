@@ -15,11 +15,26 @@ public sealed class AvaloniaParsedLiteralRule : IXamlTextConversionRule
         expression = null;
         if (targetType is not INamedTypeSymbol target || target.MetadataName is not
             ("PixelPoint" or "PixelSize" or "Vector3D" or "RelativeScalar" or "RelativeRect" or "Transform" or
-             "FlexBasis" or "UnicodeRange" or "UnicodeRangeSegment" or "OpenTypeTag" or "FontVariationSettings")) return false;
+             "FlexBasis" or "UnicodeRange" or "UnicodeRangeSegment" or "OpenTypeTag" or "FontVariationSettings" or
+             "Effect" or "IEffect" or "CacheMode")) return false;
         try
         {
             switch (target.MetadataName())
             {
+                case "Avalonia.Media.CacheMode":
+                    _ = Parsing.CacheMode.Parse(text);
+                    expression = New(Type("Avalonia.Media.BitmapCache"));
+                    break;
+                case "Avalonia.Media.Effect":
+                case "Avalonia.Media.IEffect":
+                    expression = Parsing.Effect.Parse(text) switch
+                    {
+                        Parsing.ImmutableBlurEffect blur => New(Type("Avalonia.Media.ImmutableBlurEffect"), Constant(blur.Radius)),
+                        Parsing.ImmutableDropShadowEffect shadow => New(Type("Avalonia.Media.ImmutableDropShadowEffect"),
+                            Constant(shadow.OffsetX), Constant(shadow.OffsetY), Constant(shadow.BlurRadius), Color(shadow.Color), Constant(shadow.Opacity)),
+                        _ => throw new InvalidOperationException("The parsed effect is unsupported.")
+                    };
+                    break;
                 case "Avalonia.PixelPoint":
                     var point = Parsing.PixelPoint.Parse(text);
                     expression = New(target, Constant(point.X), Constant(point.Y));
@@ -118,6 +133,14 @@ public sealed class AvaloniaParsedLiteralRule : IXamlTextConversionRule
         BoundNewExpression Segment(Parsing.UnicodeRangeSegment segment) =>
             New(Type("Avalonia.Media.UnicodeRangeSegment"), Constant(segment.Start), Constant(segment.End));
         BoundNewExpression Tag(Parsing.OpenTypeTag tag) => New(Type("Avalonia.Media.Fonts.OpenTypeTag"), Constant((uint)tag));
+        BoundCallExpression Color(Parsing.Color color)
+        {
+            var method = Type(AvaloniaLiteralMetadata.Color).GetMembers("FromUInt32").OfType<IMethodSymbol>().FirstOrDefault(candidate =>
+                candidate.IsStatic && context.Types.IsAccessible(candidate) && candidate.Parameters.Length == 1 &&
+                candidate.Parameters[0].RefKind == RefKind.None && candidate.Parameters[0].Type.SpecialType == SpecialType.System_UInt32)
+                ?? throw new InvalidOperationException("The packed color factory is unavailable.");
+            return new(method, null, ImmutableArray.Create<BoundExpression>(Constant(color.ToUInt32())), span);
+        }
         BoundArrayExpression Array(INamedTypeSymbol element, IEnumerable<BoundExpression> values) =>
             new(values.ToImmutableArray(), context.Types.Compilation.CreateArrayTypeSymbol(element), span) { SuppressSourceInfo = true };
     }

@@ -22,6 +22,7 @@ internal sealed class ValueEmitter
         BoundCachedExpression cached => UsesFrame(cached.Value),
         BoundNewExpression creation => creation.Arguments.Any(UsesFrame) || creation.Initializers.Any(initializer => UsesFrame(initializer.Value)),
         BoundBuilderExpression builder => UsesFrame(builder.Creation) || builder.Calls.Any(call => call.Arguments.Any(UsesFrame)),
+        BoundScopedInitializationExpression scoped => UsesFrame(scoped.Creation) || scoped.Calls.Any(call => call.Arguments.Any(UsesFrame)),
         BoundArrayExpression array => array.Values.Any(UsesFrame),
         BoundCollectionExpression collection => collection.Values.Any(UsesFrame),
         BoundCallExpression call => call.Receiver != null && UsesFrame(call.Receiver) || call.Arguments.Any(UsesFrame),
@@ -39,6 +40,7 @@ internal sealed class ValueEmitter
         _context.Cancellation.ThrowIfCancellationRequested();
         switch (value)
         {
+            case BoundScopedInitializationExpression scoped: return new ScopedInitializationEmitter(_context, this).Emit(scoped, frame);
             case BoundBuilderExpression builder: return new BuilderExpressionEmitter(_context, this).Emit(builder, frame);
             case BoundChoiceExpression choice: return new ChoiceExpressionEmitter(_context, _objects, this).Emit(choice, frame);
             case BoundResourceExpression resource: return new ResourceExpressionEmitter(_context).Emit(resource, frame);

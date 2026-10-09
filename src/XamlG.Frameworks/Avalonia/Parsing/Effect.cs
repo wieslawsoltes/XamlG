@@ -1,45 +1,9 @@
 using System;
-using Avalonia.Animation;
-using Avalonia.Animation.Animators;
-using Avalonia.Reactive;
-using Avalonia.Rendering.Composition.Expressions;
-using Avalonia.Utilities;
 
-// ReSharper disable once CheckNamespace
-namespace Avalonia.Media;
+namespace XamlG.Frameworks.Avalonia.Parsing;
 
-public class Effect : Animatable, IAffectsRender
+internal static class Effect
 {
-    /// <summary>
-    /// Marks a property as affecting the brush's visual representation.
-    /// </summary>
-    /// <param name="properties">The properties.</param>
-    /// <remarks>
-    /// After a call to this method in a brush's static constructor, any change to the
-    /// property will cause the <see cref="Invalidated"/> event to be raised on the brush.
-    /// </remarks>
-    protected static void AffectsRender<T>(params AvaloniaProperty[] properties)
-        where T : Effect
-    {
-        var invalidateObserver = new AnonymousObserver<AvaloniaPropertyChangedEventArgs>(
-            static e => (e.Sender as T)?.RaiseInvalidated(EventArgs.Empty));
-
-        foreach (var property in properties)
-        {
-            property.Changed.Subscribe(invalidateObserver);
-        }
-    }
-
-    /// <summary>
-    /// Raises the <see cref="Invalidated"/> event.
-    /// </summary>
-    /// <param name="e">The event args.</param>
-    protected void RaiseInvalidated(EventArgs e) => Invalidated?.Invoke(this, e);
-
-    /// <inheritdoc />
-    public event EventHandler? Invalidated;
-
-
     static Exception ParseError(string s) => throw new ArgumentException("Unable to parse effect: " + s);
     public static IEffect Parse(string s)
     {
@@ -59,7 +23,7 @@ public class Effect : Animatable, IAffectsRender
                                    || !r.TryParseDouble(out var offsetY))
                 throw ParseError(s);
             double blurRadius = 0;
-            var color = Colors.Black;
+            var color = Color.FromUInt32(0xff000000);
             if (!r.TryConsume(')'))
             {
                 if (!r.TryParseDouble(out blurRadius) || blurRadius < 0)
@@ -86,13 +50,8 @@ public class Effect : Animatable, IAffectsRender
         throw ParseError(s);
     }
 
-    static Effect()
-    {
-        EffectAnimator.EnsureRegistered();
-    }
-
-    internal Effect()
-    {
-        
-    }
 }
+
+internal interface IEffect { }
+internal sealed record ImmutableBlurEffect(double Radius) : IEffect;
+internal sealed record ImmutableDropShadowEffect(double OffsetX, double OffsetY, double BlurRadius, Color Color, double Opacity) : IEffect;

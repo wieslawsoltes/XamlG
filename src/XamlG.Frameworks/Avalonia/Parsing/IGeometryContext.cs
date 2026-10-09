@@ -1,12 +1,11 @@
 using System;
-using Avalonia.Media;
 
-namespace Avalonia.Platform
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Describes a geometry using drawing commands.
     /// </summary>
-    public interface IGeometryContext : IDisposable
+    internal interface IGeometryContext : IDisposable
     {
         /// <summary>
         /// Draws an arc to the specified point.
