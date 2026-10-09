@@ -4,14 +4,15 @@ using XamlG.Roslyn;
 
 namespace XamlG.CSharp;
 
-/// <summary>Shares a deferred object and its scalar-parameter markup assignment as ordinary typed C#.</summary>
-internal sealed class DeferredConstructionEmitter(EmissionContext context, SourceInfoEmitter source, ObjectEmitter objects)
+/// <summary>Shares deferred construction with typed literal or markup assignments as ordinary C#.</summary>
+internal sealed partial class DeferredConstructionEmitter(EmissionContext context, SourceInfoEmitter source, ObjectEmitter objects)
 {
     private readonly Dictionary<string, (string Name, string ReturnType, ConstructionParameters Parameters)> _factories = new(StringComparer.Ordinal);
     private readonly Dictionary<ISymbol, string> _symbols = new(SymbolEqualityComparer.Default);
 
     public bool TryEmit(BoundDeferredExpression deferred, string incoming)
     {
+        if (TryEmitLoweredObject(deferred, incoming)) return true;
         if (!deferred.UsesFunctionPointer || context.Document.Runtime.SourceInfo != null ||
             deferred.Content is not BoundObjectExpression { Object: var root } || !Node(root) ||
             root.Constructor!.Parameters.Length != 0 || root.Assignments.Length != 1 ||
@@ -51,6 +52,11 @@ internal sealed class DeferredConstructionEmitter(EmissionContext context, Sourc
             .Concat(new[] { "adapted-types" }).Concat(set.AdaptedTypes.Select(Symbol))
             .Concat(new[] { "extension-properties" })
             .Concat(extension.Assignments.Cast<BoundSetAssignment>().Select(assignment => PropertyAccessor.Create(extension.Type, assignment.Member).Key)));
+        return EmitFactoryCall(key, returnType, values, incoming);
+    }
+
+    private bool EmitFactoryCall(string key, string returnType, ConstructionParameters values, string incoming)
+    {
         if (!_factories.TryGetValue(key, out var factory))
         {
             factory = ("__XamlGBuildObject_" + context.Id + "_" + _factories.Count, returnType, values);

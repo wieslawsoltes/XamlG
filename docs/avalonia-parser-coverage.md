@@ -104,6 +104,12 @@ separately; parser coverage is not evidence that the compilation parity target i
 
 ## Validation checkpoint
 
+Deferred literal construction sharing passes all 2,617 native tests, 14
+pinned-source tests and 1,188 cases on each headless, actual desktop and trimmed
+browser host. All 390 generated workload files compile with zero runtime
+`Parse` call sites. Lowered constructors and static calls execute inside each
+deferred lifetime; the shared bodies do not reintroduce runtime parsing.
+
 At `6d870bc`, all 2,605 native tests, 14 pinned-source tests and 1,188 cases on
 each of the headless, actual desktop and trimmed browser hosts pass with
 warnings treated as errors. All 390 captured workload sources are byte-identical
