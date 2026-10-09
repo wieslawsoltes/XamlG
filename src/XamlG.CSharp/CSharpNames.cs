@@ -49,7 +49,16 @@ internal static class CSharpNames
         ulong number => number.ToString(CultureInfo.InvariantCulture) + "UL",
         float number => float.IsNaN(number) ? "global::System.Single.NaN" : float.IsPositiveInfinity(number) ? "global::System.Single.PositiveInfinity" : float.IsNegativeInfinity(number) ? "global::System.Single.NegativeInfinity" : number.ToString("R", CultureInfo.InvariantCulture) + "F",
         double number => double.IsNaN(number) ? "global::System.Double.NaN" : double.IsPositiveInfinity(number) ? "global::System.Double.PositiveInfinity" : double.IsNegativeInfinity(number) ? "global::System.Double.NegativeInfinity" : number.ToString("R", CultureInfo.InvariantCulture) + "D",
-        decimal number => number.ToString(CultureInfo.InvariantCulture) + "M",
+        decimal number => Decimal(number),
         _ => throw new ArgumentException("Only CLR scalar constants may reach the source emitter.", nameof(value))
     };
+
+    private static string Decimal(decimal number)
+    {
+        // Decimal.ToString preserves scale, but drops the sign of zero. Keep
+        // that bit explicitly; decimal.GetBits can observe it.
+        if (number == 0M && decimal.GetBits(number)[3] is var flags && flags < 0)
+            return "new decimal(0, 0, 0, true, (byte)" + ((flags >> 16) & 0xff).ToString(CultureInfo.InvariantCulture) + ")";
+        return number.ToString(CultureInfo.InvariantCulture) + "M";
+    }
 }
