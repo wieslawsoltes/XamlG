@@ -5,16 +5,17 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Controls.Shapes;
+using Calendar = Avalonia.Controls.Calendar;
 
 namespace XamlG.IntelligentUI.Avalonia;
 
 public sealed record UiControlRegistration(Func<Control> Create, ImmutableDictionary<string, Action<Control, JsonElement?>> Setters,
     Func<Control, AvaloniaPropertyChangedEventArgs, JsonElement?>? ReadInput = null, Action<Control>? Retire = null);
 
-/// <summary>Application-authored constructors, typed setters and input adapters. All registrations work under browser AOT without reflection.</summary>
+/// <summary>Application-authored constructors, typed setters and input adapters. No reflective control creation is required by the browser backend.</summary>
 public sealed class UiAvaloniaCatalog
 {
     public ImmutableDictionary<string, UiControlRegistration> Registrations { get; }
@@ -141,7 +142,7 @@ public sealed class UiAvaloniaCatalog
         return new(entries);
     }
     private static Func<Control, AvaloniaPropertyChangedEventArgs, JsonElement?> Input<T, TResult>(AvaloniaProperty<T> property, Func<T, TResult> convert) =>
-        (control, args) => args.Property == property ? JsonSerializer.SerializeToElement(convert(control.GetValue(property))) : null;
+        (control, args) => args.Property == property ? JsonSerializer.SerializeToElement(convert((T)control.GetValue(property)!)) : null;
     private static Action<Control, JsonElement?> Set<T>(AvaloniaProperty<T> property, Func<JsonElement, T> convert) => (control, value) =>
     { if (value.HasValue) control.SetValue(property, convert(value.Value)); else control.ClearValue(property); };
     private static double Number(JsonElement value) => (double)value.GetDecimal();
