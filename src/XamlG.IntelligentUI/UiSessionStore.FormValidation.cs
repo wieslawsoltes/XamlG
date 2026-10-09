@@ -2,10 +2,30 @@ namespace XamlG.IntelligentUI;
 
 public sealed partial class UiSessionStore
 {
-    /// <summary>Run a trusted validator against an exact session/source/value snapshot.
-    /// Touch-only presentation changes are retained; edits, reset and replacement invalidate results.</summary>
-    public async Task<UiSnapshot> ValidateFormAsync(UiFormCall request, string principal,
+    /// <summary>Await a trusted validator against exact session/source/values; touch history is retained.</summary>
+    public Task<UiSnapshot> ValidateFormAsync(UiFormCall request, string principal,
         CancellationToken cancellationToken = default, TimeSpan? timeout = null)
+        => ValidateFormCoreAsync(request, principal, cancellationToken, timeout, null);
+
+    /// <summary>Start trusted asynchronous validation and return its committed pending snapshot.
+    /// The bounded operation updates the normal store; read/notifications observe completion.</summary>
+    public UiSnapshot StartFormValidation(UiFormCall request, string principal)
+    {
+        UiSnapshot? pending = null;
+        var task = ValidateFormCoreAsync(request, principal, CancellationToken.None, null, snapshot => pending = snapshot);
+        if (task.IsCompleted) return task.GetAwaiter().GetResult();
+        _ = ObserveValidationAsync(task);
+        return pending ?? throw new InvalidOperationException("Validation did not publish its pending state.");
+    }
+    private static async Task ObserveValidationAsync(Task<UiSnapshot> task)
+    {
+        // Completion errors are deliberately observed. Obsolete results never overwrite newer UI.
+        try { await task.ConfigureAwait(false); }
+        catch (Exception error) when (error is not OutOfMemoryException) { }
+    }
+
+    private async Task<UiSnapshot> ValidateFormCoreAsync(UiFormCall request, string principal,
+        CancellationToken cancellationToken, TimeSpan? timeout, Action<UiSnapshot>? started)
     {
         ArgumentNullException.ThrowIfNull(request); cancellationToken.ThrowIfCancellationRequested();
         var duration = timeout ?? TimeSpan.FromSeconds(10);
@@ -29,13 +49,13 @@ public sealed partial class UiSessionStore
             {
                 if (value.Id != pending.Id) return;
                 var current = Flatten(value.Roots).FirstOrDefault(node => node.FormState?.Id == form.Id)?.FormState;
-                if (value.SessionId != pending.SessionId || value.Revision != pending.Revision ||
-                    current?.Stamp != form.Stamp || current.ValidationId != form.ValidationId) lifetime.Cancel();
+                if (value.SessionId != pending.SessionId || value.Revision != pending.Revision || current == null ||
+                    current.Stamp != form.Stamp || current.ValidationId != form.ValidationId) lifetime.Cancel();
             };
             released = id => { if (id == pending.Id) lifetime.Cancel(); };
             Changed += changed; Released += released;
         }
-        Notify(pending);
+        Notify(pending); started?.Invoke(pending);
         string? error;
         try
         {
@@ -49,7 +69,6 @@ public sealed partial class UiSessionStore
         catch (Exception exception) when (exception is not OutOfMemoryException)
         { error = "The application validator failed. Try again."; }
         finally { Changed -= changed; Released -= released; }
-
         UiSnapshot completed;
         lock (_gate)
         {

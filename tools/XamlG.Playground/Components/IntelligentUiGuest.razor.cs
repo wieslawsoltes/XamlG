@@ -44,6 +44,7 @@ public partial class IntelligentUiGuest
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 _renderer = new(); _renderer.StateChanged += StateChanged; _renderer.ActionRequested += ActionRequested;
+                InitializeFormBehavior();
                 _view = new AvaloniaView(_elementId) { Content = _renderer.View };
             });
             _reference = DotNetObjectReference.Create(this);
@@ -54,29 +55,24 @@ public partial class IntelligentUiGuest
         }
         catch (Exception error) { await ReceiveError(error.Message); }
     }
-
     private bool IsCurrent(long epoch) => !_disposed && _surfaceEpoch == epoch;
     private bool CanApply(UiSnapshot snapshot)
         => !_disposed && (Mode != "mcp" || _activeId == snapshot.Id && _activeSession == snapshot.SessionId) &&
            !(_snapshot?.SessionId == snapshot.SessionId && (snapshot.Revision < _snapshot.Revision ||
              snapshot.Revision == _snapshot.Revision && snapshot.StateRevision < _snapshot.StateRevision));
-
     [JSInvokable]
     public async Task BeginSurface(string id, string sessionId)
     {
         if (_disposed || Mode != "mcp") return;
         if (string.IsNullOrEmpty(id) || id.Length > 80 || !id.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-') ||
-            sessionId.Length != 32 || !sessionId.All(char.IsAsciiHexDigit))
-            throw new UiException("invalid_snapshot", "Invalid UI identity.");
+            sessionId.Length != 32 || !sessionId.All(char.IsAsciiHexDigit)) throw new UiException("invalid_snapshot", "Invalid UI identity.");
         if (_activeId == id && _activeSession == sessionId) return;
         var old = _snapshot; var epoch = ++_surfaceEpoch;
         _activeId = id; _activeSession = sessionId; _snapshot = null; CancelReview(); _error = null;
         _status = "Loading the selected native UI…";
-        if (old != null && _renderer != null)
-            await Dispatcher.UIThread.InvokeAsync(() => { if (IsCurrent(epoch)) _renderer.Apply(old with { Roots = [] }); });
+        if (old != null && _renderer != null) await Dispatcher.UIThread.InvokeAsync(() => { if (IsCurrent(epoch)) ApplyNative(old with { Roots = [] }); });
         if (IsCurrent(epoch)) await InvokeAsync(StateHasChanged);
     }
-
     [JSInvokable]
     public async Task RetireSurface()
     {
@@ -84,11 +80,9 @@ public partial class IntelligentUiGuest
         var old = _snapshot; var epoch = ++_surfaceEpoch;
         _activeId = null; _activeSession = null; _snapshot = null; CancelReview();
         _status = "This UI session is no longer available.";
-        if (old != null && _renderer != null)
-            await Dispatcher.UIThread.InvokeAsync(() => { if (IsCurrent(epoch)) _renderer.Apply(old with { Roots = [] }); });
+        if (old != null && _renderer != null) await Dispatcher.UIThread.InvokeAsync(() => { if (IsCurrent(epoch)) ApplyNative(old with { Roots = [] }); });
         if (IsCurrent(epoch)) await InvokeAsync(StateHasChanged);
     }
-
     [JSInvokable]
     public async Task ReceiveSnapshot(UiSnapshot snapshot)
     {
@@ -96,29 +90,24 @@ public partial class IntelligentUiGuest
         if (snapshot.Id.Length > 80 || snapshot.SessionId.Length != 32 || snapshot.Revision < 1 || snapshot.StateRevision < 0)
             throw new UiException("invalid_snapshot", "Invalid UI identity.");
         var epoch = _surfaceEpoch;
-        // Check again on the dispatcher: input mutations and resource deliveries can
-        // complete in a different order, even when each individual transport is ordered.
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (!IsCurrent(epoch) || !CanApply(snapshot)) return;
-            _renderer.Apply(snapshot);
+            ApplyNative(snapshot);
             _snapshot = snapshot; _lastFallback = snapshot.FallbackMarkdown; CancelReview();
             _status = $"Native Avalonia · revision {snapshot.Revision} · state {snapshot.StateRevision}";
         });
         if (IsCurrent(epoch)) await InvokeAsync(StateHasChanged);
     }
-
     [JSInvokable]
     public async Task ReceiveError(string message)
     {
         if (_disposed) return;
         _error = message.Length > 4096 ? message[..4096] : message;
         if (message.Contains("released", StringComparison.OrdinalIgnoreCase) || message.Contains("replaced", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("unknown_surface", StringComparison.Ordinal) || message.Contains("no longer available", StringComparison.OrdinalIgnoreCase))
-            await RetireSurface();
+            message.Contains("unknown_surface", StringComparison.Ordinal) || message.Contains("no longer available", StringComparison.OrdinalIgnoreCase)) await RetireSurface();
         if (!_disposed) await InvokeAsync(StateHasChanged);
     }
-
     [JSInvokable]
     public async Task HostContextChanged(JsonElement context)
     {
@@ -129,7 +118,6 @@ public partial class IntelligentUiGuest
                     app.RequestedThemeVariant = theme.GetString() == "dark" ? ThemeVariant.Dark : ThemeVariant.Light;
             });
     }
-
     private async void StateChanged(UiStateChange change)
     {
         var epoch = _surfaceEpoch;
@@ -158,8 +146,7 @@ public partial class IntelligentUiGuest
             if (_snapshot != null && IsCurrent(epoch)) await ReceiveSnapshot(_snapshot);
         }
     }
-
-    private async void ActionRequested(UiActionCall call)
+    private async void DispatchAction(UiActionCall call)
     {
         var epoch = _surfaceEpoch;
         try
@@ -168,8 +155,6 @@ public partial class IntelligentUiGuest
             try
             {
                 if (!IsCurrent(epoch) || _snapshot == null) return;
-                // Routing is non-executing. Authorization and expression evaluation occur
-                // exactly once inside the owner-scoped mutation, not in this classifier.
                 if (UiActionRouting.IsStateAction(_snapshot, call))
                 {
                     var next = Mode == "execution" ? _executionStore!.ApplyStateAction(call, "approved-execution")
@@ -189,7 +174,6 @@ public partial class IntelligentUiGuest
         catch (OperationCanceledException) when (_disposed) { }
         catch (Exception error) { if (IsCurrent(epoch)) await ReceiveError(error.Message); }
     }
-
     private async Task PublishContextAsync(UiSnapshot snapshot)
     {
         if (_disposed || !ReferenceEquals(_snapshot, snapshot)) return;
@@ -217,7 +201,6 @@ public partial class IntelligentUiGuest
         try { if (_bridge != null) await _bridge.InvokeVoidAsync("refresh", _lifetime.Token); }
         catch (Exception error) { if (IsCurrent(epoch)) await ReceiveError(error.Message); }
     }
-
     [JSInvokable]
     public async Task<object> ExecuteApproved(UiPublish request)
     {
@@ -240,6 +223,7 @@ public partial class IntelligentUiGuest
         if (_module != null) await _module.DisposeAsync(); _reference?.Dispose();
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
+            _forms?.Dispose(); _forms = null;
             if (_view != null) _view.Content = null;
             _renderer?.Dispose(); _executionStore?.Clear(); _fullCompiler?.Dispose();
             if ((object?)_view is IDisposable disposable) disposable.Dispose(); _view = null;

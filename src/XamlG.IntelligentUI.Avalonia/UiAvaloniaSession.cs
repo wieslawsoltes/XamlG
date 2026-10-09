@@ -92,11 +92,13 @@ public sealed class UiAvaloniaSession : IDisposable
             var current = pending with { ExpectedRevision = next.Revision, ExpectedStateRevision = next.StateRevision };
             result = _principal == null ? _store.SubmitFormLocal(current) : _store.SubmitForm(current, _principal);
         }
-        await Dispatcher.UIThread.InvokeAsync(() =>
+        void Complete()
         {
             lifetime.Token.ThrowIfCancellationRequested(); Refresh(); _forms?.Focus(result.FocusKey);
             if (result.Action != null) DispatchAction(result.Action);
-        });
+        }
+        // Synchronous forms preserve normal routed-event ordering and the existing host contract.
+        if (Dispatcher.UIThread.CheckAccess()) Complete(); else await Dispatcher.UIThread.InvokeAsync(Complete);
         return result;
     }
     private void OnAction(UiActionCall call)
