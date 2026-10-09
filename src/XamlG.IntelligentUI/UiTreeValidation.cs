@@ -16,6 +16,11 @@ public static class UiTreeValidation
             if (property.Value.ValueKind == System.Text.Json.JsonValueKind.String && property.Value.GetString()!.Length > textLimit) throw new UiException("text_limit", "Computed property text exceeds the limit.");
         }
         if (node.Children.Length != 0 && (properties.ContainsKey("ItemsSource") || properties.ContainsKey("Content"))) throw new UiException("invalid_content", "Child elements conflict with Content or ItemsSource.");
+        // Enforce this in the resolved tree, not only in ChangeState: declared local
+        // patches, streaming publications, tool data and transport snapshots share it.
+        if (node.Type == "TextBox" && properties.TryGetValue("MaxLength", out var length) &&
+            properties.TryGetValue("Text", out var text) && text.GetString()!.Length > length.GetDecimal())
+            throw new UiException("invalid_property", "Text exceeds the input's declared MaxLength.");
         if (node.Type is "Slider" or "ProgressBar" or "NumericUpDown")
         {
             var min = properties.TryGetValue("Minimum", out var lower) ? lower.GetDecimal() : node.Type == "NumericUpDown" ? -1000000 : 0;
