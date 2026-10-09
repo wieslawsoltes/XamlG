@@ -17,6 +17,9 @@ public sealed partial class AutomationCatalog : IAutomationHost, IAutomationCata
     public AutomationCatalog(Func<AutomationReview, CancellationToken, ValueTask<bool>>? authorize = null) => _authorize = authorize;
     public event Action? CatalogChanged;
     public event Action<string>? ResourceChanged;
+    /// <summary>Trusted local observers see successful results only after schema validation,
+    /// authorization and execution. Observers cannot replace the result or grant authority.</summary>
+    public event Action<AutomationTool, JsonElement, AutomationCallContext>? InvocationCompleted;
     public IReadOnlyList<AutomationTool> Tools { get { lock (_gate) return _tools.Values.Select(e => e.Tool).ToArray(); } }
     public IReadOnlyList<AutomationResource> Resources { get { lock (_gate) return _resources.Values.Select(e => e.Resource).ToArray(); } }
     public IReadOnlyList<AutomationPrompt> Prompts { get { lock (_gate) return _prompts.Values.ToArray(); } }
@@ -103,7 +106,12 @@ public sealed partial class AutomationCatalog : IAutomationHost, IAutomationCata
         if (authorize && _authorize != null && !await _authorize(new(entry.Tool, arguments, context.Caller), context.CancellationToken))
             throw new AutomationException("permission_denied", "The host denied this tool invocation.");
         context.CancellationToken.ThrowIfCancellationRequested();
-        return await entry.Execute(arguments, context);
+        var result = await entry.Execute(arguments, context);
+        if (InvocationCompleted is { } observers)
+            foreach (Action<AutomationTool, JsonElement, AutomationCallContext> observer in observers.GetInvocationList())
+                try { observer(entry.Tool, result, context); }
+                catch (Exception error) when (error is not OutOfMemoryException) { /* Completion observers cannot change the operation outcome. */ }
+        return result;
     }
 
     public ValueTask<string> ReadResourceAsync(string uri, AutomationCallContext context)

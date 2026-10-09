@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Components;
 using XamlG.Automation;
 using XamlG.IntelligentUI;
 
@@ -8,8 +9,30 @@ public partial class App
 {
     private readonly UiSessionStore _intelligentUi = new();
     private UiAutomation? _intelligentUiAutomation;
-    private void InitializeIntelligentUi() => _intelligentUiAutomation = new(_automation, _intelligentUi);
-    private void DisposeIntelligentUi() { _intelligentUiAutomation?.Dispose(); _intelligentUi.Clear(); }
+    private UiDataAutomation? _intelligentUiData;
+    [Inject] public IntelligentUiWorkspaceContext IntelligentUiWorkspace { get; set; } = default!;
+    private void InitializeIntelligentUi()
+    {
+        _intelligentUiAutomation = new(_automation, _intelligentUi);
+        _intelligentUiData = new(_automation, _intelligentUi, captureAuthorizedResult: tool =>
+            tool.Scope is AutomationScope.Source or AutomationScope.Compiler or AutomationScope.Project);
+        IntelligentUiWorkspace.Attach(_intelligentUi, () => _browserAgents.WorkspaceIdentity.ToString(), WithIntelligentUiWorkspaceAsync);
+    }
+    private void DisposeIntelligentUi()
+    {
+        IntelligentUiWorkspace.Detach(_intelligentUi);
+        _intelligentUiData?.Dispose(); _intelligentUiAutomation?.Dispose(); _intelligentUi.Clear();
+    }
+    private async Task WithIntelligentUiWorkspaceAsync(Func<CancellationToken, Task> operation, CancellationToken token)
+    {
+        await _automationGate.WaitAsync(token);
+        try
+        {
+            if (!_ready || _busy || _disposed) throw new AutomationException("unavailable", "The Studio workspace is busy or not ready.");
+            await operation(token);
+        }
+        finally { _automationGate.Release(); if (!_disposed) StateHasChanged(); }
+    }
 
     // This method is not JSInvokable and is never exposed to agents. The card invokes it
     // only after an explicit local user review; normal schema/source-revision checks remain.
@@ -23,8 +46,6 @@ public partial class App
             if (!_ready || _busy || _disposed) throw new AutomationException("unavailable", "The IDE operation was superseded.");
             var intent = _intelligentUi.PrepareActionLocal(call);
             if (intent.Kind != "tool" || intent.Tool == null) throw new AutomationException("invalid_action", "This is not a tool action.");
-            // Event-driven waits intentionally do not take the mutation gate in the agent
-            // transport. They are not meaningful as a blocking local button operation.
             if (intent.Tool == "xamlg_wait") throw new AutomationException("invalid_action", "Use the agent's wait tool rather than a blocking UI button.");
             var tool = _automation.Tools.SingleOrDefault(tool => tool.Name == intent.Tool) ?? throw new AutomationException("unknown_tool", "The tool is no longer available.");
             var before = SourceRevision;
