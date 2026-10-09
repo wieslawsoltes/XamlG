@@ -118,6 +118,58 @@ public sealed class RuntimeTests
         Assert.Same(expected, actual);
     }
     [Fact]
+    public void NestedNameFixupsFinishInQueueOrderBeforePublishingTheRoot()
+    {
+        var context = new XamlRuntimeContext(); var root = new object(); var target = new object();
+        using var session = context.Session;
+        var calls = new List<int>(); object? resolved = null;
+        void Record(int value)
+        {
+            Assert.False(XamlRuntimeSession.TryGet(root, out _));
+            calls.Add(value);
+        }
+        context.Defer(() =>
+        {
+            Record(1);
+            context.Defer(() =>
+            {
+                Record(3); resolved = context.ResolveName<object>("later");
+                context.Defer(() => Record(5));
+            });
+        });
+        context.Defer(() =>
+        {
+            Record(2); context.RegisterName("later", target);
+            context.Defer(() => Record(4));
+        });
+        context.Complete(root);
+        Assert.Equal(new[] { 1, 2, 3, 4, 5 }, calls);
+        Assert.Same(target, resolved);
+        Assert.True(XamlRuntimeSession.TryGet(root, out var attached)); Assert.Same(session, attached);
+        context.Complete(root);
+        Assert.Equal(5, calls.Count);
+        context.Defer(() => { calls.Add(6); context.Defer(() => calls.Add(7)); });
+        context.Complete(root); context.Complete(root);
+        Assert.Equal(new[] { 1, 2, 3, 4, 5, 6, 7 }, calls);
+    }
+    [Fact]
+    public void NestedNameFixupFailureStopsCompletionWithoutPublishingTheRoot()
+    {
+        var context = new XamlRuntimeContext(); var root = new object();
+        using var session = context.Session;
+        var failure = new InvalidOperationException("Reference assignment rejected");
+        var calls = new List<int>();
+        context.Defer(() =>
+        {
+            calls.Add(1);
+            context.Defer(() => { calls.Add(2); throw failure; });
+            context.Defer(() => calls.Add(3));
+        });
+        Assert.Same(failure, Assert.Throws<InvalidOperationException>(() => context.Complete(root)));
+        Assert.Equal(new[] { 1, 2 }, calls);
+        Assert.False(XamlRuntimeSession.TryGet(root, out _));
+    }
+    [Fact]
     public void PropertyBatchIsRevisionCheckedAndRollbackSafe()
     {
         using var session = new XamlRuntimeSession(); var a = 1; var b = 2;
