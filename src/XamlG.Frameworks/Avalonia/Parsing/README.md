@@ -3,7 +3,8 @@
 The original files were imported unchanged from Avalonia commit
 `a9429a328057befa287ffb5e981f58b86a86eda0`: colors in `5e53e44` and animation
 parsers/tokenizer in `5e70673`, keyboard/cursor parsers in `74204d1`, and
-font-feature/shadow parsers and bracket splitter in `3b92450`.
+font-feature/shadow parsers and bracket splitter in `3b92450`, and the transform
+operation parser in `697d6c0`.
 `upstream.json` records their original paths and SHA-256 hashes.
 The MIT license and original color-conversion notices are retained.
 
@@ -75,3 +76,24 @@ Font-feature/shadow adaptations:
 - Preserve invalid font-feature defaults, range overflow, empty-shadow counts,
   bracket errors, optional-token behavior and fresh reference values. No runtime
   parser or private compiler type appears in the generated application.
+
+Transform-operation adaptations:
+
+- Move the parser into the private compiler namespace. Substitute a recording
+  builder and matrix value holder for the framework's types; retain the original
+  grammar, unit checks, argument counts and degree/gradian/turn arithmetic.
+- Restore the three angle helpers from the previously imported `MathUtilities`.
+  The recorder stores ordered calls and numeric arguments without baking matrices
+  or loading the application's Avalonia assembly.
+- Lower the result into public `TransformOperations.CreateBuilder`, typed
+  `AppendTranslate`/`AppendRotate`/`AppendScale`/`AppendSkew`/`AppendMatrix` calls,
+  and `Build`. Preallocate the exact operation count. Preserve the shared `none`
+  identity and fresh values for other literals.
+- Preserve operation kinds and order, including identity operations and signed
+  zero, so animation interpolation uses the same primitive transforms. The
+  matrix parser's final-value whitespace behavior and rejection of scientific
+  notation remain unchanged. Invalid input now produces a source diagnostic
+  containing the parser's error during generation instead of failing at runtime.
+- Compare both accepted values and interpolation against public framework parsing
+  and XamlX, including keyed source metadata. Generated applications contain no
+  parser calls or dependency on the private recorder.

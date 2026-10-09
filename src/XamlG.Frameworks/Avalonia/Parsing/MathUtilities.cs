@@ -2,9 +2,24 @@ using System;
 
 namespace XamlG.Frameworks.Avalonia.Parsing
 {
-    // Only the numeric clamp used by the imported color parsers is needed here.
+    // Numeric helpers retained from upstream for the color and transform parsers.
     internal static class MathUtilities
     {
+        public static double Deg2Rad(double angle)
+        {
+            return angle * (Math.PI / 180d);
+        }
+
+        public static double Grad2Rad(double angle)
+        {
+            return angle * (Math.PI / 200d);
+        }
+
+        public static double Turn2Rad(double angle)
+        {
+            return angle * 2 * Math.PI;
+        }
+
         public static double Clamp(double val, double min, double max)
         {
             if (min > max)

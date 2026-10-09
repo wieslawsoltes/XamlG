@@ -34,6 +34,7 @@ internal static class BoundTraversal
         BoundChoiceExpression c => Expressions(c.Extension).Concat(c.Branches.SelectMany(b => new[] { b.Option, b.Value })).Concat(c.Default == null ? Array.Empty<BoundExpression>() : new[] { c.Default }),
         BoundCastExpression c => new[] { c.Value }, BoundArrayExpression a => a.Values,
         BoundNewExpression n => n.Arguments.Concat(n.Initializers.Select(initializer => initializer.Value)),
+        BoundBuilderExpression b => new[] { b.Creation }.Concat(b.Calls.SelectMany(call => call.Arguments)),
         BoundCollectionExpression c => c.Values,
         BoundCachedExpression c => new[] { c.Value },
         BoundValueConverterExpression c => new[] { c.Value },

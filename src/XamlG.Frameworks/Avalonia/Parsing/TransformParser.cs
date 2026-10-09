@@ -1,8 +1,7 @@
 using System;
 using System.Globalization;
-using Avalonia.Utilities;
 
-namespace Avalonia.Media.Transformation
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     internal static class TransformParser
     {
@@ -30,7 +29,7 @@ namespace Avalonia.Media.Transformation
             ("px", Unit.Pixel)
         };
 
-        public static TransformOperations Parse(string s)
+        public static ParsedTransformOperations Parse(string s)
         {
             void ThrowInvalidFormat()
             {
@@ -46,10 +45,10 @@ namespace Avalonia.Media.Transformation
 
             if (span.Equals("none".AsSpan(), StringComparison.OrdinalIgnoreCase))
             {
-                return TransformOperations.Identity;
+                return ParsedTransformOperations.Identity;
             }
 
-            var builder = TransformOperations.CreateBuilder(0);
+            var builder = ParsedTransformOperations.CreateBuilder(0);
 
             while (true)
             {
@@ -88,7 +87,7 @@ namespace Avalonia.Media.Transformation
         private static void ParseFunction(
             in ReadOnlySpan<char> functionPart,
             TransformFunction function,
-            in TransformOperations.Builder builder)
+            in ParsedTransformOperations.Builder builder)
         {
             static UnitValue ParseValue(ReadOnlySpan<char> part)
             {
@@ -300,7 +299,7 @@ namespace Avalonia.Media.Transformation
                         VerifyZeroOrUnit(function, value, Unit.None);
                     }
 
-                    var matrix = new Matrix(
+                    var matrix = new ParsedTransformMatrix(
                         values[0].Value,
                         values[1].Value,
                         values[2].Value,
