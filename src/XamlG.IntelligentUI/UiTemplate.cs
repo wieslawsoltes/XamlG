@@ -44,7 +44,8 @@ public sealed class UiTemplate
         }
         var children = ImmutableArray.CreateBuilder<UiElement>();
         foreach (var child in node.Children) children.AddRange(RenderNode(child, state, data, item, scope, keys, ref count));
-        var element = new UiElement(nodeKey, node.Component.Name, properties, children.ToImmutable(), node.StateKey, node.ActionId);
+        var element = new UiElement(nodeKey, node.Component.Name, properties, children.ToImmutable(), node.StateKey, node.ActionId)
+        { ActionItem = node.ActionId == null ? null : item };
         UiTreeValidation.ValidateElement(element, node.Component, _limits.TextCharacters);
         return [element];
     }
