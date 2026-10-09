@@ -9,13 +9,19 @@ public sealed class UiSessionStore(UiCompiler? compiler = null)
 {
     private readonly object _gate = new();
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+    // Never reset the revision counter when a surface is removed. This prevents ABA writes
+    // from a released card from modifying a later surface with the same logical ID.
+    private long _revision, _lifetime;
     public UiCompiler Compiler { get; } = compiler ?? new();
     public event Action<UiSnapshot>? Changed;
     public event Action<string>? Released;
     public UiSnapshot Publish(UiPublish request, string principal)
     {
+        ArgumentNullException.ThrowIfNull(request);
         Principal(principal); UiJson.Identifier(request.Id, "Surface ID");
+        if (request.Xaml == null) throw new UiException("invalid_xaml", "XAML is required.");
         if (request.ExpectedRevision < 0 || request.Sequence < 1) throw new UiException("revision_conflict", "Invalid revision or stream sequence.");
+        long lifetime; lock (_gate) lifetime = _lifetime;
         var compiled = Compiler.Compile(request.Xaml, request.IsFinal);
         if (!compiled.Success) throw new UiException("compilation_failed", string.Join("\n", compiled.Diagnostics.Select(d => d.Code + ": " + d.Message)));
         var actions = ValidateActions(request.Actions ?? []);
@@ -23,6 +29,7 @@ public sealed class UiSessionStore(UiCompiler? compiler = null)
         UiSnapshot snapshot;
         lock (_gate)
         {
+            if (lifetime != _lifetime) throw new UiException("workspace_changed", "The UI workspace was retired during compilation.");
             _entries.TryGetValue(request.Id, out var current);
             if (current != null) Owner(current, principal);
             if ((current?.Snapshot.Revision ?? 0) != request.ExpectedRevision || request.Sequence != (current?.Snapshot.Sequence ?? 0) + 1)
@@ -32,9 +39,9 @@ public sealed class UiSessionStore(UiCompiler? compiler = null)
             var data = UiJson.Object(request.Data ?? current?.Snapshot.Data, Compiler.Limits.DataBytes, "Data");
             var roots = compiled.Template!.Render(state, data);
             ValidateActionReferences(roots, actions);
-            snapshot = new(request.Id, checked(request.ExpectedRevision + 1), current?.Snapshot.StateRevision ?? 0,
+            snapshot = new(request.Id, checked(++_revision), current?.Snapshot.StateRevision ?? 0,
                 request.Sequence, request.IsFinal, request.Xaml, state, data, roots, actions, compiled.Diagnostics,
-                Fallback(roots, request.FallbackMarkdown));
+                Fallback(roots, request.FallbackMarkdown), current?.Snapshot.SessionId ?? Guid.NewGuid().ToString("N"));
             if (current != null && !JsonElement.DeepEquals(current.Snapshot.State, state)) snapshot = snapshot with { StateRevision = checked(snapshot.StateRevision + 1) };
             _entries[request.Id] = new(principal, compiled.Template, snapshot, request.FallbackMarkdown);
         }
@@ -54,10 +61,14 @@ public sealed class UiSessionStore(UiCompiler? compiler = null)
                 throw new UiException("invalid_state", "Input state cannot change its declared type.");
             var inputs = Flatten(entry.Snapshot.Roots).Where(node => node.StateKey == request.Key).ToArray();
             if (inputs.Length == 0 || inputs.All(node => Disabled(node, entry.Snapshot.Roots))) throw new UiException("invalid_state", "No enabled input exposes this state key.");
+            foreach (var input in inputs)
+                if (input.Type == "TextBox" && input.Properties.TryGetValue("MaxLength", out var maximum) && request.Value.ValueKind == JsonValueKind.String && request.Value.GetString()!.Length > maximum.GetDecimal())
+                    throw new UiException("invalid_state", "Input exceeds its declared MaxLength.");
             var model = JsonNode.Parse(entry.Snapshot.State.GetRawText())!.AsObject();
             model[request.Key] = JsonNode.Parse(request.Value.GetRawText());
             var state = ValidateState(JsonSerializer.SerializeToElement(model));
             var roots = entry.Template.Render(state, entry.Snapshot.Data);
+            ValidateActionReferences(roots, entry.Snapshot.Actions);
             snapshot = entry.Snapshot with { State = state, StateRevision = checked(entry.Snapshot.StateRevision + 1), Roots = roots, FallbackMarkdown = Fallback(roots, entry.Markdown) };
             _entries[request.Id] = entry with { Snapshot = snapshot };
         }
@@ -72,7 +83,8 @@ public sealed class UiSessionStore(UiCompiler? compiler = null)
             var entry = Get(request.Id, principal);
             if (entry.Snapshot.Revision != request.ExpectedRevision) throw new UiException("revision_conflict", "The surface changed before data arrived.");
             var roots = entry.Template.Render(entry.Snapshot.State, data);
-            snapshot = entry.Snapshot with { Revision = checked(entry.Snapshot.Revision + 1), Data = data, Roots = roots, FallbackMarkdown = Fallback(roots, entry.Markdown) };
+            ValidateActionReferences(roots, entry.Snapshot.Actions);
+            snapshot = entry.Snapshot with { Revision = checked(++_revision), Data = data, Roots = roots, FallbackMarkdown = Fallback(roots, entry.Markdown) };
             _entries[request.Id] = entry with { Snapshot = snapshot };
         }
         Notify(snapshot); return snapshot;
@@ -109,7 +121,7 @@ public sealed class UiSessionStore(UiCompiler? compiler = null)
     public void Clear()
     {
         string[] ids;
-        lock (_gate) { ids = _entries.Keys.ToArray(); _entries.Clear(); }
+        lock (_gate) { ids = _entries.Keys.ToArray(); _entries.Clear(); _lifetime = checked(_lifetime + 1); }
         foreach (var id in ids) NotifyReleased(id);
     }
     private string LocalPrincipal(string id) { lock (_gate) return _entries.TryGetValue(id, out var entry) ? entry.Principal : throw new UiException("unknown_surface", "The surface is no longer available."); }
@@ -164,7 +176,7 @@ public sealed class UiSessionStore(UiCompiler? compiler = null)
             if (!ids.Add(action.Id) || action.Kind is not ("message" or "copy" or "openUrl" or "tool")) throw new UiException("invalid_action", "Invalid or duplicate action.");
             if (action.Kind == "tool")
             {
-                if (action.Tool == null || action.Tool.Length > 64 || !action.Tool.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-')) throw new UiException("invalid_action", "Tool name is invalid.");
+                if (string.IsNullOrEmpty(action.Tool) || action.Tool.Length > 64 || !action.Tool.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-')) throw new UiException("invalid_action", "Tool name is invalid.");
                 if (action.Text != null) throw new UiException("invalid_action", "Tool actions do not accept Text.");
             }
             else if (action.Text == null || action.Tool != null || action.Arguments != null) throw new UiException("invalid_action", "This action requires only Text.");

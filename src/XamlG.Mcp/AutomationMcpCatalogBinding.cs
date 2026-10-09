@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Runtime.CompilerServices;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -13,8 +14,6 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
 {
     private readonly IAutomationHost _host;
     private readonly object _gate = new();
-    // HTTP creates options for every request. Weak collection keys release completed
-    // requests and also let an embedding host intentionally share its SDK collections.
     private readonly ConditionalWeakTable<McpServerPrimitiveCollection<McpServerTool>, Dictionary<string, AutomationToolPrimitive>> _tools = new();
     private readonly ConditionalWeakTable<McpServerResourceCollection, Dictionary<string, AutomationResourcePrimitive>> _resources = new();
     private readonly ConditionalWeakTable<McpServerPrimitiveCollection<McpServerPrompt>, Dictionary<string, AutomationPromptPrimitive>> _prompts = new();
@@ -54,8 +53,6 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
         where TPrimitive : IMcpServerPrimitive where TOwned : TPrimitive
     {
         var desired = definitions.ToDictionary(key, StringComparer.Ordinal);
-        // Reject a collision before removing any current primitives. Foreign registrations
-        // may share the SDK collection but remain owned by their original host.
         foreach (var name in desired.Keys)
             if (collection.TryGetPrimitive(name, out var existing) && (!owned.TryGetValue(name, out var current) || !ReferenceEquals(existing, current)))
                 throw new InvalidOperationException("Duplicate MCP primitive: " + name);
@@ -83,7 +80,6 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
             _tools.Clear(); _resources.Clear(); _prompts.Clear();
         }
     }
-
     private sealed class AutomationToolPrimitive(IAutomationHost host, AutomationTool definition) : McpServerTool
     {
         public AutomationTool Definition { get; } = definition;
@@ -91,6 +87,7 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
         public override Tool ProtocolTool { get; } = new()
         {
             Name = definition.Name, Description = definition.Description, InputSchema = definition.InputSchema,
+            Meta = ProtocolMetadata(definition.Metadata),
             Annotations = new() { ReadOnlyHint = definition.Effect == AutomationEffect.Read, DestructiveHint = definition.Destructive,
                 OpenWorldHint = definition.Effect == AutomationEffect.Execute }
         };
@@ -102,7 +99,14 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
                 if (AutomationMedia.TryRead(result, out var media))
                     return new() { StructuredContent = media.Metadata, Content = new ContentBlock[] { new TextContentBlock { Text = media.Metadata.GetRawText() } }
                         .Concat(media.Images.Select(image => ImageContentBlock.FromBytes(Convert.FromBase64String(image.Data), image.MimeType))).ToArray() };
-                return new() { StructuredContent = result, Content = [new TextContentBlock { Text = result.GetRawText() }] };
+                var text = result.GetRawText();
+                // Keep the structured marker for capable hosts and meaningful computed text for
+                // text-only clients. No rendering dependency is introduced into the MCP package.
+                if (Definition.Metadata is { } metadata && metadata.TryGetProperty("ui", out _) &&
+                    result.ValueKind == JsonValueKind.Object && result.TryGetProperty("fallbackMarkdown", out var fallback) &&
+                    fallback.ValueKind == JsonValueKind.String && fallback.GetString()!.Length <= 131072)
+                    text = fallback.GetString()!;
+                return new() { StructuredContent = result, Content = [new TextContentBlock { Text = text }] };
             }
             catch (AutomationException error) { return Error(error.Code, error.Message); }
             catch (Exception error) when (error is ArgumentException or InvalidOperationException or KeyNotFoundException)
@@ -114,13 +118,13 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
         public AutomationResource Definition { get; } = definition;
         public override IReadOnlyList<object> Metadata => [];
         public override ResourceTemplate ProtocolResourceTemplate { get; } = new()
-        { UriTemplate = definition.Uri, Name = definition.Name, Description = definition.Description, MimeType = definition.MimeType };
+        { UriTemplate = definition.Uri, Name = definition.Name, Description = definition.Description, MimeType = definition.MimeType, Meta = ProtocolMetadata(definition.Metadata) };
         public override bool IsMatch(string uri) => AutomationUriTemplate.IsMatch(Definition, uri);
         public override async ValueTask<ReadResourceResult> ReadAsync(RequestContext<ReadResourceRequestParams> request, CancellationToken cancellationToken = default)
         {
             var resource = host.Resources.FirstOrDefault(r => AutomationUriTemplate.IsMatch(r, request.Params.Uri)) ?? throw new McpException("Unknown resource.");
             var text = await host.ReadResourceAsync(request.Params.Uri, new("mcp", cancellationToken, Principal(request)));
-            return new() { Contents = [new TextResourceContents { Uri = request.Params.Uri, MimeType = resource.MimeType, Text = text }] };
+            return new() { Contents = [new TextResourceContents { Uri = request.Params.Uri, MimeType = resource.MimeType, Text = text, Meta = ProtocolMetadata(resource.Metadata) }] };
         }
     }
     private sealed class AutomationPromptPrimitive(IAutomationHost host, AutomationPrompt definition) : McpServerPrompt
@@ -135,6 +139,13 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
             return ValueTask.FromResult(new GetPromptResult { Description = prompt.Description,
                 Messages = [new PromptMessage { Role = Role.User, Content = new TextContentBlock { Text = prompt.Text } }] });
         }
+    }
+    private static JsonObject? ProtocolMetadata(JsonElement? metadata)
+    {
+        if (metadata == null) return null;
+        if (metadata.Value.ValueKind != JsonValueKind.Object || System.Text.Encoding.UTF8.GetByteCount(metadata.Value.GetRawText()) > 8192)
+            throw new InvalidOperationException("MCP metadata must be a bounded object.");
+        return JsonNode.Parse(metadata.Value.GetRawText())!.AsObject();
     }
     private static CallToolResult Error(string code, string message)
     {

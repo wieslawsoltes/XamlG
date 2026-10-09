@@ -35,11 +35,12 @@ public sealed record UiElement(string Key, string Type, ImmutableDictionary<stri
     ImmutableArray<UiElement> Children, string? StateKey = null, string? ActionId = null);
 public sealed record UiSnapshot(string Id, long Revision, long StateRevision, long Sequence, bool IsFinal,
     string Xaml, JsonElement State, JsonElement Data, ImmutableArray<UiElement> Roots,
-    ImmutableArray<UiAction> Actions, ImmutableArray<UiDiagnostic> Diagnostics, string FallbackMarkdown);
-public sealed record UiPresentation(string Format, string Id, long Revision, long StateRevision, string FallbackMarkdown)
+    ImmutableArray<UiAction> Actions, ImmutableArray<UiDiagnostic> Diagnostics, string FallbackMarkdown, string SessionId);
+public sealed record UiPresentation(string Format, string Id, long Revision, long StateRevision, string FallbackMarkdown, string SessionId)
 {
     public const string FormatName = "xamlg.intelligent-ui/1";
-    public static UiPresentation From(UiSnapshot snapshot) => new(FormatName, snapshot.Id, snapshot.Revision, snapshot.StateRevision, snapshot.FallbackMarkdown.Length <= 1000 ? snapshot.FallbackMarkdown : snapshot.FallbackMarkdown[..1000] + "\n[Use xamlg_ui_read for complete fallback]");
+    public static UiPresentation From(UiSnapshot snapshot) => new(FormatName, snapshot.Id, snapshot.Revision, snapshot.StateRevision,
+        snapshot.FallbackMarkdown.Length <= 1000 ? snapshot.FallbackMarkdown : snapshot.FallbackMarkdown[..1000] + "\n[Use xamlg_ui_read for complete fallback]", snapshot.SessionId);
     public static bool TryRead(string json, out UiPresentation? presentation)
     {
         presentation = null;
@@ -49,7 +50,7 @@ public sealed record UiPresentation(string Format, string Id, long Revision, lon
             using var document = JsonDocument.Parse(json);
             if (!document.RootElement.TryGetProperty("format", out var format) || format.GetString() != FormatName) return false;
             presentation = document.RootElement.Deserialize<UiPresentation>(AutomationJson.Options);
-            return presentation is { Id.Length: > 0 and <= 80 };
+            return presentation is { Id.Length: > 0 and <= 80, SessionId.Length: 32 };
         }
         catch (Exception error) when (error is JsonException or InvalidOperationException) { return false; }
     }
@@ -80,7 +81,6 @@ internal static class UiJson
         var result = value ?? Empty;
         if (result.ValueKind != JsonValueKind.Object || System.Text.Encoding.UTF8.GetByteCount(result.GetRawText()) > maximumBytes)
             throw new UiException("invalid_data", name + " must be a bounded JSON object.");
-        // Ambiguous duplicate object members are not accepted at any depth.
         Check(result, 0);
         return result.Clone();
         static void Check(JsonElement item, int depth)
