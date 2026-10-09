@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { readFileSync } from 'node:fs';
-const resource = readFileSync(new URL('../../../src/XamlG.IntelligentUI/Resources/intelligent-ui.html', import.meta.url), 'utf8');
+import { loadUiResource } from './resource.mjs';
+const resource = loadUiResource();
 
 async function mount(page, options = {}) {
   await page.setContent('<iframe title="MCP App" sandbox="allow-scripts" style="width:950px;height:740px;border:0"></iframe>');
@@ -18,13 +18,10 @@ async function mount(page, options = {}) {
       ])] });
     const marker = () => ({ format: 'xamlg.intelligent-ui/1', id: 'pricing', sessionId: 'a'.repeat(32), revision: 1, stateRevision: 0, fallbackMarkdown: 'Pricing fallback' });
     const send = message => frame.contentWindow.postMessage(message, '*');
-    host.send = send;
-    host.replace = () => { host.sessionId = 'b'.repeat(32); host.revision++; };
-    host.mutate = () => { host.revision++; };
+    host.send = send;host.replace = () => { host.sessionId = 'b'.repeat(32); host.revision++; };host.mutate = () => { host.revision++; };
     window.addEventListener('message', event => {
       if (event.source !== frame.contentWindow || event.data?.jsonrpc !== '2.0') return;
-      const m = event.data;
-      const reply = result => send({ jsonrpc: '2.0', id: m.id, result });
+      const m = event.data, reply = result => send({ jsonrpc: '2.0', id: m.id, result });
       const fail = message => send({ jsonrpc: '2.0', id: m.id, error: { code: -32602, message } });
       if (m.method === 'ui/initialize') {
         host.initialization = m.params;
@@ -46,74 +43,46 @@ async function mount(page, options = {}) {
       else if (m.method === 'ui/open-link') { host.links.push(m.params); reply({}); }
       else if (m.method === 'ui/update-model-context') { host.contexts.push(m.params); reply({}); }
       else if (m.id !== undefined) reply({});
-    });
-    frame.srcdoc = html;
+    });frame.srcdoc = html;
   }, { html: resource, options });
-  const app = page.frameLocator('iframe[title="MCP App"]');
-  await expect(app.getByRole('status')).toContainText('revision 1');
-  return app;
+  const app = page.frameLocator('iframe[title="MCP App"]');await expect(app.getByRole('status')).toContainText('revision 1');return app;
 }
-
 test('initializes the actual embedded resource and uses parent-mediated structured tool data', async ({ page }) => {
-  const app = await mount(page);
-  await expect(app.getByText('$232', { exact: true }).first()).toBeVisible();
+  const app = await mount(page);await expect(app.getByText('$232', { exact: true }).first()).toBeVisible();
   const state = await page.evaluate(() => ({ initialization: window.uiHost.initialization, calls: window.uiHost.calls }));
-  expect(state.initialization.protocolVersion).toBe('2026-01-26');
-  expect(state.calls[0]).toEqual({ name: 'xamlg_ui_read', arguments: { id: 'pricing' } });
+  expect(state.initialization.protocolVersion).toBe('2026-01-26');expect(state.calls[0]).toEqual({ name: 'xamlg_ui_read', arguments: { id: 'pricing' } });
 });
-
 test('state editing updates computed output without requesting model inference', async ({ page }) => {
   const app = await mount(page);
   await app.getByRole('slider').evaluate(input => { input.value = '10'; input.dispatchEvent(new Event('change', { bubbles: true })); });
-  await expect(app.getByRole('status')).toContainText('state 1');
-  await expect(app.getByText('$290', { exact: true }).first()).toBeVisible();
+  await expect(app.getByRole('status')).toContainText('state 1');await expect(app.getByText('$290', { exact: true }).first()).toBeVisible();
   expect(await page.evaluate(() => window.uiHost.calls.filter(call => call.name === 'xamlg_ui_state'))).toHaveLength(1);
-  expect(await page.evaluate(() => window.uiHost.messages)).toEqual([]);
-  await expect.poll(() => page.evaluate(() => window.uiHost.contexts.length)).toBe(1);
+  expect(await page.evaluate(() => window.uiHost.messages)).toEqual([]);await expect.poll(() => page.evaluate(() => window.uiHost.contexts.length)).toBe(1);
 });
-
 test('actions require review and use the MCP Apps content array', async ({ page }) => {
-  const app = await mount(page);
-  await app.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(app.getByRole('region', { name: 'Review UI action' })).toBeVisible();
-  expect(await page.evaluate(() => window.uiHost.messages)).toEqual([]);
-  await app.getByRole('button', { name: 'Confirm', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => window.uiHost.messages.length)).toBe(1);
+  const app = await mount(page);await app.getByRole('button', { name: 'Continue', exact: true }).click();
+  await expect(app.getByRole('region', { name: 'Review UI action' })).toBeVisible();expect(await page.evaluate(() => window.uiHost.messages)).toEqual([]);
+  await app.getByRole('button', { name: 'Confirm', exact: true }).click();await expect.poll(() => page.evaluate(() => window.uiHost.messages.length)).toBe(1);
   expect(await page.evaluate(() => window.uiHost.messages[0])).toEqual({ role: 'user', content: [{ type: 'text', text: 'Discuss 8 seats' }] });
 });
-
 test('a stale review cannot send a message', async ({ page }) => {
-  const app = await mount(page);
-  await app.getByRole('button', { name: 'Continue', exact: true }).click();
-  await expect(app.getByRole('region', { name: 'Review UI action' })).toBeVisible();
-  await page.evaluate(() => window.uiHost.mutate());
-  await app.getByRole('button', { name: 'Confirm', exact: true }).click();
-  await expect(app.getByRole('alert')).toContainText('revision_conflict');
-  expect(await page.evaluate(() => window.uiHost.messages)).toEqual([]);
+  const app = await mount(page);await app.getByRole('button', { name: 'Continue', exact: true }).click();await expect(app.getByRole('region', { name: 'Review UI action' })).toBeVisible();
+  await page.evaluate(() => window.uiHost.mutate());await app.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await expect(app.getByRole('alert')).toContainText('revision_conflict');expect(await page.evaluate(() => window.uiHost.messages)).toEqual([]);
 });
-
 test('released IDs cannot attach an old card to a different owner session', async ({ page }) => {
-  const app = await mount(page);
-  await page.evaluate(() => window.uiHost.replace());
-  await app.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await expect(app.getByRole('alert')).toContainText('released or replaced');
-  await expect(app.getByRole('slider')).toHaveCount(0);
+  const app = await mount(page);await page.evaluate(() => window.uiHost.replace());await app.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect(app.getByRole('alert')).toContainText('released or replaced');await expect(app.getByRole('slider')).toHaveCount(0);
 });
-
 test('untrusted strings remain text and script links are rejected', async ({ page }) => {
   const malicious = '<img src="https://invalid.test/x" onerror="parent.pwned=true">';
   const app = await mount(page, { untrusted: malicious, kind: 'openUrl', url: 'javascript:alert(1)' });
-  await expect(app.getByText(malicious, { exact: true })).toBeVisible();
-  await expect(app.locator('img')).toHaveCount(0);
-  await app.getByRole('button', { name: 'Continue', exact: true }).click();
-  await app.getByRole('button', { name: 'Confirm', exact: true }).click();
-  await expect(app.getByRole('alert')).toContainText('Unsupported URL');
-  expect(await page.evaluate(() => window.uiHost.links)).toEqual([]);
+  await expect(app.getByText(malicious, { exact: true })).toBeVisible();await expect(app.locator('img')).toHaveCount(0);
+  await app.getByRole('button', { name: 'Continue', exact: true }).click();await app.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await expect(app.getByRole('alert')).toContainText('Unsupported URL');expect(await page.evaluate(() => window.uiHost.links)).toEqual([]);
 });
-
 test('messages from the app window cannot spoof the parent transport', async ({ page }) => {
   const app = await mount(page);
   await app.locator('body').evaluate(() => window.postMessage({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: { format: 'xamlg.intelligent-ui/1', id: 'foreign', sessionId: 'c'.repeat(32), fallbackMarkdown: 'spoofed' } } }, '*'));
-  await expect(app.getByRole('status')).toContainText('revision 1');
-  await expect(app.getByText('spoofed', { exact: true })).toHaveCount(0);
+  await expect(app.getByRole('status')).toContainText('revision 1');await expect(app.getByText('spoofed', { exact: true })).toHaveCount(0);
 });

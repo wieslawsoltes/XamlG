@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -12,15 +11,13 @@ public sealed record UiDataPage(JsonElement Value, int? Total, bool HasMore, UiD
 public sealed record UiDataBinding(string Name, UiDataReference Reference);
 public sealed record UiBindData(string Id, long ExpectedRevision, UiDataBinding[] Bindings, JsonElement? Data = null);
 
-/// <summary>A registered data provider. The principal is supplied by the trusted host; URLs,
-/// credentials and executable expressions are not part of a data reference.</summary>
+/// <summary>A registered data provider. Principal identity comes from the host, not the reference.</summary>
 public interface IUiDataResolver
 {
     ValueTask<UiDataPage> ResolveAsync(UiDataReference reference, string principal, int maximumBytes, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Bounded retained tool results. Handles are version-pinned and owner-scoped rather
-/// than bearer capabilities. Expired, released and foreign results are indistinguishable.</summary>
+/// <summary>Bounded retained results. Version-pinned handles are owner-scoped, not bearer capabilities.</summary>
 public sealed class UiDataStore : IUiDataResolver
 {
     private readonly object _gate = new();
@@ -136,7 +133,7 @@ public sealed class UiDataStore : IUiDataResolver
     private sealed record Entry(string Principal, UiDataHandle Handle, JsonElement Value);
 }
 
-/// <summary>RFC 6901 string syntax, including escaped slash/tilde and strict array indices.</summary>
+/// <summary>RFC 6901 string syntax, escaped slash/tilde and strict array indices.</summary>
 public static class UiJsonPointer
 {
     public static JsonElement Resolve(JsonElement root, string pointer)
@@ -188,7 +185,7 @@ public sealed partial class UiSessionStore
             if (_lifetime != lifetime) throw new UiException("workspace_changed", "The UI workspace was retired while data was resolving.");
             var entry = Get(request.Id, principal);
             if (entry.Snapshot.Revision != request.ExpectedRevision || entry.Snapshot.SessionId != original.SessionId) throw new UiException("revision_conflict", "The UI changed while data was resolving.");
-            var roots = entry.Template.Render(entry.Snapshot.State, resolved); ValidateActionReferences(roots, entry.Snapshot.Actions);
+            var roots = entry.Template.Render(entry.Snapshot.State, resolved, entry.Snapshot.Roots); ValidateActionReferences(roots, entry.Snapshot.Actions);
             snapshot = entry.Snapshot with { Revision = checked(++_revision), Data = resolved, Roots = roots, FallbackMarkdown = Fallback(roots, entry.Markdown) };
             _entries[request.Id] = entry with { Snapshot = snapshot }; _generation = checked(_generation + 1);
         }

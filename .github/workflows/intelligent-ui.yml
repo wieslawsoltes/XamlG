@@ -35,13 +35,14 @@ jobs:
         run: |
           mkdir -p artifacts/intelligent-ui
           dotnet restore XamlG.slnx
-      - name: Check trusted MCP Apps script syntax
+      - name: Check assembled trusted MCP Apps script syntax
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          source = Path('src/XamlG.IntelligentUI/Resources/intelligent-ui.html').read_text()
-          Path('artifacts/intelligent-ui/ui-app.js').write_text(source.split('<script>', 1)[1].split('</script>', 1)[0])
-          PY
+          node --input-type=module - <<'JS'
+          import { writeFileSync } from 'node:fs';
+          import { loadUiResource } from './tools/XamlG.Playground/ui-app-tests/resource.mjs';
+          const source = loadUiResource();
+          writeFileSync('artifacts/intelligent-ui/ui-app.js', source.split('<script>')[1].split('</script>')[0]);
+          JS
           node --check artifacts/intelligent-ui/ui-app.js
           node --check tools/XamlG.Playground/wwwroot/intelligent-ui.js
       - name: Build native contracts

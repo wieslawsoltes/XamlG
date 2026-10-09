@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { readFileSync } from 'node:fs';
-const html = readFileSync(new URL('../../../src/XamlG.IntelligentUI/Resources/intelligent-ui.html', import.meta.url), 'utf8');
+import { loadUiResource } from './resource.mjs';
+const html = loadUiResource();
 
 async function mount(page) {
   await page.setContent('<iframe title="Parity app" sandbox="allow-scripts" style="width:700px;height:720px;border:0"></iframe>');
@@ -50,10 +50,8 @@ async function mount(page) {
     frame.srcdoc = html;
   }, html);
   const app = page.frameLocator('iframe[title="Parity app"]');
-  await expect(app.getByRole('status')).toContainText('revision 1');
-  return app;
+  await expect(app.getByRole('status')).toContainText('revision 1');return app;
 }
-
 test('state buttons execute once without external action review or inference', async ({ page }) => {
   const app = await mount(page), button = app.getByRole('button', { name: 'Increment', exact: true });
   await button.click(); await expect(app.getByRole('status')).toContainText('state 1');
@@ -64,56 +62,35 @@ test('state buttons execute once without external action review or inference', a
   expect(calls).toEqual([0, 1].map(expectedStateRevision => ({ name: 'xamlg_ui_state_action', arguments: { id: 'a', expectedRevision: 1, expectedStateRevision, nodeKey: '/increment' } })));
   expect(await page.evaluate(() => window.parityHost.external)).toEqual([]);
 });
-
 test('rejected state actions preserve the committed view and allow retry', async ({ page }) => {
-  const app = await mount(page);
-  await page.evaluate(() => { window.parityHost.reject = true; });
+  const app = await mount(page);await page.evaluate(() => { window.parityHost.reject = true; });
   await app.getByRole('button', { name: 'Increment', exact: true }).click();
-  await expect(app.getByRole('alert')).toContainText('revision_conflict');
-  await expect(app.getByRole('status')).toContainText('state 0');
-  await page.evaluate(() => { window.parityHost.reject = false; });
-  await app.getByRole('button', { name: 'Increment', exact: true }).click();
-  await expect(app.getByRole('status')).toContainText('state 1');
-  await expect(app.getByRole('alert')).toBeEmpty();
+  await expect(app.getByRole('alert')).toContainText('revision_conflict');await expect(app.getByRole('status')).toContainText('state 0');
+  await page.evaluate(() => { window.parityHost.reject = false; });await app.getByRole('button', { name: 'Increment', exact: true }).click();
+  await expect(app.getByRole('status')).toContainText('state 1');await expect(app.getByRole('alert')).toBeEmpty();
 });
-
 test('a late snapshot for the previous surface cannot replace the new card', async ({ page }) => {
-  const app = await mount(page);
-  await page.evaluate(() => { window.parityHost.hold = true; });
-  await app.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => window.parityHost.held.length)).toBe(1);
-  await page.evaluate(() => window.parityHost.publish('b'));
-  await expect(app.getByRole('button', { name: 'Increment', exact: true })).toHaveCount(0);
-  await page.evaluate(() => window.parityHost.flush());
-  await expect(app.getByText('b: 0', { exact: true }).first()).toBeVisible();
-  await expect(app.getByText('a: 0', { exact: true })).toHaveCount(0);
-  await expect(app.getByRole('alert')).toBeEmpty();
+  const app = await mount(page);await page.evaluate(() => { window.parityHost.hold = true; });
+  await app.getByRole('button', { name: 'Refresh', exact: true }).click();await expect.poll(() => page.evaluate(() => window.parityHost.held.length)).toBe(1);
+  await page.evaluate(() => window.parityHost.publish('b'));await expect(app.getByRole('button', { name: 'Increment', exact: true })).toHaveCount(0);
+  await page.evaluate(() => window.parityHost.flush());await expect(app.getByText('b: 0', { exact: true }).first()).toBeVisible();
+  await expect(app.getByText('a: 0', { exact: true })).toHaveCount(0);await expect(app.getByRole('alert')).toBeEmpty();
 });
-
 test('portable Viewbox scales chart geometry and respects down-only stretch', async ({ page }) => {
   const app = await mount(page);
   await expect.poll(async () => (await app.getByLabel('Plot', { exact: true }).boundingBox())?.width).toBe(200);
-  expect((await app.getByLabel('Plot', { exact: true }).boundingBox()).height).toBe(100);
-  expect((await app.getByLabel('Bar', { exact: true }).boundingBox()).width).toBe(50);
+  expect((await app.getByLabel('Plot', { exact: true }).boundingBox()).height).toBe(100);expect((await app.getByLabel('Bar', { exact: true }).boundingBox()).width).toBe(50);
   await page.evaluate(() => { window.parityHost.width = 1000; window.parityHost.revision++; window.parityHost.publish('a'); });
-  await expect(app.getByRole('status')).toContainText('revision 2');
-  await expect.poll(async () => (await app.getByLabel('Plot', { exact: true }).boundingBox())?.width).toBe(800);
+  await expect(app.getByRole('status')).toContainText('revision 2');await expect.poll(async () => (await app.getByLabel('Plot', { exact: true }).boundingBox())?.width).toBe(800);
 });
-
 test('portable code viewport honors declared MaxHeight', async ({ page }) => {
-  const app = await mount(page);
-  await expect(app.getByLabel('Code viewport')).toHaveCSS('max-height', '100px');
+  const app = await mount(page);await expect(app.getByLabel('Code viewport')).toHaveCSS('max-height', '100px');
   expect((await app.getByLabel('Code viewport').boundingBox()).height).toBeLessThanOrEqual(100);
 });
-
 test('teardown invalidates pending reads and prevents UI resurrection', async ({ page }) => {
-  const app = await mount(page);
-  await page.evaluate(() => { window.parityHost.hold = true; });
-  await app.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await expect.poll(() => page.evaluate(() => window.parityHost.held.length)).toBe(1);
+  const app = await mount(page);await page.evaluate(() => { window.parityHost.hold = true; });
+  await app.getByRole('button', { name: 'Refresh', exact: true }).click();await expect.poll(() => page.evaluate(() => window.parityHost.held.length)).toBe(1);
   await page.evaluate(() => window.parityHost.send({ jsonrpc: '2.0', id: 'teardown', method: 'ui/resource-teardown', params: {} }));
-  await expect(app.getByRole('main')).toBeEmpty();
-  await page.evaluate(() => window.parityHost.flush());
-  await app.locator('body').evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  await expect(app.getByRole('main')).toBeEmpty();
+  await expect(app.getByRole('main')).toBeEmpty();await page.evaluate(() => window.parityHost.flush());
+  await app.locator('body').evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));await expect(app.getByRole('main')).toBeEmpty();
 });

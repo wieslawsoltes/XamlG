@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
-import {readFileSync} from 'node:fs';
-const resource=readFileSync(new URL('../../../src/XamlG.IntelligentUI/Resources/intelligent-ui.html',import.meta.url),'utf8');
+import {loadUiResource} from './resource.mjs';
+const resource=loadUiResource();
 test('literal content retires when a keyed container receives controls or empty content',async({page})=>{
  await page.setContent('<iframe title="content" sandbox="allow-scripts" style="width:900px;height:500px"></iframe>');
  await page.evaluate(html=>{

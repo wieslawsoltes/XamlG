@@ -8,15 +8,15 @@ namespace XamlG.Playground.Components;
 public partial class IntelligentUiGuest
 {
     private UiAvaloniaFormBehavior? _forms;
-    private readonly HashSet<string> _submittingForms = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, FormOperation> _submittingForms = new(StringComparer.Ordinal);
+    private sealed record FormOperation(string Stamp);
     private void InitializeFormBehavior()
     {
-        _forms = new(_renderer!);
-        _forms.TouchRequested += FormTouched;
-        _forms.SubmitRequested += FormSubmitted;
+        _forms = new(_renderer!); _forms.TouchRequested += FormTouched; _forms.SubmitRequested += FormSubmitted;
     }
     private void ApplyNative(UiSnapshot snapshot) => _forms!.Apply(snapshot);
-
+    private static UiFormInteraction? GuestForm(UiSnapshot snapshot, string key)
+        => UiSessionStore.Flatten(snapshot.Roots).FirstOrDefault(node => node.FormState?.Id == key)?.FormState;
     private async void FormTouched(UiFormCall call)
     {
         var epoch = _surfaceEpoch;
@@ -26,7 +26,7 @@ public partial class IntelligentUiGuest
             try
             {
                 if (!IsCurrent(epoch) || _snapshot == null || _snapshot.Id != call.Id || _snapshot.Revision != call.ExpectedRevision) return;
-                var form = UiSessionStore.Flatten(_snapshot.Roots).FirstOrDefault(node => node.FormState?.Id == call.FormKey)?.FormState;
+                var form = GuestForm(_snapshot, call.FormKey);
                 if (form == null || !form.Fields.Any(input => input.Key == call.FieldKey && !input.Touched)) return;
                 call = call with { ExpectedStateRevision = _snapshot.StateRevision };
                 var next = Mode == "execution" ? _executionStore!.TouchForm(call, "approved-execution")
@@ -38,68 +38,82 @@ public partial class IntelligentUiGuest
         catch (OperationCanceledException) when (_disposed) { }
         catch (Exception error) { if (IsCurrent(epoch)) await ReceiveError(error.Message); }
     }
-
     private async void FormSubmitted(UiFormCall call)
     {
-        var epoch = _surfaceEpoch;
-        var identity = epoch + ":" + call.FormKey;
-        if (!_submittingForms.Add(identity)) return;
+        var epoch = _surfaceEpoch; var identity = epoch + ":" + call.FormKey;
+        FormOperation? operation = null;
+        bool Active() => IsCurrent(epoch) && operation != null && _submittingForms.TryGetValue(identity, out var current) && ReferenceEquals(operation, current);
         try
         {
-            var result = await SubmitGuestFormAsync(call, epoch);
-            if (result == null || !IsCurrent(epoch)) return;
+            UiFormSubmission? result;
+            // Capture the operation after earlier value/blur mutations have committed.
+            await _mutations.WaitAsync(_lifetime.Token);
+            try
+            {
+                if (!IsCurrent(epoch) || _snapshot == null || _snapshot.Id != call.Id || _snapshot.Revision != call.ExpectedRevision) return;
+                var form = GuestForm(_snapshot, call.FormKey); if (form == null) return;
+                if (_submittingForms.TryGetValue(identity, out var existing) && existing.Stamp == form.Stamp) return;
+                operation = new(form.Stamp); _submittingForms[identity] = operation;
+                var current = call with { ExpectedStateRevision = _snapshot.StateRevision };
+                result = Mode == "execution" ? _executionStore!.SubmitForm(current, "approved-execution")
+                    : await _bridge!.InvokeAsync<UiFormSubmission>("tool", _lifetime.Token, "xamlg_ui_form_submit", current);
+                if (!Active()) return;
+                await ReceiveSnapshot(result.Snapshot);
+            }
+            finally { _mutations.Release(); }
             if (result.RequiresValidation)
             {
-                var request = call with { ExpectedRevision = result.Snapshot.Revision, ExpectedStateRevision = result.Snapshot.StateRevision };
-                var next = Mode == "execution" ? _executionStore!.StartFormValidation(request, "approved-execution")
-                    : await _bridge!.InvokeAsync<UiSnapshot>("tool", _lifetime.Token, "xamlg_ui_form_validate_start", request);
-                if (!IsCurrent(epoch)) return;
-                await ReceiveSnapshot(next);
-                var validation = UiSessionStore.Flatten(next.Roots).FirstOrDefault(node => node.FormState?.Id == call.FormKey)?.FormState;
-                if (validation == null) return;
-                var stamp = validation.Stamp;
-                // Poll only inert status. Do not hold the mutation semaphore while validation runs.
+                UiSnapshot next;
+                await _mutations.WaitAsync(_lifetime.Token);
+                try
+                {
+                    if (!Active() || _snapshot == null || _snapshot.Revision != call.ExpectedRevision || GuestForm(_snapshot, call.FormKey)?.Stamp != operation.Stamp) return;
+                    var request = call with { ExpectedStateRevision = _snapshot.StateRevision };
+                    next = Mode == "execution" ? _executionStore!.StartFormValidation(request, "approved-execution")
+                        : await _bridge!.InvokeAsync<UiSnapshot>("tool", _lifetime.Token, "xamlg_ui_form_validate_start", request);
+                    if (!Active()) return; await ReceiveSnapshot(next);
+                }
+                finally { _mutations.Release(); }
+                var validation = GuestForm(next, call.FormKey); if (validation == null) return;
+                var nonce = validation.ValidationId;
+                var deadline = DateTimeOffset.UtcNow.AddSeconds(15);
                 while (validation.Pending)
                 {
-                    await Task.Delay(200, _lifetime.Token);
-                    if (!IsCurrent(epoch)) return;
+                    if (DateTimeOffset.UtcNow >= deadline) throw new UiException("validation_timeout", "Validation did not complete before the UI deadline. Refresh its status.");
+                    await Task.Delay(200, _lifetime.Token); if (!Active()) return;
                     var current = Mode == "execution" ? _executionStore!.Read(next.Id, "approved-execution")
                         : await _bridge!.InvokeAsync<UiSnapshot>("tool", _lifetime.Token, "xamlg_ui_read", new UiRead(next.Id));
-                    if (!IsCurrent(epoch)) return;
-                    await ReceiveSnapshot(current);
-                    validation = UiSessionStore.Flatten(current.Roots).FirstOrDefault(node => node.FormState?.Id == call.FormKey)?.FormState;
-                    if (validation == null || validation.Stamp != stamp || current.Revision != next.Revision) return;
+                    if (!Active()) return; await ReceiveSnapshot(current);
+                    validation = GuestForm(current, call.FormKey);
+                    if (validation == null || validation.Stamp != operation.Stamp || current.Revision != next.Revision ||
+                        validation.Pending && validation.ValidationId != nonce) return;
                     next = current;
                 }
                 if (!validation.IsValid) return;
-                result = await SubmitGuestFormAsync(call with { ExpectedRevision = next.Revision, ExpectedStateRevision = next.StateRevision }, epoch);
+                result = await SubmitGuestFormAsync(call with { ExpectedRevision = next.Revision, ExpectedStateRevision = next.StateRevision }, epoch, operation.Stamp, Active);
             }
-            if (result == null || !IsCurrent(epoch)) return;
-            await Dispatcher.UIThread.InvokeAsync(() => { if (IsCurrent(epoch)) _forms?.Focus(result.FocusKey); });
-            if (result.Action != null) DispatchAction(result.Action);
+            if (result == null || !Active()) return;
+            await Dispatcher.UIThread.InvokeAsync(() => { if (Active()) _forms?.Focus(result.FocusKey); });
+            if (Mode == "mcp") await PublishContextAsync(result.Snapshot);
+            if (result.Action != null && Active()) DispatchAction(result.Action);
         }
         catch (OperationCanceledException) when (_disposed) { }
         catch (Exception error) { if (IsCurrent(epoch)) await ReceiveError(error.Message); }
-        finally { _submittingForms.Remove(identity); }
+        finally { if (Active()) _submittingForms.Remove(identity); }
     }
-
-    private async Task<UiFormSubmission?> SubmitGuestFormAsync(UiFormCall request, long epoch)
+    private async Task<UiFormSubmission?> SubmitGuestFormAsync(UiFormCall request, long epoch, string stamp, Func<bool> active)
     {
         await _mutations.WaitAsync(_lifetime.Token);
         try
         {
-            if (!IsCurrent(epoch) || _snapshot == null || _snapshot.Id != request.Id || _snapshot.Revision != request.ExpectedRevision) return null;
+            if (!IsCurrent(epoch) || !active() || _snapshot == null || _snapshot.Id != request.Id || _snapshot.Revision != request.ExpectedRevision || GuestForm(_snapshot, request.FormKey)?.Stamp != stamp) return null;
             request = request with { ExpectedStateRevision = _snapshot.StateRevision };
             var result = Mode == "execution" ? _executionStore!.SubmitForm(request, "approved-execution")
                 : await _bridge!.InvokeAsync<UiFormSubmission>("tool", _lifetime.Token, "xamlg_ui_form_submit", request);
-            if (!IsCurrent(epoch)) return null;
-            await ReceiveSnapshot(result.Snapshot);
-            if (Mode == "mcp") await PublishContextAsync(result.Snapshot);
-            return result;
+            if (!active()) return null; await ReceiveSnapshot(result.Snapshot); return result;
         }
         finally { _mutations.Release(); }
     }
-
     private void ActionRequested(UiActionCall call)
     {
         var form = _snapshot == null ? null : UiSessionStore.Flatten(_snapshot.Roots).FirstOrDefault(node => node.Key == call.NodeKey)?.Form;
