@@ -19,7 +19,7 @@ public sealed class UiAvaloniaSession : IDisposable
     public string? Diagnostic { get; private set; }
     public event Action? Updated;
     public event Action<string>? Failed;
-    /// <summary>Raised only for external actions. Local state actions are executed by the session.</summary>
+    /// <summary>Raised only for external actions. The host must prepare and review the intent before executing it.</summary>
     public event Action<UiActionCall>? ActionRequested;
 
     public UiAvaloniaSession(UiSessionStore store, UiPresentation presentation, string principal, UiAvaloniaCatalog? catalog = null)
@@ -71,8 +71,9 @@ public sealed class UiAvaloniaSession : IDisposable
         if (_disposed || Snapshot == null) return;
         try
         {
-            var intent = _principal == null ? _store.PrepareActionLocal(call) : _store.PrepareAction(call, _principal);
-            if (intent.Kind == "state")
+            // Routing must not evaluate expressions. In approved C# mode even preparing an
+            // expression can execute code. The owned mutation validates and evaluates once.
+            if (UiActionRouting.IsStateAction(Snapshot, call))
             {
                 if (_principal == null) _store.ApplyStateActionLocal(call); else _store.ApplyStateAction(call, _principal);
                 Refresh();

@@ -107,11 +107,10 @@ public partial class IntelligentUiGuest
             await _mutations.WaitAsync(_lifetime.Token);
             try
             {
-                if (_disposed) return;
-                var intent = Mode == "execution"
-                    ? _executionStore!.PrepareAction(call, "approved-execution")
-                    : await _bridge!.InvokeAsync<UiActionIntent>("tool", _lifetime.Token, "xamlg_ui_action", call);
-                if (intent.Kind == "state")
+                if (_disposed || _snapshot == null) return;
+                // Classification has no expression evaluation or side effects. The tool/store
+                // remains authoritative for ownership, enabled nodes and exact revisions.
+                if (UiActionRouting.IsStateAction(_snapshot, call))
                 {
                     var next = Mode == "execution"
                         ? _executionStore!.ApplyStateAction(call, "approved-execution")
@@ -121,7 +120,8 @@ public partial class IntelligentUiGuest
                     return;
                 }
                 if (Mode != "mcp") throw new UiException("action_disabled", "Full-C# preview has no editor or agent action authority.");
-                _review = intent; _reviewCall = call; await InvokeAsync(StateHasChanged);
+                _review = await _bridge!.InvokeAsync<UiActionIntent>("tool", _lifetime.Token, "xamlg_ui_action", call);
+                _reviewCall = call; await InvokeAsync(StateHasChanged);
             }
             finally { _mutations.Release(); }
         }
