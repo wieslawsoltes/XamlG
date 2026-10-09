@@ -49,6 +49,107 @@ public sealed class TemporaryLifetimeTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void DescriptorReferencesRetainTheirImmediateEvaluationAndContainingObjectOrder(bool project)
+    {
+        const string extra = """
+            namespace Model {
+                public class ObserveExtension {
+                    public object ProvideValue(System.IServiceProvider provider) =>
+                        ((XamlG.Runtime.XamlRuntimeContext)provider.GetService(typeof(XamlG.Runtime.XamlRuntimeContext)))
+                            .ResolveName<Panel>("descriptor").Text;
+                }
+            }
+            """;
+        const string xaml = """
+            <Panel xmlns='clr-namespace:Model' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
+              <Panel x:Name='descriptor' Text='ready'/>
+              <Panel Text='second'/>
+              <Panel Value='{Observe}'/>
+            </Panel>
+            """;
+        var profile = XamlFrameworkProfile.Portable with
+            { MemberBindingRules = ImmutableArray.Create<IXamlMemberBindingRule>(new DescriptorReferenceRule()) };
+        using var code = CompiledXaml.Create(xaml, Model + extra, profile, shareAcrossDocuments: project);
+        var root = code.Build();
+        var children = ((IList)Property(root, "Children")!).Cast<object>().ToArray();
+        Assert.Equal(3, children.Length);
+        Assert.Equal("ready", Property(children[0], "Text"));
+        Assert.Equal("second", Property(children[1], "Text"));
+        Assert.Equal("ready", Property(children[2], "Value"));
+        Assert.True(XamlRuntimeSession.TryGet(root, out var session));
+        session!.Dispose();
+    }
+
+    private sealed class DescriptorReferenceRule : IXamlMemberBindingRule
+    {
+        public BoundMember Bind(BindingContext context, ITypeSymbol targetType, BoundMember member, NamespaceScope scope) =>
+            member.Name != "Text" ? member : member with
+            { TargetDescriptor = new BoundReferenceExpression("descriptor", context.Types.Special(SpecialType.System_Object), member.Span) };
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DeferredReferencesStayInsideTheirFactoryAndResolveOnEachBuild(bool project)
+    {
+        const string model = """
+            using System;
+            using System.Collections.Generic;
+            using XamlG.Runtime;
+            namespace Boundary;
+            public class Root {
+                public static Root Last;
+                public Root() { Last = this; }
+                public Template Template { get; set; }
+                [Content] public List<Node> Children { get; } = new();
+            }
+            public class Node { public object Value { get; set; } }
+            public class Probe : Node {
+                public Probe() {
+                    if (Root.Last.Template == null)
+                        throw new InvalidOperationException("The template assignment was deferred by a reference inside its factory");
+                }
+            }
+            public class Template {
+                [Content, DeferredContent] public Func<IServiceProvider, object> Content { get; set; }
+            }
+            """;
+        const string xaml = """
+            <Root xmlns='clr-namespace:Boundary' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>
+              <Root.Template>
+                <Template>
+                  <Root><Node Value='{x:Reference later}'/><Node x:Name='later'/></Root>
+                </Template>
+              </Root.Template>
+              <Probe/>
+            </Root>
+            """;
+        using var code = CompiledXaml.Create(xaml, model, shareAcrossDocuments: project);
+        var root = code.Build();
+        var factory = Assert.IsAssignableFrom<Delegate>(Property(Property(root, "Template")!, "Content"));
+        object? previous = null;
+        for (var iteration = 0; iteration < 2; iteration++)
+        {
+            var content = factory.DynamicInvoke(new object?[] { null })!;
+            Assert.NotSame(previous, content);
+            var children = ((IList)Property(content, "Children")!).Cast<object>().ToArray();
+            Assert.Equal(2, children.Length);
+            var referencing = children.Single(child => Property(child, "Value") != null);
+            var target = children.Single(child => Property(child, "Value") == null);
+            Assert.Same(target, Property(referencing, "Value"));
+            Assert.True(XamlRuntimeSession.TryGet(content, out var session));
+            Assert.NotNull(session!.FindNode(referencing));
+            Assert.NotNull(session.FindNode(target));
+            session.Dispose();
+            previous = content;
+        }
+        Assert.True(XamlRuntimeSession.TryGet(root, out var rootSession));
+        rootSession!.Dispose();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void SafeSiblingsReuseLocalsWithoutChangingCapturedTargetsReferencesOrCleanup(bool project)
     {
         var children = string.Concat(Enumerable.Range(0, 24).Select(index =>

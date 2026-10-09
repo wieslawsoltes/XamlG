@@ -28,7 +28,6 @@ internal static class BoundTraversal
         if (expression is BoundMarkupExpression markup) { foreach (var child in Objects(markup.Extension, includeDeferred)) yield return child; yield break; }
         foreach (var child in Children(expression, includeDeferred)) foreach (var nested in Objects(child, includeDeferred)) yield return nested;
     }
-    public static bool ContainsReference(BoundExpression expression) => expression is BoundReferenceExpression || Children(expression, false).Any(ContainsReference);
     public static IEnumerable<BoundExpression> Children(BoundExpression expression, bool includeDeferred) => expression switch
     {
         BoundChoiceExpression c => Expressions(c.Extension).Concat(c.Branches.SelectMany(b => new[] { b.Option, b.Value })).Concat(c.Default == null ? Array.Empty<BoundExpression>() : new[] { c.Default }),

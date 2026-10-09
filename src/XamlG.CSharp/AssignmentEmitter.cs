@@ -14,7 +14,7 @@ internal sealed class AssignmentEmitter
     public void Emit(BoundAssignment assignment, BoundObject owner, string target, string frame)
     {
         using var temporaries = _context.Locals.EnterAssignment(owner, assignment);
-        if (BoundTraversal.Expressions(assignment).Any(BoundTraversal.ContainsReference))
+        if (_context.Locals.ContainsReference(assignment))
         { _context.Writer.Open(frame + ".Defer(() =>"); EmitCore(assignment, owner, target, frame); _context.Writer.Close(");"); }
         else EmitCore(assignment, owner, target, frame);
     }

@@ -9,7 +9,7 @@ internal sealed class TemporaryLocalPool(EmissionContext context)
     private readonly Dictionary<(int Scope, string Type), Stack<string>> _available = new();
     private readonly List<((int Scope, string Type) Key, string Name)> _active = new();
     [Flags]
-    private enum Hazard { None = 0, Capture = 1, Raw = 2 }
+    private enum Hazard { None = 0, Capture = 1, Raw = 2, Reference = 4 }
     private sealed class Identity<T> : IEqualityComparer<T> where T : class
     {
         public static readonly Identity<T> Instance = new();
@@ -20,6 +20,8 @@ internal sealed class TemporaryLocalPool(EmissionContext context)
     private readonly Dictionary<BoundAssignment, Hazard> _assignments = new(Identity<BoundAssignment>.Instance);
     private Hazard? _document;
     private int _depth;
+
+    public bool ContainsReference(BoundAssignment assignment) => (Analyze(assignment) & Hazard.Reference) != 0;
 
     public Lease EnterAssignment(BoundObject owner, BoundAssignment assignment)
     {
@@ -105,7 +107,9 @@ internal sealed class TemporaryLocalPool(EmissionContext context)
             BoundEventAssignment => Hazard.Capture,
             _ => Hazard.None
         };
-        if (Descriptor(assignment) is { } descriptor) result |= Analyze(descriptor);
+        // Descriptors contribute lifetime hazards, but only assignment values
+        // (and explicit call arguments/descriptors) schedule name fixups.
+        if (Descriptor(assignment) is { } descriptor) result |= Analyze(descriptor) & ~Hazard.Reference;
         foreach (var expression in BoundTraversal.Expressions(assignment)) result |= Analyze(expression);
         _assignments.Add(assignment, result);
         return result;
@@ -129,12 +133,15 @@ internal sealed class TemporaryLocalPool(EmissionContext context)
         var result = value switch
         {
             BoundRawExpression => Hazard.Raw,
-            BoundReferenceExpression or BoundLambdaExpression { IsStatic: false } or
+            BoundReferenceExpression => Hazard.Capture | Hazard.Reference,
+            BoundLambdaExpression { IsStatic: false } or
                 BoundDeferredExpression { UsesFunctionPointer: false } => Hazard.Capture,
             BoundChoiceExpression choice => Analyze(choice.Extension),
             _ => Hazard.None
         };
         foreach (var child in BoundTraversal.Children(value, includeDeferred: true)) result |= Analyze(child);
-        return result;
+        // A deferred factory resolves its own names when it executes. Its body
+        // still protects captured locals, but cannot defer the outer assignment.
+        return value is BoundDeferredExpression ? result & ~Hazard.Reference : result;
     }
 }
