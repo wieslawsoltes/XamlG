@@ -6,23 +6,24 @@ Roslyn-reported generation time and captured-C# compilation are reported
 separately. The target is **not met**. See [measurement methodology](performance.md)
 and [PR #14](https://github.com/wieslawsoltes/XamlG/pull/14) for current results.
 
-The [CI checkpoint for `0bec59d`](https://github.com/wieslawsoltes/XamlG/actions/runs/37894747753)
+The [CI checkpoint for `fdec691`](https://github.com/wieslawsoltes/XamlG/actions/runs/37897100966)
 uses three forced Release rebuilds per compiler/project with SDK 10.0.401 and
-normal analyzers. All catalog validation stages pass, but the performance target
-fails for all three projects:
+normal analyzers. All eight CI workflows pass, including complete catalog and
+playground validation, but the performance target fails for all three projects:
 
 | Project | XamlX added cost | XamlG added cost | G/X added cost | Required XamlG cost |
 | --- | ---: | ---: | ---: | ---: |
-| Simple | 1.823s | 4.970s | 2.73× | ≤0.912s |
-| Fluent | 2.649s | 7.859s | 2.97× | ≤1.325s |
-| ControlCatalog | 6.543s | 12.421s | 1.90× | ≤3.272s |
+| Simple | 2.126s | 5.370s | 2.53× | ≤1.063s |
+| Fluent | 3.060s | 8.659s | 2.83× | ≤1.530s |
+| ControlCatalog | 7.711s | 14.009s | 1.82× | ≤3.856s |
 
-The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37894747733)
-reports generation at 0.878/1.096/1.655 seconds and captured-C# compilation at
-3.351/4.445/9.764 seconds for Simple/Fluent/ControlCatalog. These use a different
+The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37897100937)
+reports generation at 0.884/1.105/1.667 seconds and captured-C# compilation at
+3.249/4.760/10.547 seconds for Simple/Fluent/ControlCatalog. These use a different
 runner and are not additive phase costs. Compilation and analysis of the
-generated program remain the larger cost. Later type-name allocation changes
-preserve all 390 generated files; their local measurements are recorded below.
+generated program remain the larger cost. Both runs use PR merge checkout
+`a22fa6ff14c9a939ca1119ed080a7c5ba3a8eb59`; the local experiments below use
+separately identified snapshots and do not establish the acceptance target.
 
 ## Structural findings
 
@@ -96,7 +97,8 @@ make the port reviewable independently of the emitter changes.
 
 This inventory counts actual generated `Parse` call sites at scalar-inlining
 revision `5fc7563`, before the color port. It counts source occurrences rather
-than unique values or runtime executions.
+than unique values or runtime executions. The decimal row was missing from the
+original inventory and was added from the fresh `fdec691` capture.
 
 | Parser family | Simple | Fluent | ControlCatalog |
 | --- | ---: | ---: | ---: |
@@ -111,13 +113,17 @@ than unique values or runtime executions.
 | FontFeature | 0 | 0 | 5 |
 | HsvColor | 0 | 0 | 3 |
 | DateTime | 0 | 0 | 2 |
+| Decimal | 0 | 0 | 37 |
 
 After the color, animation/tokenizer, keyboard/cursor and font-feature/shadow ports, actual source captures contain
 zero calls to `Color.Parse`, `HsvColor.Parse`, `Easing.Parse`, `Cue.Parse`,
 `IterationCount.Parse`, `KeySpline.Parse`, `Rect.Parse`, `PixelRect.Parse`,
 `KeyGesture.Parse`, `Cursor.Parse`, `BoxShadows.Parse` or `FontFeature.Parse` in all
 three projects. This removes 3,090 runtime parser call sites from this inventory.
-The remaining 452 calls cover geometry (429), transforms (21) and date/time (2).
+The transform-operation port removes another 21 sites. The subsequent decimal
+folding targets the 37 newly identified calls. The complete `b902960` capture has
+468 calls: 429 geometry, 37 decimal and two date/time. Fresh inventories are
+recorded below and in the PR.
 
 Animation parsing preserves the upstream percentage and suffix grammar and
 constructs fresh easing/key-spline objects. Key-spline constructors accept values
@@ -319,3 +325,104 @@ with normal analyzers gave captured-C# CPU medians of 8.340→7.752,
 12.123→13.290 and 21.430→22.279 seconds. Because Fluent and ControlCatalog did not
 improve, this rewrite was not added to the emitter. Shorter identifiers alone do
 not remove Roslyn's operation analysis and code emission work.
+
+
+## Typed transform-operation lowering and single service emission
+
+Pristine transform-parser import `697d6c0` and adaptation `0d32a2b` move the
+remaining operation-list parsing into the generator. A private recording builder
+retains the upstream parser's ordered numeric operations. New framework-independent
+`BoundBuilderExpression` IR emits public typed builder construction, append calls
+and the final result call. This preserves primitive operation kinds and animation
+interpolation instead of collapsing the list to a matrix. The generated code has
+no dependency on the private parser or recorder.
+
+Differential tests compare values, operation matrices, interpolation, shared
+identity, fresh non-identity resources, source metadata and invalid syntax against
+Avalonia and XamlX. The upstream final-matrix-value whitespace behavior, unit rules
+and rejection of scientific notation remain intact. Invalid operations now report
+a source diagnostic during generation. Empty XAML attributes retain upstream
+whitespace handling. The tests also exposed and fixed source lookup at adjacent
+XML element boundaries, without changing editor cursor lookup behavior.
+
+Typed builder tests cover mutable value types, argument conversions, statement
+lowering, call order and failure short-circuiting. All 2,291 native tests pass with
+warnings treated as errors. All 20 upstream parser source hashes are verified.
+All 1,188 catalog cases pass on each of headless, actual desktop and trimmed
+browser hosts using the pinned source-built Avalonia revision.
+
+Commit `b902960` eliminates duplicate service, namespace-map and runtime-context
+emission. Previously, `CreateShared` emitted the complete body for hashing and
+then emitted it again with the computed class name. The body now has a fixed type
+name inside a content-addressed namespace and is emitted once. No user literals
+are rewritten. Existing tests verify independent namespace maps, roots, target
+objects, namescopes, rebuilds and shared-source ownership after a document fails.
+The `fdec691` profile attributed 7.8/7.7/29.3 MB of sampled allocations to the
+nearest `NamespaceMapEmitter.EmitFactory` frame in Simple/Fluent/ControlCatalog;
+these are sampled inclusive attributions, not exclusive allocation totals.
+
+An isolated `CreateShared` probe runs 200 warmups and five blocks of 1,000
+emissions per variant, using the same bound document and symbols. Complete source
+matches after normalizing the generated service identities. Median allocation
+per emission falls from 356,129 to 230,278 bytes with one extra namespace (35.3%)
+and 622,873 to 398,499 bytes with 32 (36.0%). Corresponding local times are
+135.5 to 57.3 and 213.2 to 134.8 microseconds. The probe includes context creation
+and reflection overhead, excludes binding and C# compilation, and does not
+establish an overall generator or project speedup.
+
+Three alternating fresh compiler pairs compare frozen `fdec691` and `b902960`
+assemblies on macOS ARM64, SDK 10.0.401, with normal analyzers. Owned validation
+and runtime probes finished before compiler timing. Local host load varied.
+
+| Project | Generated bytes before → after | Generation before → after | Full Csc CPU before → after | Captured C# CPU before → after |
+| --- | ---: | ---: | ---: | ---: |
+| Avalonia.Themes.Simple | 6,793,254 → 6,792,944 | 0.935s → 0.944s | 9.354s → 10.044s | 6.079s → 6.328s |
+| Avalonia.Themes.Fluent | 10,332,857 → 10,333,668 | 1.207s → 0.941s | 15.009s → 11.808s | 9.930s → 10.143s |
+| ControlCatalog | 23,776,885 → 23,774,910 | 1.678s → 1.690s | 21.608s → 23.227s | 21.512s → 18.734s |
+
+Generation is Roslyn-reported elapsed time; CPU is user plus system time. Full
+Csc wall medians are 4.249→4.149, 6.031→5.272 and 9.336→8.780 seconds; captured
+C# wall medians are 2.573→2.595, 3.536→3.506 and 7.445→8.259 seconds. Results
+are mixed: Simple and ControlCatalog full Csc CPU increase, while Fluent improves;
+Fluent generation improves but the other two are approximately flat. This
+isolates the transform/service changes, before the subsequent decimal folding.
+It does not establish the XamlX acceptance target.
+
+## Rejected deferred factory consolidation
+
+Three direct-C# alternatives attempted to remove each occurrence's tiny static
+factory wrapper. A delegate-backed design increased warmed Fluent construction
+allocation by 28%. Static argument tables reduced that increase to 1.3%, but
+increased cold JIT cost: the largest population method's JIT time rose from
+29.2 to 81.5 ms while successful inlining rose from zero to 2,321 calls. Splitting
+the initializers and preventing argument-constructor inlining did not fix that
+tradeoff.
+
+The final prototype stored typed arguments directly in a generated resource
+subclass, without static tables or a separate argument object. Fluent source
+shrunk from 10,332,857 to 9,779,190 bytes (5.4%). Three alternating fresh compiler
+pairs nevertheless measured captured-C# CPU at 9.441 to 9.737 seconds and full
+Csc CPU at 12.182 to 12.502 seconds; generation was 1.037 to 1.030 seconds.
+Other project results were mixed under variable local host load. Warmed Fluent
+allocation increased by 4.2%, and cold construction/resolution CPU rose by about
+11%/8%. These results do not justify replacing the existing factories. All three
+prototypes were removed; the compiler snapshots, JIT logs and runtime probes are
+retained in the local performance artifacts for follow-up research.
+
+
+## Decimal constant folding
+
+A fresh full-source audit at `b902960` found 37 invariant decimal parser calls in ControlCatalog,
+which the previous family inventory omitted. Valid decimal literals now pass through
+the portable constant parser and emit ordinary C# decimal constants. Decimal scale
+is retained; negative zero uses the typed bit constructor because `ToString` drops
+its sign. Invalid literals keep their Parse-based runtime failure timing, and
+explicit string conversion inside a text-initialized decimal remains a runtime
+conversion. This preserves the pinned XamlX invalid-value contract.
+
+Commit `7d402cc` implements this lowering. Sixteen focused tests compare every decimal bit for nullable and non-nullable
+properties, including trailing zeros, rounding, range limits, signed zero and
+invariant parsing under French culture. They also cover invalid/overflow failures
+and explicit string conversion. All pass. The full native run also passes all
+2,307 tests with warnings treated as errors. The final catalog rerun and isolated
+decimal phase comparison are reported in the linked PR when complete.
