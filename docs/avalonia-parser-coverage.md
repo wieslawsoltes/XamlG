@@ -104,6 +104,13 @@ separately; parser coverage is not evidence that the 2× compilation target is m
 
 ## Validation checkpoint
 
+At `6d870bc`, all 2,605 native tests, 14 pinned-source tests and 1,188 cases on
+each of the headless, actual desktop and trimmed browser hosts pass with
+warnings treated as errors. All 390 captured workload sources are byte-identical
+to `ee13421` and compile with zero runtime `Parse` call sites. The public parser
+inventory still covers 49 types. Cached reference analysis removes repeated
+descendant scans; the 2× XamlX compilation target remains unmet.
+
 At `ee13421`, all 2,452 native tests, 14 pinned-source tests and 1,188 cases on
 each of the headless, actual desktop and trimmed browser hosts pass. The parser
 inventory still covers 49 public parser types, and all 390 captured workload

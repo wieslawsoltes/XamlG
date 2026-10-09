@@ -6,33 +6,51 @@ Roslyn-reported generation time and captured-C# compilation are reported
 separately. The target is **not met**. See [measurement methodology](performance.md)
 and [PR #14](https://github.com/wieslawsoltes/XamlG/pull/14) for current results.
 
-The [previously verified CI acceptance checkpoint, `8cae121`](https://github.com/wieslawsoltes/XamlG/actions/runs/37937829548)
+The [latest verified CI acceptance checkpoint, `ee13421`](https://github.com/wieslawsoltes/XamlG/actions/runs/37963953725)
 uses three forced Release rebuilds per compiler/project with SDK 10.0.401 and
 normal analyzers. Complete catalog validation passes, including the trimmed
 browser host, but the performance target fails for all three projects:
 
 | Project | XamlX added cost | XamlG added cost | G/X added cost | Required XamlG cost |
 | --- | ---: | ---: | ---: | ---: |
-| Simple | 1.496s | 3.337s | 2.23× | ≤0.748s |
-| Fluent | 2.171s | 5.268s | 2.43× | ≤1.086s |
-| ControlCatalog | 4.860s | 9.119s | 1.88× | ≤2.430s |
+| Simple | 2.378s | 6.458s | 2.72× | ≤1.189s |
+| Fluent | 3.372s | 9.985s | 2.96× | ≤1.686s |
+| ControlCatalog | 8.141s | 14.706s | 1.81× | ≤4.071s |
 
-The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37937829665)
-reports generation at 1.444/1.863/3.548 seconds and captured-C# compilation at
-5.800/8.906/16.074 seconds for Simple/Fluent/ControlCatalog. These use a different
+Full rebuild medians (XamlX/XamlG) are 6.942/11.714, 8.228/15.516 and
+16.674/23.909 seconds. Compiler-task totals are 4.313/8.393, 5.546/12.180 and
+13.629/20.167 seconds; common-C# baselines are 1.935, 2.195 and 5.461 seconds.
+These totals and individual stage medians are computed separately and need not
+sum. This is a fresh CI comparison, not a paired measurement against older runs.
+
+The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37963953813)
+reports generation at 1.266/1.649/2.888 seconds and captured-C# compilation at
+4.842/7.524/13.853 seconds for Simple/Fluent/ControlCatalog. These use a different
 runner and are not additive phase costs. Compilation and analysis of the
 generated program remain the larger cost. Both runs use PR merge checkout
-`09dba3096a5707bc2f29279e2c8ce756774ca4f1`; all 390 XamlG-generated source hashes
-match the local `8cae121` implementation. The local experiments below use
+`905fe0c46428b85492aaaa2f2d07199f97f5ce63`; all 390 XamlG-generated source hashes
+match the local `ee13421` implementation. The local experiments below use
 separately identified snapshots and do not establish the acceptance target.
 
-The newest local round, `ee13421`, narrows the temporary-local lifetime guard to
-individual assignments and fixes collection-descriptor captures. Together with
-`c4f9243`, it also completes nested name-reference fixups before attaching the
-runtime session. [The measurements below](#assignment-lifetime-analysis) show
-smaller catalog source/IL and lower catalog compiler CPU in three alternating
-pairs. Theme output is unchanged and timings remain mixed. Independent CI
-acceptance for this revision is pending; the 2× target is not established.
+The assignment-lifetime round, `ee13421`, narrows the temporary-local lifetime
+guard to individual assignments and fixes collection-descriptor captures.
+Together with `c4f9243`, it also completes nested name-reference fixups before
+attaching the runtime session. [The measurements below](#assignment-lifetime-analysis)
+show smaller catalog source/IL and lower catalog compiler CPU in three alternating
+pairs. Theme output is unchanged and timings remain mixed.
+
+After merging main at `7b925ed`, all 2,601 native assertions pass. The language
+server runner reported a teardown failure in `PortableSymbolReader.Dispose`
+after its 94 assertions passed; an isolated no-build rerun passed and exited 0.
+Pinned-source validation passes 14 tests and 1,188 cases on each headless,
+actual desktop and trimmed browser host. The merge leaves compiler and catalog
+sources unchanged, resolves the workflow inventory conflict by retaining both
+profiling and Intelligent UI validation, and starts fresh PR checks.
+
+The current local revision, `6d870bc`, shares lifetime and name-reference analysis
+to remove repeated descendant scans. All 390 generated files are byte-identical
+to the validated baseline. The [nested-input diagnostic](#shared-lifetime-and-reference-analysis)
+confirms reduced allocation growth; complete workload timings remain mixed.
 
 ## Structural findings
 
@@ -1126,3 +1144,91 @@ older rounds were removed during the requested disk cleanup; their compact
 summaries, logs and experiment sources remain. An initial capture failed because
 an old output directory was absent; no timings from that failed capture are
 included. The harness now recreates its output directories.
+
+
+## Initialized-object sharing experiment
+
+A prototype factored repeated construction, initialization and ordinary property
+assignments into per-document typed helpers. Scalar arguments, node keys and
+source indices varied by call; constructors, descriptors, conversions and markup
+service calls stayed in their original order inside the helper. It passed 55
+focused tests, including differential execution against inline code for editing,
+source locations, parent/target services and cleanup after six failure stages.
+
+Three alternating fresh compiler pairs compared this prototype with `ee13421`,
+using the same normal analyzers and pinned references. Generation is
+Roslyn-reported elapsed time; both compiler columns report user plus system CPU.
+
+| Project | Generated bytes before → after | Generation before → after | Full Csc CPU before → after | Captured C# CPU before → after |
+| --- | ---: | ---: | ---: | ---: |
+| Simple | 6,793,938 → 6,659,084 | 0.872s → 0.876s | 8.338s → 10.654s | 11.852s → 12.348s |
+| Fluent | 10,234,711 → 9,829,611 | 1.094s → 2.198s | 13.926s → 16.105s | 11.490s → 11.239s |
+| ControlCatalog | 22,240,442 → 22,057,535 | 2.398s → 1.996s | 29.180s → 27.733s | 24.970s → 22.604s |
+
+Full-Csc wall medians are 3.667→5.558, 6.321→8.234 and 10.873→8.828
+seconds. Captured-C# wall medians are 6.639→6.996, 4.451→4.512 and
+10.898→12.695 seconds. Host load varies; independent phases are nonadditive.
+The prototype reduces source by 722,861 bytes, but full compilation regresses
+for both themes and results do not establish a general speedup. The change was
+not retained. Frozen generator/source snapshots, tests and all measurements
+remain under `artifacts/controlcatalog-performance/initialized-shape-*`.
+
+
+## Shared lifetime and reference analysis
+
+At `6d870bc`, all 2,605 native tests pass with warnings treated as errors and
+no failures or skips. The pinned-source suite passes all 14 tests, and all 1,188
+catalog cases pass on each of the headless, actual desktop and trimmed browser
+hosts. Desktop build and browser publication retain normal compiler and
+trimming analysis with warnings treated as errors.
+
+Assignment emission previously scanned every descendant for name references,
+after lifetime analysis had already traversed the same bound graph. A chain of
+nested object assignments repeated this scan at each ancestor, giving quadratic
+reference-detection work. The emitter now reads a reference flag from the
+existing identity-keyed lifetime analysis. This adds no second graph cache and
+does not change generated operations.
+
+Deferred factories retain capture hazards but do not defer their containing
+assignment because of names inside the factory. Member descriptors retain their
+evaluation order and lifetime protection; explicit call descriptors remain part
+of call-assignment reference detection. Runtime regressions exercise both
+boundaries with single-document and project compilation.
+
+All 390 captured generated files are byte-identical to `ee13421`: 83 Simple,
+87 Fluent and 220 catalog files, still with zero runtime `Parse` sites. Normal
+analyzers remain enabled in three alternating fresh-Csc pairs:
+
+| Project | Generation before → after | Full Csc CPU before → after | Captured C# CPU before → after |
+| --- | ---: | ---: | ---: |
+| Avalonia.Themes.Simple | 0.864s → 0.868s | 8.065s → 8.797s | 7.883s → 7.873s |
+| Avalonia.Themes.Fluent | 1.134s → 1.268s | 13.268s → 15.447s | 11.857s → 12.187s |
+| ControlCatalog | 5.758s → 4.696s | 35.504s → 30.795s | 32.421s → 33.915s |
+
+Full-Csc wall medians are 4.256→3.923, 5.880→6.516 and 23.295→17.764
+seconds. Captured-C# wall medians are 3.247→3.248, 4.742→4.725 and
+21.708→26.411 seconds. During the catalog measurements the host also ran
+unrelated native compilers and system media analysis, with low free memory.
+Even byte-identical captured C# varied substantially. These measurements do not
+establish a general compiler speedup; the XamlX acceptance target is not met.
+Owned builds, tests and runtime probes did not overlap the compiler comparison.
+
+A separate nested-object diagnostic isolates emission of an already-bound
+chain, excluding binding and C# compilation. Three alternating fresh processes
+per variant use 10 warmups, then five blocks of 10 emissions at each depth.
+Every before/after source hash matches. Medians below are per emission;
+allocation counts use the current emitting thread.
+
+| Nested assignments | Allocated bytes before → after | Emission wall ms before → after | Process CPU ms before → after |
+| --- | ---: | ---: | ---: |
+| 16 | 193,056.0 → 171,840.0 | 0.225 → 0.279 | 0.195 → 0.211 |
+| 64 | 863,350.4 → 545,110.4 | 1.506 → 0.872 | 1.280 → 0.760 |
+| 128 | 2,292,675.2 → 1,033,590.4 | 6.286 → 2.436 | 5.956 → 1.950 |
+| 256 | 7,047,283.2 → 2,038,733.6 | 9.526 → 5.447 | 11.010 → 5.930 |
+| 512 | 23,993,011.2 → 4,063,873.6 | 26.351 → 9.773 | 23.489 → 13.062 |
+
+At depth 512, allocated bytes fall by 83.1%. The shallow case is not faster;
+the diagnostic demonstrates removal of repeated deep-tree work, not the
+accepted 2× XamlX compilation target. Source hashes, all samples, frozen compiler
+inputs and the rebuildable diagnostic are retained under
+`artifacts/controlcatalog-performance/reference-analysis-*`.
