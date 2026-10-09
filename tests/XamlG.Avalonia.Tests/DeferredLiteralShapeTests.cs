@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
@@ -30,7 +29,6 @@ public sealed class DeferredLiteralShapeTests
         var dictionary = Assert.IsType<ResourceDictionary>(fixture.Build("Literals.axaml"));
         Assert.Empty(DeferredLiteralOwner.Events);
         var output = fixture.Result.Documents.Single().Output;
-        Assert.Equal(sourceInfo ? 0 : 1, Regex.Matches(output.Source, @"private static [^\r\n]+ __XamlGBuildObject_").Count);
         var first = Assert.IsType<DeferredLiteralOwner>(dictionary["first"]);
         var second = Assert.IsType<DeferredLiteralOwner>(dictionary["second"]);
         Assert.NotSame(first, second);
@@ -64,7 +62,7 @@ public sealed class DeferredLiteralShapeTests
     [AvaloniaTheory]
     [InlineData(false)]
     [InlineData(true)]
-    public void SharedBodiesEvaluateStaticValuesOnEachDeferredInvocation(bool sourceInfo)
+    public void StaticValuesAreEvaluatedOnEachDeferredInvocation(bool sourceInfo)
     {
         const string xaml = """
             <ResourceDictionary xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"

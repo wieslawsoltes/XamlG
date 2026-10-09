@@ -57,6 +57,8 @@ Each project runs adjacent before/after pairs for the full Csc invocation and fo
 
 The **Compiler profiling** workflow accepts an optional `baseline_ref` and a `pairs` count for this comparison. A manual run with a baseline uses one runner for all pairs and uploads the `compiler-comparison` artifact. Without a baseline, the workflow retains its normal profiling behavior. Published comparisons should use clean committed revisions; local runs also record tracked changes and the harness hash.
 
+Source-size, IL-size and isolated generator improvements do not establish a compilation improvement. Retain performance-only changes when paired full-Csc measurements with normal analyzers demonstrate a benefit and runtime validation supports the tradeoff. Inconclusive changes remain experiments; do not present them as progress toward parity. Keep correctness, parser coverage and demonstrated scaling fixes distinct from workload-speed claims. Compare revisions with equivalent functionality, and use the full XamlX added-cost benchmark for acceptance.
+
 ## Compilation-scoped metadata caching
 
 The compatibility review found repeated scans for provider methods and declared/inherited content properties, including negative lookups for ordinary controls. The type system now retains these immutable results within one Roslyn compilation and framework configuration. Generator environment creation also no longer constructs an unused second type system. Changing the C# compilation creates a new environment; the generator regression checks provider removal and restoration after cached positive and negative results.

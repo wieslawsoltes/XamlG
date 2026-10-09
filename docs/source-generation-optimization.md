@@ -10,30 +10,31 @@ The target changed from 2× faster to parity on October 9, 2026. Earlier experim
 sections retain their original 2× assessments as historical results. The current
 benchmark gate requires an added-cost ratio of at most 1.0 for every project.
 
-The [latest verified CI acceptance checkpoint, `7283eb5`](https://github.com/wieslawsoltes/XamlG/actions/runs/37971807779)
+The [latest verified CI acceptance checkpoint, `45c8d72`](https://github.com/wieslawsoltes/XamlG/actions/runs/37975551125)
 uses three forced Release rebuilds per compiler/project with SDK 10.0.401 and
 normal analyzers. Complete catalog validation passes, including the trimmed
 browser host, but the performance target fails for all three projects:
 
 | Project | XamlX added cost | XamlG added cost | G/X added cost | Required XamlG cost |
 | --- | ---: | ---: | ---: | ---: |
-| Simple | 2.753s | 7.521s | 2.73× | ≤2.753s |
-| Fluent | 3.998s | 11.675s | 2.92× | ≤3.998s |
-| ControlCatalog | 8.548s | 15.843s | 1.85× | ≤8.548s |
+| Simple | 1.875s | 5.054s | 2.70× | ≤1.875s |
+| Fluent | 2.672s | 7.747s | 2.90× | ≤2.672s |
+| ControlCatalog | 6.443s | 11.465s | 1.78× | ≤6.443s |
 
-Full rebuild medians (XamlX/XamlG) are 7.718/13.288, 9.198/17.753 and
-17.978/25.825 seconds. Compiler-task totals are 4.806/9.572, 6.373/14.050 and
-14.632/21.812 seconds; common-C# baselines are 2.051, 2.375 and 5.969 seconds.
+Full rebuild medians (XamlX/XamlG) are 5.451/9.324, 6.436/12.118 and
+13.457/18.980 seconds. Compiler-task totals are 3.314/6.487, 4.277/9.349 and
+10.808/15.819 seconds; common-C# baselines are 1.433, 1.602 and 4.354 seconds.
 These totals and individual stage medians are computed separately and need not
 sum. This is a fresh CI comparison, not a paired measurement against older runs.
 
-The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37971807158)
-reports generation at 1.237/1.587/3.005 seconds and captured-C# compilation at
-4.762/7.194/13.783 seconds for Simple/Fluent/ControlCatalog. These use a different
+The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37975551031)
+reports generation at 0.831/1.077/1.597 seconds and captured-C# compilation at
+3.092/4.464/9.647 seconds for Simple/Fluent/ControlCatalog. These use a different
 runner and are not additive phase costs. Compilation and analysis of the
 generated program remain the larger cost. Both runs use PR merge checkout
-`87b68bbb7cb4739a984637f8a5eab1a67a23a3bd`; all 390 XamlG-generated source hashes
-match the local `7283eb5` implementation. The local experiments below use
+`800ddc747bbce001c203565376b674876d184bdb`; all 390 XamlG-generated source hashes
+match the local `7283eb5` implementation. These measurements precede deferred
+literal construction sharing at `222f0d2`. The local experiments below use
 separately identified snapshots and do not establish the acceptance target.
 
 The assignment-lifetime round, `ee13421`, narrows the temporary-local lifetime
@@ -1237,8 +1238,28 @@ accepted 2× XamlX compilation target. Source hashes, all samples, frozen compil
 inputs and the rebuildable diagnostic are retained under
 `artifacts/controlcatalog-performance/reference-analysis-*`.
 
+The [six-pair CI comparison](https://github.com/wieslawsoltes/XamlG/actions/runs/37975596778)
+compares `7b925ed` with `45c8d72` on one Linux runner, SDK 10.0.401 and a
+two-processor limit. All 72 fresh compiler runs pass with normal analyzers.
+The 390 generated files are byte-identical before and after.
 
-## Deferred literal construction sharing
+| Project | Generation before → after | Full Csc CPU before → after | Captured C# CPU before → after |
+| --- | ---: | ---: | ---: |
+| Simple | 1.327s → 1.344s | 14.070s → 14.520s | 12.552s → 12.778s |
+| Fluent | 1.749s → 1.769s | 23.500s → 23.588s | 20.613s → 20.727s |
+| ControlCatalog | 3.928s → 3.808s | 40.100s → 40.580s | 35.036s → 35.179s |
+
+Full-Csc wall medians are 6.854→6.796, 10.223→10.281 and 17.625→17.061
+seconds; captured-C# wall medians are 5.362→5.285, 8.377→8.392 and
+14.553→14.159 seconds. Individual paired CPU ratios cross 1.0 for every
+project and phase, including the identical captured sources. The result does
+not establish a workload-wide compiler speedup. The demonstrated benefit remains
+the reduction in repeated work for deeply nested input. Compact CI logs,
+responses, source hashes and every sample are retained under
+`artifacts/controlcatalog-performance/ci-45c8d72-comparison`.
+
+
+## Rejected deferred literal construction sharing
 
 Deferred resources with ordinary property assignments can share their complete
 construction lifetime when values have already been lowered to typed literals,
@@ -1269,7 +1290,7 @@ seconds. Captured-C# wall medians are 2.851→2.770, 4.706→4.898 and
 9.249→12.436 seconds. These independent phases are nonadditive. Results are
 mixed, including higher captured-C# CPU for Fluent and ControlCatalog; the
 source reduction does not establish a compilation speedup or parity with XamlX.
-A paired CI comparison will assess this change on one dedicated runner.
+The completed paired CI comparison and retention decision are recorded below.
 
 | Project | Method bodies before → after | Local slots before → after | Exception regions before → after | IL bytes before → after |
 | --- | ---: | ---: | ---: | ---: |
@@ -1305,3 +1326,29 @@ The public parser inventory still covers 49 types, and all 390 generated workloa
 files compile with zero runtime `Parse` call sites. Frozen compiler and source
 snapshots, every measurement, runtime/IL probes and validation results remain
 under `artifacts/controlcatalog-performance/deferred-literal-*`.
+
+
+The [six-pair CI comparison](https://github.com/wieslawsoltes/XamlG/actions/runs/37978057485)
+compares `45c8d72` with `222f0d2` on identical project/runtime references with
+normal analyzers. It ran 72 fresh compiler processes, with generation and
+captured-C# compilation reported separately.
+
+| Project | Generation before → after | Full Csc CPU before → after | Captured C# CPU before → after |
+| --- | ---: | ---: | ---: |
+| Simple | 1.888s → 1.885s | 22.036s → 22.360s | 19.649s → 19.854s |
+| Fluent | 2.530s → 2.532s | 36.263s → 34.594s | 29.800s → 29.013s |
+| ControlCatalog | 5.489s → 5.512s | 55.722s → 55.599s | 44.805s → 46.581s |
+
+Fluent's full compiler CPU improves in all six adjacent pairs. ControlCatalog's
+captured-C# CPU worsens in all six pairs; its median rises 4.0%. Simple's pairs
+are mixed. Full-Csc wall medians are 9.923→9.766, 14.866→14.288 and
+23.168→22.586 seconds; captured wall medians are 7.967→7.994,
+11.541→11.507 and 19.867→19.495 seconds. Generation is effectively unchanged.
+These independent phase timings are nonadditive and do not measure XamlX parity.
+
+The optimization is removed: the Fluent improvement does not justify the
+ControlCatalog compilation regression and uncertain runtime costs. The semantic
+coverage for laziness, source mappings, live editing, evaluation order and
+cleanup remains. Smaller source and IL alone are not acceptance criteria.
+Compact CI evidence is retained in
+`artifacts/controlcatalog-performance/ci-222f0d2-comparison`.
