@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
@@ -8,7 +7,8 @@ using Avalonia.Threading;
 
 namespace XamlG.IntelligentUI.Avalonia;
 
-/// <summary>Dispatcher-affine native renderer. Stable keys retain controls, caret/focus and subscriptions across value-only updates.</summary>
+/// <summary>Dispatcher-affine keyed renderer. Typed input adapters, item/content containers and
+/// control lifetimes use the same schema as compilation. No native property is set before validation.</summary>
 public sealed class UiAvaloniaRenderer : IDisposable
 {
     private readonly UiAvaloniaCatalog _catalog;
@@ -26,62 +26,89 @@ public sealed class UiAvaloniaRenderer : IDisposable
     public void Apply(UiSnapshot snapshot)
     {
         Dispatcher.UIThread.VerifyAccess(); ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(snapshot);
         if (_applying) throw new InvalidOperationException("Reentrant native UI update.");
-        // Revalidate the inert boundary even when a caller did not obtain it from UiSessionStore.
-        var nodes = UiSessionStore.Flatten(snapshot.Roots).ToArray();
-        if (nodes.Length > 4096 || nodes.Select(n => n.Key).Distinct(StringComparer.Ordinal).Count() != nodes.Length)
-            throw new UiException("invalid_tree", "Invalid or oversized native tree.");
-        foreach (var node in nodes)
+        if (_snapshot is { } previous && previous.SessionId == snapshot.SessionId &&
+            (snapshot.Revision < previous.Revision || snapshot.Revision == previous.Revision && snapshot.StateRevision < previous.StateRevision))
+            throw new UiException("revision_conflict", "The native snapshot is older than the displayed state.");
+        ApplyCore(snapshot, recover: true);
+    }
+    private void ApplyCore(UiSnapshot snapshot, bool recover)
+    {
+        var nodes = new Dictionary<string, UiElement>(StringComparer.Ordinal);
+        var parents = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pending = new Stack<(UiElement Node, string Parent, int Depth)>();
+        if (snapshot.Roots.IsDefault) throw new UiException("invalid_tree", "Uninitialized root collection.");
+        foreach (var node in snapshot.Roots.Reverse()) pending.Push((node, "", 0));
+        while (pending.TryPop(out var item))
         {
-            if (!_catalog.Registrations.TryGetValue(node.Type, out var native) || !_schema.Components.TryGetValue(node.Type, out var component))
-                throw new UiException("unknown_component", "No trusted native factory: " + node.Type);
-            if (node.Children.Length > component.MaximumChildren) throw new UiException("invalid_content", "Invalid native child count.");
-            foreach (var property in node.Properties)
-            {
-                if (!component.Properties.TryGetValue(property.Key, out var definition) || !native.Setters.ContainsKey(property.Key)) throw new UiException("unknown_property", "No trusted property setter.");
-                // Public descriptor validation is shared with the compiler.
-                definition.ValidateValue(property.Value);
-            }
+            var node = item.Node;
+            if (node == null || string.IsNullOrEmpty(node.Key) || node.Key.Length > 8192 || item.Depth > 48 || nodes.Count >= 4096 || !nodes.TryAdd(node.Key, node)) throw new UiException("invalid_tree", "Invalid, duplicate or oversized native tree.");
+            parents.Add(node.Key, item.Parent);
+            if (!_catalog.Registrations.TryGetValue(node.Type, out var native) || !_schema.Components.TryGetValue(node.Type, out var component)) throw new UiException("unknown_component", "No trusted native factory: " + node.Type);
+            UiTreeValidation.ValidateElement(node, component);
+            if (node.Properties.Keys.Any(key => !native.Setters.ContainsKey(key))) throw new UiException("unknown_property", "No trusted property setter.");
+            foreach (var child in node.Children.Reverse()) pending.Push((child, node.Key, item.Depth + 1));
         }
+        var newSession = _snapshot != null && _snapshot.SessionId != snapshot.SessionId;
+        var replacements = _entries.Values.Where(entry => newSession || !nodes.TryGetValue(entry.Node.Key, out var node) || node.Type != entry.Node.Type).Select(entry => entry.Node.Key).ToHashSet(StringComparer.Ordinal);
+        var prepared = new Dictionary<string, Entry>(StringComparer.Ordinal);
+        // Constructor/conversion failures for new controls occur while detached.
+        try
+        {
+            foreach (var node in nodes.Values)
+                if (!_entries.ContainsKey(node.Key) || replacements.Contains(node.Key))
+                {
+                    var registration = _catalog.Registrations[node.Type];
+                    var entry = new Entry(node, registration.Create(), parents[node.Key], registration);
+                    prepared.Add(node.Key, entry); Update(entry, node, true);
+                }
+        }
+        catch { foreach (var entry in prepared.Values) Retire(entry); throw; }
+        var previous = _snapshot;
         _applying = true;
         try
         {
-            var parents = new Dictionary<string, string>(StringComparer.Ordinal);
-            Collect(snapshot.Roots, "", parents);
-            var replaced = _entries.Values.Where(entry => !nodes.Any(node => node.Key == entry.Node.Key && node.Type == entry.Node.Type)).Select(entry => entry.Node.Key).ToHashSet(StringComparer.Ordinal);
             foreach (var entry in _entries.Values.ToArray())
             {
-                var next = nodes.FirstOrDefault(node => node.Key == entry.Node.Key);
-                if (next == null || next.Type != entry.Node.Type || parents[entry.Node.Key] != entry.Parent || replaced.Contains(entry.Parent)) Detach(entry.Control);
-                if (next == null || next.Type != entry.Node.Type) { Unsubscribe(entry); _entries.Remove(entry.Node.Key); }
+                if (!nodes.ContainsKey(entry.Node.Key) || replacements.Contains(entry.Node.Key) || parents[entry.Node.Key] != entry.Parent || replacements.Contains(entry.Parent)) Detach(entry.Control);
+                if (replacements.Contains(entry.Node.Key)) { Retire(entry); _entries.Remove(entry.Node.Key); }
             }
-            foreach (var node in nodes)
+            foreach (var node in nodes.Values)
             {
-                if (!_entries.TryGetValue(node.Key, out var entry))
-                {
-                    entry = new(node, _catalog.Registrations[node.Type].Create(), parents[node.Key]);
-                    _entries.Add(node.Key, entry); Subscribe(entry);
-                    Update(entry, node, true);
-                }
-                else { Update(entry, node, false); entry.Parent = parents[node.Key]; }
+                if (prepared.Remove(node.Key, out var created)) { _entries.Add(node.Key, created); Subscribe(created); }
+                else { var entry = _entries[node.Key]; Update(entry, node, false); entry.Parent = parents[node.Key]; }
             }
-            foreach (var node in nodes.Reverse()) Children(_entries[node.Key].Control, node.Children.Select(child => _entries[child.Key].Control).ToArray());
-            Children(_root, snapshot.Roots.Select(node => _entries[node.Key].Control).ToArray());
+            foreach (var node in nodes.Values.Reverse()) Children(_entries[node.Key].Control, node.Children.Select(child => _entries[child.Key].Control).ToArray(), node.Properties.ContainsKey("ItemsSource"), node.Properties.ContainsKey("Content"));
+            Children(_root, snapshot.Roots.Select(node => _entries[node.Key].Control).ToArray(), false, false);
+            // Item insertion may coerce selection. Publish the validated selection only after all items exist.
+            foreach (var node in nodes.Values)
+                if (node.Properties.TryGetValue("SelectedIndex", out var selected)) _entries[node.Key].Registration.Setters["SelectedIndex"](_entries[node.Key].Control, selected);
             _snapshot = snapshot;
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            foreach (var entry in prepared.Values) Retire(entry);
+            _applying = false;
+            if (recover && previous != null)
+            {
+                try { Reset(); ApplyCore(previous, recover: false); }
+                catch (Exception rollback) when (rollback is not OutOfMemoryException) { Reset(); throw new AggregateException("Native update and recovery failed.", error, rollback); }
+            }
+            else Reset();
+            throw;
         }
         finally { _applying = false; }
     }
-    private static void Collect(IEnumerable<UiElement> nodes, string parent, Dictionary<string, string> map)
-    { foreach (var node in nodes) { map.Add(node.Key, parent); Collect(node.Children, node.Key, map); } }
     private void Update(Entry entry, UiElement node, bool initial)
     {
-        var setters = _catalog.Registrations[node.Type].Setters;
+        var setters = entry.Registration.Setters;
         foreach (var old in entry.Node.Properties.Keys.Where(key => !node.Properties.ContainsKey(key)).ToArray()) setters[old](entry.Control, null);
-        // Range endpoints must precede Value; input events caused by coercion remain suppressed.
         foreach (var property in node.Properties.OrderBy(p => p.Key == "Minimum" ? 0 : p.Key == "Maximum" ? 1 : p.Key == "Value" ? 3 : 2))
-            if (initial || property.Key == _schema.Components[node.Type].InputProperty || !entry.Node.Properties.TryGetValue(property.Key, out var previous) || !JsonElement.DeepEquals(previous, property.Value) ||
-                property.Key == "Value" && (Changed("Minimum") || Changed("Maximum")))
-                setters[property.Key](entry.Control, property.Value);
+        {
+            if (property.Key == "SelectedIndex") continue;
+            if (initial || property.Key == _schema.Components[node.Type].InputProperty || !entry.Node.Properties.TryGetValue(property.Key, out var previous) || !JsonElement.DeepEquals(previous, property.Value) || property.Key == "Value" && (Changed("Minimum") || Changed("Maximum"))) setters[property.Key](entry.Control, property.Value);
+        }
         entry.Node = node;
         bool Changed(string key) => entry.Node.Properties.TryGetValue(key, out var old) != node.Properties.TryGetValue(key, out var next) || !JsonElement.DeepEquals(old, next);
     }
@@ -90,23 +117,30 @@ public sealed class UiAvaloniaRenderer : IDisposable
         entry.PropertyChanged = (_, args) =>
         {
             if (_applying || _disposed || _snapshot == null || entry.Node.StateKey == null) return;
-            object? value;
-            if (entry.Control is TextBox text && args.Property == TextBox.TextProperty) value = text.Text ?? "";
-            else if (entry.Control is Slider slider && args.Property == RangeBase.ValueProperty) value = slider.Value;
-            else if (entry.Control is CheckBox toggle && args.Property == ToggleButton.IsCheckedProperty) value = toggle.IsChecked == true;
-            else return;
-            StateChanged?.Invoke(new(_snapshot.Id, _snapshot.Revision, _snapshot.StateRevision, entry.Node.StateKey, JsonSerializer.SerializeToElement(value)));
+            JsonElement? value = entry.Registration.ReadInput?.Invoke(entry.Control, args);
+            // Preserve existing custom catalogs that rely on the original native input families.
+            if (value == null && entry.Registration.ReadInput == null)
+            {
+                if (entry.Control is TextBox text && args.Property == TextBox.TextProperty) value = JsonSerializer.SerializeToElement(text.Text ?? "");
+                else if (entry.Control is Slider slider && args.Property == RangeBase.ValueProperty) value = JsonSerializer.SerializeToElement(slider.Value);
+                else if (entry.Control is CheckBox toggle && args.Property == ToggleButton.IsCheckedProperty) value = JsonSerializer.SerializeToElement(toggle.IsChecked == true);
+            }
+            if (value is { } changed) StateChanged?.Invoke(new(_snapshot.Id, _snapshot.Revision, _snapshot.StateRevision, entry.Node.StateKey, changed));
         };
         entry.Control.PropertyChanged += entry.PropertyChanged;
-        if (entry.Control is Button button && entry.Control is not CheckBox)
+        if (entry.Control is Button button && _schema.Components[entry.Node.Type].SupportsAction)
         {
             entry.Click = (_, _) => { if (!_applying && !_disposed && _snapshot != null && entry.Node.ActionId != null) ActionRequested?.Invoke(new(_snapshot.Id, _snapshot.Revision, _snapshot.StateRevision, entry.Node.Key)); };
             button.Click += entry.Click;
         }
     }
-    private static void Unsubscribe(Entry entry)
-    { entry.Control.PropertyChanged -= entry.PropertyChanged; if (entry.Control is Button button && entry.Click != null) button.Click -= entry.Click; }
-    private static void Children(Control parent, IReadOnlyList<Control> children)
+    private static void Retire(Entry entry)
+    {
+        entry.Control.PropertyChanged -= entry.PropertyChanged;
+        if (entry.Control is Button button && entry.Click != null) button.Click -= entry.Click;
+        entry.Registration.Retire?.Invoke(entry.Control);
+    }
+    private static void Children(Control parent, IReadOnlyList<Control> children, bool itemsSource, bool scalarContent)
     {
         switch (parent)
         {
@@ -119,7 +153,17 @@ public sealed class UiAvaloniaRenderer : IDisposable
                 }
                 break;
             case Decorator decorator: if (!ReferenceEquals(decorator.Child, children.FirstOrDefault())) decorator.Child = children.FirstOrDefault(); break;
-            case ScrollViewer scroll: if (!ReferenceEquals(scroll.Content, children.FirstOrDefault())) scroll.Content = children.FirstOrDefault(); break;
+            case ItemsControl items when !itemsSource:
+                for (var i = items.Items.Count - 1; i >= 0; i--) if (items.Items[i] is not Control control || !children.Contains(control)) items.Items.RemoveAt(i);
+                for (var i = 0; i < children.Count; i++)
+                {
+                    if (i < items.Items.Count && ReferenceEquals(items.Items[i], children[i])) continue;
+                    items.Items.Remove(children[i]); items.Items.Insert(i, children[i]);
+                }
+                break;
+            case ItemsControl: break;
+            case ContentControl content when !scalarContent: if (!ReferenceEquals(content.Content, children.FirstOrDefault())) content.Content = children.FirstOrDefault(); break;
+            case ContentControl: break;
             default: if (children.Count != 0) throw new UiException("invalid_content", "This native factory has no child container."); break;
         }
     }
@@ -128,18 +172,24 @@ public sealed class UiAvaloniaRenderer : IDisposable
         if (control.Parent is Panel panel) panel.Children.Remove(control);
         else if (control.Parent is Decorator decorator && ReferenceEquals(decorator.Child, control)) decorator.Child = null;
         else if (control.Parent is ContentControl content && ReferenceEquals(content.Content, control)) content.Content = null;
+        else if (control.Parent is ItemsControl items && items.ItemsSource == null) items.Items.Remove(control);
+    }
+    private void Reset()
+    {
+        foreach (var entry in _entries.Values) Retire(entry);
+        _root.Children.Clear(); _entries.Clear(); _snapshot = null;
     }
     public void Dispose()
     {
         Dispatcher.UIThread.VerifyAccess(); if (_disposed) return; _disposed = true;
-        foreach (var entry in _entries.Values) Unsubscribe(entry);
-        _root.Children.Clear(); _entries.Clear(); _snapshot = null; StateChanged = null; ActionRequested = null;
+        Reset(); StateChanged = null; ActionRequested = null;
     }
-    private sealed class Entry(UiElement node, Control control, string parent)
+    private sealed class Entry(UiElement node, Control control, string parent, UiControlRegistration registration)
     {
         internal UiElement Node = node;
         internal Control Control { get; } = control;
         internal string Parent = parent;
+        internal UiControlRegistration Registration { get; } = registration;
         internal EventHandler<AvaloniaPropertyChangedEventArgs>? PropertyChanged;
         internal EventHandler<RoutedEventArgs>? Click;
     }
