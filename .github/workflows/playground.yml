@@ -36,13 +36,18 @@ jobs:
         run: dotnet publish tools/XamlG.Playground/XamlG.Playground.csproj -c Release -p:NuGetAudit=false -o artifacts/playground
       - name: Prepare the existing GitHub Pages application
         run: python scripts/prepare-pages.py --commit "${{ github.sha }}"
-      - name: Browser acceptance tests
+      - name: Intelligent UI native browser and provider acceptance
         working-directory: tools/XamlG.Playground
         env:
           PLAYGROUND_PAGES_PREVIEW: '1'
         run: |
           dotnet build ../XamlG.Studio.Host -c Release -warnaserror
-          python ../../scripts/test-browser-studio.py
+          python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs
+      - name: Browser acceptance tests
+        working-directory: tools/XamlG.Playground
+        env:
+          PLAYGROUND_PAGES_PREVIEW: '1'
+        run: python ../../scripts/test-browser-studio.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

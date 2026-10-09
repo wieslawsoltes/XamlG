@@ -1,12 +1,12 @@
 using System.Globalization;
 using System.Text.Json;
 using Avalonia.Browser;
-using Avalonia.Threading;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using XamlG.Automation;
 using XamlG.IntelligentUI;
 using XamlG.IntelligentUI.Avalonia;
+using Dispatcher = Avalonia.Threading.Dispatcher;
 
 namespace XamlG.Playground.Components;
 
@@ -28,16 +28,17 @@ public partial class IntelligentUiCard
     private UiActionCall? _action;
     private UiActionIntent? _intent;
     private AutomationTool? _reviewedTool;
-    private string? _mountedId, _error, _notice;
+    private string? _mountedId, _failedMountId, _error, _notice;
     private bool _disposed, _mounting, _busy, _inspect;
     private long _inputRevision;
     private AutomationTool? ReviewedTool => _intent?.Tool is { } name ? Tools.SingleOrDefault(tool => tool.Name == name) : null;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_disposed || _mounting || !Ready) return;
+        if (_disposed || _mounting || !Ready || _failedMountId == Presentation.SessionId) return;
         if (_session != null && ReferenceEquals(_mountedStore, Store) && _mountedId == Presentation.SessionId) return;
         _mounting = true;
+        var mountingId = Presentation.SessionId;
         try
         {
             await ReleaseNativeAsync();
@@ -55,9 +56,14 @@ public partial class IntelligentUiCard
             if (!_disposed) StateHasChanged();
         }
         catch (Exception error) when (error is not OutOfMemoryException)
-        { _error = error.Message; if (!_disposed) StateHasChanged(); }
+        {
+            _failedMountId = mountingId; _error = error.Message;
+            await ReleaseNativeAsync();
+            if (!_disposed) StateHasChanged();
+        }
         finally { _mounting = false; }
     }
+    private void RetryNativeView() { _failedMountId = null; _error = null; }
     private void OnUpdated()
     {
         if (_disposed) return; _snapshot = _session?.Snapshot;
@@ -127,7 +133,7 @@ public partial class IntelligentUiCard
         catch (Exception error) when (error is not OutOfMemoryException) { if (!_disposed) _error = error.Message; }
         finally { _busy = false; }
     }
-    private async Task ModuleAsync() => _module ??= await JavaScript.InvokeAsync<IJSObjectReference>("import", _lifetime.Token, "./intelligent-ui.js");
+    private async Task ModuleAsync() { _module ??= await JavaScript.InvokeAsync<IJSObjectReference>("import", _lifetime.Token, "./intelligent-ui.js"); }
     private async Task CopyAsync(string text) { await ModuleAsync(); await _module!.InvokeVoidAsync("copyText", _lifetime.Token, text); }
     private Task ExportXamlAsync() => DownloadAsync("IntelligentView.axaml", "application/xml", _snapshot == null ? "" : UiSourceExporter.Xaml(_snapshot));
     private Task ExportCSharpAsync() => DownloadAsync("GeneratedIntelligentView.cs", "text/plain", _snapshot == null ? "" : UiSourceExporter.CSharp(_snapshot));

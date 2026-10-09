@@ -8,10 +8,11 @@
     <div id="@_elementId" class="intelligent-ui-native" hidden="@(_snapshot == null)" aria-label="Native Avalonia response"></div>
     @if (_snapshot == null)
     {
-        <AgentMarkdown Text="Presentation.FallbackMarkdown" CopyRequested="CopyAsync" />
+        <AgentMarkdown Text="@Presentation.FallbackMarkdown" CopyRequested="CopyAsync" />
         <p class="muted" role="status">@(_session?.Diagnostic ?? (Ready ? "Loading the native view…" : "Waiting for the Avalonia host…"))</p>
     }
     @if (_error != null) { <p class="intelligent-ui-error" role="alert">@_error</p> }
+    @if (_failedMountId != null) { <button @onclick="RetryNativeView" disabled="@_mounting">Retry native view</button> }
     @if (_notice != null) { <p role="status">@_notice</p> }
     @if (_intent != null)
     {

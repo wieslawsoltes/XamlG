@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
+using XamlG.Automation;
 
 namespace XamlG.Mcp;
 
@@ -14,7 +15,10 @@ public static class AutomationMcpUiExtensions
         {
             options.Capabilities ??= new();
             options.Capabilities.Extensions ??= new Dictionary<string, object>(StringComparer.Ordinal);
-            options.Capabilities.Extensions.TryAdd("io.modelcontextprotocol/ui", new { mimeTypes = new[] { "text/html;profile=mcp-app" } });
+            // The MCP SDK uses a generated JSON contract. An arbitrary anonymous CLR type
+            // cannot be serialized by that contract; JsonElement is the explicit wire value.
+            options.Capabilities.Extensions.TryAdd("io.modelcontextprotocol/ui",
+                AutomationJson.Element(new { mimeTypes = new[] { "text/html;profile=mcp-app" } }));
         });
         return builder;
     }
