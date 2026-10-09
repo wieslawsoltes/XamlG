@@ -81,7 +81,7 @@ public sealed class UiIntegrationTests
         var source = UiSourceExporter.CSharp(snapshot);
         Assert.Contains("UiSessionStore", source); Assert.Contains("UiAvaloniaSession", source);
         Assert.DoesNotContain("AvaloniaXamlLoader", source);
-        Assert.Empty(CSharpSyntaxTree.ParseText(source).GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error));
+        Assert.DoesNotContain(CSharpSyntaxTree.ParseText(source, cancellationToken: TestContext.Current.CancellationToken).GetDiagnostics(TestContext.Current.CancellationToken), d => d.Severity == DiagnosticSeverity.Error);
     }
     [Fact] public void ConditionalMissingActionIsRejectedBeforeStatePublication()
     {

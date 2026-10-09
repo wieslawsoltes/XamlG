@@ -273,6 +273,7 @@ public partial class App
         _dockReference?.Dispose();
         if (_shellHooks != null) { await _shellHooks.InvokeVoidAsync("dispose"); await _shellHooks.DisposeAsync(); }
         _browserAgents.Dispose();
+        DisposeIntelligentUi();
         RevokeAutomation(); _runtimeInspector?.Dispose(); _buildArtifacts.Dispose();
         if (_module != null) await _module.InvokeVoidAsync("disconnectAutomation");
         _automationReference?.Dispose();

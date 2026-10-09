@@ -215,7 +215,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                     try
                     {
                         var target = local.Tools.Any(t => t.Name == tool.Name) ? (IAutomationHost)local : host;
-                        result = await target.CallAsync(tool.Name, call.Arguments, new("AI Agent", lease.Token));
+                        result = await target.CallAsync(tool.Name, call.Arguments, new("AI Agent", lease.Token, "agent:" + task.Id));
                     }
                     catch (OperationCanceledException)
                     {

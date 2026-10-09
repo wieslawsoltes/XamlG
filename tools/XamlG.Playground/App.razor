@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="resources.css" />
 <link rel="stylesheet" href="authoring.css" />
 <link rel="stylesheet" href="agent-workbench.css" />
+<link rel="stylesheet" href="intelligent-ui.css" />
 <link rel="stylesheet" href="runtime-workbench.css" />
 <div class="studio" inert="@(_renameVisible || _actionsVisible || _fileMoveVisible)" data-ready="@(_ready ? "true" : "false")">
     <header class="titlebar studio-shell">
@@ -198,7 +199,7 @@
             </div>
 </section>
     </BrowserTemplate>
-    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("agent")" Context="pane"><AgentWorkbench @ref="_agentWorkbench" BrowserRuntime="_browserAgents" SourceRevision="SourceRevision" SourceRequested="NavigateAgentSourceAsync" AccessRequested='() => ShowPaneAsync("agent-access")' /></BrowserTemplate>
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("agent")" Context="pane"><AgentWorkbench @ref="_agentWorkbench" UiStore="_intelligentUi" UiReady="_ready" UiTools="_automation.Tools" UiToolRequested="ExecuteIntelligentUiToolAsync" BrowserRuntime="_browserAgents" SourceRevision="SourceRevision" SourceRequested="NavigateAgentSourceAsync" AccessRequested='() => ShowPaneAsync("agent-access")' /></BrowserTemplate>
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("agent-access")" Context="pane">
     <section class="agent-access-panel" aria-label="Agent access">
         <h2>MCP agent access</h2>
