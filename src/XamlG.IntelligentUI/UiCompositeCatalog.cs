@@ -2,12 +2,10 @@ using System.Collections.Immutable;
 
 namespace XamlG.IntelligentUI;
 
-/// <summary>Trusted source-only components in urn:xamlg:intelligent-ui. Lowering produces
-/// ordinary validated Avalonia operations; hosts never execute composite source.</summary>
+/// <summary>Trusted source-only components in urn:xamlg:intelligent-ui.</summary>
 public static class UiCompositeCatalog
 {
     public static ImmutableDictionary<string, UiComponent> Components { get; } = CreateComponents();
-
     private static ImmutableDictionary<string, UiComponent> CreateComponents()
     {
         var common = UiCatalog.Default.Components["Separator"].Properties;
@@ -36,14 +34,14 @@ public static class UiCompositeCatalog
              ("PlotHeight", new(UiPropertyKind.Number, 80, 2000)), ("Accent", new(UiPropertyKind.Color)), ("ShowLegend", boolean)]);
         Add("DataPoint", properties: [("Label", text), ("Value", number), ("X", number)]);
         Add("Form", 512, properties: [("Title", text), ("Description", text), ("Gap", space),
-            ("IsValid", boolean), ("ErrorText", text), ("ShowErrors", boolean)]);
+            ("IsValid", boolean), ("ErrorText", text), ("ShowErrors", boolean), ("Validator", text),
+            ("ErrorMode", new(UiPropertyKind.Choice, Choices: ["Always", "OnTouch", "OnSubmit"]))]);
         Add("Field", 1, properties: [("Label", text), ("HelpText", text), ("IsRequired", boolean),
             ("IsValid", boolean), ("ErrorText", text), ("ShowErrors", boolean)]);
         Add("SubmitButton", 1, content: "Content", action: true, properties: [("Content", text)]);
         Add("ValidationSummary", properties: [("Title", text)]);
         return result.ToImmutable();
     }
-
     internal static ImmutableArray<UiElement> Lower(ImmutableArray<UiElement> roots, UiCatalog catalog, UiLimits limits)
         => new UiCompositeLowerer(catalog, limits).Run(roots);
 }

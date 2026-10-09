@@ -4,11 +4,7 @@ namespace XamlG.IntelligentUI;
 
 public sealed partial class UiSessionStore
 {
-    /// <summary>
-    /// Executes a declared local state action. Every expression sees the same pre-action
-    /// snapshot; the entire patch is rendered and validated before one atomic commit.
-    /// This operation cannot invoke a host tool, navigate, copy, or start inference.
-    /// </summary>
+    /// <summary>All expressions read pre-action state. Candidate state and render commit atomically.</summary>
     public UiSnapshot ApplyStateAction(UiActionCall request, string principal)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -17,42 +13,27 @@ public sealed partial class UiSessionStore
         {
             var entry = Get(request.Id, principal);
             Revisions(entry.Snapshot, request.ExpectedRevision, request.ExpectedStateRevision);
-            // PrepareAction also checks ancestor visibility, enablement and active tabs.
             var intent = PrepareAction(request, principal);
             if (intent.Kind != "state" || intent.Arguments is not { } patch)
                 throw new UiException("invalid_action", "Only a declared state action can change local state.");
-
-            var values = entry.Snapshot.State.EnumerateObject()
-                .ToDictionary(field => field.Name, field => field.Value, StringComparer.Ordinal);
+            var values = entry.Snapshot.State.EnumerateObject().ToDictionary(field => field.Name, field => field.Value, StringComparer.Ordinal);
             foreach (var field in patch.EnumerateObject())
             {
-                if (!values.TryGetValue(field.Name, out var old))
-                    throw new UiException("unknown_state", "The action targets an undeclared state key: " + field.Name);
+                if (!values.TryGetValue(field.Name, out var old)) throw new UiException("unknown_state", "The action targets an undeclared state key: " + field.Name);
                 if (!SameStateType(old, field.Value) && old.ValueKind != JsonValueKind.Null && field.Value.ValueKind != JsonValueKind.Null)
                     throw new UiException("invalid_state", "An action cannot change a state slot's declared type.");
                 values[field.Name] = field.Value;
             }
-
             var state = ValidateState(JsonSerializer.SerializeToElement(values));
-            var roots = entry.Template.Render(state, entry.Snapshot.Data);
+            var roots = entry.Template.Render(state, entry.Snapshot.Data, entry.Snapshot.Roots);
             ValidateActionReferences(roots, entry.Snapshot.Actions);
-            // Idempotent actions neither advance a revision nor notify observers.
             if (JsonElement.DeepEquals(state, entry.Snapshot.State)) return entry.Snapshot;
-            snapshot = entry.Snapshot with
-            {
-                State = state,
-                StateRevision = checked(entry.Snapshot.StateRevision + 1),
-                Roots = roots,
-                FallbackMarkdown = Fallback(roots, entry.Markdown)
-            };
-            _entries[request.Id] = entry with { Snapshot = snapshot };
-            _generation = checked(_generation + 1);
+            snapshot = entry.Snapshot with { State = state, StateRevision = checked(entry.Snapshot.StateRevision + 1),
+                Roots = roots, FallbackMarkdown = Fallback(roots, entry.Markdown) };
+            _entries[request.Id] = entry with { Snapshot = snapshot }; _generation = checked(_generation + 1);
         }
-        Notify(snapshot);
-        return snapshot;
+        Notify(snapshot); return snapshot;
     }
-
-    /// <summary>Trusted embedding UI only; never publish this owner-bypassing entry point.</summary>
-    public UiSnapshot ApplyStateActionLocal(UiActionCall request)
-        => ApplyStateAction(request, LocalPrincipal(request.Id));
+    /// <summary>Trusted embedding UI only; never expose this entry point to a transport.</summary>
+    public UiSnapshot ApplyStateActionLocal(UiActionCall request) => ApplyStateAction(request, LocalPrincipal(request.Id));
 }

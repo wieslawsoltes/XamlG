@@ -13,7 +13,6 @@ public sealed partial class UiSessionStore(UiCompiler? compiler = null)
     public long Generation { get { lock (_gate) return _generation; } }
     public event Action<UiSnapshot>? Changed;
     public event Action<string>? Released;
-
     public UiSnapshot Publish(UiPublish request, string principal)
     {
         ArgumentNullException.ThrowIfNull(request); Principal(principal); UiJson.Identifier(request.Id, "Surface ID");
@@ -35,7 +34,8 @@ public sealed partial class UiSessionStore(UiCompiler? compiler = null)
             if (current == null && _entries.Count >= Compiler.Limits.Surfaces) throw new UiException("surface_limit", "Release an existing surface before creating another.");
             var state = MergeState(current?.Snapshot.State, request.InitialState);
             var data = UiJson.Object(request.Data ?? current?.Snapshot.Data, Compiler.Limits.DataBytes, "Data");
-            var roots = compiled.Template!.Render(state, data); ValidateActionReferences(roots, actions);
+            var roots = compiled.Template!.Render(state, data, current == null ? null : current.Snapshot.Roots);
+            ValidateActionReferences(roots, actions);
             snapshot = new(request.Id, checked(++_revision), current?.Snapshot.StateRevision ?? 0, request.Sequence, request.IsFinal,
                 request.Xaml, state, data, roots, actions, compiled.Diagnostics, Fallback(roots, request.FallbackMarkdown), current?.Snapshot.SessionId ?? Guid.NewGuid().ToString("N"));
             if (current != null && !JsonElement.DeepEquals(current.Snapshot.State, state)) snapshot = snapshot with { StateRevision = checked(snapshot.StateRevision + 1) };
@@ -43,7 +43,6 @@ public sealed partial class UiSessionStore(UiCompiler? compiler = null)
         }
         Notify(snapshot); return snapshot;
     }
-
     public UiSnapshot Read(string id, string principal) { lock (_gate) return Get(id, principal).Snapshot; }
     public IReadOnlyList<UiPresentation> List(string principal)
     {

@@ -8,12 +8,15 @@ public sealed class UiTemplate
     private readonly UiPlanNode _root;
     private readonly UiLimits _limits;
     private readonly UiCatalog _catalog;
+    private readonly string _templateId = Guid.NewGuid().ToString("N");
     internal UiTemplate(UiPlanNode root, UiLimits limits, UiCatalog catalog) { _root = root; _limits = limits; _catalog = catalog; }
-    public ImmutableArray<UiElement> Render(JsonElement state, JsonElement data)
+    public ImmutableArray<UiElement> Render(JsonElement state, JsonElement data, IEnumerable<UiElement>? previous = null)
     {
         var count = 0; var keys = new HashSet<string>(StringComparer.Ordinal);
         var resolved = RenderNode(_root, state, data, null, "", keys, ref count);
-        return UiCompositeCatalog.Lower(resolved, _catalog, _limits);
+        var lowered = UiCompositeCatalog.Lower(resolved, _catalog, _limits);
+        lowered = UiFormSemantics.Apply(resolved, lowered, _catalog);
+        return UiFormProjection.Apply(lowered, previous, state, data, _templateId, _catalog, _limits);
     }
     private ImmutableArray<UiElement> RenderNode(UiPlanNode node, JsonElement state, JsonElement data, JsonElement? item, string scope, HashSet<string> keys, ref int count, bool expanded = false)
     {
