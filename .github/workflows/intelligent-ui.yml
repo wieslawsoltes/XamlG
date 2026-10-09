@@ -1,0 +1,47 @@
+name: Intelligent UI
+on:
+  pull_request:
+    paths:
+      - 'src/XamlG.IntelligentUI*/**'
+      - 'src/XamlG.Automation/**'
+      - 'src/XamlG.Mcp/**'
+      - 'src/XamlG.Agents/**'
+      - 'tools/XamlG.Playground/**'
+      - 'tests/XamlG.IntelligentUI.Tests/**'
+      - '.github/workflows/intelligent-ui.yml'
+      - 'XamlG.slnx'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: intelligent-ui-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture reproducible source
+        run: |
+          mkdir -p artifacts/intelligent-ui
+          git archive --format=tar.gz -o artifacts/intelligent-ui/source.tar.gz HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: intelligent-ui-source
+          path: artifacts/intelligent-ui/source.tar.gz
+          retention-days: 3
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Build native contracts
+        run: dotnet build XamlG.slnx -c Release -warnaserror
+      - name: Test native contracts
+        run: dotnet test XamlG.slnx -c Release --no-build --logger 'trx;LogFilePrefix=intelligent-ui' --results-directory artifacts/intelligent-ui/tests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: intelligent-ui-test-results
+          path: artifacts/intelligent-ui/tests
+          if-no-files-found: ignore
+          retention-days: 7
