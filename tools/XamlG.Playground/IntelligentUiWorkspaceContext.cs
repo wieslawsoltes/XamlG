@@ -8,13 +8,16 @@ public sealed class IntelligentUiWorkspaceContext
     public UiSessionStore? Store { get; private set; }
     public UiCSharpProposals? Proposals { get; private set; }
     private Func<string>? _identity;
+    private Func<CancellationToken>? _lifetime;
     private Func<Func<CancellationToken, Task>, CancellationToken, Task>? _exclusive;
     public string? WorkspaceId => _identity?.Invoke();
+    public CancellationToken Lifetime => _lifetime?.Invoke() ?? CancellationToken.None;
     public event Action? Changed;
-    public void Attach(UiSessionStore store, UiCSharpProposals proposals, Func<string> identity, Func<Func<CancellationToken, Task>, CancellationToken, Task> exclusive)
+    public void Attach(UiSessionStore store, UiCSharpProposals proposals, Func<string> identity,
+        Func<Func<CancellationToken, Task>, CancellationToken, Task> exclusive, Func<CancellationToken>? lifetime = null)
     {
         if (Store != null) Detach(Store);
-        Store = store; Proposals = proposals; _identity = identity; _exclusive = exclusive;
+        Store = store; Proposals = proposals; _identity = identity; _exclusive = exclusive; _lifetime = lifetime;
         store.Changed += OnChanged; store.Released += OnReleased; proposals.Changed += Notify;
         Notify();
     }
@@ -28,6 +31,6 @@ public sealed class IntelligentUiWorkspaceContext
         if (!ReferenceEquals(Store, store)) return;
         store.Changed -= OnChanged; store.Released -= OnReleased;
         if (Proposals != null) Proposals.Changed -= Notify;
-        Store = null; Proposals = null; _identity = null; _exclusive = null; Notify();
+        Store = null; Proposals = null; _identity = null; _exclusive = null; _lifetime = null; Notify();
     }
 }

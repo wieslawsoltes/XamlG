@@ -100,8 +100,6 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
                     return new() { StructuredContent = media.Metadata, Content = new ContentBlock[] { new TextContentBlock { Text = media.Metadata.GetRawText() } }
                         .Concat(media.Images.Select(image => ImageContentBlock.FromBytes(Convert.FromBase64String(image.Data), image.MimeType))).ToArray() };
                 var text = result.GetRawText();
-                // Keep the structured marker for capable hosts and meaningful computed text for
-                // text-only clients. No rendering dependency is introduced into the MCP package.
                 if (Definition.Metadata is { } metadata && metadata.TryGetProperty("ui", out _) &&
                     result.ValueKind == JsonValueKind.Object && result.TryGetProperty("fallbackMarkdown", out var fallback) &&
                     fallback.ValueKind == JsonValueKind.String && fallback.GetString()!.Length <= 131072)
@@ -119,10 +117,19 @@ internal sealed class AutomationMcpCatalogBinding : IDisposable
         public override IReadOnlyList<object> Metadata => [];
         public override ResourceTemplate ProtocolResourceTemplate { get; } = new()
         { UriTemplate = definition.Uri, Name = definition.Name, Description = definition.Description, MimeType = definition.MimeType, Meta = ProtocolMetadata(definition.Metadata) };
+        // Keep the concrete descriptor explicit as well as the template descriptor. SDK
+        // resource-list projections must not drop the application's CSP or UI metadata.
+        public override Resource? ProtocolResource => Definition.IsTemplate ? null : new()
+        { Uri = Definition.Uri, Name = Definition.Name, Description = Definition.Description, MimeType = Definition.MimeType, Meta = ProtocolMetadata(Definition.Metadata) };
         public override bool IsMatch(string uri) => AutomationUriTemplate.IsMatch(Definition, uri);
         public override async ValueTask<ReadResourceResult> ReadAsync(RequestContext<ReadResourceRequestParams> request, CancellationToken cancellationToken = default)
         {
-            var resource = host.Resources.FirstOrDefault(r => AutomationUriTemplate.IsMatch(r, request.Params.Uri)) ?? throw new McpException("Unknown resource.");
+            // Resolve this registered descriptor by identity, not the first broad template
+            // that also happens to match the requested URI. Content and metadata belong to
+            // the same resource registration; retirement still rejects outstanding reads.
+            var resource = host.Resources.SingleOrDefault(r => r.Uri == Definition.Uri)
+                ?? throw new McpException("Unknown resource.");
+            if (!AutomationUriTemplate.IsMatch(resource, request.Params.Uri)) throw new McpException("Resource URI does not match its registration.");
             var text = await host.ReadResourceAsync(request.Params.Uri, new("mcp", cancellationToken, Principal(request)));
             return new() { Contents = [new TextResourceContents { Uri = request.Params.Uri, MimeType = resource.MimeType, Text = text, Meta = ProtocolMetadata(resource.Metadata) }] };
         }

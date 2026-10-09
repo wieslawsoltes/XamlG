@@ -32,11 +32,30 @@
     private string? _error, _reviewHash;
     private string _status = "No code has run.";
     private string _state = "{\"n\":3}", _data = "{}";
-    private string _xaml = "<StackPanel xmlns=\"https://github.com/avaloniaui\" xmlns:ui=\"urn:xamlg:intelligent-ui\" Spacing=\"12\"><Slider ui:Bind=\"n\" Minimum=\"1\" Maximum=\"20\" IsSnapToTickEnabled=\"True\" TickFrequency=\"1\"/><TextBlock Text=\"{ui:Expr &quot;Sum: &quot; + Enumerable.Range(1, state.GetProperty(&quot;n&quot;).GetInt32()).Sum()}\"/></StackPanel>";
+    private string _xaml = UiCSharpExamples.Sum().Xaml;
     private bool _running, _disposed;
     private long _generation;
-    protected override void OnInitialized() => Workspace.Changed += WorkspaceChanged;
-    private void WorkspaceChanged() { if (!_disposed) _ = InvokeAsync(StateHasChanged); }
+    private CancellationToken _workspaceToken;
+    private CancellationTokenRegistration _workspaceCancellation;
+    protected override void OnInitialized() { Workspace.Changed += WorkspaceChanged; WatchWorkspace(); }
+    private void WorkspaceChanged()
+    { if (!_disposed) _ = InvokeAsync(() => { WatchWorkspace(); StateHasChanged(); }); }
+    private void WatchWorkspace()
+    {
+        var token = Workspace.Lifetime;
+        if (token == _workspaceToken) return;
+        _workspaceCancellation.Dispose(); _workspaceToken = token;
+        _workspaceCancellation = token.Register(() =>
+        {
+            if (!_disposed) _ = InvokeAsync(async () =>
+            {
+                if (_disposed) return;
+                InvalidateReview();
+                try { await ResetAsync(); } catch (JSException error) { _error = error.Message; }
+                StateHasChanged();
+            });
+        });
+    }
     private void InvalidateReview() { _reviewed = null; _reviewHash = null; _proposal = null; }
     private void ClearProposals() { if (_running) return; InvalidateReview(); Workspace.Proposals?.ClearLocal(); }
     private void SelectProposal(UiCSharpProposal proposal)
@@ -48,7 +67,7 @@
     {
         try
         {
-            _error = null;
+            WatchWorkspace(); _workspaceToken.ThrowIfCancellationRequested(); _error = null;
             if (_xaml.Length > 65536 || _state.Length > 131072 || _data.Length > 131072) throw new InvalidOperationException("The declaration exceeds its bounds.");
             using var state = JsonDocument.Parse(_state); using var data = JsonDocument.Parse(_data);
             if (state.RootElement.ValueKind != JsonValueKind.Object || data.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("State and data must be objects.");
@@ -60,17 +79,19 @@
     }
     private async Task RunApprovedAsync()
     {
-        if (_running || _reviewed == null || _disposed) return;
+        if (_running || _reviewed == null || _disposed || _workspaceToken.IsCancellationRequested) return;
         var request = _reviewed; var proposal = _proposal; _reviewed = null;
         await ResetAsync(); var generation = _generation; _running = true; _error = null; _status = "Starting approved execution…";
         try
         {
             _module ??= await JavaScript.InvokeAsync<IJSObjectReference>("import", "./ui-execution-client.js");
+            _workspaceToken.ThrowIfCancellationRequested();
             var frame = await _module.InvokeAsync<IJSObjectReference>("create", _host, Navigation.BaseUri);
-            if (_disposed || generation != _generation) { await frame.InvokeVoidAsync("dispose"); await frame.DisposeAsync(); return; }
+            if (_disposed || generation != _generation || _workspaceToken.IsCancellationRequested)
+            { await frame.InvokeVoidAsync("dispose"); await frame.DisposeAsync(); return; }
             _frame = frame;
             var result = await frame.InvokeAsync<JsonElement>("execute", request);
-            if (_disposed || generation != _generation) return;
+            if (_disposed || generation != _generation || _workspaceToken.IsCancellationRequested) return;
             _status = "Full C# executed in the isolated frame. " + result.GetProperty("fallbackMarkdown").GetString();
             if (proposal != null) Workspace.Proposals?.CompleteLocal(proposal.Id, proposal.Sha256, result, null);
         }
@@ -93,7 +114,8 @@
     }
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return; _disposed = true; Workspace.Changed -= WorkspaceChanged; await ResetAsync();
+        if (_disposed) return; _disposed = true;
+        _workspaceCancellation.Dispose(); Workspace.Changed -= WorkspaceChanged; await ResetAsync();
         if (_module != null) await _module.DisposeAsync();
     }
 }

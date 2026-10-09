@@ -59,7 +59,13 @@
   function radius(value){const p=tuple(value);return(p.length===4?[p[0],p[1],p[2],p[3]]:p.length===2?[p[0],p[1],p[0],p[1]]:p).map(item=>item+'px').join(' ');}
   function color(value){if(/^#[0-9a-f]{8}$/i.test(value))return '#'+value.slice(3)+value.slice(1,3);if(/^#[0-9a-f]{4}$/i.test(value))return '#'+value.slice(2)+value[1];if(/^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(value)||/^(Transparent|Black|White|Gray|Red|Green|Blue|Orange|Yellow|Purple|Pink|Silver|Navy|Teal|Lime|Maroon|Olive|Aqua|Fuchsia)$/.test(value))return value;throw new Error('Invalid catalog color.');}
   function tracks(value){const parts=String(value).split(',');if(parts.length>64)throw new Error('Too many grid tracks.');return parts.map(raw=>{const text=raw.trim();if(text==='Auto')return 'auto';if(text==='*')return '1fr';const star=text.endsWith('*');return number(Number(star?text.slice(0,-1):text),0,10000)+(star?'fr':'px');}).join(' ');}
-  function reconcile(parent,children){const wanted=new Set(children);for(const child of [...parent.children])if(!wanted.has(child))child.remove();children.forEach((child,index)=>{if(parent.children[index]!==child)parent.insertBefore(child,parent.children[index]||null);});}
+  function reconcile(parent,children){
+    const wanted=new Set(children);
+    // Content controls can change from a literal text node to keyed child controls and back.
+    // Removing only Element children would retain the previous literal beside the new content.
+    for(const child of [...parent.childNodes])if(child.nodeType!==Node.ELEMENT_NODE||!wanted.has(child))child.remove();
+    children.forEach((child,index)=>{if(parent.children[index]!==child)parent.insertBefore(child,parent.children[index]||null);});
+  }
   function common(element,p){
     for(const [name,css]of [['Width','width'],['Height','height'],['MinWidth','minWidth'],['MinHeight','minHeight'],['MaxWidth','maxWidth'],['MaxHeight','maxHeight']])if(p[name]!==undefined)element.style[css]=px(p[name]);
     if(p.Margin!==undefined)element.style.margin=thickness(p.Margin);
@@ -89,7 +95,10 @@
     const entry={element:e,input,caption,slot,summary,nav,shape,type:node.type,node,disabled:false};
     if(input)input.addEventListener('change',()=>changeState(entry));
     if(node.type==='TextBox')input.addEventListener('keydown',event=>{if(event.key==='Enter'&&!entry.node.properties.AcceptsReturn)event.preventDefault();});
-    if(summary)e.addEventListener('toggle',()=>{if(!applying&&entry.node.stateKey&&e.open!==(entry.node.properties.IsExpanded===true))changeState(entry,e.open);});
+    if(summary){
+      summary.addEventListener('click',event=>{if(entry.disabled||busy)event.preventDefault();});
+      e.addEventListener('toggle',()=>{if(!applying&&entry.node.stateKey&&e.open!==(entry.node.properties.IsExpanded===true))changeState(entry,e.open);});
+    }
     if(node.type==='Button'||node.type==='RepeatButton')e.addEventListener('click',()=>prepare(entry));
     return entry;
   }

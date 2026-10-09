@@ -1,7 +1,6 @@
 import { test, expect } from './studio-fixture.mjs';
 import { openStudio, connectMcp } from './live-preview.mjs';
 const panelFor = page => page.getByRole('complementary',{name:'Intelligent UI workspace',exact:true});
-// The first canvas in Avalonia 12 is a deliberately hidden native-scene overlay.
 const canvas = frame => frame.locator('canvas.avalonia-canvas');
 const declaration = id => ({id,expectedRevision:0,sequence:1,
  xaml:'<StackPanel xmlns="https://github.com/avaloniaui" xmlns:ui="urn:xamlg:intelligent-ui" Spacing="12"><Slider Width="300" Height="40" HorizontalAlignment="Left" ui:Key="seats" ui:Bind="seats" Minimum="1" Maximum="50" IsSnapToTickEnabled="True" TickFrequency="1"/><TextBlock Text="{ui:Expr &quot;$&quot; + state.seats * data.unitPrice}"/></StackPanel>',initialState:{seats:8},data:{unitPrice:29},fallbackMarkdown:'Native pricing'});
@@ -35,7 +34,7 @@ test('full C# proposal requires owner review and runs only in a disposable opaqu
  test.setTimeout(240000);await openStudio(page);const mcp=await connectMcp(page,request);
  try{
   const panel=panelFor(page);await panel.getByRole('button',{name:'Intelligent UI workspace',exact:true}).click();await panel.locator('.ui-full-csharp > summary').click();
-  const proposal=await mcp.call('xamlg_ui_csharp_propose',{...declaration('full-query'),xaml:'<StackPanel xmlns="https://github.com/avaloniaui" xmlns:ui="urn:xamlg:intelligent-ui"><Slider Width="300" Height="40" HorizontalAlignment="Left" ui:Bind="n" Minimum="1" Maximum="20" IsSnapToTickEnabled="True" TickFrequency="1"/><TextBlock Text="{ui:Expr &quot;Sum: &quot; + Enumerable.Range(1, state.GetProperty(&quot;n&quot;).GetInt32()).Sum()}"/></StackPanel>',initialState:{n:3},data:{}});
+  const proposal=await mcp.call('xamlg_ui_csharp_propose',{...declaration('full-query'),xaml:'<StackPanel xmlns="https://github.com/avaloniaui" xmlns:ui="urn:xamlg:intelligent-ui"><Slider Width="300" Height="40" HorizontalAlignment="Left" ui:Bind="n" Minimum="1" Maximum="20" IsSnapToTickEnabled="True" TickFrequency="1"/><TextBlock Text="{ui:Expr &quot;Sum: &quot; + Enumerable.Range(1, checked((int)state.GetProperty(&quot;n&quot;).GetDecimal())).Sum()}"/></StackPanel>',initialState:{n:3},data:{}});
   expect(proposal.status).toBe('pending');await expect(page.locator('iframe[title="Approved full C# preview"]')).toHaveCount(0);
   await panel.getByRole('button',{name:new RegExp('Review proposal '+proposal.id.slice(0,8))}).click();await panel.getByRole('button',{name:'Review full C#',exact:true}).click();
   await expect(panel.getByRole('region',{name:'Review full C# execution'})).toContainText('Enumerable.Range');await expect(page.locator('iframe[title="Approved full C# preview"]')).toHaveCount(0);
@@ -44,6 +43,7 @@ test('full C# proposal requires owner review and runs only in a disposable opaqu
   await expect(frame.getByRole('status')).toContainText('revision 1');await expect(canvas(frame)).toBeVisible();await frame.locator('details > summary').click();await expect(frame.locator('details')).toContainText('Sum: 6');
   expect(await frame.locator('body').evaluate(()=>{let parentBlocked=false,storageBlocked=false;try{void parent.document.body;}catch{parentBlocked=true;}try{void localStorage.length;}catch{storageBlocked=true;}return{parentBlocked,storageBlocked};})).toEqual({parentBlocked:true,storageBlocked:true});
   await canvas(frame).click({position:{x:240,y:20}});await expect(frame.getByRole('status')).not.toContainText('state 0');await expect(frame.locator('details')).not.toContainText('Sum: 6');
+  await expect(frame.getByRole('alert')).toHaveCount(0);
   await panel.getByRole('button',{name:'Reset execution frame',exact:true}).click();await expect(page.locator('iframe[title="Approved full C# preview"]')).toHaveCount(0);
  }finally{await mcp.close();}
 });
