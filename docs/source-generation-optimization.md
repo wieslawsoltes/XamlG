@@ -1,10 +1,14 @@
 # Direct C# compilation optimization
 
-The acceptance target is XamlG's added XAML compilation cost at most half of
-XamlX's, including compilation and analysis of generated C#. Full rebuild time,
+The acceptance target is parity: XamlG's added XAML compilation cost must be no
+greater than XamlX's, including compilation and analysis of generated C#. Full rebuild time,
 Roslyn-reported generation time and captured-C# compilation are reported
 separately. The target is **not met**. See [measurement methodology](performance.md)
 and [PR #14](https://github.com/wieslawsoltes/XamlG/pull/14) for current results.
+
+The target changed from 2× faster to parity on October 9, 2026. Earlier experiment
+sections retain their original 2× assessments as historical results. The current
+benchmark gate requires an added-cost ratio of at most 1.0 for every project.
 
 The [latest verified CI acceptance checkpoint, `7283eb5`](https://github.com/wieslawsoltes/XamlG/actions/runs/37971807779)
 uses three forced Release rebuilds per compiler/project with SDK 10.0.401 and
@@ -13,9 +17,9 @@ browser host, but the performance target fails for all three projects:
 
 | Project | XamlX added cost | XamlG added cost | G/X added cost | Required XamlG cost |
 | --- | ---: | ---: | ---: | ---: |
-| Simple | 2.753s | 7.521s | 2.73× | ≤1.377s |
-| Fluent | 3.998s | 11.675s | 2.92× | ≤1.999s |
-| ControlCatalog | 8.548s | 15.843s | 1.85× | ≤4.274s |
+| Simple | 2.753s | 7.521s | 2.73× | ≤2.753s |
+| Fluent | 3.998s | 11.675s | 2.92× | ≤3.998s |
+| ControlCatalog | 8.548s | 15.843s | 1.85× | ≤8.548s |
 
 Full rebuild medians (XamlX/XamlG) are 7.718/13.288, 9.198/17.753 and
 17.978/25.825 seconds. Compiler-task totals are 4.806/9.572, 6.373/14.050 and

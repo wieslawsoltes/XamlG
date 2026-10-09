@@ -100,7 +100,7 @@ by the compiler; generated applications use their own public framework APIs.
 
 Removing runtime parsing can increase generated C# size. Source size, generation
 time, compilation/analyzer time and the XamlX added-cost benchmark are measured
-separately; parser coverage is not evidence that the 2× compilation target is met.
+separately; parser coverage is not evidence that the compilation parity target is met.
 
 ## Validation checkpoint
 
@@ -109,20 +109,20 @@ each of the headless, actual desktop and trimmed browser hosts pass with
 warnings treated as errors. All 390 captured workload sources are byte-identical
 to `ee13421` and compile with zero runtime `Parse` call sites. The public parser
 inventory still covers 49 types. Cached reference analysis removes repeated
-descendant scans; the 2× XamlX compilation target remains unmet.
+descendant scans; the XamlX compilation parity target remains unmet.
 
 At `ee13421`, all 2,452 native tests, 14 pinned-source tests and 1,188 cases on
 each of the headless, actual desktop and trimmed browser hosts pass. The parser
 inventory still covers 49 public parser types, and all 390 captured workload
 files compile with zero runtime `Parse` call sites. The local-lifetime change
-reduces catalog source and IL; it does not establish the 2× XamlX target.
+reduces catalog source and IL; it does not establish the XamlX parity target.
 
 The inventory remains green at `8cae121`: all 2,446 native tests and 14
 pinned-source tests pass, together with all 1,188 catalog cases on each of the
 headless, actual desktop and trimmed browser hosts. All 390 generated workload
 files contain zero runtime `Parse` call sites. Independent CI source captures
 match the locally measured generated files byte for byte. The generation and
-compilation measurements remain separate; the 2× XamlX target is still unmet.
+compilation measurements remain separate; the XamlX parity target is still unmet.
 
 At implementation `49fce1a`, all 2,385 native tests pass with warnings treated as
 errors: 425 core, 1,525 Avalonia, 169 tooling, 94 language-server, 158 automation
