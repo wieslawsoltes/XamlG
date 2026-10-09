@@ -6,23 +6,23 @@ Roslyn-reported generation time and captured-C# compilation are reported
 separately. The target is **not met**. See [measurement methodology](performance.md)
 and [PR #14](https://github.com/wieslawsoltes/XamlG/pull/14) for current results.
 
-The [CI checkpoint for `49fce1a`](https://github.com/wieslawsoltes/XamlG/actions/runs/37915050254)
+The [CI checkpoint for `9e6517d`](https://github.com/wieslawsoltes/XamlG/actions/runs/37923053195)
 uses three forced Release rebuilds per compiler/project with SDK 10.0.401 and
-normal analyzers. All eight CI workflows pass, including complete catalog and
-playground validation, but the performance target fails for all three projects:
+normal analyzers. Complete catalog validation passes, including the trimmed
+browser host, but the performance target fails for all three projects:
 
 | Project | XamlX added cost | XamlG added cost | G/X added cost | Required XamlG cost |
 | --- | ---: | ---: | ---: | ---: |
-| Simple | 2.666s | 7.487s | 2.81× | ≤1.333s |
-| Fluent | 4.032s | 12.018s | 2.98× | ≤2.016s |
-| ControlCatalog | 8.758s | 19.024s | 2.17× | ≤4.379s |
+| Simple | 2.799s | 7.970s | 2.85× | ≤1.400s |
+| Fluent | 4.099s | 12.147s | 2.96× | ≤2.050s |
+| ControlCatalog | 8.674s | 17.457s | 2.01× | ≤4.337s |
 
-The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37915050114)
-reports generation at 1.684/2.296/4.474 seconds and captured-C# compilation at
-7.128/10.855/20.559 seconds for Simple/Fluent/ControlCatalog. These use a different
+The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37923053179)
+reports generation at 0.829/1.092/1.669 seconds and captured-C# compilation at
+3.243/4.933/10.084 seconds for Simple/Fluent/ControlCatalog. These use a different
 runner and are not additive phase costs. Compilation and analysis of the
 generated program remain the larger cost. Both runs use PR merge checkout
-`ce100b0bcba8f13687272074ba73d4e3887e98e4`; the local experiments below use
+`391bf627a2bf5d364b72fda5776f5fa77e5ae86e`; the local experiments below use
 separately identified snapshots and do not establish the acceptance target.
 
 ## Structural findings
@@ -596,8 +596,7 @@ captured-C# wall medians are 3.181→3.410, 5.664→4.145 and 10.324→13.859 se
 Generation is Roslyn-reported elapsed time; CPU is user plus system time. These
 results are mixed, including increased captured-C# CPU for Simple and the
 catalog. The retained source reduction does **not** establish a compilation
-speedup or a pass against XamlX. Independent CI acceptance measurements are
-still required for the new implementation.
+speedup or a pass against XamlX. The completed CI checkpoint is recorded below.
 
 A separate runtime probe uses the exact before/after compiler outputs with
 identical runtime dependencies. Three alternating fresh process pairs create
@@ -630,3 +629,95 @@ Avalonia, 169 tooling, 94 language-server, 158 automation and 14 workspace tests
 No tests fail or skip. This includes the exhaustive parser inventory and the
 existing behavioral parser suites. The generated workload retains zero Parse
 calls in both snapshots.
+
+At `9e6517d`, the pinned-source suite also passes all 14 tests and all 1,188 cases
+pass on each of headless, actual desktop and trimmed browser hosts. Native and
+MSBuild CI passes on Linux, Windows and macOS. The completed
+[catalog/acceptance workflow](https://github.com/wieslawsoltes/XamlG/actions/runs/37923053195)
+uses clean merge checkout `391bf627a2bf5d364b72fda5776f5fa77e5ae86e`, Linux x64,
+SDK 10.0.401 and three sequential forced rebuilds per backend/project.
+
+| Project | XamlX rebuild | XamlG rebuild | XamlX compiler tasks | XamlG compiler tasks | Common C# | XamlX added cost | XamlG added cost | G/X added cost |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Simple | 7.888s | 13.771s | 4.901s | 10.074s | 2.104s | 2.799s | 7.970s | 2.85× |
+| Fluent | 9.463s | 18.266s | 6.528s | 14.576s | 2.429s | 4.099s | 12.147s | 2.96× |
+| ControlCatalog | 18.730s | 28.446s | 15.246s | 24.306s | 6.849s | 8.674s | 17.457s | 2.01× |
+
+Added costs use the same difference-of-medians and compiler-task methodology
+above. The 2× target still fails for all projects. The separate
+[profile run](https://github.com/wieslawsoltes/XamlG/actions/runs/37923053179)
+uses the same checkout on another runner; its 390 XamlG-generated files match
+the local candidate hashes exactly. Other generators add 12 files to the
+catalog's compiler invocation and remain enabled in the measurements.
+
+| Project | XamlG generation | All generators | Full Csc | Captured C# + analyzers |
+| --- | ---: | ---: | ---: | ---: |
+| Simple | 0.829s | 1.118s | 4.449s | 3.243s |
+| Fluent | 1.092s | 1.381s | 6.190s | 4.933s |
+| ControlCatalog | 1.669s | 2.416s | 11.922s | 10.084s |
+
+These columns are not additive, and the profile/acceptance runners must not be
+combined. Separate CI runs are not paired before/after experiments.
+
+## Metadata probe allocations
+
+The `9e6517d` allocation profile attributes approximately 4.7/5.2/37.9 MB of
+Simple/Fluent/catalog allocations to `HasMetadataName`, principally Roslyn's
+construction of arity-suffixed names. The existing qualified-name cache did not
+avoid reading `ISymbol.MetadataName` on every suffix test. Generic symbols can
+allocate a new short metadata-name string on that read.
+
+Each weak metadata-name entry now caches the short name and computes the
+qualified name only when needed. Both positive and negative generic probes reuse
+the short string. Constructed types retain their definition names, while nested
+names, escaping and non-type original-definition behavior remain unchanged.
+Three additional tests cover negative probes followed by concurrent qualified
+lookups and collection of old compilations with either short-only or fully
+qualified entries.
+
+Fresh-process microbenchmarks load the actual old and candidate assemblies with
+SDK Roslyn 5.9.0.0. Three alternating process pairs/triplets warm each case with
+10,000 calls, then measure five blocks of 100,000 calls. Rows below take each
+process's block median, then the process median. These are metadata-name probes,
+not XAML compilation or XamlX acceptance timings.
+
+| Symbols / probe | Milliseconds per 100,000 before → after | Allocated bytes before → after |
+| --- | ---: | ---: |
+| Generic / positive | 6.7313 → 2.3014 | 4,000,000 → 0 |
+| Generic / negative | 4.9301 → 1.5398 | 4,000,000 → 0 |
+| Generic / same suffix, wrong namespace | 5.6401 → 1.8606 | 4,000,000 → 0 |
+| Ordinary / positive | 2.8725 → 2.1033 | 0 → 0 |
+| Ordinary / negative | 1.3430 → 1.6268 | 0 → 0 |
+| Ordinary / same suffix, wrong namespace | 2.8511 → 2.0705 | 0 → 0 |
+
+Ordinary negative probes incur additional cache lookup work. A trial restricting
+the cache to generic symbols was slower in every one of the nine mixed, generic
+and ordinary microbenchmarks, so that extra branch was not retained. Evidence
+for all three variants is in `metadata-generic-micro/`; the initial mixed-only
+probe is in `metadata-probe-micro/`.
+
+The frozen `metadata-probe-generator/` candidate and `shared-scalar-generator/`
+baseline generate **byte-identical C# across all 390 files**, retaining zero
+workload Parse calls. Three alternating fresh real-Csc pairs per project use
+the same SDK, analyzers and two-processor configuration as the earlier local
+measurements. No owned build/test/runtime probe overlaps the timed compilers.
+
+| Project | Generation before → after | Full Csc CPU before → after | Captured C# CPU before → after |
+| --- | ---: | ---: | ---: |
+| Simple | 1.651s → 2.081s | 15.647s → 16.039s | 12.363s → 13.492s |
+| Fluent | 2.336s → 1.889s | 20.879s → 17.945s | 12.881s → 15.809s |
+| ControlCatalog | 7.710s → 6.280s | 48.313s → 42.181s | 43.427s → 37.297s |
+
+Full-Csc wall medians are 9.107→10.681, 11.513→8.685 and 33.408→26.314 seconds.
+Captured-C# wall medians are 6.060→7.282, 5.147→6.933 and 35.963→25.597 seconds.
+The captured source is identical, yet its measured times vary substantially;
+host variability therefore prevents attributing these differences to the change.
+Simple generation also increases. The retained result is the narrowly measured
+allocation reduction, not a demonstrated full-compiler speedup. The accepted
+2× XamlX compilation target remains unmet.
+
+All 2,396 native tests pass with warnings treated as errors and no failures or
+skips: 436 core, 1,525 Avalonia, 169 tooling, 94 language-server, 158 automation
+and 14 workspace tests. All three complete project captures compile with normal
+analysis. Generated application sources match the `9e6517d` version already
+validated across all 1,188 cases on each host; runtime source is unchanged.
