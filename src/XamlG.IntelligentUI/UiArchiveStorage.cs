@@ -129,11 +129,18 @@ public sealed class UiFileArchiveStorage : IUiArchiveStorage
         if (workspaceId.Length > 256) throw new ArgumentOutOfRangeException(nameof(workspaceId));
         return Path.Combine(_directory, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(workspaceId))) + ".json");
     }
-    private static FileStreamOptions Options(FileMode mode) => new()
+    private static FileStreamOptions Options(FileMode mode)
     {
-        Mode = mode, Access = FileAccess.ReadWrite, Share = FileShare.None,
-        Options = FileOptions.Asynchronous, UnixCreateMode = OperatingSystem.IsWindows() ? null : UnixFileMode.UserRead | UnixFileMode.UserWrite
-    };
+        var options = new FileStreamOptions
+        {
+            Mode = mode, Access = FileAccess.ReadWrite, Share = FileShare.None,
+            Options = FileOptions.Asynchronous
+        };
+        // The setter itself is platform-specific, even when assigned null.
+        if (!OperatingSystem.IsWindows())
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        return options;
+    }
     private static async ValueTask<FileStream> LockAsync(string path, CancellationToken token)
     {
         var lockPath = path + ".lock";
