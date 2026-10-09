@@ -30,7 +30,7 @@ public sealed class TransformLiteralTests
         var fixture = Fixture("<Border " + ResourceProjectFixture.Namespace + " RenderTransform='" + literal + "'/>");
         var border = Assert.IsType<Border>(fixture.Build("View.axaml"));
         Equivalent(literal, border.RenderTransform);
-        Assert.DoesNotContain(".Parse(", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", fixture.Result.Documents.Single().Output.Source);
     }
 
     [AvaloniaFact]
@@ -122,7 +122,7 @@ public sealed class TransformLiteralTests
                     TransformOperations.Interpolate((TransformOperations)actual[key]!, (TransformOperations)actual["v" + ((index + 1) % literals.Length)]!, progress));
         }
         var output = fixture.Result.Documents.Single().Output;
-        Assert.DoesNotContain(".Parse(", output.Source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", output.Source);
         Assert.DoesNotContain("XamlG.Frameworks.Avalonia.Parsing", output.Source, StringComparison.Ordinal);
         var assembly = AppDomain.CurrentDomain.GetAssemblies().Single(value => value.GetName().Name == fixture.Compilation.AssemblyName);
         var second = Assert.IsType<ResourceDictionary>(assembly.GetType(output.FactoryMetadataName)!.GetMethod(output.BuildMethodName!)!.Invoke(null, new object?[] { null }));

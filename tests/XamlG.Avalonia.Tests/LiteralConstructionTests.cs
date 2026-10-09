@@ -96,7 +96,7 @@ public sealed class LiteralConstructionTests
         var root = Assert.IsType<ResourceDictionary>(fixture.Build("Colors.axaml"));
         for (var index = 0; index < literals.Length; index++)
             Assert.Equal(Color.Parse(literals[index]), Assert.IsType<Color>(root[index.ToString(CultureInfo.InvariantCulture)]));
-        Assert.DoesNotContain("global::Avalonia.Media.Color.Parse(", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", fixture.Result.Documents.Single().Output.Source);
     }
 
     [AvaloniaTheory]
@@ -113,7 +113,7 @@ public sealed class LiteralConstructionTests
         var root = Assert.IsType<ResourceDictionary>(fixture.Build("Model.axaml"));
         if (type == "HslColor") Assert.Equal(HslColor.Parse(literal), Assert.IsType<HslColor>(root["value"]));
         else Assert.Equal(HsvColor.Parse(literal), Assert.IsType<HsvColor>(root["value"]));
-        Assert.DoesNotContain("global::Avalonia.Media." + type + ".Parse(", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", fixture.Result.Documents.Single().Output.Source);
     }
 
     [AvaloniaTheory]

@@ -32,7 +32,7 @@ public sealed class InputLiteralTests
             Assert.Equal(SourceInfo.GetXamlSourceInfo(expected, key), SourceInfo.GetXamlSourceInfo(actual, key));
             Assert.Null(SourceInfo.GetXamlSourceInfo(gesture));
         }
-        Assert.DoesNotContain("global::Avalonia.Input.KeyGesture.Parse(", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", fixture.Result.Documents.Single().Output.Source);
     }
 
     [AvaloniaTheory]
@@ -53,7 +53,7 @@ public sealed class InputLiteralTests
             Assert.Equal(SourceInfo.GetXamlSourceInfo(expected, key), SourceInfo.GetXamlSourceInfo(actual, key));
             Assert.Equal(SourceInfo.GetXamlSourceInfo(baseline), SourceInfo.GetXamlSourceInfo(cursor));
         }
-        Assert.DoesNotContain("global::Avalonia.Input.Cursor.Parse(", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", fixture.Result.Documents.Single().Output.Source);
     }
 
     [AvaloniaTheory]

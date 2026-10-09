@@ -1,9 +1,9 @@
-﻿namespace Avalonia.Media
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Specifies the vertical position of a <see cref="TextDecoration"/> object.
     /// </summary>
-    public enum TextDecorationLocation
+    internal enum TextDecorationLocation
     {
         /// <summary>
         /// The underline position.

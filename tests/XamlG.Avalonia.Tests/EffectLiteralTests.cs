@@ -26,7 +26,7 @@ public sealed class EffectLiteralTests
         Equal(Effect.Parse(literal), actual!);
         Equal(Assert.IsType<Border>(baseline.Root).Effect!, actual!);
         var output = fixture.Result.Documents.Single().Output;
-        Assert.DoesNotContain(".Parse(", output.Source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", output.Source);
         Assert.DoesNotContain("EffectConverter", output.Source, StringComparison.Ordinal);
         var assembly = AppDomain.CurrentDomain.GetAssemblies().Single(value => value.GetName().Name == fixture.Compilation.AssemblyName);
         var second = Assert.IsType<Border>(assembly.GetType(output.FactoryMetadataName)!.GetMethod(output.BuildMethodName!)!.Invoke(null, [null]));
@@ -59,7 +59,7 @@ public sealed class EffectLiteralTests
         var first = Assert.IsType<BitmapCache>(((Border)panel.Children[0]).CacheMode);
         var second = Assert.IsType<BitmapCache>(((Border)panel.Children[1]).CacheMode);
         Assert.NotSame(first, second);
-        Assert.DoesNotContain(".Parse(", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", fixture.Result.Documents.Single().Output.Source);
         foreach (var literal in new[] { "bitmapcache", "BitmapCache ", "Other" })
         {
             Assert.Throws<ArgumentException>(() => CacheMode.Parse(literal));

@@ -33,7 +33,7 @@ public sealed class InitializedLiteralTests
             Assert.Equal(SourceInfo.GetXamlSourceInfo(expected, key), SourceInfo.GetXamlSourceInfo(actual, key));
             Assert.Equal(SourceInfo.GetXamlSourceInfo(expected[key]!), SourceInfo.GetXamlSourceInfo(value));
         }
-        Assert.DoesNotContain(".Parse(", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", fixture.Result.Documents.Single().Output.Source);
         Assert.Contains("@Tag =", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
         Assert.DoesNotContain("UnsafeAccessor", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
     }
@@ -55,7 +55,7 @@ public sealed class InitializedLiteralTests
             Equal(Assert.IsType<BoxShadow>(expected[key]), value);
             Assert.Equal(SourceInfo.GetXamlSourceInfo(expected, key), SourceInfo.GetXamlSourceInfo(actual, key));
         }
-        Assert.DoesNotContain(".Parse(", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", fixture.Result.Documents.Single().Output.Source);
         var lists = literals.Concat(new[] { ",", " ,", "none,none", "0 0 #00000000,none", "1 2 rgba(0,0,0,.5), inset 3 4 blue", ",none,," }).ToArray();
         var (listFixture, actualLists, expectedLists) = Compile("BoxShadows", lists, sourceInfo);
         for (var index = 0; index < lists.Length; index++)
@@ -69,7 +69,7 @@ public sealed class InitializedLiteralTests
             for (var item = 0; item < value.Count; item++) { Equal(parsed[item], value[item]); Equal(baseline[item], value[item]); }
             Assert.Equal(SourceInfo.GetXamlSourceInfo(expectedLists, key), SourceInfo.GetXamlSourceInfo(actualLists, key));
         }
-        Assert.DoesNotContain(".Parse(", listFixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", listFixture.Result.Documents.Single().Output.Source);
     }
 
     [AvaloniaTheory]

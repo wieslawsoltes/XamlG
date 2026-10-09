@@ -62,7 +62,7 @@ public sealed class GeometryLiteralTests
                     Assert.Equal(SourceInfo.GetXamlSourceInfo(expected[key]!), SourceInfo.GetXamlSourceInfo(actual[key]!));
                 }
                 var output = fixture.Result.Documents.Single().Output;
-                Assert.DoesNotContain(".Parse(", output.Source, StringComparison.Ordinal);
+                Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", output.Source);
                 Assert.Contains("using (var", output.Source, StringComparison.Ordinal);
                 Assert.DoesNotContain("XamlG.Frameworks.Avalonia.Parsing", output.Source, StringComparison.Ordinal);
                 var assembly = AppDomain.CurrentDomain.GetAssemblies().Single(value => value.GetName().Name == fixture.Compilation.AssemblyName);
@@ -83,7 +83,7 @@ public sealed class GeometryLiteralTests
             var fixture = new ResourceProjectFixture([("Path.axaml", xaml)]);
             var path = Assert.IsType<global::Avalonia.Controls.Shapes.Path>(fixture.Build("Path.axaml"));
             Equal(Geometry.Parse("M0,0L10,10"), path.Data!);
-            Assert.DoesNotContain(".Parse(", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+            Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", fixture.Result.Documents.Single().Output.Source);
         }
     }
 

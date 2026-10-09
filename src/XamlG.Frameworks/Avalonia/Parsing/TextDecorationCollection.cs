@@ -1,14 +1,12 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using Avalonia.Collections;
-using Avalonia.Utilities;
 
-namespace Avalonia.Media
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// A collection that holds <see cref="TextDecoration"/> objects.
     /// </summary>
-    public class TextDecorationCollection : AvaloniaList<TextDecoration>
+    internal class TextDecorationCollection : List<TextDecoration>
     {
         public TextDecorationCollection()
         {
@@ -69,4 +67,9 @@ namespace Avalonia.Media
             throw new ArgumentException("Could not parse text decoration.", nameof(s));
         }
     }
+}
+
+namespace XamlG.Frameworks.Avalonia.Parsing
+{
+    internal sealed class TextDecoration { public TextDecorationLocation Location { get; set; } }
 }

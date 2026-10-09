@@ -52,7 +52,7 @@ public sealed class ParsedLiteralTests
                     Assert.Equal(SourceInfo.GetXamlSourceInfo(expected[key]!), SourceInfo.GetXamlSourceInfo(actual[key]!));
                 }
                 var output = fixture.Result.Documents.Single().Output;
-                Assert.DoesNotContain(".Parse(", output.Source, StringComparison.Ordinal);
+                Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", output.Source);
                 Assert.DoesNotContain("XamlG.Frameworks.Avalonia.Parsing", output.Source, StringComparison.Ordinal);
                 if (type == typeof(Transform))
                 {

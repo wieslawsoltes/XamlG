@@ -5,7 +5,7 @@ The original files were imported unchanged from Avalonia commit
 parsers/tokenizer in `5e70673`, keyboard/cursor parsers in `74204d1`, and
 font-feature/shadow parsers and bracket splitter in `3b92450`, and the transform
 operation parser in `697d6c0`, and the remaining numeric/font parsers in
-`0cb9dbd`, and geometry/effect/cache parsers in `f71e556`.
+`0cb9dbd`, and geometry/effect/cache parsers in `f71e556`, and the decoration parser/enum in `ee72643`.
 `upstream.json` records their original paths and SHA-256 hashes.
 The MIT license and original color-conversion notices are retained.
 
@@ -147,3 +147,15 @@ Geometry, effect and cache adaptations:
   complete figure/segment values, XamlX source metadata, every command family,
   malformed input and fresh objects. Portable backend tests also cover scope
   disposal after failures, value-type scope mutation and target services.
+
+Decoration adaptations:
+
+- Retain comma tokenization, case-insensitive enum parsing (including numeric
+  values), duplicate rejection and order. Replace AvaloniaList and styled objects
+  with private list/value holders used only during parsing.
+- Run this fallback after the static and list intrinsics. Named single decorations
+  keep the framework's shared static collection; compound/numeric forms create
+  fresh public collections and TextDecoration objects with typed Location values.
+- A shared inventory test discovers public string Parse methods in both supported
+  framework builds. Every inventoried literal must bind and compile into C# with
+  no direct Parse call. Detailed suites cover the grammar and runtime behavior.

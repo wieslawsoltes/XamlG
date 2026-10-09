@@ -78,5 +78,5 @@ public sealed class ParsedLiteralTests
     }
 
     private static void NoParse(ResourceProjectFixture fixture) =>
-        Assert.DoesNotContain(".Parse(", fixture.Result.Documents.Single().Output.Source, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", fixture.Result.Documents.Single().Output.Source);
 }
