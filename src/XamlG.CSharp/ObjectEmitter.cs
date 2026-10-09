@@ -13,18 +13,21 @@ internal sealed class ObjectEmitter
     private readonly RuntimeContextEmitter _runtime;
     private readonly SourceInfoEmitter _source;
     private readonly LeafConstructionEmitter _leaves;
+    private readonly DeferredConstructionEmitter _deferred;
     public ObjectEmitter(EmissionContext context)
     {
         _context = context; _namespaces = new(context); _runtime = new(context, _namespaces);
         _values = new(context, this); _assignments = new(context, this, _values); _source = new(context);
         _leaves = new(context, _values, _source, this);
+        _deferred = new(context, _source, this);
     }
     public void EmitContext(string variable, string outer, string root) => _runtime.Create(variable, outer, root);
     public void RegisterName(string frame, string nameExpression, string value) => _runtime.RegisterName(frame, nameExpression, value);
     public void Complete(string frame, string root) => _runtime.Complete(frame, root);
     public void EmitNamespaceMaps() => _namespaces.Emit();
-    public void EmitContextHelpers() { _leaves.EmitHelpers(); _runtime.EmitHelpers(); }
-    public bool TryEmitSharedDeferred(BoundDeferredExpression value, string incoming) => _leaves.TryEmitDeferred(value, incoming);
+    public void EmitContextHelpers() { _leaves.EmitHelpers(); _deferred.EmitHelpers(); _runtime.EmitHelpers(); }
+    public bool TryEmitSharedDeferred(BoundDeferredExpression value, string incoming) =>
+        _leaves.TryEmitDeferred(value, incoming) || _deferred.TryEmit(value, incoming);
     public string ConstructRoot(BoundObject value, string parentContext) =>
         Construct(value, _runtime.Scope(parentContext, value.Scope), _context.RootVariable);
 
@@ -56,13 +59,14 @@ internal sealed class ObjectEmitter
     {
         _context.Cancellation.ThrowIfCancellationRequested(); var writer = _context.Writer;
         parentContext = _runtime.Scope(parentContext, value.Scope);
-        if (existing == null && consume == null && initialize == null && _leaves.CanShare(value))
+        if (_context.ConstructionParameters == null && existing == null && consume == null && initialize == null && _leaves.CanShare(value))
             return _leaves.Emit(value, parentContext);
         // Framework source-info setters can execute user code and must remain after
         // tracking but before node registration. Preserve that sequence when enabled.
         var trackWithFrame = existing == null && !value.IsRoot && _context.Document.Runtime.SourceInfo == null;
         var variable = existing ?? Construct(value, parentContext, value.IsRoot ? _context.RootVariable : null, track: !trackWithFrame);
-        var frame = _context.Locals.Declare(CSharpNames.Context, parentContext + (value.IsRoot ? ".PushRoot(" : trackWithFrame ? ".PushConstructed(" : ".Push(") + variable + ", " + CSharpNames.Literal(value.Key) + ", " + _source.Get(value) + ")", "context", inferred: true);
+        var frame = _context.Locals.Declare(CSharpNames.Context, parentContext + (value.IsRoot ? ".PushRoot(" : trackWithFrame ? ".PushConstructed(" : ".Push(") + variable + ", " +
+            (_context.ConstructionParameters?.Key(value) ?? CSharpNames.Literal(value.Key)) + ", " + _source.Get(value) + ")", "context", inferred: true);
         _context.InheritFrameNamespaces(frame, parentContext);
         if (value.Name != null)
         {

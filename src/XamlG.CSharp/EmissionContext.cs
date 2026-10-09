@@ -31,6 +31,7 @@ internal sealed class EmissionContext : IDisposable
     private CachedExpressionEmitter? _cachedExpressions;
     public CachedExpressionEmitter CachedExpressions => _cachedExpressions ??= new(this);
     public bool ShareCachedValues { get; set; }
+    public ConstructionParameters? ConstructionParameters { get; set; }
     public CSharpWriter Writer { get; } = new();
     private TemporaryLocalPool? _locals;
     public TemporaryLocalPool Locals => _locals ??= new(this);
@@ -69,6 +70,9 @@ internal sealed class EmissionContext : IDisposable
     public void Map(TextSpan span, Action emit)
     {
         Cancellation.ThrowIfCancellationRequested();
+        // Shared construction bodies have multiple source occurrences. Their
+        // call arguments carry the occurrence-specific mappings instead.
+        if (ConstructionParameters != null) { emit(); return; }
         if (Document.Options.EmitLineDirectives && Document.Syntax.Path.Length != 0)
         { var offset = Math.Min(span.Start, Document.Syntax.Text.Length); Writer.Line("#line " + (Document.Syntax.Lines.GetPosition(offset).Line + 1) + " " + CSharpNames.Literal(Document.Syntax.Path)); }
         var start = Writer.Position; emit(); Mappings.Add(new(new(start, Writer.Position - start), span, Document.Syntax.Path));

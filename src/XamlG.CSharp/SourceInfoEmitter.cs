@@ -24,7 +24,8 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
             (position.Character + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + ");");
     }
 
-    public string Get(BoundObject value) => context.SourceInfoTable + "[" + Index(value) + "]";
+    public string Get(BoundObject value) => context.SourceInfoTable + "[" +
+        (context.ConstructionParameters?.SourceIndex(value) ?? Index(value).ToString(System.Globalization.CultureInfo.InvariantCulture)) + "]";
 
     public int Index(BoundObject value)
     {

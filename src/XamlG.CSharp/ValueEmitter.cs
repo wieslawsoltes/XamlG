@@ -40,7 +40,7 @@ internal sealed class ValueEmitter
         {
             case BoundChoiceExpression choice: return new ChoiceExpressionEmitter(_context, _objects, this).Emit(choice, frame);
             case BoundResourceExpression resource: return new ResourceExpressionEmitter(_context).Emit(resource, frame);
-            case BoundConstantExpression constant: return CSharpNames.Constant(constant.Value);
+            case BoundConstantExpression constant: return _context.ConstructionParameters?.Constant(constant) ?? CSharpNames.Constant(constant.Value);
             case BoundCachedExpression cached: return _context.CachedExpressions.Get(cached);
             case BoundEnumExpression enumeration:
                 return "(" + string.Join(" | ", enumeration.Fields.Select(f => f.ContainingType.CSharpName() + "." + CSharpNames.Identifier(f.Name))) + ")";
