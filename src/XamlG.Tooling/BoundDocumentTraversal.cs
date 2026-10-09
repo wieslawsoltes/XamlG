@@ -52,6 +52,7 @@ public static class BoundDocumentTraversal
         BoundMarkupExpression markup => ObjectExpressions(markup.Extension),
         BoundChoiceExpression choice => ObjectExpressions(choice.Extension).Concat(choice.Branches.SelectMany(b => new[] { b.Option, b.Value })).Concat(choice.Default == null ? Enumerable.Empty<BoundExpression>() : new[] { choice.Default }),
         BoundCastExpression cast => new[] { cast.Value },
+        BoundCachedExpression cached => new[] { cached.Value },
         BoundValueConverterExpression converter => new[] { converter.Value },
         BoundArrayExpression array => array.Values,
         BoundCollectionExpression collection => collection.Values,

@@ -9,6 +9,7 @@ internal static class AvaloniaResourceNames
         BoundObjectExpression value => Contains(value.Object),
         BoundMarkupExpression value => Contains(value.Extension),
         BoundCastExpression value => Contains(value.Value),
+        BoundCachedExpression value => Contains(value.Value),
         BoundValueConverterExpression value => Contains(value.Value),
         BoundArrayExpression value => value.Values.Any(Contains),
         BoundCollectionExpression value => value.Values.Any(Contains),

@@ -28,6 +28,9 @@ internal sealed class EmissionContext : IDisposable
     public DynamicSetterEmitter DynamicSetters => _dynamicSetters ??= new(this);
     private DynamicAddEmitter? _dynamicAdds;
     public DynamicAddEmitter DynamicAdds => _dynamicAdds ??= new(this);
+    private CachedExpressionEmitter? _cachedExpressions;
+    public CachedExpressionEmitter CachedExpressions => _cachedExpressions ??= new(this);
+    public bool ShareCachedValues { get; set; }
     public CSharpWriter Writer { get; } = new();
     private TemporaryLocalPool? _locals;
     public TemporaryLocalPool Locals => _locals ??= new(this);

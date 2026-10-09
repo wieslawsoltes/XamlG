@@ -137,9 +137,9 @@ public sealed class XamlProjectCompiler
         {
             var emission = emissions[i];
             if (!emission.Success) continue;
-            var owned = emission.SharedSources.Where(source => published.Add(source.TypeName)).ToArray();
+            var owned = emission.SharedSources.Where(source => published.Add(source.Identity)).ToArray();
             if (owned.Length == 0) continue;
-            var identity = string.Join("\n", owned.Select(source => source.TypeName));
+            var identity = string.Join("\n", owned.Select(source => source.Identity));
             if (ReferenceEquals(emission, entries[i].Output))
             {
                 var entry = entries[i];

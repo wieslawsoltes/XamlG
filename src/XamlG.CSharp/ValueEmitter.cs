@@ -19,6 +19,7 @@ internal sealed class ValueEmitter
         BoundConstantExpression or BoundEnumExpression or BoundTypeExpression or BoundMethodHandleExpression or
             BoundStaticExpression or BoundParseExpression => false,
         BoundCastExpression cast => UsesFrame(cast.Value),
+        BoundCachedExpression cached => UsesFrame(cached.Value),
         BoundNewExpression creation => creation.Arguments.Any(UsesFrame),
         BoundArrayExpression array => array.Values.Any(UsesFrame),
         BoundCollectionExpression collection => collection.Values.Any(UsesFrame),
@@ -40,6 +41,7 @@ internal sealed class ValueEmitter
             case BoundChoiceExpression choice: return new ChoiceExpressionEmitter(_context, _objects, this).Emit(choice, frame);
             case BoundResourceExpression resource: return new ResourceExpressionEmitter(_context).Emit(resource, frame);
             case BoundConstantExpression constant: return CSharpNames.Constant(constant.Value);
+            case BoundCachedExpression cached: return _context.CachedExpressions.Get(cached);
             case BoundEnumExpression enumeration:
                 return "(" + string.Join(" | ", enumeration.Fields.Select(f => f.ContainingType.CSharpName() + "." + CSharpNames.Identifier(f.Name))) + ")";
             case BoundCastExpression cast: return "((" + cast.TargetType.CSharpName() + ")(" + Emit(cast.Value, frame) + "))";

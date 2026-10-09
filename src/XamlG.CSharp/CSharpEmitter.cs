@@ -18,6 +18,7 @@ public sealed class CSharpEmitter
     {
         using var context = new EmissionContext(document, cancellationToken);
         context.SharedProperties = sharedProperties;
+        context.ShareCachedValues = shareServices;
         if (document.IsSkipped)
             return new(context.Id + ".xaml.g.cs", string.Empty, string.Empty, null, string.Empty,
                 context.Diagnostics.ToImmutableArray(), ImmutableArray<XamlSourceMapping>.Empty) { IsSkipped = true };
@@ -104,7 +105,7 @@ public sealed class CSharpEmitter
             ComponentInitializationEmitter.Emit(context, populate);
         flow.EmitContextHelpers(); flow.EmitNamespaceMaps();
         new ServiceContractEmitter(context).Emit();
-        context.DynamicSetters.Emit(); context.DynamicAdds.Emit(); context.EmitMetadataHelpers();
+        context.DynamicSetters.Emit(); context.DynamicAdds.Emit(); context.CachedExpressions.EmitHelpers(flow); context.EmitMetadataHelpers();
         if (nesting == 0) writer.Close(); else for (var i = 0; i < nesting; i++) writer.Close();
         if (namespaceName.Length != 0) writer.Close();
         if (exportResources) XamlResourceExports.Emit(context, typeName, build);
@@ -117,6 +118,7 @@ public sealed class CSharpEmitter
                     ? ImmutableArray.Create(new SharedGeneratedSource(services.TypeName, services.Source))
                     : ImmutableArray<SharedGeneratedSource>.Empty)
                     .AddRange(sharedProperties?.Sources.Select(entry => entry.Source) ?? Enumerable.Empty<SharedGeneratedSource>())
+                    .AddRange(context.CachedExpressions.SharedSources)
             };
     }
 }
