@@ -1,3 +1,5 @@
+import { readExecutionConfig, executionAssets } from './ui-execution-policy.js';
+
 // Render-host client. Only a reviewed execution frame may create this capability.
 // The isolated iframe and its dedicated worker receive assets and UI declarations, never tools.
 export async function create(assetBase) {
@@ -46,17 +48,19 @@ export async function create(assetBase) {
     const paths=manifest.split(/\r?\n/).map(path=>path.trim()).filter(Boolean);
     if(paths.length<5||paths.length>2048||new Set(paths).size!==paths.length||paths.some(path=>!/^(?:_framework|references)\/[A-Za-z0-9_.\/-]+$/.test(path)||path.includes('..')))throw new Error('Invalid execution asset manifest.');
     const loader=paths.find(path=>/^_framework\/dotnet(?:\.[A-Za-z0-9_-]+)?\.js$/.test(path)&&!path.includes('native')&&!path.includes('runtime')&&!path.includes('boot'));
-    const boot=paths.find(path=>/^_framework\/dotnet\.boot(?:\.[A-Za-z0-9_-]+)?\.js$/.test(path));
-    if(!loader||!boot)throw new Error('The published .NET loader and manifest are required for isolation.');
-    const files=new Array(paths.length);let index=0,total=0;
+    const boot=paths.find(path=>/^_framework\/dotnet\.boot(?:\.[A-Za-z0-9_-]+)?\.(?:js|json)$/.test(path));
+    if(!loader)throw new Error('The published .NET loader is required for isolation.');
+    const loaderBytes=await read(loader);
+    // .NET 10 production builds can embed their manifest in dotnet.js instead of
+    // publishing dotnet.boot.js. Read its JSON payload without executing loader code.
+    const config=readExecutionConfig(new TextDecoder().decode(boot?await read(boot):loaderBytes));
+    const selected=executionAssets(config,paths,loader);
+    const files=new Array(selected.length);let index=0,total=0;
     await Promise.all(Array.from({length:6},async()=>{
-      while(index<paths.length){const current=index++,name=paths[current],bytes=await read(name);total+=bytes.byteLength;if(total>536870912)throw new Error('Execution assets exceed 512 MiB.');files[current]={name,bytes};}
+      while(index<selected.length){const current=index++,name=selected[current],bytes=name===loader?loaderBytes:await read(name);total+=bytes.byteLength;if(total>536870912)throw new Error('Execution assets exceed 512 MiB.');files[current]={name,bytes};}
     }));
-    const bootBytes=files.find(file=>file.name===boot).bytes;
-    const bootUrl=URL.createObjectURL(new Blob([bootBytes],{type:'text/javascript'}));
-    let config;try{config=structuredClone((await import(bootUrl)).config);}finally{URL.revokeObjectURL(bootUrl);}
-    if(!config?.resources)throw new Error('Invalid trusted .NET boot manifest.');
-    const source=new TextDecoder().decode(await read('ui-execution-worker.js'));
+    const source=new TextDecoder().decode(await read('ui-execution-policy.js')) + '\n' +
+      new TextDecoder().decode(await read('ui-execution-worker.js'));
     await connected;
     channel.port1.postMessage({type:'bootstrap',base:base.href,source,config,loader,files},files.map(file=>file.bytes));
     const limits=await ready;

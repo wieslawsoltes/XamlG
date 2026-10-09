@@ -35,20 +35,29 @@ async function bootstrap(event) {
     const original = message.config;
     if (!original || !original.resources) throw new Error('The trusted runtime manifest is missing.');
     const resources = original.resources, assets = [];
+    if (!Array.isArray(resources.wasmNative) || resources.wasmNative.length !== 1) throw new Error('One native Wasm runtime is required.');
+    const native = resources.wasmNative[0], nativePath = '_framework/' + native.name;
+    const originalBytes = get(nativePath);
+    const digest = 'sha256-' + btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256',originalBytes))));
+    if (native.hash !== digest) throw new Error('Native runtime integrity check failed.');
+    const boundedMemory = constrainWasmMemory(originalBytes);
+    const nativeModule = await WebAssembly.compile(boundedMemory.bytes);
+    if (WebAssembly.Module.imports(nativeModule).some(item=>item.kind==='memory') ||
+        WebAssembly.Module.exports(nativeModule).filter(item=>item.kind==='memory').length !== 1)
+      throw new Error('Unsupported runtime memory imports or exports.');
+    files.set(nativePath,boundedMemory.bytes);
     const groups = { wasmNative: 'dotnetwasm', jsModuleNative: 'js-module-native', jsModuleRuntime: 'js-module-runtime',
       coreAssembly: 'assembly', assembly: 'assembly', lazyAssembly: 'assembly', coreVfs: 'vfs', vfs: 'vfs', icu: 'icu' };
     for (const [name,behavior] of Object.entries(groups)) {
       for (const asset of resources[name] || []) {
         if (!asset || typeof asset.name !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(asset.name)) throw new Error('Invalid runtime asset descriptor.');
         const path = '_framework/' + asset.name;
-        assets.push({ ...asset, behavior, isCore: behavior === 'assembly', loadRemote: false,
+        assets.push({ ...asset, hash: behavior === 'dotnetwasm' ? undefined : asset.hash, behavior, isCore: behavior === 'assembly', loadRemote: false,
           resolvedUrl: behavior.startsWith('js-module-') ? moduleUrl(path) : new URL(path,base).href,
           buffer: behavior.startsWith('js-module-') ? undefined : get(path) });
       }
     }
-    const memory = new WebAssembly.Memory({ initial: 1024, maximum: 8192 });
     const { dotnet } = await import(moduleUrl(message.loader));
-    if (typeof dotnet.withModuleConfig !== 'function') throw new Error('This runtime cannot supply the required bounded memory.');
     const runtime = await dotnet.withConfig({ ...original, assets, resources: undefined,
       debugLevel: 0, diagnosticTracing: false, environmentVariables: {}, appsettings: [], extensions: {},
       interpreterPgo: false, loadAllSatelliteResources: false, applicationArguments: [] })
@@ -60,10 +69,9 @@ async function bootstrap(event) {
         const path = '_framework/' + name;
         return Promise.resolve(response(path));
       })
-      .withModuleConfig({ wasmMemory: memory })
       .create();
-    if (typeof runtime.localHeapViewU8 !== 'function' || runtime.localHeapViewU8().buffer !== memory.buffer)
-      throw new Error('The runtime did not honor the isolated 512 MiB Wasm memory ceiling.');
+    if (typeof runtime.localHeapViewU8 !== 'function' || runtime.localHeapViewU8().byteLength > boundedMemory.maximumPages * 65536)
+      throw new Error('Invalid bounded runtime memory.');
     const exports = await runtime.getAssemblyExports('XamlG.Playground.dll');
     const api = exports.XamlG.Playground.UiCSharpWorkerExports;
     await api.Initialize(base.href);
@@ -71,9 +79,10 @@ async function bootstrap(event) {
     // Defense in depth: evaluated code gets no worker spawning or cross-origin messaging APIs.
     for (const name of ['Worker','SharedWorker','BroadcastChannel','WebSocket','EventSource','WebTransport'])
       Object.defineProperty(globalThis,name,{ configurable:false,writable:false,value:class { constructor(){throw new Error('This API is unavailable in approved execution.');} } });
+    Object.defineProperty(globalThis,'postMessage',{ configurable:false,writable:false,value:()=>{throw new Error('Only the trusted execution bridge may send results.');} });
     ready = true;
     addEventListener('message', onCall);
-    reply({ type: 'ready', limits: { wasmMemoryBytes: 536870912, compilationMilliseconds: 20000, interactionMilliseconds: 3000, network: false, execution: 'dedicated-worker' } });
+    reply({ type: 'ready', limits: { wasmMemoryBytes: boundedMemory.maximumPages * 65536, compilationMilliseconds: 20000, interactionMilliseconds: 3000, network: false, execution: 'dedicated-worker' } });
   } catch (error) { fail(error); }
 }
 function onCall(event) {

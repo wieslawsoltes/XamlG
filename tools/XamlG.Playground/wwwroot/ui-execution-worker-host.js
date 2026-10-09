@@ -3,12 +3,13 @@ const opaque = globalThis.origin === 'null';
 const policy = document.createElement('meta');policy.httpEquiv = 'Content-Security-Policy';
 policy.content = "default-src 'none'; script-src blob: 'unsafe-eval' 'wasm-unsafe-eval'; worker-src blob:; connect-src 'none'; img-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 document.head.append(policy);
-let worker = null, channel = null, used = false, active = null, stopped = false, boot = null;
+let worker = null, workerUrl = null, channel = null, used = false, active = null, stopped = false, boot = null;
 const send = message => { if (channel && !stopped) channel.postMessage(message); };
 function stop(reason) {
   if(stopped)return;clearTimeout(boot);
   if(active){clearTimeout(active.timer);active=null;}
   worker?.terminate();worker=null;
+  if(workerUrl){URL.revokeObjectURL(workerUrl);workerUrl=null;}
   send({type:'fatal',error:String(reason||'Execution stopped.').slice(0,4096)});
   stopped=true;channel?.close();channel=null;
 }
@@ -28,14 +29,15 @@ addEventListener('message',event=>{
     if(value?.type==='call'){call(value);return;}
     if(value?.type!=='bootstrap'||worker||typeof value.source!=='string'||value.source.length>131072||!Array.isArray(value.files)||value.files.length>2048){stop('Invalid worker bootstrap.');return;}
     let bytes=0;for(const file of value.files){if(typeof file.name!=='string'||!(file.bytes instanceof ArrayBuffer)||(bytes+=file.bytes.byteLength)>536870912){stop('Execution asset limit exceeded.');return;}}
-    const url=URL.createObjectURL(new Blob([value.source],{type:'text/javascript'}));
-    worker=new Worker(url,{type:'module',name:'xamlg-approved-csharp'});URL.revokeObjectURL(url);
+    workerUrl=URL.createObjectURL(new Blob([value.source],{type:'text/javascript'}));
+    // Module-worker loading is asynchronous. Keep its source alive until startup completes.
+    worker=new Worker(workerUrl,{type:'module',name:'xamlg-approved-csharp'});
     boot=setTimeout(()=>stop('The isolated .NET runtime did not initialize.'),120000);
     worker.onerror=event=>{event.preventDefault();stop(event.message||'Execution worker failed.');};
     worker.onmessageerror=()=>stop('Invalid execution worker message.');
     worker.onmessage=event=>{
       const result=event.data;
-      if(result?.type==='ready'){clearTimeout(boot);send({type:'ready',limits:result.limits});return;}
+      if(result?.type==='ready'){clearTimeout(boot);if(workerUrl){URL.revokeObjectURL(workerUrl);workerUrl=null;}send({type:'ready',limits:result.limits});return;}
       if(result?.type==='fatal'){stop(result.error);return;}
       if(result?.type!=='result'||!active||result.id!==active.id||typeof result.json!=='string'||result.json.length>2097152){stop('Invalid execution result.');return;}
       clearTimeout(active.timer);active=null;

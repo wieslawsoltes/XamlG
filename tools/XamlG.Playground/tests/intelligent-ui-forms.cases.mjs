@@ -40,11 +40,15 @@ test('native forms gate submission while retaining editable state and computed e
     await expect(app.guest.locator('details')).not.toContainText('Name is required.');
     await clickNativeTopButton(app.guest);
     await expect(app.guest.locator('details')).toContainText('Saved');
-    await expect(app.guest.getByRole('status')).toContainText('state 2');
+    await expect(app.guest.getByRole('status')).toContainText('state 3');
     snapshot = await mcp.call('xamlg_ui_read', { id: marker.id });
     expect(snapshot.state).toEqual({ name: 'Browser project', submitted: true });
     const calls = await app.host.evaluate(() => window.nativeRequests.filter(call => call.name !== 'xamlg_ui_read'));
-    expect(calls.map(call => call.name)).toEqual(['xamlg_ui_state_action']);
+    expect(calls.map(call => call.name)).toEqual(['xamlg_ui_form_submit', 'xamlg_ui_state_action']);
+    expect(calls[0].arguments.expectedStateRevision).toBe(1);
+    expect(calls[1].arguments.expectedStateRevision).toBe(2);
+    expect(snapshot.stateRevision).toBe(3);
+    expect(snapshot.roots[0].formState.submitted).toBe(true);
     await expect(app.guest.getByRole('region', { name: 'Review UI action', exact: true })).toHaveCount(0);
     await expect(app.guest.getByRole('alert')).toHaveCount(0);
     expect(app.errors).toEqual([]);
@@ -83,3 +87,5 @@ test('native repeated actions retain item identity after data reordering', async
     await expect(app.guest.getByRole('alert')).toHaveCount(0); expect(app.errors).toEqual([]);
   } finally { if (app) await app.host.close(); await mcp.close(); }
 });
+
+//
