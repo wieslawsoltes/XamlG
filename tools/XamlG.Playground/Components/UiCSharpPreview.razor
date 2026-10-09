@@ -9,6 +9,7 @@
     <p>Full Roslyn C# runs in a disposable opaque-origin frame, not in the editor. It receives no provider keys, agent permissions or workspace-storage access. The frame is not a hard CPU/memory sandbox. Only run code you trust.</p>
     @foreach (var proposal in Workspace.Proposals?.SnapshotLocal() ?? [])
     { <button disabled="@_running" @onclick="() => SelectProposal(proposal)">Review proposal @proposal.Id[..8] · @proposal.Status</button> }
+    <button disabled="@(_running || Workspace.Proposals?.SnapshotLocal().Count is not > 0)" @onclick="ClearProposals">Clear C# proposals</button>
     <label>Intelligent XAML with full C#<textarea aria-label="Full C# intelligent XAML" @bind="_xaml" @bind:event="oninput" @bind:after="InvalidateReview" disabled="@_running"></textarea></label>
     <label>Initial state JSON<textarea aria-label="Full C# initial state" @bind="_state" @bind:event="oninput" @bind:after="InvalidateReview" disabled="@_running"></textarea></label>
     <label>Data JSON<textarea aria-label="Full C# data" @bind="_data" @bind:event="oninput" @bind:after="InvalidateReview" disabled="@_running"></textarea></label>
@@ -34,7 +35,10 @@
     private string _xaml = "<StackPanel xmlns=\"https://github.com/avaloniaui\" xmlns:ui=\"urn:xamlg:intelligent-ui\" Spacing=\"12\"><Slider ui:Bind=\"n\" Minimum=\"1\" Maximum=\"20\" IsSnapToTickEnabled=\"True\" TickFrequency=\"1\"/><TextBlock Text=\"{ui:Expr &quot;Sum: &quot; + Enumerable.Range(1, state.GetProperty(&quot;n&quot;).GetInt32()).Sum()}\"/></StackPanel>";
     private bool _running, _disposed;
     private long _generation;
+    protected override void OnInitialized() => Workspace.Changed += WorkspaceChanged;
+    private void WorkspaceChanged() { if (!_disposed) _ = InvokeAsync(StateHasChanged); }
     private void InvalidateReview() { _reviewed = null; _reviewHash = null; _proposal = null; }
+    private void ClearProposals() { if (_running) return; InvalidateReview(); Workspace.Proposals?.ClearLocal(); }
     private void SelectProposal(UiCSharpProposal proposal)
     {
         InvalidateReview(); _proposal = proposal; _xaml = proposal.Request.Xaml;
@@ -89,7 +93,7 @@
     }
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return; _disposed = true; await ResetAsync();
+        if (_disposed) return; _disposed = true; Workspace.Changed -= WorkspaceChanged; await ResetAsync();
         if (_module != null) await _module.DisposeAsync();
     }
 }

@@ -41,7 +41,6 @@ public static class UiSourceExporter
         root.Add(new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName));
         return root.ToString();
     }
-
     /// <summary>Trusted wrapper around an inert JSON declaration. Optional host-supplied compiler
     /// and native catalogs preserve application extensions; full C# still requires an approved compiler.</summary>
     public static string CSharp(UiSnapshot snapshot)
@@ -65,7 +64,8 @@ public static class UiSourceExporter
             public Control View => _session.View;
             public UiSnapshot Snapshot => _session.Snapshot!;
             public event Action<UiActionIntent>? ActionRequested;
-            public GeneratedIntelligentView(UiCompiler? compiler = null, UiAvaloniaCatalog? nativeCatalog = null)
+            public GeneratedIntelligentView() : this(null, null) { }
+            public GeneratedIntelligentView(UiCompiler? compiler, UiAvaloniaCatalog? nativeCatalog = null)
             {
                 _store = new UiSessionStore(compiler);
                 var request = JsonSerializer.Deserialize<UiPublish>(

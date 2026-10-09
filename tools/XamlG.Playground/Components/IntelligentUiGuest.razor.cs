@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Avalonia;
+using Avalonia.Browser;
 using Avalonia.Styling;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
@@ -16,6 +18,7 @@ public partial class IntelligentUiGuest
     private readonly CancellationTokenSource _lifetime = new();
     private DotNetObjectReference<IntelligentUiGuest>? _reference;
     private IJSObjectReference? _module, _bridge;
+    private AvaloniaView? _view;
     private UiAvaloniaRenderer? _renderer;
     private UiCSharpExpressionCompiler? _fullCompiler;
     private UiSessionStore? _executionStore;
@@ -23,20 +26,30 @@ public partial class IntelligentUiGuest
     private UiActionIntent? _review;
     private UiActionCall? _reviewCall;
     private string _status = "Starting native Avalonia…";
-    private string? _error;
+    private string? _error, _lastFallback;
     private bool _disposed, _executed;
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
         try
         {
-            await Preview.InitializeAsync(_elementId, new Uri(Navigation.BaseUri));
-            _renderer = new(); _renderer.StateChanged += StateChanged; _renderer.ActionRequested += ActionRequested;
-            await Preview.ShowAsync(_renderer.View);
+            var baseUri = new Uri(Navigation.BaseUri);
+            await AppBuilder.Configure<PreviewApplication>().WithInterFont().SetupBrowserAppAsync(new BrowserPlatformOptions
+            {
+                FrameworkAssetPathResolver = file => new Uri(baseUri, "_content/Avalonia.Browser/" + file).AbsoluteUri,
+                RegisterAvaloniaServiceWorker = false
+            });
+            // Use the same direct native control host as a Studio conversation card.
+            // Designer/reload surfaces have a separate lifetime and are not initialized here.
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _renderer = new(); _renderer.StateChanged += StateChanged; _renderer.ActionRequested += ActionRequested;
+                _view = new AvaloniaView(_elementId) { Content = _renderer.View };
+            });
             _reference = DotNetObjectReference.Create(this);
-            _module = await JavaScript.InvokeAsync<IJSObjectReference>("import", new Uri(new Uri(Navigation.BaseUri), "ui-native-guest.js").AbsoluteUri);
+            _module = await JavaScript.InvokeAsync<IJSObjectReference>("import", new Uri(baseUri, "ui-native-guest.js").AbsoluteUri);
             _bridge = await _module.InvokeAsync<IJSObjectReference>("connect", _reference, Mode);
-            _status = Mode == "mcp" ? "Native Avalonia connected; waiting for a UI result." : "Waiting for an explicitly approved C# declaration.";
+            if (_snapshot == null) _status = Mode == "mcp" ? "Native Avalonia connected; waiting for a UI result." : "Waiting for an explicitly approved C# declaration.";
             StateHasChanged();
         }
         catch (Exception error) { await ReceiveError(error.Message); }
@@ -48,13 +61,23 @@ public partial class IntelligentUiGuest
         if (snapshot.Id.Length > 80 || snapshot.SessionId.Length != 32 || snapshot.Revision < 1 || snapshot.StateRevision < 0) throw new UiException("invalid_snapshot", "Invalid UI identity.");
         if (_snapshot?.SessionId == snapshot.SessionId && (snapshot.Revision < _snapshot.Revision || snapshot.Revision == _snapshot.Revision && snapshot.StateRevision < _snapshot.StateRevision)) return;
         await Dispatcher.UIThread.InvokeAsync(() => _renderer.Apply(snapshot));
-        _snapshot = snapshot; _review = null; _reviewCall = null;
+        _snapshot = snapshot; _lastFallback = snapshot.FallbackMarkdown; CancelReview();
         _status = $"Native Avalonia · revision {snapshot.Revision} · state {snapshot.StateRevision}";
         await InvokeAsync(StateHasChanged);
     }
     [JSInvokable]
-    public Task ReceiveError(string message)
-    { _error = message.Length > 4096 ? message[..4096] : message; return _disposed ? Task.CompletedTask : InvokeAsync(StateHasChanged); }
+    public async Task ReceiveError(string message)
+    {
+        _error = message.Length > 4096 ? message[..4096] : message;
+        if (_disposed) return;
+        if (message.Contains("released", StringComparison.OrdinalIgnoreCase) || message.Contains("replaced", StringComparison.OrdinalIgnoreCase) || message.Contains("unknown_surface", StringComparison.Ordinal) || message.Contains("no longer available", StringComparison.OrdinalIgnoreCase))
+        {
+            var snapshot = _snapshot; _snapshot = null; CancelReview();
+            if (snapshot != null && _renderer != null) await Dispatcher.UIThread.InvokeAsync(() => _renderer.Apply(snapshot with { Roots = [] }));
+            _status = "This UI session is no longer available.";
+        }
+        await InvokeAsync(StateHasChanged);
+    }
     [JSInvokable]
     public async Task HostContextChanged(JsonElement context)
     {
@@ -122,7 +145,12 @@ public partial class IntelligentUiGuest
         if (_disposed) return; _disposed = true; _lifetime.Cancel();
         if (_bridge != null) { try { await _bridge.InvokeVoidAsync("dispose"); } catch (JSDisconnectedException) { } await _bridge.DisposeAsync(); }
         if (_module != null) await _module.DisposeAsync(); _reference?.Dispose();
-        await Dispatcher.UIThread.InvokeAsync(() => { _renderer?.Dispose(); _executionStore?.Clear(); _fullCompiler?.Dispose(); Preview.Dispose(); });
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (_view != null) _view.Content = null;
+            _renderer?.Dispose(); _executionStore?.Clear(); _fullCompiler?.Dispose();
+            if ((object?)_view is IDisposable disposable) disposable.Dispose(); _view = null;
+        });
         _lifetime.Dispose();
     }
 }

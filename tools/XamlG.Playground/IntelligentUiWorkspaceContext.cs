@@ -15,16 +15,19 @@ public sealed class IntelligentUiWorkspaceContext
     {
         if (Store != null) Detach(Store);
         Store = store; Proposals = proposals; _identity = identity; _exclusive = exclusive;
-        store.Changed += OnChanged; store.Released += OnReleased; Changed?.Invoke();
+        store.Changed += OnChanged; store.Released += OnReleased; proposals.Changed += Notify;
+        Notify();
     }
-    private void OnChanged(UiSnapshot _) => Changed?.Invoke();
-    private void OnReleased(string _) => Changed?.Invoke();
+    private void OnChanged(UiSnapshot _) => Notify();
+    private void OnReleased(string _) => Notify();
+    private void Notify() => Changed?.Invoke();
     public Task ExclusiveAsync(Func<CancellationToken, Task> operation, CancellationToken token)
         => _exclusive?.Invoke(operation, token) ?? Task.FromException(new InvalidOperationException("The Studio workspace is not ready."));
     public void Detach(UiSessionStore store)
     {
         if (!ReferenceEquals(Store, store)) return;
         store.Changed -= OnChanged; store.Released -= OnReleased;
-        Store = null; Proposals = null; _identity = null; _exclusive = null; Changed?.Invoke();
+        if (Proposals != null) Proposals.Changed -= Notify;
+        Store = null; Proposals = null; _identity = null; _exclusive = null; Notify();
     }
 }

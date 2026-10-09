@@ -15,6 +15,7 @@ public sealed class UiCSharpProposals(UiSessionStore workspace)
     private readonly object _gate = new();
     private readonly Dictionary<string, (string Owner, UiCSharpProposal Proposal)> _entries = new(StringComparer.Ordinal);
     private long _epoch = workspace.DataLifetime;
+    public event Action? Changed;
     public void Register(AutomationCatalog catalog)
     {
         catalog.Add<UiPublish, UiCSharpProposal>("xamlg_ui_csharp_propose", "Propose a full Roslyn C# intelligent UI for explicit local owner review. Does NOT compile, execute, request provider inference, grant permissions or open a frame. The owner uses Intelligent UI workspace to inspect the exact source and start a disposable isolated frame. Use ordinary JsonElement C# APIs for state/data. No action authority is available inside that frame.", AutomationScope.Agent, AutomationEffect.Edit,
@@ -46,7 +47,7 @@ public sealed class UiCSharpProposals(UiSessionStore workspace)
                 if (_entries.Count >= 8) throw new UiException("proposal_limit", "The owner must clear finished proposals before adding another.");
                 _entries.Add(proposal.Id, (owner, proposal));
             }
-            return proposal;
+            Notify(); return proposal;
         }
         catch (UiException error) { throw new AutomationException(error.Code, error.Message); }
     }
@@ -63,10 +64,17 @@ public sealed class UiCSharpProposals(UiSessionStore workspace)
             if (!_entries.TryGetValue(id, out var entry) || entry.Proposal.Sha256 != approvedSha256) throw new UiException("unknown_proposal", "The reviewed proposal was retired.");
             _entries[id] = (entry.Owner, entry.Proposal with { Status = error == null ? "completed" : "failed", Result = result?.Clone(), Error = error });
         }
+        Notify();
     }
-    public void ClearLocal() { lock (_gate) _entries.Clear(); }
+    public void ClearLocal() { lock (_gate) _entries.Clear(); Notify(); }
     private (string Owner, UiCSharpProposal Proposal) Get(string id, string owner)
         => _entries.TryGetValue(id, out var entry) && entry.Owner == owner ? entry : throw new AutomationException("unknown_proposal", "This proposal is unavailable.");
     private void Synchronize()
     { var epoch = workspace.DataLifetime; if (epoch != _epoch) { _entries.Clear(); _epoch = epoch; } }
+    private void Notify()
+    {
+        if (Changed is not { } handlers) return;
+        foreach (Action handler in handlers.GetInvocationList())
+            try { handler(); } catch (Exception error) when (error is not OutOfMemoryException) { }
+    }
 }
