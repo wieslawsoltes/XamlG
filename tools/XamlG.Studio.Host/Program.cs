@@ -109,7 +109,7 @@ using var agents = new AgentWorkbench(bridge, providers, new BrowserAgentWorkspa
 if (await sessionStore.LoadAsync() is { } savedSession) agents.RestoreSession(savedSession);
 agents.Harness.PersistSession = sessionStore.SaveAsync;
 var mcp = builder.Services.AddMcpServer(options => options.ServerInfo = new Implementation { Name = "XamlG Studio", Version = "0.1.0" })
-    .WithAutomation(bridge).WithAutomationTasks(mcpTasks, () => bridge.CurrentSessionLifetime);
+    .WithAutomation(bridge).WithAutomationUi().WithAutomationTasks(mcpTasks, () => bridge.CurrentSessionLifetime);
 if (builder.Configuration.GetValue("stdio", false))
 {
     builder.Logging.ClearProviders();

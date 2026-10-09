@@ -10,12 +10,12 @@ public enum PermissionProfile { Ask, ReadOnly, Plan, AutoEdit, FullAccess, Custo
 
 public sealed record AutomationTool(string Name, string Description, JsonElement InputSchema,
     AutomationScope Scope, AutomationEffect Effect, bool Destructive = false,
-    IReadOnlyList<AutomationOperationEffect>? AdditionalEffects = null)
+    IReadOnlyList<AutomationOperationEffect>? AdditionalEffects = null, JsonElement? Metadata = null)
 {
     public IEnumerable<AutomationOperationEffect> Effects => new[] { new AutomationOperationEffect(Scope, Effect) }.Concat(AdditionalEffects ?? []);
 }
 public sealed record AutomationOperationEffect(AutomationScope Scope, AutomationEffect Effect);
-public sealed record AutomationResource(string Uri, string Name, string Description, string MimeType = "application/json", bool IsTemplate = false);
+public sealed record AutomationResource(string Uri, string Name, string Description, string MimeType = "application/json", bool IsTemplate = false, JsonElement? Metadata = null);
 public sealed record AutomationPrompt(string Name, string Description, string Text);
 public sealed record AutomationCallContext(string Caller, CancellationToken CancellationToken = default, string? PrincipalId = null);
 public sealed record AutomationReview(AutomationTool Tool, JsonElement Arguments, string Caller, JsonElement? Preview = null);
@@ -37,16 +37,8 @@ public sealed class AutomationException(string code, string message) : Exception
 
 /// <summary>Optional dynamic discovery. Raise after publishing the complete catalog change;
 /// this event contains no project source or credentials.</summary>
-public interface IAutomationCatalogEvents
-{
-    event Action? CatalogChanged;
-}
-
-public interface IAutomationResourceEvents
-{
-    event Action<string>? ResourceChanged;
-}
-
+public interface IAutomationCatalogEvents { event Action? CatalogChanged; }
+public interface IAutomationResourceEvents { event Action<string>? ResourceChanged; }
 public sealed record AutomationCompletion(IReadOnlyList<string> Values, int Total, bool HasMore);
 public interface IAutomationCompletions
 {

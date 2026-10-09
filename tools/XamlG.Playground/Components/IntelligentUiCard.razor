@@ -1,0 +1,57 @@
+@using System.Text.Json
+@using XamlG.IntelligentUI
+@implements IAsyncDisposable
+@inject IJSRuntime JavaScript
+
+<article class="intelligent-ui-card" data-surface-id="@Presentation.Id" data-session-id="@Presentation.SessionId" aria-label="Intelligent UI response">
+    <header><strong>Interactive Avalonia UI</strong><small>@(_snapshot == null ? "Text fallback" : $"revision {_snapshot.Revision} · state {_snapshot.StateRevision}")</small><button @onclick="() => _inspect = !_inspect" aria-expanded="@_inspect">Inspect UI</button></header>
+    <div id="@_elementId" class="intelligent-ui-native" hidden="@(_snapshot == null)" aria-label="Native Avalonia response"></div>
+    @if (_snapshot == null)
+    {
+        <AgentMarkdown Text="@Presentation.FallbackMarkdown" CopyRequested="CopyAsync" />
+        <p class="muted" role="status">@(_session?.Diagnostic ?? (Ready ? "Loading the native view…" : "Waiting for the Avalonia host…"))</p>
+    }
+    @if (_error != null) { <p class="intelligent-ui-error" role="alert">@_error</p> }
+    @if (_failedMountId != null) { <button @onclick="RetryNativeView" disabled="@_mounting">Retry native view</button> }
+    @if (_notice != null) { <p role="status">@_notice</p> }
+    @if (_intent != null)
+    {
+        <section class="intelligent-ui-review" aria-label="Review intelligent UI action">
+            <strong>Review @_intent.Kind action</strong>
+            @if (_intent.Kind == "tool")
+            {
+                <p><code>@_intent.Tool</code> — @ReviewedTool?.Description</p>
+                @if (ReviewedTool != null) { <p>@string.Join(", ", ReviewedTool.Effects.Select(effect => effect.Scope + ": " + effect.Effect))</p> }
+                <pre>@_intent.Arguments?.GetRawText()</pre>
+                <p>This is a separate user-initiated operation. It does not grant permissions to the agent.</p>
+            }
+            else
+            {
+                <pre>@_intent.Text</pre>
+                @if (_intent.Kind == "message") { <p>This fills the message composer. Use the normal Run review to send it.</p> }
+            }
+            <button @onclick="ConfirmAsync" disabled="@(_busy || (_intent.Kind == "tool" && (ReviewedTool == null || ToolRequested == null)))">Confirm action</button>
+            <button @onclick="CancelAction" disabled="@_busy">Cancel</button>
+        </section>
+    }
+    @if (_inspect && _snapshot is { } snapshot)
+    {
+        <section class="intelligent-ui-inspector" aria-label="Intelligent UI inspector">
+            <div class="intelligent-ui-toolbar"><button @onclick="ExportXamlAsync">Export resolved XAML</button><button @onclick="ExportCSharpAsync">Export reactive C#</button><button @onclick="ExportSnapshotAsync">Export snapshot</button></div>
+            <h4>Live input state</h4>
+            @foreach (var state in snapshot.State.EnumerateObject())
+            {
+                <label @key="state.Name + _inputRevision">@state.Name
+                    @if (state.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    { <input type="checkbox" aria-label="@("UI state " + state.Name)" checked="@state.Value.GetBoolean()" @onchange="args => ChangeStateAsync(state.Name, args)" disabled="@(_busy || !HasInput(state.Name))" /> }
+                    else
+                    { <input type="@(state.Value.ValueKind == JsonValueKind.Number ? "number" : "text")" step="any" aria-label="@("UI state " + state.Name)" value="@StateText(state.Value)" @onchange="args => ChangeStateAsync(state.Name, args)" disabled="@(_busy || !HasInput(state.Name))" /> }
+                </label>
+            }
+            <details><summary>Intelligent XAML</summary><pre>@snapshot.Xaml</pre></details>
+            <details><summary>Bound data</summary><pre>@Pretty(snapshot.Data)</pre></details>
+            <details><summary>Computed text fallback</summary><pre>@snapshot.FallbackMarkdown</pre></details>
+            @if (!snapshot.Diagnostics.IsEmpty) { <details open><summary>Streaming diagnostics</summary>@foreach (var diagnostic in snapshot.Diagnostics) { <p>@diagnostic.Code: @diagnostic.Message</p> }</details> }
+        </section>
+    }
+</article>

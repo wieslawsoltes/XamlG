@@ -16,6 +16,8 @@
     { "id": "XamlG.Lsp", "project": "tools/XamlG.Lsp/XamlG.Lsp.csproj", "command": "xamlg-lsp" },
     { "id": "XamlG.Automation", "project": "src/XamlG.Automation/XamlG.Automation.csproj" },
     { "id": "XamlG.Mcp", "project": "src/XamlG.Mcp/XamlG.Mcp.csproj" },
+    { "id": "XamlG.IntelligentUI", "project": "src/XamlG.IntelligentUI/XamlG.IntelligentUI.csproj" },
+    { "id": "XamlG.IntelligentUI.Avalonia", "project": "src/XamlG.IntelligentUI.Avalonia/XamlG.IntelligentUI.Avalonia.csproj" },
     { "id": "XamlG.Agents", "project": "src/XamlG.Agents/XamlG.Agents.csproj" },
     { "id": "XamlG.Agents.OpenAI", "project": "src/XamlG.Agents.OpenAI/XamlG.Agents.OpenAI.csproj" },
     { "id": "XamlG.Agents.Anthropic", "project": "src/XamlG.Agents.Anthropic/XamlG.Agents.Anthropic.csproj" },

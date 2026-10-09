@@ -322,6 +322,7 @@ public partial class App
             var destructive = tool.Destructive || tool.Name is "xamlg_document_remove" or "xamlg_designer_edit" or "xamlg_project_restore" or "xamlg_project_undo" or "xamlg_project_redo";
             _automation.SetEffects(tool.Name, destructive, effects);
         }
+        InitializeIntelligentUi();
         _browserAgents = new(new BrowserAgentHost(this));
     }
 
@@ -456,7 +457,7 @@ public partial class App
         await DisconnectAutomationAsync();
         // Let cancelled operations leave the old project before installing its replacement.
         await _automationGate.WaitAsync();
-        _automationGate.Release();
+        try { _intelligentUi.Clear(); } finally { _automationGate.Release(); }
     }
     private void ApproveAutomation(bool allow) => _approval?.TrySetResult(allow);
 

@@ -1,0 +1,82 @@
+name: Intelligent UI
+on:
+  pull_request:
+    paths:
+      - 'src/XamlG.IntelligentUI*/**'
+      - 'src/XamlG.Automation/**'
+      - 'src/XamlG.Mcp/**'
+      - 'src/XamlG.Agents/**'
+      - 'tools/XamlG.Playground/**'
+      - 'tools/XamlG.Studio.Host/**'
+      - 'tests/XamlG.IntelligentUI.Tests/**'
+      - '.github/workflows/intelligent-ui.yml'
+      - 'XamlG.slnx'
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+concurrency:
+  group: intelligent-ui-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore native dependencies
+        run: |
+          mkdir -p artifacts/intelligent-ui
+          dotnet restore XamlG.slnx
+      - name: Check trusted MCP Apps script syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('src/XamlG.IntelligentUI/Resources/intelligent-ui.html').read_text()
+          Path('artifacts/intelligent-ui/ui-app.js').write_text(source.split('<script>', 1)[1].split('</script>', 1)[0])
+          PY
+          node --check artifacts/intelligent-ui/ui-app.js
+          node --check tools/XamlG.Playground/wwwroot/intelligent-ui.js
+      - name: Build native contracts
+        run: dotnet build XamlG.slnx -c Release --no-restore -warnaserror 2>&1 | tee artifacts/intelligent-ui/build.log
+      - name: Test native contracts
+        run: dotnet test XamlG.slnx -c Release --no-build --logger trx --results-directory artifacts/intelligent-ui/tests 2>&1 | tee artifacts/intelligent-ui/tests.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: intelligent-ui-test-results
+          path: |
+            artifacts/intelligent-ui/*.log
+            artifacts/intelligent-ui/tests
+          if-no-files-found: ignore
+          retention-days: 7
+  mcp-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: tools/XamlG.Playground
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          npx playwright test --config=playwright.ui.config.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: intelligent-ui-mcp-app-browser
+          path: |
+            tools/XamlG.Playground/ui-app-report
+            tools/XamlG.Playground/test-results
+          retention-days: 7
