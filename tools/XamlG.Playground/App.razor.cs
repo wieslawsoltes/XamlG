@@ -37,6 +37,7 @@ public partial class App
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_shellStateLoaded) try { await SaveShellStateAsync(); } catch (JSException error) { Report(error); }
         await ReconcileDockDocumentsAsync();
         await RevealDocumentBuffersAsync();
         if (firstRender) await InitializeStudioAsync();
@@ -50,11 +51,13 @@ public partial class App
         StateHasChanged();
         try
         {
-            _module ??= await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+            _module ??= await JavaScript.InvokeAsync<IJSObjectReference>("xamlgBoot.importModule", "studio.js");
             _shellHooks ??= await _module.InvokeAsync<IJSObjectReference>("installStudioShell");
             _theme = await _module.InvokeAsync<string>("loadTheme");
             await _module.InvokeVoidAsync("setTheme", _theme);
             await LoadLiveUpdatesAsync();
+            await RestoreInitialStateAsync();
+            await InitializeSavedAgentsAsync();
             await Compiler.InitializeAsync((current, total) =>
             {
                 if (_disposed) return;
@@ -64,13 +67,16 @@ public partial class App
             cancellationToken.ThrowIfCancellationRequested();
             await _module.InvokeVoidAsync("waitForElement", "avalonia-preview");
             await Preview.InitializeAsync("avalonia-preview", new Uri(Navigation.BaseUri));
+            Preview.IsDesignMode = _designMode;
             _automationReference ??= DotNetObjectReference.Create(this);
             await _module.InvokeVoidAsync("installAutomation", _automationReference);
             cancellationToken.ThrowIfCancellationRequested();
             _ready = true; _startupFailed = false;
+            await RestoreCompanionConnectionAsync();
             _status = "Ready · compile or run the project";
             await CompileSnapshotAsync(captureEditors: true);
             await RefreshAutomaticPreviewAsync();
+            await RestoreInitialDockLayoutAsync();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception error)
@@ -153,6 +159,7 @@ public partial class App
         ResetCompilerSettings();
         _selectedElement = null; _error = null; _result = null;
         ResetWorkspaceHistory();
+        await SaveDraftAsync();
         await CompileSnapshotAsync();
         await RefreshAutomaticPreviewAsync();
     }
@@ -184,9 +191,10 @@ public partial class App
         var previous = SourceRevision;
         RecordWorkspace();
         if (_module != null && (!onlyIfChanged || SourceRevision != previous))
-            await _module.InvokeVoidAsync("saveDraft", _document.Current.Text, _code, ResourceTexts(), CodeTexts(), Compiler.Settings);
+            await _module.InvokeVoidAsync("saveDraft", _document.Current.Text, _code, ResourceTexts(), CodeTexts(), Compiler.Settings, _workspaceEdits.CaptureState(), _browserAgents.WorkspaceIdentity);
     }
-    private async Task RestoreDraftAsync()
+    private Task RestoreDraftAsync() => RestoreDraftCoreAsync(startup: false);
+    private async Task RestoreDraftCoreAsync(bool startup)
     {
         if (_module == null || _busy) return;
         try
@@ -207,14 +215,20 @@ public partial class App
             documents.Add("Code.cs", draft.GetProperty("code").GetString() ?? string.Empty);
             documents.Add(CompilerSettingsPath, draft.TryGetProperty("compilerOptions", out var settings) && settings.ValueKind != JsonValueKind.Null ? settings.GetRawText() : DefaultCompilerSettingsText);
             ValidateWorkspace(documents);
-            await RetireAutomationWorkspaceAsync();
-            RestoreWorkspace(_workspaceEdits.ReplaceAll(SourceRevision, documents, "Restore draft", recordHistory: false));
-            ResetWorkspaceHistory();
-            await CompileSnapshotAsync();
-            await RefreshAutomaticPreviewAsync();
+            if (!startup) await RetireAutomationWorkspaceAsync();
+            if (draft.TryGetProperty("workspaceIdentity", out var identity) && identity.ValueKind == JsonValueKind.String && Guid.TryParse(identity.GetString(), out var workspaceId))
+                _browserAgents.WorkspaceIdentity = workspaceId.ToString("N");
+            if (draft.TryGetProperty("workspace", out var history) && history.ValueKind == JsonValueKind.Object)
+                RestoreWorkspace(_workspaceEdits.RestoreState(history.Deserialize<XamlG.Tooling.Editing.XamlWorkspaceSavedState>(XamlG.Automation.AutomationJson.Options)!));
+            else
+            {
+                RestoreWorkspace(_workspaceEdits.ReplaceAll(SourceRevision, documents, "Restore draft", recordHistory: false));
+                ResetWorkspaceHistory();
+            }
+            if (!startup) { await CompileSnapshotAsync(); await RefreshAutomaticPreviewAsync(); }
             if (!_autoCompile || !_autoPreview) _status = "Draft restored without executing it · review the code before Run";
         }
-        catch (Exception error) { Report(error); }
+        catch (Exception error) { if (startup) throw; Report(error); }
     }
     private async Task ExportAsync()
     {
@@ -259,6 +273,7 @@ public partial class App
         _dockReference?.Dispose();
         if (_shellHooks != null) { await _shellHooks.InvokeVoidAsync("dispose"); await _shellHooks.DisposeAsync(); }
         _browserAgents.Dispose();
+        DisposeIntelligentUi();
         RevokeAutomation(); _runtimeInspector?.Dispose(); _buildArtifacts.Dispose();
         if (_module != null) await _module.InvokeVoidAsync("disconnectAutomation");
         _automationReference?.Dispose();

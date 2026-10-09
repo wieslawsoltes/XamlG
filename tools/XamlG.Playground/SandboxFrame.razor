@@ -4,6 +4,8 @@
 @inject NavigationManager Navigation
 @using System.Reflection
 @using XamlG.Playground.Isolation
+@using XamlG.AvaloniaRuntime.Inspection
+@using System.Text.Json
 
 <div id="sandbox-view" style="position:fixed;inset:0;background:white"></div>
 @if (_error != null) { <pre style="position:fixed;inset:0;overflow:auto;padding:16px;background:#fff;color:#8a2334">@_error</pre> }
@@ -13,6 +15,21 @@
     private DotNetObjectReference<SandboxFrame>? _reference;
     private int _loaded;
     private string? _error;
+    private AvaloniaRuntimeInspector? _computer;
+    private object? _computerRoot;
+    private AvaloniaRuntimeInspector Computer()
+    {
+        var root = Preview.Root ?? throw new InvalidOperationException("Run the isolated preview first.");
+        if (!ReferenceEquals(root, _computerRoot)) { _computer?.Dispose(); _computer = new(root); _computerRoot = root; }
+        return _computer!;
+    }
+    [JSInvokable] public JsonElement ComputerObserve(ComputerObserveOptions options) => App.ComputerResult(Computer().ObserveComputer(options));
+    [JSInvokable] public async Task<JsonElement> ComputerActions(ComputerActionsRequest request)
+    {
+        Preview.IsDesignMode = false;
+        var result = await Computer().ComputerActionsAsync(request);
+        return App.ComputerResult(result.Capture, result.Completed, result.Error, result.FailedIndex);
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -62,6 +79,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        _computer?.Dispose();
         Preview.Dispose();
         if (_module != null)
         {

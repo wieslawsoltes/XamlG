@@ -56,6 +56,12 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
         VerifyAccess();
         var seen = new HashSet<AvaloniaObject>(ReferenceEqualityComparer.Instance);
         var ordered = new List<AvaloniaObject>();
+        // Browser popups live on an overlay beside the preview root. Include only
+        // hosts whose placement target is reached from this inspected project.
+        var popupHosts = (_root is Control rootControl ? TopLevel.GetTopLevel(rootControl)?.GetVisualDescendants() : null)?
+            .OfType<Avalonia.Controls.Primitives.OverlayPopupHost>().Take(MaximumNodes)
+            .Select(host => (Host: host, Parent: PopupOwner(host))).Where(item => item.Parent?.PlacementTarget != null)
+            .ToLookup(item => item.Parent!.PlacementTarget, item => item.Host);
         var pending = new Queue<(AvaloniaObject Object, int Depth)>();
         pending.Enqueue((_root, 0));
         while (pending.TryDequeue(out var entry))
@@ -66,6 +72,11 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
             ordered.Add(entry.Object);
             foreach (var child in VisualChildren(entry.Object).Concat(LogicalChildren(entry.Object)))
                 pending.Enqueue((child, entry.Depth + 1));
+            if (entry.Object is Control control)
+            {
+                if (control.ContextMenu is { IsOpen: true } menu) pending.Enqueue((menu, entry.Depth + 1));
+                if (popupHosts != null) foreach (var popup in popupHosts[control]) pending.Enqueue((popup, entry.Depth + 1));
+            }
         }
 
         // Publish only after traversal succeeds; a failed bounded read does not retire handles.
@@ -373,6 +384,10 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
         "CornerRadius" => typeof(CornerRadius), _ => throw new ArgumentException("Unsupported resource literal type.")
     };
 
+    [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(Avalonia.Controls.Primitives.OverlayPopupHost))]
+    private static Avalonia.Controls.Primitives.Popup? PopupOwner(Avalonia.Controls.Primitives.OverlayPopupHost host) =>
+        typeof(Avalonia.Controls.Primitives.OverlayPopupHost).GetProperty("InteractiveParent", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(host) as Avalonia.Controls.Primitives.Popup;
+
     private static IEnumerable<AvaloniaObject> VisualChildren(AvaloniaObject obj) =>
         obj is Visual visual ? visual.GetVisualChildren() : [];
     private static IEnumerable<AvaloniaObject> LogicalChildren(AvaloniaObject obj) =>
@@ -422,7 +437,7 @@ public sealed partial class AvaloniaRuntimeInspector : IDisposable
         foreach (var subscription in _ownedBindings.Values) subscription.Dispose();
         _ownedBindings.Clear();
         foreach (var obj in _objects.Values) obj.PropertyChanged -= OnPropertyChanged;
-        _objects.Clear(); _changes.Clear(); RuntimeChanged = null; _disposed = true;
+        _objects.Clear(); _changes.Clear(); _computerFrames.Clear(); RuntimeChanged = null; _disposed = true;
     }
     private sealed record ObjectIdentity(string Id);
 }

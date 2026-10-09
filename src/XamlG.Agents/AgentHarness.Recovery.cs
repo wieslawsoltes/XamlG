@@ -8,8 +8,9 @@ public sealed partial class AgentHarness
     private sealed class RunBudget { public int Requests; }
 
     private async Task<AgentReply?> RequestProviderAsync(AgentTask task, AgentRequest request, AgentRunOptions options,
-        AutomationLease lease, RunBudget budget, bool checkpoint = false)
+        AutomationLease lease, RunBudget budget, bool checkpoint = false, int? contextBytes = null)
     {
+        var inputEstimate = ((contextBytes ?? task.Provider.GetContextBytes(request)) + 3L) / 4;
         for (var retry = 0; ; retry++)
         {
             lease.Token.ThrowIfCancellationRequested();
@@ -24,7 +25,6 @@ public sealed partial class AgentHarness
             task.RetryAfterUtc = null;
             if (budget.Requests >= options.Limits.RequestsPerRun) { Pause(task, "Request limit reached."); return null; }
             if (task.TotalTokens >= options.Limits.TotalTaskTokens) { Pause(task, "Task token budget reached."); return null; }
-            var inputEstimate = (task.Provider.GetContextBytes(request) + 3L) / 4;
             var remaining = options.Limits.TotalTaskTokens - task.TotalTokens - inputEstimate;
             if (remaining < 1) { Pause(task, "The remaining task budget cannot fit the estimated input. Review the token limit."); return null; }
             var effective = request with { MaxOutputTokens = (int)Math.Min(request.MaxOutputTokens, remaining) };
@@ -108,10 +108,10 @@ public sealed partial class AgentHarness
         task.LastUsage = usage;
     }
 
-    private bool ReserveToolResults(AgentTask task, AgentRunOptions options, IReadOnlyList<AutomationTool> tools)
+    private bool ReserveToolResults(AgentTask task, AgentRunOptions options, IReadOnlyList<AutomationTool> tools, int? contextBytes = null)
     {
-        var request = new AgentRequest(task.Model, options.Instructions, task.Messages.ToArray(), tools, options.Limits.OutputTokensPerRequest);
-        task.NativeContextBytes = task.Provider.GetContextBytes(request);
+        var request = new AgentRequest(task.Model, RunInstructions(options), task.Messages.ToArray(), tools, options.Limits.OutputTokensPerRequest);
+        task.NativeContextBytes = contextBytes ?? task.Provider.GetContextBytes(request);
         var otherTasks = _tasks.Values.Where(other => other != task).Sum(other => (long)other.NativeContextBytes);
         var available = Math.Min(options.Limits.ContextBytes, 64_000_000 - otherTasks) - task.NativeContextBytes;
         var count = task.PendingReply!.ToolCalls.Count - task.NextTool;

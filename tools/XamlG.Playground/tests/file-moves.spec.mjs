@@ -1,5 +1,5 @@
 import { test, expect } from './studio-fixture.mjs';
-import { captureEditorState } from './editor-state.mjs';
+import { captureEditorState, savedProject as draft } from './editor-state.mjs';
 
 test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status !== testInfo.expectedStatus) await captureEditorState(page, 'failed: ' + testInfo.title);
@@ -14,7 +14,6 @@ async function ready(page) {
   await expect(page.locator('.statusbar')).toContainText('3 documents');
   await expect(page.getByLabel('Project resource', { exact: true })).toHaveValue('Resources/Palette.axaml');
 }
-const draft = page => page.evaluate(() => JSON.parse(localStorage.getItem('xamlg.draft')));
 const mainSource = page => page.evaluate(() => monaco.editor.getModels().find(m => m.getLanguageId() === 'xml' && m.getValue().includes('<StackPanel')).getValue());
 
 async function preview(page, destination = 'Themes/Colors.axaml') {

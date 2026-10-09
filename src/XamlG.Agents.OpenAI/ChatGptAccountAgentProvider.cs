@@ -7,8 +7,11 @@ namespace XamlG.Agents.OpenAI;
 
 /// <summary>Official Responses SDK adapter bound to one validated account registration.
 /// The output allowance is a local budget estimate: this route rejects max_output_tokens.</summary>
-public sealed class ChatGptAccountAgentProvider : IAgentProvider, IAgentProviderSession
+public sealed class ChatGptAccountAgentProvider : IAgentProvider, IAgentProviderSession, IAgentProviderState
 {
+    public string? AccountIdentity => AccountId;
+    public JsonElement SaveNative(object native) => OpenAIAgentProvider.SaveContinuation(native);
+    public object RestoreNative(JsonElement native) => OpenAIAgentProvider.RestoreContinuation(native);
     public const string ProviderId = "openai-chatgpt";
     private readonly ChatGptAccountManager _accounts;
     private readonly Uri _endpoint;

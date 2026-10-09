@@ -9,17 +9,28 @@ public class AgentWorkbenchSession : IDisposable
 {
     private readonly IReadOnlyDictionary<string, IAgentProvider> _providers;
     private readonly AgentHarness _harness;
+    private readonly Func<string?>? _workspaceIdentity;
     private readonly ConcurrentDictionary<string, Pending> _pending = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _gate = new();
     private Task? _run;
     private CancellationTokenSource? _runCancellation;
     private string? _runningId;
-    private readonly Queue<AgentEvent> _activity = new();
+    private readonly Queue<AgentEventDisplay> _activity = new();
     private int _activityBytes;
     private bool _disposed;
-    public AgentWorkbenchSession(IAutomationHost host, IEnumerable<IAgentProvider> providers, IAgentWorkspace? workspace = null, AgentPermissionConstraints? constraints = null)
-    { _providers = providers.ToDictionary(p => p.Id, StringComparer.Ordinal); _harness = new(host, workspace, constraints); _harness.EventPublished += RecordActivity; }
+    private long _stateRevision = 1, _cachedRevision;
+    private readonly string _sessionId = Guid.NewGuid().ToString("N");
+    private string? _externalState;
+    private JsonElement _cachedState;
+    private readonly object _stateGate = new();
+    private readonly System.Runtime.CompilerServices.ConditionalWeakTable<AgentEvent, AgentEventDisplay> _eventViews = new();
+    private DateTimeOffset? _cachedPermissionExpiry;
+    private AgentEventDisplay DisplayEvent(AgentEvent item) => _eventViews.GetValue(item, value => AgentEventDisplay.Create(value, 8192));
+    private static readonly HashSet<string> ReadActions = new(StringComparer.Ordinal)
+    { "state", "tools", "activity", "thread", "models", "model_choices", "pending_export", "export", "export_markdown", "handoff", "diff_file", "change_file", "block_preview", "diff", "patch", "changes" };
+    public AgentWorkbenchSession(IAutomationHost host, IEnumerable<IAgentProvider> providers, IAgentWorkspace? workspace = null, AgentPermissionConstraints? constraints = null, Func<string?>? workspaceIdentity = null)
+    { _providers = providers.ToDictionary(p => p.Id, StringComparer.Ordinal); _harness = new(host, workspace, constraints); _harness.EventPublished += RecordActivity; _workspaceIdentity = workspaceIdentity; }
     protected virtual IEnumerable<string> ProviderIds => _providers.Keys;
     protected virtual object? AccountState => null;
     protected virtual string? AccountError => null;
@@ -32,16 +43,57 @@ public class AgentWorkbenchSession : IDisposable
     public AgentHarness Harness => _harness;
     public bool IsRunning { get { lock (_gate) return _run is { IsCompleted: false } || _harness.ActivePermissions != null; } }
 
+    public void RestoreSession(AgentSessionSnapshot snapshot, CancellationToken workspaceLifetime = default)
+    {
+        _harness.RestoreSession(snapshot, (id, account) =>
+        {
+            try { return Provider(id, account); }
+            catch (Exception error) when (error is InvalidOperationException or ArgumentException or KeyNotFoundException)
+            { return new UnavailableProvider(id, account); }
+        }, workspaceLifetime, _workspaceIdentity?.Invoke());
+        foreach (var item in _harness.Tasks.SelectMany(task => task.Events).OrderBy(item => item.Sequence).TakeLast(500)) RecordActivity(item);
+        Interlocked.Increment(ref _stateRevision);
+    }
+
     public async Task<JsonElement> ExecuteAsync(string action, JsonElement arguments, CancellationToken cancellationToken, CancellationToken ownerSession = default)
+    {
+        if (_workspaceIdentity?.Invoke() is { Length: > 0 } identity && !ownerSession.IsCancellationRequested && _harness.ReconnectWorkspace(identity, ownerSession))
+        { Interlocked.Increment(ref _stateRevision); await _harness.SaveSessionAsync(cancellationToken); }
+        try { return await ExecuteCoreAsync(action, arguments, cancellationToken, ownerSession); }
+        finally
+        {
+            if (!ReadActions.Contains(action))
+            {
+                Interlocked.Increment(ref _stateRevision);
+                if (action is not ("run" or "stop" or "respond")) await _harness.SaveSessionAsync(cancellationToken);
+            }
+        }
+    }
+
+    private async Task<JsonElement> ExecuteCoreAsync(string action, JsonElement arguments, CancellationToken cancellationToken, CancellationToken ownerSession)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         switch (action)
         {
             case "state":
-                return AutomationJson.Element(new
+                lock (_stateGate)
                 {
+                var accounts = AccountState; var accountError = AccountError; var operations = OperationState;
+                var external = JsonSerializer.Serialize(new { accounts, accountError, operations, toolCount = _harness.ToolCatalog.Count,
+                    retired = _harness.Tasks.OrderBy(task => task.Id, StringComparer.Ordinal).Select(task => new { task.Id, task.IsPreviousWorkspace }) }, AutomationJson.Options);
+                if (_externalState != external) { _externalState = external; Interlocked.Increment(ref _stateRevision); }
+                if (_cachedPermissionExpiry <= DateTimeOffset.UtcNow) { _cachedPermissionExpiry = null; Interlocked.Increment(ref _stateRevision); }
+                var stateRevision = Volatile.Read(ref _stateRevision);
+                if (arguments.TryGetProperty("sessionId", out var sessionId) && sessionId.ValueKind == JsonValueKind.String && sessionId.GetString() == _sessionId &&
+                    arguments.TryGetProperty("revision", out var known) && known.ValueKind == JsonValueKind.Number && known.GetInt64() == stateRevision)
+                    return AutomationJson.Element(new { sessionId = _sessionId, revision = stateRevision, unchanged = true });
+                if (_cachedRevision == stateRevision) return _cachedState;
+                _cachedPermissionExpiry = _harness.ActivePermissions?.ExpiresAt;
+                _cachedState = AutomationJson.Element(new
+                {
+                    sessionId = _sessionId, revision = stateRevision,
                     providers = ProviderIds.Order(StringComparer.Ordinal), toolCount = _harness.ToolCatalog.Count, constraints = _harness.Constraints, activePermissions = _harness.ActivePermissions,
-                    chatGpt = AccountState, chatGptError = AccountError, tasks = _harness.Tasks.Select(task => new
+                    chatGpt = accounts, chatGptError = accountError, tasks = _harness.Tasks.Select(task => new
                     {
                         task.Id, task.Name, task.ProviderId, task.Model, task.Status, task.StatusReason, task.Draft, task.IsPreviousWorkspace,
                         account = DescribeAccount(task.Provider),
@@ -50,11 +102,14 @@ public class AgentWorkbenchSession : IDisposable
                         changes = task.Changes == null ? null : new { task.Changes.ReviewId, task.Changes.ReviewVersion, task.Changes.Revision, files = task.Changes.Files.Select(file => new { file.Path, contentId = task.Changes.FileIdentities[file.Path], beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
                         latestRunChanges = task.LatestRunChanges == null ? null : new { task.LatestRunChanges.ReviewId, task.LatestRunChanges.ReviewVersion, task.LatestRunChanges.Revision, files = task.LatestRunChanges.Files.Select(file => new { file.Path, contentId = task.LatestRunChanges.FileIdentities[file.Path], beforeLength = file.Before?.Length, afterLength = file.After?.Length }) },
                         publicEventCount = task.Events.Count(item => item.Kind != "text_delta"),
-                        events = task.Events.Where(item => item.Kind != "text_delta").TakeLast(80).Select(item => item with { Text = item.Text.Length > 8192 ? item.Text[..8192] + "\n[see transcript export]" : item.Text })
+                        events = task.Events.Where(item => item.Kind != "text_delta").TakeLast(80).Select(DisplayEvent)
                     }),
                     pending = _pending.Values.Select(p => new { p.Id, p.TaskId, p.Kind, content = PublicPending(p) }),
-                    operations = OperationState
+                    operations
                 });
+                _cachedRevision = stateRevision;
+                return _cachedState;
+                }
             case "tools": return AutomationJson.Element(_harness.ToolCatalog);
             case "revoke_grant":
                 var grant = Read<TextArgs>(arguments); return AutomationJson.Element(new { revoked = _harness.RevokeGrant(grant.Id, grant.Text) });
@@ -68,12 +123,12 @@ public class AgentWorkbenchSession : IDisposable
                 var candidates = all.Where(item => (thread.BeforeSequence == null || item.Sequence < thread.BeforeSequence) &&
                     (thread.AfterSequence == null || item.Sequence > thread.AfterSequence));
                 if (thread.AfterSequence == null) candidates = candidates.Reverse();
-                var page = new List<AgentEvent>(); var characters = 0;
+                var page = new List<AgentEventDisplay>(); var characters = 0;
                 foreach (var item in candidates.Take(thread.MaximumEntries))
                 {
                     var text = item.Text.Length > 8192 ? item.Text[..8192] + "\n[see transcript export]" : item.Text;
                     if (characters + text.Length > 262144) break;
-                    page.Add(item with { Text = text }); characters += text.Length;
+                    page.Add(DisplayEvent(item)); characters += text.Length;
                 }
                 if (thread.AfterSequence == null) page.Reverse();
                 return AutomationJson.Element(new { events = page, hasEarlier = page.Count > 0 && all.Any(item => item.Sequence < page[0].Sequence),
@@ -85,7 +140,7 @@ public class AgentWorkbenchSession : IDisposable
                 return AutomationJson.Element(await ModelChoicesAsync(Read<ProviderArgs>(arguments), cancellationToken));
             case "create":
                 var create = Read<CreateArgs>(arguments);
-                return AutomationJson.Element(_harness.CreateTask(create.Name, Provider(create.Provider, create.AccountId), create.Model, ownerSession));
+                return AutomationJson.Element(_harness.CreateTask(create.Name, Provider(create.Provider, create.AccountId), create.Model, ownerSession, _workspaceIdentity?.Invoke()));
             case "rename":
                 var rename = Read<TextArgs>(arguments); _harness.RenameTask(rename.Id, rename.Text); break;
             case "draft":
@@ -94,7 +149,7 @@ public class AgentWorkbenchSession : IDisposable
                 _harness.GetTask(draft.Id).Draft = draft.Text; break;
             case "delete":
                 var deleted = _harness.GetTask(Read<IdArgs>(arguments).Id); _harness.DeleteTask(deleted.Id);
-                if (_harness.Tasks.Count == 0) _harness.CreateTask("New task", deleted.Provider, deleted.Model, ownerSession);
+                if (_harness.Tasks.Count == 0) _harness.CreateTask("New task", deleted.Provider, deleted.Model, ownerSession, _workspaceIdentity?.Invoke());
                 break;
             case "queue":
                 var queue = Read<TextArgs>(arguments); _harness.QueueMessage(queue.Id, queue.Text);
@@ -219,15 +274,16 @@ public class AgentWorkbenchSession : IDisposable
         }
         catch (Exception error) when (error is not OutOfMemoryException)
         { /* The harness retains the failure in task status and its public thread. */ }
-        finally { lock (_gate) _runningId = null; }
+        finally { lock (_gate) _runningId = null; Interlocked.Increment(ref _stateRevision); }
     }
 
     private async Task<JsonElement> AskAsync(string kind, JsonElement content, CancellationToken token)
     {
         var item = new Pending(Guid.NewGuid().ToString("N"), _runningId!, kind, content);
         _pending.TryAdd(item.Id, item);
+        Interlocked.Increment(ref _stateRevision);
         try { return await item.Completion.Task.WaitAsync(token); }
-        finally { _pending.TryRemove(item.Id, out _); }
+        finally { _pending.TryRemove(item.Id, out _); Interlocked.Increment(ref _stateRevision); }
     }
 
     private static JsonElement PublicPending(Pending pending)
@@ -255,16 +311,17 @@ public class AgentWorkbenchSession : IDisposable
     private void RecordActivity(AgentEvent item)
     {
         if (item.Kind == "text_delta") return;
+        Interlocked.Increment(ref _stateRevision);
         var text = item.Kind is "user" or "assistant" or "answer" or "question" ? $"{item.Kind} message · {item.Text.Length:N0} characters" :
             item.Text.Length <= 2048 ? item.Text : item.Text[..2048] + " [excerpt]";
         lock (_gate)
         {
-            var entry = item with { Text = text };
+            var entry = AgentEventDisplay.Create(item, 2048) with { Text = text };
             _activity.Enqueue(entry); _activityBytes += ActivityBytes(entry);
             while (_activity.Count > 500 || _activityBytes > 524288) _activityBytes -= ActivityBytes(_activity.Dequeue());
         }
     }
-    private static int ActivityBytes(AgentEvent item) => JsonSerializer.SerializeToUtf8Bytes(item, AutomationJson.Options).Length + 1;
+    private static int ActivityBytes(AgentEventDisplay item) => JsonSerializer.SerializeToUtf8Bytes(item, AutomationJson.Options).Length + 1;
 
     protected virtual IAgentProvider Provider(string id, string? accountId = null) =>
         _providers.TryGetValue(id, out var provider) ? provider : throw new ArgumentException("Provider is not configured for this connection.");
@@ -281,6 +338,16 @@ public class AgentWorkbenchSession : IDisposable
     }
     private sealed record Pending(string Id, string TaskId, string Kind, JsonElement Content)
     { public TaskCompletionSource<JsonElement> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously); }
+    private sealed class UnavailableProvider(string id, string? account) : IAgentProvider, IAgentProviderState
+    {
+        public string Id => id;
+        public string? AccountIdentity => account;
+        public JsonElement SaveNative(object native) => ((JsonElement)native).Clone();
+        public object RestoreNative(JsonElement native) => native.Clone();
+        public int GetContextBytes(AgentRequest request) => throw new InvalidOperationException("Reconnect this saved provider/account and restart the companion to resume.");
+        public Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken cancellationToken = default) => throw new InvalidOperationException("Saved provider is unavailable.");
+        public Task<AgentReply> GenerateAsync(AgentRequest request, Func<string, ValueTask> textDelta, CancellationToken cancellationToken) => throw new InvalidOperationException("Saved provider is unavailable.");
+    }
     public sealed record IdArgs(string Id);
     public sealed record TextArgs(string Id, string Text);
     public sealed record ProviderArgs(string Provider, string? AccountId = null);

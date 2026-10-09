@@ -17,11 +17,15 @@ public partial class App
         try
         {
             if (!_ready || _busy || _disposed) throw new AutomationException("unavailable", "Wait for the current IDE operation.");
-            await CaptureEditorsAsync();
+            var needsSource = tool.Scope != AutomationScope.Runtime || name == "xamlg_runtime_run";
+            if (needsSource) await CaptureEditorsAsync();
             context.CancellationToken.ThrowIfCancellationRequested();
             if (!_ready || _busy || _disposed) throw new AutomationException("unavailable", "The IDE changed while capturing source.");
-            var result = await _automation.CallLocalAsync(name, arguments, context with { Caller = "Coding agent", PrincipalId = "browser-agent" });
-            if (tool.Effect != AutomationEffect.Read) await SaveDraftAsync();
+            // UI sessions belong to the originating task. Preserve the established artifact
+            // principal for other tools so external MCP revocation does not retire direct-agent artifacts.
+            var principal = name.StartsWith("xamlg_ui_", StringComparison.Ordinal) ? context.PrincipalId ?? "browser-agent" : "browser-agent";
+            var result = await _automation.CallLocalAsync(name, arguments, context with { Caller = "Coding agent", PrincipalId = principal });
+            if (needsSource && tool.Effect != AutomationEffect.Read) await SaveDraftAsync();
             return result;
         }
         finally { _automationGate.Release(); if (!_disposed) StateHasChanged(); }

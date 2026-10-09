@@ -19,6 +19,14 @@ attempts, with bounded backoff and `Retry-After` support. Permanent errors and s
 delays above 15 seconds stop automatic retries. If loading fails, **Retry loading**
 starts it again without reloading the page or discarding source edits.
 
+The initial browser runtime also limits parallel downloads and retries transient
+failures through its boot-resource hook, including in isolated previews. Studio's JavaScript
+modules share a loader that retries failed downloads up to three times without
+creating separate editor or agent registries. A failure before the application
+starts shows **Reload the page**; compiler metadata failures after startup use
+**Retry loading** and preserve the active editor buffers. Runtime integrity checks
+and the isolated preview's credential and content-security restrictions still apply.
+
 ## Source, semantics and pixels
 
 The studio includes XAML/C# editors, compiler/generated-C# diagnostics, source mappings, syntax and typed-operation inspection, realized visual trees, property/structure editing, undo/redo, project drafts/export and responsive dark/light themes.
@@ -129,12 +137,22 @@ Both hosts bound loaded preview assemblies because collectible browser load cont
 
 ## Coding agents
 
+The workbench uses a single row of section icons with tooltips and accessible
+names; labels expand when the dock has room. Task status and usage expand from
+the task selector, and the compact composer leaves more room for the conversation.
+Started and completed events share one tool card. Each card shows the operation,
+its outcome, and a short result summary. Expand it for structured fields and
+collections; raw data stays in a separate disclosure. Large results show bounded,
+labelled excerpts, while provider context and transcript exports retain the original
+results. History paging and expanded tool cards survive task and dock changes.
+
 Open **Coding agent → Connection** and choose one of three transports:
 
 - **Direct API** runs in the browser with an OpenAI, Anthropic or Gemini API key.
   Accept browser key exposure, discover or enter a model, and create a task in
-  **Tasks**. No companion, MCP connection or project sharing is required. Keys stay
-  in page memory and clear on provider changes, pane closure or **Clear credentials**.
+  **Tasks**. No companion, MCP connection or project sharing is required. Connections
+  and keys are remembered per provider by default in private browser storage.
+  **Forget connection** removes saved credentials, including the previous version.
 - **Local provider relay** uses the browser agent with a loopback companion as its
   provider transport. Set provider keys in the companion environment; enter its
   origin and Owner token in Connection. Provider keys remain on the server, and
@@ -190,6 +208,8 @@ python3 scripts/prepare-pages.py --commit "$(git rev-parse HEAD)"
 dotnet build tools/XamlG.Studio.Host -c Release
 PLAYGROUND_PAGES_PREVIEW=1 python3 scripts/test-browser-studio.py
 ```
+
+Set `PLAYGROUND_ASSET_PORT` to an unused port when another checkout is running browser tests (default: `8765`). Companion ports and private test stores are isolated automatically.
 
 Acceptance covers real controls/code-behind, inspections, immediate edits, undo/redo, mobile themes, canvas gestures, isolation/reset, resource projects, exports/drafts and dependency errors. These are behavioral tests, not exhaustive pixel or browser-engine certification.
 

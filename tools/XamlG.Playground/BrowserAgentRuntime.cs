@@ -21,9 +21,11 @@ public sealed class BrowserAgentRuntime : IDisposable
     {
         _providers = new[] { "openai", "anthropic", "gemini" }.ToDictionary(id => id, id => new BrowserProvider(id), StringComparer.Ordinal);
         Session = new(host, _providers.Values, new AutomationAgentWorkspace(host),
-            new AgentPermissionConstraints(deniedTools: ["xamlg_layout_set", "xamlg_layout_reset"]));
+            new AgentPermissionConstraints(deniedTools: ["xamlg_layout_set", "xamlg_layout_reset"]), () => WorkspaceIdentity);
     }
     public AgentWorkbenchSession Session { get; }
+    public bool IsStateLoaded { get; internal set; }
+    public string WorkspaceIdentity { get; internal set; } = Guid.NewGuid().ToString("N");
     public CancellationToken WorkspaceLifetime => _workspace.Token;
     public void Configure(string provider, string key, bool browserExposureAccepted)
     {
@@ -55,7 +57,7 @@ public sealed class BrowserAgentRuntime : IDisposable
     }
     public void RetireWorkspace()
     {
-        _workspace.Cancel(); ClearCredentials(); _workspace.Dispose(); _workspace = new();
+        _workspace.Cancel(); ClearCredentials(); _workspace.Dispose(); _workspace = new(); WorkspaceIdentity = Guid.NewGuid().ToString("N");
     }
     public async Task<JsonElement> ExecuteAsync(string action, JsonElement arguments, CancellationToken cancellationToken)
     {
@@ -80,7 +82,7 @@ public sealed class BrowserAgentRuntime : IDisposable
 
     // Tasks retain a credential-free provider identity. Clearing a connection revokes
     // its lifetime and drops SDK clients; native conversation state can remain in memory.
-    private sealed class BrowserProvider(string id) : IAgentProvider, IAgentProviderSession, IDisposable
+    private sealed class BrowserProvider(string id) : IAgentProvider, IAgentProviderSession, IAgentProviderState, IDisposable
     {
         private SdkConnection? _shape;
         private SdkConnection? _connection;
@@ -93,8 +95,11 @@ public sealed class BrowserAgentRuntime : IDisposable
             _connection?.Dispose(); _connection = null;
         }
         private IAgentProvider Connected => _connection?.Provider ?? throw new AgentProviderException("browser_credentials_required", false);
+        private IAgentProvider Shape => (_shape ??= SdkConnection.Create(id, "context-shape-only")).Provider;
+        public JsonElement SaveNative(object native) => ((IAgentProviderState)Shape).SaveNative(native);
+        public object RestoreNative(JsonElement native) => ((IAgentProviderState)Shape).RestoreNative(native);
         public CancellationToken GetSessionLifetime() => _credentials?.Token ?? throw new AgentProviderException("browser_credentials_required", false);
-        public int GetContextBytes(AgentRequest request) => (_shape ??= SdkConnection.Create(id, "context-shape-only")).Provider.GetContextBytes(request);
+        public int GetContextBytes(AgentRequest request) => Shape.GetContextBytes(request);
         public async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken cancellationToken = default)
         {
             using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, GetSessionLifetime());

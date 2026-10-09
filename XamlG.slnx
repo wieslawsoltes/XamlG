@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/XamlG.Syntax/XamlG.Syntax.csproj" />
+    <Project Path="src/XamlG.IntelligentUI/XamlG.IntelligentUI.csproj" />
+    <Project Path="src/XamlG.IntelligentUI.Avalonia/XamlG.IntelligentUI.Avalonia.csproj" />
     <Project Path="src/XamlG.Mcp/XamlG.Mcp.csproj" />
     <Project Path="src/XamlG.Roslyn/XamlG.Roslyn.csproj" />
     <Project Path="src/XamlG.Compiler/XamlG.Compiler.csproj" />
@@ -25,6 +27,7 @@
     <Project Path="tools/XamlG.Studio.Host/XamlG.Studio.Host.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/XamlG.IntelligentUI.Tests/XamlG.IntelligentUI.Tests.csproj" />
     <Project Path="tests/XamlG.Tests/XamlG.Tests.csproj" />
     <Project Path="tests/XamlG.Tooling.Tests/XamlG.Tooling.Tests.csproj" />
     <Project Path="tests/XamlG.Workspaces.Tests/XamlG.Workspaces.Tests.csproj" />

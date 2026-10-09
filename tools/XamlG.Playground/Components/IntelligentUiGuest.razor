@@ -1,0 +1,18 @@
+@using XamlG.IntelligentUI
+@implements IAsyncDisposable
+@inject IJSRuntime JavaScript
+@inject NavigationManager Navigation
+@inject BrowserCompilerService Compiler
+<section class="ui-native-guest" style="font:14px system-ui;padding:12px;box-sizing:border-box">
+    <header style="display:flex;gap:12px"><span role="status">@_status</span><button @onclick="RefreshAsync" disabled="@(_bridge == null || Mode != "mcp")">Refresh</button></header>
+    @if (_error != null) { <pre role="alert">@_error</pre> }
+    <div id="@_elementId" class="avalonia-preview" style="height:420px;width:100%;position:relative"></div>
+    @if (_review != null)
+    {
+        <section aria-label="Review UI action"><h3>Review action</h3><pre>@System.Text.Json.JsonSerializer.Serialize(_review)</pre>
+            <p>This requests the action through the host. It does not grant agent permissions.</p>
+            <button @onclick="ConfirmAsync">Confirm</button><button @onclick="CancelReview">Cancel</button>
+        </section>
+    }
+    <details><summary>Text fallback</summary><pre style="white-space:pre-wrap">@(_snapshot?.FallbackMarkdown ?? _lastFallback)</pre></details>
+</section>

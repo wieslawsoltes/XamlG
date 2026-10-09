@@ -12,4 +12,5 @@ builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.H
 builder.Services.AddScoped<BrowserCompilerService>();
 builder.Services.AddScoped<AvaloniaPreviewHost>();
 builder.Services.AddScoped<EditorInteropModule>();
+builder.Services.AddScoped<IntelligentUiWorkspaceContext>();
 await builder.Build().RunAsync();

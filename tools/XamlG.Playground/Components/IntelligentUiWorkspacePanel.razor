@@ -1,0 +1,106 @@
+@using XamlG.IntelligentUI
+@implements IAsyncDisposable
+@inject IntelligentUiWorkspaceContext Workspace
+@inject IJSRuntime JavaScript
+<link rel="stylesheet" href="ui-workspace.css" />
+<aside class="ui-workspace-owner" aria-label="Intelligent UI workspace">
+    <button aria-expanded="@_open" @onclick="Toggle">Intelligent UI workspace</button>
+    @if (_open)
+    {
+        <section class="ui-workspace-body">
+            <h2>Intelligent UI workspace</h2>
+            <p>Keep reactive cards across reloads. Saved data stays in this browser; page scripts and extensions can read it. Execution grants and retained tool handles are never saved.</p>
+            <label><input type="checkbox" @bind="_consent" disabled="@_busy" /> Allow local UI workspace storage</label>
+            <p><code>@Workspace.WorkspaceId</code></p>
+            <div class="ui-workspace-actions">
+                <button @onclick="SaveAsync" disabled="@(_busy || !_consent)">Save UI workspace</button>
+                <button @onclick="RestoreAsync" disabled="@(_busy || !_consent)">Restore saved UI</button>
+                <button @onclick="ForgetAsync" disabled="@(_busy || !_consent)">Forget saved UI</button>
+            </div>
+            <p role="status">@_status</p>
+            @if (_error != null) { <p role="alert">@_error</p> }
+            @if (Workspace.Store is { } store)
+            {
+                <p>@store.SnapshotLocal().Count live cards · @(store.Generation == _savedGeneration ? "saved" : "unsaved changes")</p>
+                @foreach (var snapshot in store.SnapshotLocal())
+                { <details @key="snapshot.SessionId"><summary>@snapshot.Id</summary><pre>@snapshot.FallbackMarkdown</pre></details> }
+            }
+            <p>Restore replaces current cards only after validating the complete archive. Save and forget reject changes made by another tab; reload does not silently overwrite them.</p>
+            <UiCSharpPreview @key="Workspace.WorkspaceId" />
+        </section>
+    }
+</aside>
+
+@code {
+    private BrowserUiArchiveStorage _storage = default!;
+    private readonly CancellationTokenSource _lifetime = new();
+    private string? _workspaceId, _version, _error;
+    private string _status = "Persistence is off until you explicitly allow it.";
+    private bool _open, _consent, _busy, _loaded, _disposed;
+    private long _savedGeneration = -1;
+    protected override void OnInitialized()
+    { _storage = new(JavaScript); Workspace.Changed += Changed; }
+    private void Changed() { if (!_disposed) _ = InvokeAsync(StateHasChanged); }
+    private void Toggle() { Synchronize(); _open = !_open; }
+    private void Synchronize()
+    {
+        var identity = Workspace.WorkspaceId;
+        if (_workspaceId == identity) return;
+        _workspaceId = identity; _version = null; _loaded = false; _consent = false; _savedGeneration = -1;
+        _status = "Choose whether to store this workspace."; _error = null;
+    }
+    private async Task RunAsync(Func<UiSessionStore, string, CancellationToken, Task> operation)
+    {
+        if (_busy || !_consent) return;
+        var identity = Workspace.WorkspaceId;
+        if (identity == null || _workspaceId != identity) { Synchronize(); return; }
+        _busy = true; _error = null;
+        try
+        {
+            await Workspace.ExclusiveAsync(async token =>
+            {
+                var store = Workspace.Store ?? throw new InvalidOperationException("No UI workspace.");
+                if (Workspace.WorkspaceId != identity) throw new UiException("workspace_changed", "Select the current workspace again.");
+                await operation(store, identity, token);
+            }, _lifetime.Token);
+        }
+        catch (OperationCanceledException) when (_disposed) { }
+        catch (Exception error) { _error = error.Message; }
+        finally { _busy = false; }
+    }
+    private Task SaveAsync() => RunAsync(async (store, identity, token) =>
+    {
+        if (!_loaded)
+        {
+            var existing = await _storage.ReadAsync(identity, token);
+            if (existing != null) throw new UiException("storage_conflict", "Saved UI already exists. Restore it before replacing it.");
+            _loaded = true;
+        }
+        var generation = store.Generation;
+        var json = store.CaptureArchive(identity);
+        _version = await _storage.WriteAsync(identity, json, _version, token);
+        _savedGeneration = generation; _status = "UI workspace saved.";
+    });
+    private Task RestoreAsync() => RunAsync(async (store, identity, token) =>
+    {
+        var generation = store.Generation;
+        var saved = await _storage.ReadAsync(identity, token);
+        token.ThrowIfCancellationRequested();
+        if (saved == null) { _version = null; _loaded = true; _status = "No saved UI for this workspace."; return; }
+        store.ReplaceArchive(saved.Json, identity, generation);
+        _version = saved.Version; _loaded = true; _savedGeneration = store.Generation;
+        _status = "Saved UI restored and revalidated. Agent permissions remain unchanged.";
+    });
+    private Task ForgetAsync() => RunAsync(async (_, identity, token) =>
+    {
+        if (!_loaded) { var saved = await _storage.ReadAsync(identity, token); _version = saved?.Version; _loaded = true; }
+        if (_version != null) await _storage.DeleteAsync(identity, _version, token);
+        _version = null; _savedGeneration = -1; _consent = false;
+        _status = "Saved UI forgotten. Current in-memory cards were not deleted.";
+    });
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return; _disposed = true; Workspace.Changed -= Changed;
+        _lifetime.Cancel(); await _storage.DisposeAsync(); _lifetime.Dispose();
+    }
+}

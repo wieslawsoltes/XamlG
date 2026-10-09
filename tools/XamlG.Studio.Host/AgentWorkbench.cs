@@ -13,7 +13,7 @@ public sealed class AgentWorkbench : AgentWorkbenchSession
     private readonly ChatGptAccountManager? _chatGpt;
     private readonly string? _chatGptError;
     public AgentWorkbench(IAutomationHost host, IEnumerable<IAgentProvider> providers, IAgentWorkspace? workspace = null, AutomationMcpTaskStore? mcpTasks = null,
-        ChatGptAccountManager? chatGpt = null, string? chatGptError = null) : base(host, providers, workspace, new AgentPermissionConstraints(deniedTools: ["xamlg_layout_set", "xamlg_layout_reset"]))
+        ChatGptAccountManager? chatGpt = null, string? chatGptError = null) : base(host, providers, workspace, new AgentPermissionConstraints(deniedTools: ["xamlg_layout_set", "xamlg_layout_reset"]), () => (host as BrowserAutomationBridge)?.WorkspaceIdentity)
     { _mcpTasks = mcpTasks; _chatGpt = chatGpt; _chatGptError = chatGptError; }
     protected override IEnumerable<string> ProviderIds => base.ProviderIds.Concat(_chatGpt == null ? [] : new[] { ChatGptAccountAgentProvider.ProviderId });
     protected override object? AccountState => _chatGpt?.State;
@@ -48,7 +48,7 @@ public sealed class AgentWorkbench : AgentWorkbenchSession
         }
         return AutomationJson.Element(new { accepted = true });
     }
-    public sealed record AccountSignInArgs(string? AccountId = null, string? Label = null, bool Remember = false, string? RetrySignInId = null, bool RequestPlanConsent = false);
+    public sealed record AccountSignInArgs(string? AccountId = null, string? Label = null, bool Remember = true, string? RetrySignInId = null, bool RequestPlanConsent = false);
     public sealed record AccountConfigureArgs(string Id, string Label, bool Remember);
 }
 

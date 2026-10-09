@@ -35,7 +35,7 @@ internal sealed class EditorInteropFixture : IJSRuntime
     public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (identifier != "import") throw new InvalidOperationException(identifier);
+        if (identifier != "xamlgBoot.importModule") throw new InvalidOperationException(identifier);
         Imports++;
         return ValueTask.FromResult((TValue)(object)Source);
     }

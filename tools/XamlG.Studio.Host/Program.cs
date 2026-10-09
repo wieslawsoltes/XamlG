@@ -21,7 +21,7 @@ using System.Threading.Channels;
 
 if (args.Any(argument => argument is "--help" or "-h"))
 {
-    Console.WriteLine("XamlG Studio companion\nUsage: xamlg-studio [--port=4893] [--stdio=true] [--web-root=PATH] [--origins=ORIGIN,...] [--chatgpt=true] [--chatgpt-store=PATH]\nPairs one browser IDE with authenticated MCP clients. Set distinct XAMLG_STUDIO_OWNER_TOKEN (browser) and XAMLG_STUDIO_TOKEN (MCP client), or use the generated tokens printed to stderr. Provider keys and ChatGPT account credentials remain in the companion. Account credentials persist only after an explicit remember choice.");
+    Console.WriteLine("XamlG Studio companion\nUsage: xamlg-studio [--port=4893] [--stdio=true] [--web-root=PATH] [--origins=ORIGIN,...] [--chatgpt=true] [--chatgpt-store=PATH] [--agent-store=PATH]\nPairs one browser IDE with authenticated MCP clients. Set distinct XAMLG_STUDIO_OWNER_TOKEN (browser) and XAMLG_STUDIO_TOKEN (MCP client), or use the generated tokens printed to stderr. Provider keys and ChatGPT account credentials remain in the companion. Connections and agent sessions persist in private local storage; account sign-in remembers credentials by default.");
     return;
 }
 
@@ -30,8 +30,11 @@ var port = builder.Configuration.GetValue("port", 4893);
 if (port is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(port));
 builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = AutomationSchema.MaximumArgumentBytes);
-var ownerToken = LocalToken("XAMLG_STUDIO_OWNER_TOKEN");
-var clientToken = LocalToken("XAMLG_STUDIO_TOKEN");
+var sessionDirectory = builder.Configuration["agent-store"] ?? Path.Combine(
+    builder.Configuration["chatgpt-store"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XamlG", "Studio"), "Agents", port.ToString());
+using var sessionStore = new StudioSessionStore(sessionDirectory);
+var ownerToken = await sessionStore.TokenAsync("XAMLG_STUDIO_OWNER_TOKEN");
+var clientToken = await sessionStore.TokenAsync("XAMLG_STUDIO_TOKEN");
 if (EqualToken(ownerToken, clientToken)) throw new InvalidOperationException("Owner and MCP client tokens must be distinct.");
 var origins = (builder.Configuration["origins"] ?? $"https://wieslawsoltes.github.io,http://127.0.0.1:{port},http://127.0.0.1:8765,http://localhost:8765")
     .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
@@ -103,8 +106,10 @@ if (builder.Configuration.GetValue("chatgpt", true))
 }
 await using var chatGptLifetime = chatGpt;
 using var agents = new AgentWorkbench(bridge, providers, new BrowserAgentWorkspace(bridge), mcpTasks, chatGpt, chatGptError);
+if (await sessionStore.LoadAsync() is { } savedSession) agents.RestoreSession(savedSession);
+agents.Harness.PersistSession = sessionStore.SaveAsync;
 var mcp = builder.Services.AddMcpServer(options => options.ServerInfo = new Implementation { Name = "XamlG Studio", Version = "0.1.0" })
-    .WithAutomation(bridge).WithAutomationTasks(mcpTasks, () => bridge.CurrentSessionLifetime);
+    .WithAutomation(bridge).WithAutomationUi().WithAutomationTasks(mcpTasks, () => bridge.CurrentSessionLifetime);
 if (builder.Configuration.GetValue("stdio", false))
 {
     builder.Logging.ClearProviders();
@@ -230,14 +235,6 @@ await app.RunAsync();
 
 static bool EqualToken(string supplied, string expected) =>
     CryptographicOperations.FixedTimeEquals(SHA256.HashData(Encoding.UTF8.GetBytes(supplied)), SHA256.HashData(Encoding.UTF8.GetBytes(expected)));
-
-static string LocalToken(string variable)
-{
-    var value = Environment.GetEnvironmentVariable(variable) ?? Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-    if (value.Length is < 32 or > 256 || value.Any(char.IsWhiteSpace))
-        throw new InvalidOperationException(variable + " must contain 32–256 non-whitespace characters.");
-    return value;
-}
 
 static Uri ProviderEndpoint(string variable, string defaultEndpoint)
 {

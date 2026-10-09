@@ -12,8 +12,19 @@ namespace XamlG.Agents.OpenAI;
 /// encrypted content remain intact in memory and are never included in public transcripts.
 /// Construct SDK clients with server-side credentials and inject them into this adapter.
 /// </summary>
-public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelClient? models = null, bool chatGptPlan = false) : IAgentProvider
+public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelClient? models = null, bool chatGptPlan = false) : IAgentProvider, IAgentProviderState
 {
+    public JsonElement SaveNative(object native) => SaveContinuation(native);
+    public object RestoreNative(JsonElement native) => RestoreContinuation(native);
+    internal static JsonElement SaveContinuation(object native) => JsonSerializer.SerializeToElement(new
+    {
+        version = 1, items = ((ResponseItem[])native).Select(item => JsonDocument.Parse(ModelReaderWriter.Write(item).ToMemory()).RootElement.Clone()).ToArray()
+    });
+    internal static object RestoreContinuation(JsonElement native)
+    {
+        if (native.GetProperty("version").GetInt32() != 1) throw new ArgumentException("Unsupported OpenAI continuation version.");
+        return native.GetProperty("items").EnumerateArray().Select(item => ModelReaderWriter.Read<ResponseItem>(BinaryData.FromString(item.GetRawText()))!).ToArray();
+    }
     public string Id => "openai";
     public async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken cancellationToken = default)
     {
@@ -146,7 +157,20 @@ public sealed class OpenAIAgentProvider(ResponsesClient responses, OpenAIModelCl
             {
                 case AgentMessageKind.User: items.Add(ResponseItem.CreateUserMessageItem(message.Text)); break;
                 case AgentMessageKind.ToolResult:
-                    items.Add(new FunctionCallOutputResponseItem(message.ToolCallId!, message.Text)); break;
+                    if (message.ToolMedia is { } media)
+                    {
+                        var output = new List<object> { new { type = "input_text", text = media.Metadata.GetRawText() } };
+                        output.AddRange(media.Images.Select(image => (object)new { type = "input_image", image_url = "data:" + image.MimeType + ";base64," + image.Data }));
+                        // The API accepts image parts here; the pinned SDK still models
+                        // output as a string. Its wire patch preserves the native array.
+                        var item = new FunctionCallOutputResponseItem(message.ToolCallId!, "");
+#pragma warning disable SCME0001
+                        item.Patch.Set("$.output"u8, BinaryData.FromObjectAsJson(output));
+#pragma warning restore SCME0001
+                        items.Add(item);
+                    }
+                    else items.Add(new FunctionCallOutputResponseItem(message.ToolCallId!, message.Text));
+                    break;
                 case AgentMessageKind.Assistant when message.Native is ResponseItem[] native:
                     items.AddRange(native); break;
                 case AgentMessageKind.Assistant:

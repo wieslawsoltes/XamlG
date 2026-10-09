@@ -76,8 +76,9 @@ Open **Coding agent → Connection** to choose a transport:
 - **Direct API** runs the shared harness in the Pages/browser app. Enter a provider
   key, accept browser exposure, discover or enter a model, and create a task.
   OpenAI, Anthropic and Gemini use their official SDK models and services. Keys
-  are held only in page memory; closing the pane, changing provider or clearing
-  credentials cancels requests and drops the clients.
+  are remembered per provider by default in private browser storage. Closing the
+  pane or changing provider cancels requests and drops live clients; **Forget
+  connection** removes saved credentials and their previous stored version.
 - **Local provider relay** uses the same browser harness but sends SDK requests
   through the companion's fixed provider routes. Set API keys in the companion,
   then enter its loopback origin and Owner token in Connection. No MCP pairing or
@@ -150,7 +151,7 @@ data directory. `--chatgpt-store=PATH` selects a separate protected store; keep 
 outside the project. One companion owns each store at a time. `--chatgpt=false`
 disables account mode, which is useful for independent API-key-only fixtures.
 Account registration metadata survives restart. Tokens survive restart only if
-**Remember credentials on this computer** was selected; Unix protects these files
+**Remember credentials on this computer** is selected (the default); Unix protects these files
 with permissions and Windows uses current-user DPAPI encryption. **Sign out**
 stops account tasks and attempts remote revocation before clearing local tokens.
 The workbench reports when that revocation could not be confirmed.
@@ -883,3 +884,67 @@ failed-attempt usage, encrypted/signed continuation preservation, late-error rej
 and output-limit resume with and without a supported cap. These fixtures do not sign
 into a real account or request production inference. The current acceptance section
 records the full native/MCP/OAuth, Pages-origin, package-consumer and CI results.
+
+
+## Durable sessions and focused requests
+
+Studio saves projects, auxiliary sources, compiler settings, workspace undo/redo,
+document layout, editor positions, inspector inputs, agent drafts, queues, plans,
+reviews, usage, native provider continuations and connection preferences. Browser
+records use IndexedDB, AES-GCM with a nonextractable browser key, compression and
+atomic current/previous versions. This protects the stored representation; scripts
+running on the same origin can still use the key. Public source/transcript exports
+never include saved credentials or private native reasoning/signatures.
+
+Storage failures are shown in Studio. Concurrent tabs cannot overwrite revisions
+loaded by another tab. A damaged record recovers its previous complete version
+with a visible notice. Forgetting a connection also removes its previous version.
+Permission grants and pending approvals expire on reload. Interrupted tasks return
+paused; unconsumed tool calls receive explicit recovery results and are never
+replayed automatically. Review and resume against the current project and preview.
+
+The companion stores its agent session and stable owner/MCP tokens in an exclusive
+private directory, using owner-only Unix permissions or current-user DPAPI on
+Windows. Override its location with `--agent-store=PATH`. Sessions are tied to the
+saved project identity; connecting a different project retires those tasks.
+
+Provider requests use a focused initial catalog and `xamlg_agent_tools` to discover
+and enable additional schemas. All IDE capabilities remain available, and discovery
+does not grant permissions. **Send every tool schema with every request** restores
+the full-catalog behavior. Unchanged agent state polls return a session/revision
+cursor; streamed text is coalesced for display and only completed text is retained
+in durable history. Provider speed still depends on the chosen model and network.
+
+## Preview computer tools
+
+`xamlg_computer_observe` captures a PNG of the running trusted or isolated preview,
+plus a bounded semantic target list, focus, frame ID, revision and image-to-DIP
+mapping. MCP receives a native image content block. OpenAI, Anthropic and Gemini
+receive native image input, and the conversation displays a screenshot instead of
+base64 JSON. The OpenAI adapter uses the pinned SDK's wire patch for the API's
+[image-bearing function outputs](https://developers.openai.com/api/docs/guides/function-calling).
+
+`xamlg_computer_actions` accepts up to 32 click, double-click, move, down/up, scroll,
+drag, key, text, focus, touch, bounded wait, assert or reset actions. Targets can be
+coordinates or object/name/automation-ID/text selectors. Coordinates use the
+observed image by default; keys/text without a selector use current focus. Actions
+require a current frame and revision, stop at the first failure, report completed
+indices and return a fresh observation. Never retry a partial batch blindly.
+
+For live clocks or unrelated progress updates, opt into `refreshTargets: true`.
+Keep the original frame ID/revision and give every action except wait/reset an
+explicit selector from that frame's element page. Before any input, the inspector
+checks the viewport, tree topology, target and visual ancestor identities,
+DataContext references, names, text, enabled/visible state, hit-test visibility,
+focusability and opacity. It pins each resolved control for the batch and checks
+current pointer/touch hits, so a covering sibling cannot receive its input.
+Coordinates, drag paths, unobserved controls and implicit keyboard focus require
+a fresh strict frame. Release held input first or start the refreshed batch with
+reset. This option tolerates unrelated property updates; it does not freeze the
+application or deep-copy mutable business data. Earlier actions may deliberately
+change later targets within the same batch.
+
+`xamlg_computer_viewport` sets a 128–4096 DIP viewport for responsive testing;
+omitting both dimensions returns to automatic dock sizing. Observe again after a
+resize or application change. Runtime edits and input remain subject to the active
+permission profile, and computer actions leave visual design mode.

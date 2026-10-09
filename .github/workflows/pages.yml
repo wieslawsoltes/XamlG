@@ -13,7 +13,7 @@ jobs:
   build:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: read
       pages: write
@@ -71,7 +71,7 @@ jobs:
   verify-public:
     needs: deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       PLAYGROUND_URL: https://wieslawsoltes.github.io/XamlG/
       PLAYGROUND_EXPECTED_COMMIT: ${{ github.sha }}

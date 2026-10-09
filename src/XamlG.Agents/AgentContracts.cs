@@ -14,7 +14,11 @@ public sealed record AgentUsage(long InputTokens, long OutputTokens, bool Estima
 {
     public long Total => checked(InputTokens + OutputTokens);
 }
-public sealed record AgentEvent(long Sequence, DateTimeOffset Time, string TaskId, string Kind, string Text, string? ToolCallId = null);
+public sealed record AgentEvent(long Sequence, DateTimeOffset Time, string TaskId, string Kind, string Text, string? ToolCallId = null)
+{
+    public string? ToolName { get; init; }
+    public IReadOnlyList<AutomationImage>? Images { get; init; }
+}
 public sealed record AgentQuestion(string Question, IReadOnlyList<string>? Options = null);
 public sealed record AgentQueuedMessage(string Id, string Text);
 public sealed record AgentQueueSnapshot(long Revision, IReadOnlyList<AgentQueuedMessage> Messages);
@@ -47,7 +51,13 @@ public interface IAgentOperationPreview
 
 /// <summary>Native provider content is intentionally excluded from public JSON/transcript exports.</summary>
 public sealed record AgentMessage(AgentMessageKind Kind, string Text, string? ToolCallId = null,
-    [property: JsonIgnore] object? Native = null);
+    [property: JsonIgnore] object? Native = null)
+{
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AgentMessage, MediaCache> Media = new();
+    private sealed record MediaCache(AutomationMediaResult? Value);
+    [JsonIgnore] public AutomationMediaResult? ToolMedia => Media.GetValue(this, static message =>
+        new(message.Kind == AgentMessageKind.ToolResult && AutomationMedia.TryRead(message.Text, out var media) ? media : null)).Value;
+}
 public sealed record AgentReply(string Text, IReadOnlyList<AgentToolCall> ToolCalls, AgentUsage Usage,
     [property: JsonIgnore] object Native, bool OutputLimitReached = false)
 {
@@ -71,6 +81,14 @@ public interface IAgentProvider
 public interface IAgentProviderSession
 {
     CancellationToken GetSessionLifetime();
+}
+
+/// <summary>Lossless, private continuation storage. This data must never appear in public transcripts.</summary>
+public interface IAgentProviderState
+{
+    string? AccountIdentity => null;
+    JsonElement SaveNative(object native);
+    object RestoreNative(JsonElement native);
 }
 public sealed record AgentProviderFailure(int HttpStatus, string ResponseShape, string? RequestId = null, string? ErrorParameter = null);
 
@@ -110,6 +128,7 @@ public sealed record AgentLimits
 
 public sealed record AgentRunOptions
 {
+    public bool FullToolCatalog { get; init; }
     public AgentLimits Limits { get; init; } = new();
     public AutomationPolicy Policy { get; init; } = new();
     public TimeSpan LeaseDuration { get; init; } = TimeSpan.FromMinutes(10);
@@ -135,8 +154,8 @@ public sealed record AgentCompactionOptions
 
 public sealed class AgentTask
 {
-    internal AgentTask(string id, string name, IAgentProvider provider, string model, CancellationToken workspaceLifetime)
-    { Id = id; Name = name; Provider = provider; Model = model; WorkspaceLifetime = workspaceLifetime; }
+    internal AgentTask(string id, string name, IAgentProvider provider, string model, CancellationToken workspaceLifetime, string? workspaceIdentity = null)
+    { Id = id; Name = name; Provider = provider; Model = model; WorkspaceLifetime = workspaceLifetime; WorkspaceIdentity = workspaceIdentity; }
     public string Id { get; }
     public string Name { get; internal set; }
     [JsonIgnore] public IAgentProvider Provider { get; }
@@ -161,7 +180,8 @@ public sealed class AgentTask
     public AgentQueueSnapshot Queue { get { lock (Sync) return new(QueueRevision, FollowUps.ToArray()); } }
     public AgentChangeReview? Changes { get; internal set; }
     public AgentChangeReview? LatestRunChanges { get; internal set; }
-    [JsonIgnore] internal CancellationToken WorkspaceLifetime { get; }
+    [JsonIgnore] internal CancellationToken WorkspaceLifetime { get; set; }
+    internal string? WorkspaceIdentity { get; }
     internal object Sync { get; } = new();
     internal List<AgentMessage> Messages { get; } = [];
     internal AgentMessage? ActiveRequest;
@@ -176,4 +196,6 @@ public sealed class AgentTask
     internal int PendingResultBytes;
     internal string? Goal;
     internal string? LatestRequest;
+    internal HashSet<string> EnabledTools { get; } = new(StringComparer.Ordinal);
+    internal string? ExecutingToolId;
 }

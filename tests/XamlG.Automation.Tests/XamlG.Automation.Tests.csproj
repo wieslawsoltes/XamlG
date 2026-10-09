@@ -6,6 +6,7 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../tools/XamlG.Studio.Host/StudioSessionStore.cs" Link="StudioSessionStore.cs" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../../src/XamlG.Automation/XamlG.Automation.csproj" />
     <ProjectReference Include="../../src/XamlG.Mcp/XamlG.Mcp.csproj" />

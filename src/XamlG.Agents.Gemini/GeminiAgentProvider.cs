@@ -8,8 +8,14 @@ namespace XamlG.Agents.Gemini;
 /// <summary>Official Google Gen AI SDK adapter with native parts and thought signatures
 /// preserved across function calls. Automatic SDK retries are disabled per generation;
 /// the harness accounts for each attempt and executes all local tools.</summary>
-public sealed class GeminiAgentProvider(Client client) : IAgentProvider
+public sealed class GeminiAgentProvider(Client client) : IAgentProvider, IAgentProviderState
 {
+    public JsonElement SaveNative(object native) => JsonSerializer.SerializeToElement(new { version = 1, message = (NativeMessage)native });
+    public object RestoreNative(JsonElement native)
+    {
+        if (native.GetProperty("version").GetInt32() != 1) throw new ArgumentException("Unsupported Gemini continuation version.");
+        return native.GetProperty("message").Deserialize<NativeMessage>() ?? throw new ArgumentException("Invalid Gemini continuation.");
+    }
     public string Id => "gemini";
 
     public async Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken cancellationToken = default)
@@ -146,10 +152,13 @@ public sealed class GeminiAgentProvider(Client client) : IAgentProvider
             {
                 if (message.ToolCallId == null || !nativeCalls.TryGetValue(message.ToolCallId, out var call))
                     throw new InvalidOperationException("Tool result does not match a native function call.");
-                using var value = JsonDocument.Parse(message.Text);
-                var response = value.RootElement.ValueKind == JsonValueKind.Object ? value.RootElement.EnumerateObject().ToDictionary(item => item.Name, item => (object)item.Value.Clone()) :
-                    new Dictionary<string, object> { ["output"] = value.RootElement.Clone() };
+                var media = message.ToolMedia;
+                var result = media?.Metadata ?? JsonSerializer.Deserialize<JsonElement>(message.Text);
+                var response = result.ValueKind == JsonValueKind.Object ? result.EnumerateObject().ToDictionary(item => item.Name, item => (object)item.Value.Clone()) :
+                    new Dictionary<string, object> { ["output"] = result.Clone() };
                 results.Add(new() { FunctionResponse = new() { Name = call.Name, Id = call.Id, Response = response } });
+                if (media != null) foreach (var image in media.Images)
+                    results.Add(new() { InlineData = new() { MimeType = image.MimeType, Data = Convert.FromBase64String(image.Data) } });
                 continue;
             }
             FlushResults();

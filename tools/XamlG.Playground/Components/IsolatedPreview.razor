@@ -41,6 +41,14 @@
         return result;
     }
 
+    public async Task<System.Text.Json.JsonElement> ComputerAsync(string method, object arguments)
+    {
+        if (_module == null || _handle == 0 || method is not ("computer_observe" or "computer_actions")) throw new InvalidOperationException("The isolated preview has not been started.");
+        var generation = _generation;
+        var result = await _module.InvokeAsync<System.Text.Json.JsonElement>("request", _handle, method, arguments);
+        EnsureCurrent(generation); return result;
+    }
+
     private async Task<int> InitializeAsync(long generation)
     {
         _module = await (_moduleLoad ??= JavaScript.InvokeAsync<IJSObjectReference>("import", "./sandbox-client.js").AsTask());

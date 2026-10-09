@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Catalog-validated intelligent XAML, bounded C# expressions, revisioned interactive state and reusable automation integration.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../XamlG.Automation/XamlG.Automation.csproj" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <EmbeddedResource Include="Resources/intelligent-ui.html" />
+  </ItemGroup>
+</Project>

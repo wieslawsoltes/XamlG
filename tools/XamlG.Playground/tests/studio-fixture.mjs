@@ -25,7 +25,7 @@ export const test = base.extend({
         if (active < 8) active++; else await new Promise(resolve => waiting.push(resolve));
         try {
           const address = new URL(route.request().url());
-          const response = await route.fetch({ url: `http://127.0.0.1:8765${address.pathname}${address.search}`, maxRedirects: 0 });
+          const response = await route.fetch({ url: `http://127.0.0.1:${process.env.PLAYGROUND_ASSET_PORT || 8765}${address.pathname}${address.search}`, maxRedirects: 0 });
           try { await route.fulfill({ response }); }
           finally { await response.dispose(); }
         } finally {

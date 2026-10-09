@@ -130,7 +130,7 @@ public partial class CompilerWorkbench : IDisposable
     private async Task ExportResultAsync()
     {
         if (_result == null) return;
-        await using var module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./studio.js");
+        await using var module = await JavaScript.InvokeAsync<IJSObjectReference>("xamlgBoot.importModule", "studio.js");
         await module.InvokeVoidAsync("download", "xamlg-compiler-inspection.json", Pretty(_result), "application/json");
     }
     public void Dispose() { _disposed = true; _lifetime.Cancel(); _lifetime.Dispose(); }

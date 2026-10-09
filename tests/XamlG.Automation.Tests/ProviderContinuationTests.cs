@@ -15,10 +15,12 @@ namespace XamlG.Automation.Tests;
 public sealed class ProviderContinuationTests
 {
     [Theory]
-    [InlineData("anthropic", true)]
-    [InlineData("gemini", true)]
-    [InlineData("gemini", false)]
-    public async Task Official_sdk_native_continuations_preserve_private_content_and_match_tool_results(string id, bool nativeId)
+    [InlineData("anthropic", true, false)]
+    [InlineData("gemini", true, false)]
+    [InlineData("gemini", false, false)]
+    [InlineData("anthropic", true, true)]
+    [InlineData("gemini", true, true)]
+    public async Task Official_sdk_native_continuations_preserve_private_content_and_match_tool_results(string id, bool nativeId, bool image)
     {
         using var handler = new ProviderHandler(id, nativeId);
         using var http = new HttpClient(new AgentHttpHandler(handler));
@@ -27,7 +29,7 @@ public sealed class ProviderContinuationTests
         IAgentProvider provider = id == "anthropic" ? new AnthropicAgentProvider(anthropic) : new GeminiAgentProvider(google);
         var catalog = new AutomationCatalog(); var writes = 0;
         catalog.Add<EditArguments, object>("edit", "Edit source", AutomationScope.Source, AutomationEffect.Edit,
-            (args, _) => { writes++; return ValueTask.FromResult<object>(new { text = args.Text, revision = writes }); });
+            (args, _) => { writes++; return ValueTask.FromResult<object>(image ? AutomationMedia.Image(new { text = args.Text, revision = writes }, [137, 80, 78, 71], 1, 1) : new { text = args.Text, revision = writes }); });
         using var harness = new AgentHarness(catalog);
         var task = harness.CreateTask("provider continuation", provider, "fixture-model", TestContext.Current.CancellationToken);
         var deltas = new StringBuilder();
@@ -39,6 +41,11 @@ public sealed class ProviderContinuationTests
         Assert.Contains("private-deliberation", continuation);
         Assert.Contains(id == "anthropic" ? "tool_result" : "functionResponse", continuation);
         Assert.Contains("updated", continuation);
+        if (image)
+        {
+            Assert.Contains("iVBORw==", continuation);
+            Assert.Contains(id == "anthropic" ? "\"image\"" : "\"inlineData\"", continuation);
+        }
         if (id == "anthropic")
         {
             var messages = handler.Requests[1].GetProperty("messages");
@@ -61,6 +68,13 @@ public sealed class ProviderContinuationTests
         Assert.DoesNotContain("opaque-redacted", transcript);
         Assert.DoesNotContain("test-provider-key", transcript);
         Assert.Contains("Updated and verified.", deltas.ToString());
+        var saved = JsonSerializer.Deserialize<AgentSessionSnapshot>(JsonSerializer.Serialize(harness.CaptureSession(), AutomationJson.Options), AutomationJson.Options)!;
+        using var restored = new AgentHarness(catalog);
+        restored.RestoreSession(saved, (_, _) => provider, TestContext.Current.CancellationToken);
+        await restored.RunAsync(task.Id, "Continue after restart", new(), cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(1, writes);
+        Assert.Contains("private-deliberation", handler.Requests[2].GetRawText());
+        Assert.DoesNotContain("private-deliberation", restored.ExportTranscript(task.Id));
     }
 
     [Theory]

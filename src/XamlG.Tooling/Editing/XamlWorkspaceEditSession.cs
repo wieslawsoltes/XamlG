@@ -34,6 +34,33 @@ public sealed class XamlWorkspaceEditSession
     public string? UndoDescription { get { lock (_gate) return _undo.Last?.Value.Description; } }
     public string? RedoDescription { get { lock (_gate) return _redo.Count == 0 ? null : _redo.Peek().Description; } }
 
+    public XamlWorkspaceSavedState CaptureState()
+    { lock (_gate) return new(1, _current, _undo.ToArray(), _redo.ToArray()); }
+
+    public XamlWorkspaceSnapshot RestoreState(XamlWorkspaceSavedState saved)
+    {
+        if (saved.Version != 1 || saved.Current.Revision < 0 || saved.Undo.Count + saved.Redo.Count > _historyCapacity)
+            throw new ArgumentException("Invalid saved workspace history.");
+        var current = ValidateDocuments(saved.Current.Documents);
+        var cost = 0L;
+        foreach (var entry in saved.Undo.Concat(saved.Redo))
+        {
+            ValidateDocuments(entry.Before); ValidateDocuments(entry.After);
+            if (string.IsNullOrWhiteSpace(entry.Description) || entry.Characters != CharacterCount(entry.Before) + CharacterCount(entry.After))
+                throw new ArgumentException("Invalid saved workspace entry.");
+            cost = checked(cost + entry.Characters);
+        }
+        if (cost > _historyCharacters || saved.Undo.Count > 0 && !Same(saved.Undo.Last().After, current) || saved.Redo.Count > 0 && !Same(saved.Redo.First().Before, current))
+            throw new ArgumentException("Saved history does not match its source snapshot.");
+        lock (_gate)
+        {
+            _undo.Clear(); foreach (var entry in saved.Undo) _undo.AddLast(entry);
+            _redo.Clear(); foreach (var entry in saved.Redo.Reverse()) _redo.Push(entry);
+            _retainedCharacters = cost;
+            return _current = new(Math.Max(_current.Revision + 1, saved.Current.Revision), current);
+        }
+    }
+
     public XamlWorkspaceSnapshot ReplaceAll(long expectedRevision, IEnumerable<KeyValuePair<string, string>> documents,
         string description, bool recordHistory = true)
     {

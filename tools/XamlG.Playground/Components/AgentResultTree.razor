@@ -1,0 +1,63 @@
+@using System.Text.Json
+
+@if (Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+{
+    <dl class="agent-result-fields">
+    @foreach (var field in Fields.Where((item, index) => index < 12 || Omitted(item) != null))
+    {
+        <div class="agent-result-field">
+        @if (Omitted(field) is { } omitted) { <dd class="agent-help">@omitted more entries in the full result</dd> }
+        else if (field.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+        {
+            <dd><details class="agent-result-branch"><summary>@AgentEventCard.Humanize(field.Key)<span>@Description(field.Value)</span></summary>
+            @if (Depth < 4) { <AgentResultTree Value="field.Value" Depth="@(Depth + 1)" /> }
+            else { <p class="agent-help">Open raw data for deeper values.</p> }
+            </details></dd>
+        }
+        else
+        {
+            <dt>@AgentEventCard.Humanize(field.Key)</dt><dd>@Display(field.Value)</dd>
+        }
+        </div>
+    }
+    @if (Fields.Count(item => Omitted(item) == null) is > 12 and var count) { <div><dd class="agent-help">@(count - 12) more entries in raw data</dd></div> }
+    </dl>
+}
+else { <p>@Display(Value)</p> }
+
+@code {
+    [Parameter] public JsonElement Value { get; set; }
+    [Parameter] public int Depth { get; set; }
+    private IEnumerable<KeyValuePair<string, JsonElement>> Fields => Value.ValueKind == JsonValueKind.Object
+        ? Value.EnumerateObject().Select(property => new KeyValuePair<string, JsonElement>(property.Name, property.Value))
+        : Value.EnumerateArray().Select((value, index) => new KeyValuePair<string, JsonElement>(Label(value, index), value));
+    private static string Label(JsonElement value, int index)
+    {
+        if (value.ValueKind == JsonValueKind.Object)
+        {
+            if (value.EnumerateObject().Count() == 1 && value.TryGetProperty("$moreItems", out _)) return "$moreItems";
+            foreach (var name in new[] { "name", "path", "type", "text", "key" })
+                if (value.TryGetProperty(name, out var field) && field.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(field.GetString())) return Display(field);
+        }
+        return $"Item {index + 1}";
+    }
+    private static int? Omitted(KeyValuePair<string, JsonElement> field)
+    {
+        if (field.Key is not ("$moreItems" or "$moreFields")) return null;
+        var value = field.Value;
+        if (value.ValueKind == JsonValueKind.Object && !value.TryGetProperty(field.Key, out value)) return null;
+        return value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var count) && count >= 0 ? count : null;
+    }
+    private static string Description(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Array)
+            return $"{AgentEventCard.Count(value)} items";
+        var fields = value.EnumerateObject().ToArray();
+        return $"{fields.Sum(item => (long)(Omitted(new(item.Name, item.Value)) ?? 1))} fields";
+    }
+    private static string Display(JsonElement value)
+    {
+        var text = value.ValueKind == JsonValueKind.Null ? "—" : value.ToString();
+        return text.Length > 180 ? text[..180] + "…" : text;
+    }
+}

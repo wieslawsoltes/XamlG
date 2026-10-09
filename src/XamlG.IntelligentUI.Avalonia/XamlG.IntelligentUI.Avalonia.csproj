@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><Description>Native Avalonia rendering and keyed reconciliation for intelligent XAML surfaces.</Description></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../XamlG.IntelligentUI/XamlG.IntelligentUI.csproj" /><PackageReference Include="Avalonia" /></ItemGroup>
+</Project>
