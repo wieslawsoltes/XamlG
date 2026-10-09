@@ -29,6 +29,8 @@ public sealed class ConstructionFactoryTests
             public static bool ExpectNamed;
             public Root() { Active = this; }
             public Bag Children { get; } = new();
+            private Node _child;
+            public Node Child { get => _child; set { Event("property:" + value.Id); _child = value; } }
             public static void Event(string value) {
               Log.Add(value);
               if (value == FailAt) throw new InvalidOperationException(value);
@@ -98,6 +100,28 @@ public sealed class ConstructionFactoryTests
     private static object? Property(object value, string name) => value.GetType().GetProperty(name)!.GetValue(value);
     private static object[] Children(object root) => ((IEnumerable)Property(root, "Children")!).Cast<object>().ToArray();
     private static string Source(XamlProjectCompilation project) => string.Join("\n", project.Documents.Select(document => document.Output.Source));
+
+    [Theory]
+    [InlineData("Node", "new:1,begin:1,set:1,end:1,property:1")]
+    [InlineData("EarlyNode", "new:1,begin:1,property:1,set:1,end:1")]
+    public void SharedPropertyAssignmentPreservesEarlyAndLateConsumption(string type, string expected)
+    {
+        var compilation = Compilation();
+        var documents = new[] { "First.xaml", "Second.xaml" }.Select(path => new XamlProjectDocument(XamlSyntaxTree.Parse(
+            "<Root xmlns='clr-namespace:ConstructionCase'><Root.Child><" + type + " Text='child'/></Root.Child></Root>", path), path));
+        var project = new XamlProjectCompiler().Compile(documents, compilation);
+        var assembly = Emit(compilation, project);
+        var root = Build(assembly, project);
+        Assert.Equal(expected, Events(assembly));
+        Assert.Contains(".Assign", Source(project), StringComparison.Ordinal);
+        var child = Property(root, "Child")!;
+        Assert.True(XamlRuntimeSession.TryGet(root, out var session));
+        Assert.Equal(session!.FindNode(root)!.Key, session.FindNode(child)!.ParentKey);
+        Assert.True(session.Apply(0, [new XamlPropertyUpdate(session.FindNode(child)!.Key, "Text", "edited")]).Applied);
+        Assert.Equal("edited", Property(child, "Text"));
+        session.Dispose(); session.Dispose();
+        Assert.EndsWith(",set:1,dispose:1", Events(assembly), StringComparison.Ordinal);
+    }
 
     [Theory]
     [InlineData(1)]

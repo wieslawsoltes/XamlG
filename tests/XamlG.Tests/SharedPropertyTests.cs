@@ -151,6 +151,42 @@ public sealed class SharedPropertyTests
     [Theory]
     [InlineData(1)]
     [InlineData(4)]
+    public void GeneralSetterLayoutChangesInvalidateCallersAndSurviveOwnerRemoval(int concurrency)
+    {
+        var compilation = CompilationFactory.Create("namespace SetterLayout; public class Node { public object Value { get; set; } } public class Payload { public string Text { get; set; } }")
+            .AddReferences(MetadataReference.CreateFromFile(typeof(XamlRuntimeContext).Assembly.Location));
+        static XamlProjectDocument Input(string path, string value, bool child = false) => new(XamlSyntaxTree.Parse(
+            "<Node xmlns='clr-namespace:SetterLayout' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'><Node.Value>" +
+            (child ? "<Payload Text='" + value + "'/>" : "<x:String>" + value + "</x:String>") + "</Node.Value></Node>", path), path);
+        var documents = new[] { Input("First.xaml", "first"), Input("Second.xaml", "second"), Input("Third.xaml", "third") };
+        var options = new XamlCompilerOptions { MaxDegreeOfParallelism = concurrency };
+        var compiler = new XamlProjectCompiler();
+        var initial = compiler.Compile(documents, compilation, options: options);
+        Assert.DoesNotContain(".Assign", string.Join("\n", initial.Documents.Select(document => document.Output.Source)), StringComparison.Ordinal);
+        documents[0] = Input("First.xaml", "first child", child: true);
+        documents[1] = Input("Second.xaml", "second child", child: true);
+        var changed = compiler.Compile(documents, compilation, options: options);
+        Assert.Equal(new XamlProjectStatistics(2, 1, 3, 0), changed.Statistics);
+        var fresh = new XamlProjectCompiler().Compile(documents, compilation, options: options);
+        Assert.Equal(fresh.Documents.Select(document => document.Output.Source), changed.Documents.Select(document => document.Output.Source));
+        Assert.Contains(".Assign", string.Join("\n", changed.Documents.Select(document => document.Output.Source)), StringComparison.Ordinal);
+        var assembly = Emit(compilation, changed);
+        var first = Build(assembly, changed, "First.xaml");
+        Assert.Equal("first child", Property(Property(first, "Value")!, "Text"));
+        Update(first, "Value", "edited"); Assert.Equal("edited", Property(first, "Value"));
+        Assert.Equal("third", Property(Build(assembly, changed, "Third.xaml"), "Value"));
+        var survivor = compiler.Compile(documents.Skip(1), compilation, options: options);
+        fresh = new XamlProjectCompiler().Compile(documents.Skip(1), compilation, options: options);
+        Assert.Equal(fresh.Documents.Select(document => document.Output.Source), survivor.Documents.Select(document => document.Output.Source));
+        assembly = Emit(compilation, survivor);
+        var second = Build(assembly, survivor, "Second.xaml");
+        Assert.Equal("second child", Property(Property(second, "Value")!, "Text"));
+        Update(second, "Value", "survived"); Assert.Equal("survived", Property(second, "Value"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
     public void ScalarHelperLayoutChangesInvalidateCallersWithoutChangingTheEditingTable(int concurrency)
     {
         var compilation = CompilationFactory.Create("namespace ScalarLayout; public class Node { public object Value { get; set; } }")

@@ -38,22 +38,24 @@ public sealed class TargetFrameExpressionTests
     public static IEnumerable<object[]> Cases() =>
         from kind in new[] { "call", "receiver", "property", "field", "indexer", "assignment", "lambda", "methodgroup", "initializer" }
         from services in new[] { false, true }
-        select new object[] { kind, services };
+        from shared in new[] { false, true }
+        select new object[] { kind, services, shared };
 
     [Theory]
     [MemberData(nameof(Cases))]
-    public void NestedExpressionsPreserveDescriptorOrderAndTargetServices(string kind, bool services)
+    public void NestedExpressionsPreserveDescriptorOrderAndTargetServices(string kind, bool services, bool shared)
     {
         var profile = XamlFrameworkProfile.Portable with
         {
             BindingRules = ImmutableArray.Create<IXamlBindingRule>(new ExpressionRule(kind, services))
         };
-        using var code = CompiledXaml.Create("<View xmlns='clr-namespace:FrameExpressions' Value='test'/>", Model, profile);
+        using var code = CompiledXaml.Create("<View xmlns='clr-namespace:FrameExpressions' Value='test'/>", Model, profile, shareAcrossDocuments: shared);
         var root = code.Build();
         var value = root.GetType().GetProperty("Value")!.GetValue(root);
         if (value is Delegate callback) value = callback.DynamicInvoke();
         if (services) Assert.Same(root, value); else Assert.Equal("literal", value);
         Assert.Equal(services, code.Emission.Source.Contains(".ForTarget(", StringComparison.Ordinal));
+        Assert.Equal(shared, code.Emission.Source.Contains(".Assign", StringComparison.Ordinal));
     }
 
     private sealed class ExpressionRule(string kind, bool services) : IXamlBindingRule

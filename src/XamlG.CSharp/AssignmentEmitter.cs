@@ -29,6 +29,7 @@ internal sealed class AssignmentEmitter
                 var valueFrame = ForTarget(set.Member, target, frame, ValueEmitter.UsesFrame(set.Value));
                 void Assign(string value)
                 {
+                    if (PropertyAssignmentEmitter.TryEmit(_context, set, owner, target, frame, value)) return;
                     if (set.RegisterName)
                     {
                         var name = _context.Locals.Declare("string", "((string)(" + value + "))!", "name");
