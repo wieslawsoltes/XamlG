@@ -2,6 +2,9 @@ import { test, expect } from './studio-fixture.mjs';
 import { openStudio, connectMcp } from './live-preview.mjs';
 const panelFor = page => page.getByRole('complementary',{name:'Intelligent UI workspace',exact:true});
 const canvas = frame => frame.locator('canvas.avalonia-canvas');
+// Avalonia renders below a native-host overlay. Exercise the real hit-test target,
+// rather than forcing a click through that overlay into the non-interactive canvas.
+const inputSurface = frame => frame.locator('.avalonia-native-host');
 const declaration = id => ({id,expectedRevision:0,sequence:1,
  xaml:'<StackPanel xmlns="https://github.com/avaloniaui" xmlns:ui="urn:xamlg:intelligent-ui" Spacing="12"><Slider Width="300" Height="40" HorizontalAlignment="Left" ui:Key="seats" ui:Bind="seats" Minimum="1" Maximum="50" IsSnapToTickEnabled="True" TickFrequency="1"/><TextBlock Text="{ui:Expr &quot;$&quot; + state.seats * data.unitPrice}"/></StackPanel>',initialState:{seats:8},data:{unitPrice:29},fallbackMarkdown:'Native pricing'});
 
@@ -15,7 +18,7 @@ test('private UI workspace saves, restores after reload and forgets without revi
  const pane=page.getByRole('region',{name:'Coding agent workbench'});
  await pane.locator('.intelligent-ui-demo > summary').click();await pane.getByRole('button',{name:'Try intelligent UI',exact:true}).click();
  const card=pane.getByRole('article',{name:'Intelligent UI response'});
- await card.locator('details.ui-inspect > summary').click();await card.getByLabel('UI state seats',{exact:true}).fill('17');await card.getByLabel('UI state seats',{exact:true}).press('Tab');
+ await card.getByRole('button',{name:'Inspect UI',exact:true}).click();await card.getByLabel('UI state seats',{exact:true}).fill('17');await card.getByLabel('UI state seats',{exact:true}).press('Tab');
  await expect(card.locator('header')).toContainText('state 1');
  let panel=panelFor(page);await panel.getByRole('button',{name:'Intelligent UI workspace',exact:true}).click();
  await expect(panel.getByRole('button',{name:'Save UI workspace',exact:true})).toBeDisabled();
@@ -41,8 +44,8 @@ test('full C# proposal requires owner review and runs only in a disposable opaqu
   await panel.getByRole('button',{name:'Approve and run full C#',exact:true}).click();const frame=page.frameLocator('iframe[title="Approved full C# preview"]');
   await expect.poll(async()=>{const state=await mcp.call('xamlg_ui_csharp_status',{id:proposal.id});if(state.status==='failed')throw new Error(state.error);return state.status;}).toBe('completed');
   await expect(frame.getByRole('status')).toContainText('revision 1');await expect(canvas(frame)).toBeVisible();await frame.locator('details > summary').click();await expect(frame.locator('details')).toContainText('Sum: 6');
-  expect(await frame.locator('body').evaluate(()=>{let parentBlocked=false,storageBlocked=false;try{void parent.document.body;}catch{parentBlocked=true;}try{void localStorage.length;}catch{storageBlocked=true;}return{parentBlocked,storageBlocked};})).toEqual({parentBlocked:true,storageBlocked:true});
-  await canvas(frame).click({position:{x:240,y:20}});await expect(frame.getByRole('status')).not.toContainText('state 0');await expect(frame.locator('details')).not.toContainText('Sum: 6');
+  expect(await frame.locator('body').evaluate(()=>{let parentBlocked=false,storageBlocked=false;try{void parent.document.body;}catch{void(parentBlocked=true);}try{void localStorage.length;}catch{void(storageBlocked=true);}return{parentBlocked,storageBlocked};})).toEqual({parentBlocked:true,storageBlocked:true});
+  await inputSurface(frame).click({position:{x:240,y:20}});await expect(frame.getByRole('status')).not.toContainText('state 0');await expect(frame.locator('details')).not.toContainText('Sum: 6');
   await expect(frame.getByRole('alert')).toHaveCount(0);
   await panel.getByRole('button',{name:'Reset execution frame',exact:true}).click();await expect(page.locator('iframe[title="Approved full C# preview"]')).toHaveCount(0);
  }finally{await mcp.close();}
@@ -60,7 +63,7 @@ test('actual native MCP resource renders Avalonia and round-trips live input thr
   console.log('NATIVE_RESOURCE_CONTENTS',JSON.stringify(resources.contents.map(item=>({...item,text:item.text?.slice(0,300)}))));
   expect(resources.contents).toHaveLength(1);expect(resources.contents[0]).toMatchObject({mimeType:'text/html;profile=mcp-app'});expect(resources.contents[0]._meta.ui.csp.frameDomains).toHaveLength(1);
   const html=resources.contents[0].text;expect(html).toContain('ui-native.html');
-  host=await context.newPage();const errors=[];host.on('pageerror',error=>errors.push(error.message));await host.exposeFunction('mcpRequest',(method,params)=>mcp.rpc(method,params));
+  host=await context.newPage();host.setDefaultTimeout(20000);const errors=[];host.on('pageerror',error=>errors.push(error.message));await host.exposeFunction('mcpRequest',(method,params)=>mcp.rpc(method,params));
   await host.setContent('<!doctype html><iframe title="MCP native resource" sandbox="allow-scripts" style="width:900px;height:900px;border:0"></iframe>');
   await host.evaluate(({html,marker})=>{
    const frame=document.querySelector('iframe');window.nativeCalls=[];
@@ -74,7 +77,7 @@ test('actual native MCP resource renders Avalonia and round-trips live input thr
   },{html,marker});
   const guest=host.frameLocator('iframe[title="MCP native resource"]').frameLocator('iframe[title="Native Avalonia UI"]');
   await expect(guest.getByRole('status')).toContainText('revision '+marker.revision);await expect(canvas(guest)).toBeVisible();await guest.locator('details > summary').click();await expect(guest.locator('details')).toContainText('$232');
-  await canvas(guest).click({position:{x:240,y:20}});await expect.poll(async()=>(await mcp.call('xamlg_ui_read',{id:marker.id})).stateRevision).toBeGreaterThan(0);
+  await inputSurface(guest).click({position:{x:240,y:20}});await expect.poll(async()=>(await mcp.call('xamlg_ui_read',{id:marker.id})).stateRevision).toBeGreaterThan(0);
   const snapshot=await mcp.call('xamlg_ui_read',{id:marker.id});await expect(guest.locator('details')).toContainText('$'+snapshot.state.seats*29);
   expect(await host.evaluate(()=>window.nativeCalls.some(call=>call.name==='xamlg_ui_state'))).toBe(true);expect(errors).toEqual([]);
  }catch(error){if(host)console.log('NATIVE_GUEST_FAILURE',JSON.stringify(await Promise.all(host.frames().map(frame=>frame.evaluate(()=>({url:location.href,text:document.body.innerText.slice(0,6000)})).catch(failure=>({error:failure.message}))))));throw error;}
