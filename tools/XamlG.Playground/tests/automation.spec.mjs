@@ -188,7 +188,7 @@ test('floating, docking and layout restoration retain the source buffers and Ava
   await expect(page.locator('#avalonia-preview canvas').first()).toBeVisible();
   await call(page, 'xamlg_layout_content', { contentId: 'explorer', operation: 'hide' });
   await call(page, 'xamlg_layout_content', { contentId: 'explorer', operation: 'show' });
-  await expect(page.getByRole('complementary')).toContainText('EXPLORER');
+  await expect(page.locator('aside.explorer')).toContainText('EXPLORER');
 });
 
 test('runtime object paths, bindings, styles and tree mutations operate on the real preview', async ({ page }) => {
