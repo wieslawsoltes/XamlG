@@ -42,7 +42,15 @@ jobs:
           PLAYGROUND_PAGES_PREVIEW: '1'
         run: |
           dotnet build ../XamlG.Studio.Host -c Release -warnaserror
-          python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs
+          python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/intelligent-ui-lifecycle.spec.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: intelligent-ui-studio-acceptance
+          path: |
+            tools/XamlG.Playground/test-results
+            tools/XamlG.Playground/playwright-report
+          if-no-files-found: ignore
       - name: Browser acceptance tests
         working-directory: tools/XamlG.Playground
         env:

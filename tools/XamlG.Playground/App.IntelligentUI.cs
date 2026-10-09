@@ -18,7 +18,7 @@ public partial class App
             tool.Scope is AutomationScope.Source or AutomationScope.Compiler or AutomationScope.Project);
         var proposals = new UiCSharpProposals(_intelligentUi); proposals.Register(_automation);
         UiNativeAppResource.Register(_automation, _intelligentUi, new Uri(Navigation.BaseUri));
-        IntelligentUiWorkspace.Attach(_intelligentUi, proposals, () => _browserAgents.WorkspaceIdentity.ToString(), WithIntelligentUiWorkspaceAsync);
+        IntelligentUiWorkspace.Attach(_intelligentUi, proposals, () => _browserAgents.WorkspaceIdentity, WithIntelligentUiWorkspaceAsync);
     }
     private void DisposeIntelligentUi()
     {
@@ -31,13 +31,18 @@ public partial class App
         try
         {
             if (!_ready || _busy || _disposed) throw new AutomationException("unavailable", "The Studio workspace is busy or not ready.");
+            await CaptureEditorsAsync(); token.ThrowIfCancellationRequested();
+            if (!_ready || _busy || _disposed) throw new AutomationException("unavailable", "The workspace changed while capturing editor state.");
+            // Persist the normal project draft and its existing identity before an explicit
+            // archive operation. Reload then addresses the same UI archive, even on a new project
+            // whose source has never been edited. This neither compiles nor runs project code.
+            await SaveDraftAsync(); token.ThrowIfCancellationRequested();
             await operation(token);
         }
         finally { _automationGate.Release(); if (!_disposed) StateHasChanged(); }
     }
 
-    // This method is not JSInvokable and is never exposed to agents. The card invokes it
-    // only after an explicit local user review; normal schema/source-revision checks remain.
+    // Owner-only callback after explicit local action review. Not exposed to agents or JS.
     private async Task<JsonElement> ExecuteIntelligentUiToolAsync(UiActionCall call, CancellationToken cancellationToken)
     {
         await _automationGate.WaitAsync(cancellationToken);
