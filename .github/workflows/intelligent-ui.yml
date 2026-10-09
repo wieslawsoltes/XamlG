@@ -28,6 +28,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Capture exact validation source
+        run: |
+          mkdir -p artifacts/intelligent-ui/source
+          git rev-parse HEAD > artifacts/intelligent-ui/source/revision.txt
+          git archive --format=tar.gz HEAD -o artifacts/intelligent-ui/source/source.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: intelligent-ui-validation-source
+          path: artifacts/intelligent-ui/source
+          retention-days: 7
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
