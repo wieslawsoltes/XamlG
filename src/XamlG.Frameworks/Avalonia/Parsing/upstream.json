@@ -96,6 +96,11 @@
       "source": "src/Avalonia.Base/Utilities/StringSplitter.cs",
       "destination": "src/XamlG.Frameworks/Avalonia/Parsing/StringSplitter.cs",
       "sha256": "3f8e954f0cff47270a7f09e703159e30c037d549daaa655839c167808859e8c3"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/Transformation/TransformParser.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/TransformParser.cs",
+      "sha256": "8a234c444ac98146cd2f462bcf07a4b5337f1b098063827dcdaa44c27b124a3c"
     }
   ]
 }

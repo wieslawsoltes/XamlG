@@ -4,6 +4,8 @@
     <Description>Symbol-only framework profiles and semantic adapters for XamlG.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <!-- Pristine parser import; enabled in the following adaptation commit. -->
+    <Compile Remove="Avalonia/Parsing/TransformParser.cs" />
     <ProjectReference Include="../XamlG.Compiler/XamlG.Compiler.csproj" />
     <None Update="Avalonia/Parsing/LICENSE.md" Pack="true" PackagePath="licenses/Avalonia/" />
   </ItemGroup>
