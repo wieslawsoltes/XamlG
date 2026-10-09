@@ -6,30 +6,30 @@ Roslyn-reported generation time and captured-C# compilation are reported
 separately. The target is **not met**. See [measurement methodology](performance.md)
 and [PR #14](https://github.com/wieslawsoltes/XamlG/pull/14) for current results.
 
-The [latest verified CI acceptance checkpoint, `ee13421`](https://github.com/wieslawsoltes/XamlG/actions/runs/37963953725)
+The [latest verified CI acceptance checkpoint, `7283eb5`](https://github.com/wieslawsoltes/XamlG/actions/runs/37971807779)
 uses three forced Release rebuilds per compiler/project with SDK 10.0.401 and
 normal analyzers. Complete catalog validation passes, including the trimmed
 browser host, but the performance target fails for all three projects:
 
 | Project | XamlX added cost | XamlG added cost | G/X added cost | Required XamlG cost |
 | --- | ---: | ---: | ---: | ---: |
-| Simple | 2.378s | 6.458s | 2.72× | ≤1.189s |
-| Fluent | 3.372s | 9.985s | 2.96× | ≤1.686s |
-| ControlCatalog | 8.141s | 14.706s | 1.81× | ≤4.071s |
+| Simple | 2.753s | 7.521s | 2.73× | ≤1.377s |
+| Fluent | 3.998s | 11.675s | 2.92× | ≤1.999s |
+| ControlCatalog | 8.548s | 15.843s | 1.85× | ≤4.274s |
 
-Full rebuild medians (XamlX/XamlG) are 6.942/11.714, 8.228/15.516 and
-16.674/23.909 seconds. Compiler-task totals are 4.313/8.393, 5.546/12.180 and
-13.629/20.167 seconds; common-C# baselines are 1.935, 2.195 and 5.461 seconds.
+Full rebuild medians (XamlX/XamlG) are 7.718/13.288, 9.198/17.753 and
+17.978/25.825 seconds. Compiler-task totals are 4.806/9.572, 6.373/14.050 and
+14.632/21.812 seconds; common-C# baselines are 2.051, 2.375 and 5.969 seconds.
 These totals and individual stage medians are computed separately and need not
 sum. This is a fresh CI comparison, not a paired measurement against older runs.
 
-The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37963953813)
-reports generation at 1.266/1.649/2.888 seconds and captured-C# compilation at
-4.842/7.524/13.853 seconds for Simple/Fluent/ControlCatalog. These use a different
+The [separate profile run for the same head](https://github.com/wieslawsoltes/XamlG/actions/runs/37971807158)
+reports generation at 1.237/1.587/3.005 seconds and captured-C# compilation at
+4.762/7.194/13.783 seconds for Simple/Fluent/ControlCatalog. These use a different
 runner and are not additive phase costs. Compilation and analysis of the
 generated program remain the larger cost. Both runs use PR merge checkout
-`905fe0c46428b85492aaaa2f2d07199f97f5ce63`; all 390 XamlG-generated source hashes
-match the local `ee13421` implementation. The local experiments below use
+`87b68bbb7cb4739a984637f8a5eab1a67a23a3bd`; all 390 XamlG-generated source hashes
+match the local `7283eb5` implementation. The local experiments below use
 separately identified snapshots and do not establish the acceptance target.
 
 The assignment-lifetime round, `ee13421`, narrows the temporary-local lifetime
@@ -47,7 +47,7 @@ actual desktop and trimmed browser host. The merge leaves compiler and catalog
 sources unchanged, resolves the workflow inventory conflict by retaining both
 profiling and Intelligent UI validation, and starts fresh PR checks.
 
-The current local revision, `6d870bc`, shares lifetime and name-reference analysis
+The compiler change at `6d870bc` shares lifetime and name-reference analysis
 to remove repeated descendant scans. All 390 generated files are byte-identical
 to the validated baseline. The [nested-input diagnostic](#shared-lifetime-and-reference-analysis)
 confirms reduced allocation growth; complete workload timings remain mixed.

@@ -2,13 +2,23 @@ name: Compiler profiling
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: 'Optional baseline commit for alternating before/after Csc measurements'
+        type: string
+        required: false
+      pairs:
+        description: 'Measured pairs per phase/project (comparison mode only)'
+        type: number
+        default: 6
 permissions:
   contents: read
 concurrency:
-  group: compiler-profile-${{ github.ref }}
+  group: compiler-profile-${{ github.ref }}-${{ github.event_name }}-${{ inputs.baseline_ref }}
   cancel-in-progress: true
 jobs:
   profile:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.baseline_ref == '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -41,4 +51,31 @@ jobs:
         with:
           name: compiler-profile
           path: artifacts/controlcatalog-profile
+          retention-days: 14
+  compare:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.baseline_ref != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DOTNET_PROCESSOR_COUNT: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - name: Prepare pinned catalog sources
+        run: python3 scripts/prepare-controlcatalog.py
+      - name: Compare compiler implementations on identical inputs
+        env:
+          BASELINE_REF: ${{ inputs.baseline_ref }}
+          COMPILER_PAIRS: ${{ inputs.pairs }}
+        run: python3 scripts/compare-controlcatalog-compilers.py --baseline-ref "$BASELINE_REF" --iterations "$COMPILER_PAIRS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compiler-comparison
+          path: artifacts/controlcatalog-comparison
           retention-days: 14

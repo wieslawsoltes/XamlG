@@ -39,6 +39,24 @@ Both the profile and XamlX benchmark pin compiler subprocesses to the selected i
 
 The sampled managed thread-time profile includes waits and GC, sums concurrent threads and has overlapping inclusive frames. It is not an on-CPU profile. Allocation ticks estimate allocated bytes and attribute each interval to the sampled type; they do not count every allocation. Trace timings include profiling overhead. The unprofiled Csc runs include generation, generated C# compilation and analysis, but exclude MSBuild. Use the separate XamlX benchmark for the accepted added-XAML-cost metric and report full rebuild time alongside it.
 
+## Comparing compiler revisions on one runner
+
+Use `scripts/compare-controlcatalog-compilers.py` to measure a compiler change against a selected commit on identical project inputs:
+
+```sh
+python3 scripts/prepare-controlcatalog.py
+DOTNET_PROCESSOR_COUNT=2 python3 scripts/compare-controlcatalog-compilers.py \
+  --baseline-ref <baseline-commit> --iterations 6
+```
+
+The baseline commit must be available locally. The script builds its generator in a temporary detached worktree, freezes both generators and their dependencies, and removes the temporary checkout. Both variants consume the current sample sources, runtime and assembly references. This isolates compiler changes; it does not compare different runtime implementations or sample revisions. An older compiler must support the current project inputs and runtime contracts.
+
+Each project runs adjacent before/after pairs for the full Csc invocation and for captured generated C#, reversing order between iterations. Builds, restores and source captures happen outside the measured runs. The default six pairs balance order; at least three are required. Use `--dotnet`, `--projects` and an empty `--output` directory to select the SDK and workloads. `--skip-prepare` requires current dependencies already restored and built. Run without competing builds or profilers on the same machine.
+
+`results.json` records commit identities, frozen compiler hashes, generated-source hashes and sizes, every process measurement, phase medians and individual paired ratios. `summary.md` reports generation, full Csc and captured-C# timings separately. The full phase retains every generator and analyzer. The captured phase replaces the XamlG generator/analyzer assembly with its generated sources and retains the other generators and analyzers. Its timing is diagnostic and cannot be subtracted from full Csc to derive an exact generation cost. The comparison does not measure the 2× XamlX acceptance target; use `benchmark-controlcatalog.py` for that gate.
+
+The **Compiler profiling** workflow accepts an optional `baseline_ref` and a `pairs` count for this comparison. A manual run with a baseline uses one runner for all pairs and uploads the `compiler-comparison` artifact. Without a baseline, the workflow retains its normal profiling behavior. Published comparisons should use clean committed revisions; local runs also record tracked changes and the harness hash.
+
 ## Compilation-scoped metadata caching
 
 The compatibility review found repeated scans for provider methods and declared/inherited content properties, including negative lookups for ordinary controls. The type system now retains these immutable results within one Roslyn compilation and framework configuration. Generator environment creation also no longer constructs an unused second type system. Changing the C# compilation creates a new environment; the generator regression checks provider removal and restoration after cached positive and negative results.
