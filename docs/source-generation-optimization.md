@@ -843,3 +843,52 @@ representations, custom source callbacks, editing, source mappings and increment
 helper ownership with one/four workers. The pinned suite passes all 14 tests,
 and all 1,188 catalog cases pass on each of headless, actual desktop and trimmed
 browser hosts. The exhaustive parser inventory remains green.
+
+
+### Construction-helper CI and rejected collection-shape extension
+
+The [completed b2a16a6 catalog benchmark](https://github.com/wieslawsoltes/XamlG/actions/runs/37932762660)
+uses clean PR merge checkout `a021b585c71d3e7083223b1598213ba546c99838`,
+Linux x64 and SDK 10.0.401. It performs three sequential forced Release rebuilds
+per compiler/project with normal analyzers, prebuilt dependencies, one MSBuild
+worker and fresh compiler processes. The added cost includes compilation and
+analysis of generated C#.
+
+| Project | XamlX / XamlG rebuild | XamlX / XamlG compiler tasks | Common C# | XamlX / XamlG added cost | G/X added cost | Required XamlG cost |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Simple | 4.098s / 6.222s | 2.460s / 4.177s | 1.066s | 1.415s / 3.111s | 2.20× | ≤0.708s |
+| Fluent | 4.740s / 8.629s | 3.132s / 6.581s | 1.167s | 1.962s / 5.414s | 2.76× | ≤0.981s |
+| ControlCatalog | 9.838s / 13.700s | 7.742s / 11.289s | 3.128s | 4.607s / 8.161s | 1.77× | ≤2.304s |
+
+No project meets the accepted 2× target. Task medians and their differences are
+computed separately, so the displayed rounded columns need not sum exactly.
+The artifact is retained in `ci-b2a16a6-catalog/complete-controlcatalog/`.
+
+The [independent b2a16a6 profile](https://github.com/wieslawsoltes/XamlG/actions/runs/37932762760)
+verifies all 390 generated source hashes against the local frozen snapshot.
+Its generation/full-Csc/captured-C# wall times are 1.681/9.309/7.032 seconds
+for Simple, 2.220/13.795/11.050 for Fluent and 4.544/22.164/18.778 for the catalog.
+These nonadditive phases run on another machine and cannot be combined with the
+acceptance benchmark or used as a paired comparison to an earlier CI runner.
+The profile and source-hash verification are in `ci-b2a16a6-profile/`.
+
+A subsequent collection-shape prototype shared complete scalar-only child
+construction, source registration, initialization, assignments and collection
+insertion. It retained early insertion where required. All 33 focused cases
+passed, including exception/cleanup order, descriptor failures, null collections,
+boxing and conversion fallbacks. All three complete generated workloads compiled.
+However, it saved only 202,267 catalog bytes and 1,294 bytes per theme. In three
+alternating fresh-process pairs against b2a16a6, captured C# CPU increased in all
+three projects:
+
+| Project | Generation before → after | Full Csc CPU before → after | Captured C# CPU before → after |
+| --- | ---: | ---: | ---: |
+| Simple | 0.730s → 0.764s | 7.723s → 8.113s | 5.689s → 6.607s |
+| Fluent | 1.024s → 1.081s | 14.255s → 13.616s | 14.261s → 14.620s |
+| ControlCatalog | 2.136s → 1.876s | 28.952s → 25.103s | 26.492s → 29.694s |
+
+The same local methodology applies: SDK 10.0.401, macOS ARM64, two reported
+processors, normal analyzers and no overlapping owned builds/tests. Host load
+varied. The prototype was rejected; no runtime or full-host validation was
+claimed. Sources, DLLs, provenance and raw results are archived in
+`collection-shape-generator/` and `collection-shape-phases/`.
