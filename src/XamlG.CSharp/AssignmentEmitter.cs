@@ -7,7 +7,10 @@ internal sealed class AssignmentEmitter
     private readonly EmissionContext _context;
     private readonly ObjectEmitter _objects;
     private readonly ValueEmitter _values;
-    public AssignmentEmitter(EmissionContext context, ObjectEmitter objects, ValueEmitter values) { _context = context; _objects = objects; _values = values; }
+    private readonly LiteralAssignmentEmitter _literals;
+    public AssignmentEmitter(EmissionContext context, ObjectEmitter objects, ValueEmitter values)
+    { _context = context; _objects = objects; _values = values; _literals = new(context, values); }
+    public void EmitHelpers() => _literals.EmitHelpers();
     public void Emit(BoundAssignment assignment, BoundObject owner, string target, string frame)
     {
         using var temporaries = _context.Locals.EnterAssignment();
@@ -22,6 +25,7 @@ internal sealed class AssignmentEmitter
         {
             case BoundSetAssignment set:
             {
+                if (_literals.TryEmit(set, owner, target, frame)) break;
                 var valueFrame = ForTarget(set.Member, target, frame, ValueEmitter.UsesFrame(set.Value));
                 void Assign(string value)
                 {

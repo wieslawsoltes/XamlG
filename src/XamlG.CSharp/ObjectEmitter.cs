@@ -25,7 +25,7 @@ internal sealed class ObjectEmitter
     public void RegisterName(string frame, string nameExpression, string value) => _runtime.RegisterName(frame, nameExpression, value);
     public void Complete(string frame, string root) => _runtime.Complete(frame, root);
     public void EmitNamespaceMaps() => _namespaces.Emit();
-    public void EmitContextHelpers() { _leaves.EmitHelpers(); _deferred.EmitHelpers(); _runtime.EmitHelpers(); }
+    public void EmitContextHelpers() { _leaves.EmitHelpers(); _deferred.EmitHelpers(); _assignments.EmitHelpers(); _runtime.EmitHelpers(); }
     public bool TryEmitSharedDeferred(BoundDeferredExpression value, string incoming) =>
         _leaves.TryEmitDeferred(value, incoming) || _deferred.TryEmit(value, incoming);
     public string ConstructRoot(BoundObject value, string parentContext) =>

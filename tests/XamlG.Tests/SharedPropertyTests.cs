@@ -147,4 +147,44 @@ public sealed class SharedPropertyTests
         Update(root, "Secret", "changed private"); Update(root, "Text", "changed public");
         Assert.Equal("changed private", Property(root, "ReadSecret")); Assert.Equal("changed public", Property(root, "Text"));
     }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public void ScalarHelperLayoutChangesInvalidateCallersWithoutChangingTheEditingTable(int concurrency)
+    {
+        var compilation = CompilationFactory.Create("namespace ScalarLayout; public class Node { public object Value { get; set; } }")
+            .AddReferences(MetadataReference.CreateFromFile(typeof(XamlRuntimeContext).Assembly.Location));
+        static XamlProjectDocument Input(string path, string type, string value) => new(XamlSyntaxTree.Parse(
+            "<Node xmlns='clr-namespace:ScalarLayout' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>" +
+            "<Node.Value><x:" + type + ">" + value + "</x:" + type + "></Node.Value></Node>", path), path);
+        var documents = new[] { Input("First.xaml", "Int32", "1"), Input("Second.xaml", "Int32", "2"), Input("Third.xaml", "Int32", "3") };
+        var options = new XamlCompilerOptions { MaxDegreeOfParallelism = concurrency };
+        var compiler = new XamlProjectCompiler();
+        var initial = compiler.Compile(documents, compilation, options: options);
+        var initialSource = string.Join("\n", initial.Documents.Select(document => document.Output.Source));
+        Assert.Equal(1, initialSource.Split("internal static void SetScalar", StringSplitOptions.None).Length - 1);
+        var assembly = Emit(compilation, initial);
+        Assert.Equal(3, Property(Build(assembly, initial, "Third.xaml"), "Value"));
+
+        documents[0] = Input("First.xaml", "String", "first");
+        documents[1] = Input("Second.xaml", "String", "second");
+        var changed = compiler.Compile(documents, compilation, options: options);
+        Assert.Equal(new XamlProjectStatistics(2, 1, 3, 0), changed.Statistics);
+        var fresh = new XamlProjectCompiler().Compile(documents, compilation, options: options);
+        Assert.Equal(fresh.Documents.Select(document => document.Output.Source), changed.Documents.Select(document => document.Output.Source));
+        var changedSource = string.Join("\n", changed.Documents.Select(document => document.Output.Source));
+        Assert.Equal(1, changedSource.Split("internal static void SetScalar", StringSplitOptions.None).Length - 1);
+        assembly = Emit(compilation, changed);
+        var first = Build(assembly, changed, "First.xaml");
+        var third = Build(assembly, changed, "Third.xaml");
+        Assert.Equal("first", Property(first, "Value")); Assert.Equal(3, Property(third, "Value"));
+        Update(first, "Value", "edited"); Update(third, "Value", 4);
+        Assert.Equal("edited", Property(first, "Value")); Assert.Equal(4, Property(third, "Value"));
+
+        var survivor = compiler.Compile(documents.Skip(1), compilation, options: options);
+        assembly = Emit(compilation, survivor);
+        Assert.Equal("second", Property(Build(assembly, survivor, "Second.xaml"), "Value"));
+        Assert.Equal(3, Property(Build(assembly, survivor, "Third.xaml"), "Value"));
+    }
 }
