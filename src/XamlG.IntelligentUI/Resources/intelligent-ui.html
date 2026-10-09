@@ -12,14 +12,14 @@
 <script>
 'use strict';
 (()=>{
-  const $=id=>document.getElementById(id),root=$('surface'),pending=new Map(),entries=new Map();
+  const $=id=>document.getElementById(id),root=$('surface'),pending=new Map(),entries=new Map(),viewboxes=new WeakMap();
   const types=new Set('StackPanel Grid Border TextBlock SelectableTextBlock Button RepeatButton TextBox Slider CheckBox ToggleButton RadioButton ToggleSwitch ProgressBar Separator ScrollViewer Panel Canvas WrapPanel DockPanel UniformGrid Viewbox ContentControl UserControl Expander TabControl TabItem ItemsControl ListBox ListBoxItem ComboBox ComboBoxItem TreeView TreeViewItem NumericUpDown DatePicker CalendarDatePicker Calendar TimePicker Rectangle Ellipse Line'.split(' '));
   const toggles=new Set(['CheckBox','ToggleButton','RadioButton','ToggleSwitch']);
   const dates=new Set(['DatePicker','CalendarDatePicker','Calendar']);
   const containers=new Set(['StackPanel','Grid','Border','ScrollViewer','Panel','Canvas','WrapPanel','DockPanel','UniformGrid','Viewbox','ContentControl','UserControl','Expander','TabControl','TabItem','ItemsControl','ListBoxItem','ComboBoxItem','TreeView','TreeViewItem','Button','RepeatButton',...toggles]);
-  let nextId=0,origin=null,ready=false,disposed=false,capabilities={},snapshot=null,marker=null,queued=null,busy=false,review=null,refreshing=false,refreshAgain=false,applying=false;
-  const status=text=>{$('status').textContent=text;};
-  const error=value=>{$('error').textContent=String(value?.message??value??'').slice(0,4096);};
+  let nextId=0,origin=null,ready=false,disposed=false,capabilities={},snapshot=null,marker=null,queued=null,busy=false,review=null,refreshing=false,refreshAgain=false,applying=false,epoch=0,layoutFrame=0;
+  const status=text=>{if(!disposed)$('status').textContent=text;};
+  const error=value=>{if(!disposed)$('error').textContent=String(value?.message??value??'').slice(0,4096);};
   const post=message=>{if(!disposed)parent.postMessage(message,origin&&origin!=='null'?origin:'*');};
   const notify=(method,params)=>post({jsonrpc:'2.0',method,params});
   function request(method,params){
@@ -34,6 +34,7 @@
     const text=result.content?.find(item=>item.type==='text')?.text;
     if(typeof text!=='string'||text.length>2097152)throw new Error('No bounded structured result.');return JSON.parse(text);
   }
+  function validMarker(value){return value?.format==='xamlg.intelligent-ui/1'&&typeof value.id==='string'&&/^[A-Za-z0-9_.-]{1,80}$/.test(value.id)&&typeof value.sessionId==='string'&&/^[a-f0-9]{32}$/i.test(value.sessionId);}
   function validSnapshot(value){
     if(!value||typeof value.id!=='string'||value.id.length>80||typeof value.sessionId!=='string'||value.sessionId.length!==32||!Number.isSafeInteger(value.revision)||value.revision<1||!Number.isSafeInteger(value.stateRevision)||value.stateRevision<0||!Array.isArray(value.roots))throw new Error('Invalid UI snapshot.');
     if(marker&&(value.id!==marker.id||value.sessionId!==marker.sessionId))throw new Error('This UI session was released or replaced.');
@@ -61,11 +62,32 @@
   function tracks(value){const parts=String(value).split(',');if(parts.length>64)throw new Error('Too many grid tracks.');return parts.map(raw=>{const text=raw.trim();if(text==='Auto')return 'auto';if(text==='*')return '1fr';const star=text.endsWith('*');return number(Number(star?text.slice(0,-1):text),0,10000)+(star?'fr':'px');}).join(' ');}
   function reconcile(parent,children){
     const wanted=new Set(children);
-    // Content controls can change from a literal text node to keyed child controls and back.
-    // Removing only Element children would retain the previous literal beside the new content.
     for(const child of [...parent.childNodes])if(child.nodeType!==Node.ELEMENT_NODE||!wanted.has(child))child.remove();
     children.forEach((child,index)=>{if(parent.children[index]!==child)parent.insertBefore(child,parent.children[index]||null);});
   }
+  function retire(entry){boxResize.unobserve(entry.element);viewboxes.delete(entry.element);entry.element.remove();}
+  function retireSurface(){for(const entry of entries.values())retire(entry);entries.clear();root.replaceChildren();snapshot=null;review=null;$('review').hidden=true;}
+  function layoutViewbox(entry){
+    if(disposed||!entry.element.isConnected)return;
+    const child=entry.slot.firstElementChild;if(!child)return;
+    const e=entry.element,p=entry.node.properties,w=child.offsetWidth,h=child.offsetHeight,aw=e.clientWidth;
+    if(!w||!h||!aw)return;
+    const ah=p.Height??p.MaxHeight??Infinity;
+    let sx=aw/w,sy=Number.isFinite(ah)?ah/h:sx;
+    const stretch=p.Stretch??'Uniform';
+    if(stretch==='None')sx=sy=1;
+    else if(stretch==='Uniform')sx=sy=Math.min(sx,sy);
+    else if(stretch==='UniformToFill')sx=sy=Math.max(sx,sy);
+    if(p.StretchDirection==='DownOnly'){sx=Math.min(1,sx);sy=Math.min(1,sy);}
+    else if(p.StretchDirection==='UpOnly'){sx=Math.max(1,sx);sy=Math.max(1,sy);}
+    if(!Number.isFinite(sx)||!Number.isFinite(sy)||sx<=0||sy<=0)return;
+    const height=p.Height??Math.min(p.MaxHeight??Infinity,h*sy);
+    const next=height+'px';if(e.style.height!==next)e.style.height=next;
+    entry.slot.style.transform=`scale(${sx},${sy})`;
+    entry.slot.style.left=Math.max(0,(aw-w*sx)/2)+'px';
+    entry.slot.style.top=Math.max(0,(height-h*sy)/2)+'px';
+  }
+  function scheduleLayout(){if(layoutFrame||disposed)return;layoutFrame=requestAnimationFrame(()=>{layoutFrame=0;for(const entry of entries.values())if(entry.type==='Viewbox')layoutViewbox(entry);});}
   function common(element,p){
     for(const [name,css]of [['Width','width'],['Height','height'],['MinWidth','minWidth'],['MinHeight','minHeight'],['MaxWidth','maxWidth'],['MaxHeight','maxHeight']])if(p[name]!==undefined)element.style[css]=px(p[name]);
     if(p.Margin!==undefined)element.style.margin=thickness(p.Margin);
@@ -88,11 +110,13 @@
     else if(node.type==='ComboBox'||node.type==='ListBox')e=input=document.createElement('select');
     else if(node.type==='ProgressBar')e=document.createElement('progress');
     else if(node.type==='Separator')e=document.createElement('hr');
+    else if(node.type==='Viewbox'){slot=document.createElement('div');slot.style.cssText='position:absolute;transform-origin:0 0;width:max-content;';e.append(slot);}
     else if(node.type==='Expander'||node.type==='TreeViewItem'){e=document.createElement('details');summary=document.createElement('summary');slot=document.createElement('div');e.append(summary,slot);}
     else if(node.type==='TabControl'){nav=document.createElement('div');nav.className='tabs';nav.setAttribute('role','tablist');slot=document.createElement('div');e.append(nav,slot);}
     else if(['Rectangle','Ellipse','Line'].includes(node.type)){e=document.createElementNS('http://www.w3.org/2000/svg','svg');shape=document.createElementNS(e.namespaceURI,({Rectangle:'rect',Ellipse:'ellipse',Line:'line'})[node.type]);e.append(shape);}
     slot??=e;
     const entry={element:e,input,caption,slot,summary,nav,shape,type:node.type,node,disabled:false};
+    if(node.type==='Viewbox'){viewboxes.set(e,entry);boxResize.observe(e);}
     if(input)input.addEventListener('change',()=>changeState(entry));
     if(node.type==='TextBox')input.addEventListener('keydown',event=>{if(event.key==='Enter'&&!entry.node.properties.AcceptsReturn)event.preventDefault();});
     if(summary){
@@ -104,13 +128,14 @@
   }
   const label=node=>String(node.properties.Content??node.properties.Header??node.properties.Text??node.children.map(label).join(' '));
   function accept(value){
+    if(disposed)return;
     validSnapshot(value);
     if(snapshot&&snapshot.sessionId===value.sessionId&&(value.revision<snapshot.revision||value.revision===snapshot.revision&&value.stateRevision<snapshot.stateRevision))return;
     snapshot=value;review=null;$('review').hidden=true;applying=true;const used=new Set();
     try{
       function render(node,disabled=false,hidden=false){
         const p=node.properties;disabled=disabled||p.IsEnabled===false;hidden=hidden||p.IsVisible===false;
-        let entry=entries.get(node.key);if(entry&&entry.type!==node.type){entry.element.remove();entries.delete(node.key);entry=null;}
+        let entry=entries.get(node.key);if(entry&&entry.type!==node.type){retire(entry);entries.delete(node.key);entry=null;}
         if(!entry){entry=create(node);entries.set(node.key,entry);}entry.node=node;entry.disabled=disabled;used.add(node.key);
         const e=entry.element;e.setAttribute('class','node');e.style.cssText='';e.hidden=hidden;common(e,p);
         if(entry.input){entry.input.disabled=disabled||busy;entry.input.setAttribute('aria-label',p['AutomationProperties.Name']||p.PlaceholderText||p.Content||node.stateKey||node.key);}
@@ -129,11 +154,11 @@
           case 'TextBlock':case 'SelectableTextBlock':e.classList.add('text');e.textContent=p.Text||'';if(p.FontSize)e.style.fontSize=px(p.FontSize,8,96);e.style.fontWeight=({Normal:'400',Medium:'500',SemiBold:'600',Bold:'700'})[p.FontWeight]||'400';if(p.Foreground)e.style.color=color(p.Foreground);e.style.whiteSpace=p.TextWrapping==='Wrap'?'pre-wrap':'pre';e.style.textAlign=({Left:'left',Center:'center',Right:'right',Justify:'justify'})[p.TextAlignment]||'left';break;
           case 'Button':case 'RepeatButton':if(!children.length)e.textContent=p.Content||'Action';e.disabled=disabled||busy||!node.actionId;break;
           case 'TextBox':if(entry.input.value!==(p.Text||''))entry.input.value=p.Text||'';entry.input.placeholder=p.PlaceholderText||'';entry.input.maxLength=integer(p.MaxLength??16384,1,16384);entry.input.rows=p.AcceptsReturn?3:1;entry.input.readOnly=p.IsReadOnly===true;break;
-          case 'Slider':case 'NumericUpDown':entry.input.min=String(number(p.Minimum??0,-1000000,1000000));entry.input.max=String(number(p.Maximum??100,-1000000,1000000));entry.input.step=node.type==='NumericUpDown'?String(p.Increment??1):p.IsSnapToTickEnabled?String(p.TickFrequency??1):'any';entry.input.value=p.Value==null?'':String(p.Value);if(p.Orientation==='Vertical')entry.input.style.writingMode='vertical-lr';break;
+          case 'Slider':case 'NumericUpDown':entry.input.min=String(number(p.Minimum??(node.type==='NumericUpDown'?-1000000:0),-1000000,1000000));entry.input.max=String(number(p.Maximum??(node.type==='NumericUpDown'?1000000:100),-1000000,1000000));entry.input.step=node.type==='NumericUpDown'?String(p.Increment??1):p.IsSnapToTickEnabled?String(p.TickFrequency??1):'any';entry.input.value=p.Value==null?'':String(p.Value);if(p.Orientation==='Vertical')entry.input.style.writingMode='vertical-lr';break;
           case 'CheckBox':case 'ToggleButton':case 'RadioButton':case 'ToggleSwitch':entry.input.checked=p.IsChecked===true;e.classList.add('label');if(!children.length)entry.caption.textContent=p.Content||'';if(node.type==='ToggleSwitch')entry.input.setAttribute('role','switch');break;
           case 'ProgressBar':e.max=number((p.Maximum??100)-(p.Minimum??0),.000001,2000000);if(p.IsIndeterminate)e.removeAttribute('value');else e.value=number((p.Value??0)-(p.Minimum??0),0,2000000);break;
-          case 'ScrollViewer':e.style.overflow='auto';e.style.maxHeight=p.Height===undefined?'600px':px(p.Height);break;
-          case 'Viewbox':e.style.overflow='hidden';e.style.display='grid';e.style.placeItems='center';break;
+          case 'ScrollViewer':e.style.overflow='auto';e.style.maxHeight=px(p.MaxHeight??p.Height??600);break;
+          case 'Viewbox':e.style.overflow='hidden';e.style.position='relative';if(p.Width===undefined)e.style.width='100%';break;
           case 'Expander':case 'TreeViewItem':entry.summary.textContent=p.Header||'';e.open=p.IsExpanded===true;entry.summary.setAttribute('aria-disabled',String(disabled));break;
           case 'ItemsControl':if(p.ItemsSource){const rows=p.ItemsSource.map(text=>{const row=document.createElement('div');row.textContent=text;return row;});reconcile(entry.slot,rows);}break;
           case 'ComboBox':case 'ListBox':{const options=p.ItemsSource??node.children.map(label);const previous=[...e.options].map(option=>option.text);if(JSON.stringify(previous)!==JSON.stringify(options)){e.replaceChildren(...options.map(text=>{const option=document.createElement('option');option.textContent=text;return option;}));}e.selectedIndex=integer(p.SelectedIndex??-1,-1,4095);if(node.type==='ListBox')e.size=Math.min(8,Math.max(2,options.length));break;}
@@ -146,47 +171,66 @@
         return e;
       }
       reconcile(root,value.roots.map(node=>render(node)));
-      for(const [key,entry]of entries)if(!used.has(key)){entry.element.remove();entries.delete(key);}
+      for(const [key,entry]of entries)if(!used.has(key)){retire(entry);entries.delete(key);}
       $('fallback').textContent=String(value.fallbackMarkdown||'').slice(0,131072);
       status((value.isFinal?'Interactive UI':'Streaming UI')+' · revision '+value.revision+' · state '+value.stateRevision);$('refresh').disabled=busy||!capabilities.serverTools;
+      scheduleLayout();
     }finally{applying=false;}
   }
+  const current=generation=>!disposed&&epoch===generation;
+  async function publishContext(result,generation){if(current(generation)&&capabilities.updateModelContext)await request('ui/update-model-context',{structuredContent:{surfaceId:result.id,sessionId:result.sessionId,revision:result.revision,stateRevision:result.stateRevision,state:result.state}});}
   async function changeState(entry,explicit){
     if(busy||applying||!snapshot||entry.disabled||!entry.node.stateKey||entry.node.properties.IsReadOnly)return;
     const value=explicit!==undefined?explicit:toggles.has(entry.type)?entry.input.checked:['Slider','NumericUpDown'].includes(entry.type)?entry.input.value===''?null:Number(entry.input.value):dates.has(entry.type)?entry.input.value?entry.input.value+'T00:00:00Z':null:entry.type==='TimePicker'?entry.input.value||null:['ComboBox','ListBox'].includes(entry.type)?entry.input.selectedIndex:entry.input.value;
-    const args={id:snapshot.id,expectedRevision:snapshot.revision,expectedStateRevision:snapshot.stateRevision,key:entry.node.stateKey,value};busy=true;error('');
-    try{const result=await tool('xamlg_ui_state',args);busy=false;accept(result);if(capabilities.updateModelContext)await request('ui/update-model-context',{structuredContent:{surfaceId:result.id,sessionId:result.sessionId,revision:result.revision,stateRevision:result.stateRevision,state:result.state}});}
-    catch(failure){busy=false;error(failure);await refresh();}finally{busy=false;}
+    const args={id:snapshot.id,expectedRevision:snapshot.revision,expectedStateRevision:snapshot.stateRevision,key:entry.node.stateKey,value},generation=epoch;busy=true;error('');
+    try{const result=await tool('xamlg_ui_state',args);busy=false;if(current(generation)){accept(result);await publishContext(result,generation);}}
+    catch(failure){busy=false;if(current(generation)){error(failure);await refresh();}}finally{busy=false;if(!disposed&&snapshot)accept(snapshot);}
   }
   async function prepare(entry){
     if(busy||entry.disabled||!snapshot)return;
-    const call={id:snapshot.id,expectedRevision:snapshot.revision,expectedStateRevision:snapshot.stateRevision,nodeKey:entry.node.key};busy=true;error('');
-    try{const intent=await tool('xamlg_ui_action',call);review={call,intent};$('intent').textContent=JSON.stringify(intent,null,2);$('review').hidden=false;}catch(failure){error(failure);}finally{busy=false;}
+    const call={id:snapshot.id,expectedRevision:snapshot.revision,expectedStateRevision:snapshot.stateRevision,nodeKey:entry.node.key},generation=epoch;
+    // Route by the declaration, not by evaluating an action just to inspect its kind.
+    const local=Array.isArray(snapshot.actions)&&snapshot.actions.some(action=>action.id===entry.node.actionId&&action.kind==='state');
+    busy=true;error('');
+    try{
+      if(local){const result=await tool('xamlg_ui_state_action',call);busy=false;if(current(generation)){accept(result);await publishContext(result,generation);}return;}
+      const intent=await tool('xamlg_ui_action',call);if(!current(generation))return;
+      review={call,intent,generation};$('intent').textContent=JSON.stringify(intent,null,2);$('review').hidden=false;
+    }catch(failure){if(current(generation))error(failure);}finally{busy=false;if(local&&!disposed&&snapshot)accept(snapshot);}
   }
   async function confirm(){
-    if(busy||!review)return;const current=review;busy=true;$('confirm').disabled=true;error('');
+    if(busy||!review)return;const reviewed=review;busy=true;$('confirm').disabled=true;error('');
     try{
-      const intent=await tool('xamlg_ui_action',current.call);if(JSON.stringify(intent)!==JSON.stringify(current.intent))throw new Error('The action changed. Review it again.');
+      const intent=await tool('xamlg_ui_action',reviewed.call);
+      if(!current(reviewed.generation))return;
+      if(JSON.stringify(intent)!==JSON.stringify(reviewed.intent))throw new Error('The action changed. Review it again.');
       if(intent.kind==='tool')await tool(intent.tool,intent.arguments||{});
       else if(intent.kind==='message'){if(!capabilities.message)throw new Error('This host does not support follow-up messages.');await request('ui/message',{role:'user',content:[{type:'text',text:intent.text}]});}
       else if(intent.kind==='openUrl'){if(!capabilities.openLinks)throw new Error('This host does not support opening links.');const url=new URL(intent.text);if(!['https:','http:'].includes(url.protocol)||url.username||url.password)throw new Error('Unsupported URL.');await request('ui/open-link',{url:url.href});}
       else if(intent.kind==='copy'){if(!navigator.clipboard)throw new Error('Clipboard is unavailable. Select the review text to copy it.');await navigator.clipboard.writeText(intent.text);}
       else throw new Error('Unsupported action.');
-      review=null;$('review').hidden=true;status('Action completed.');
-    }catch(failure){error(failure);}finally{busy=false;$('confirm').disabled=false;}
+      if(current(reviewed.generation)){review=null;$('review').hidden=true;status('Action completed.');}
+    }catch(failure){if(current(reviewed.generation))error(failure);}finally{busy=false;$('confirm').disabled=false;}
   }
   async function refresh(){
     if(!ready||!marker||disposed)return;if(refreshing){refreshAgain=true;return;}refreshing=true;
-    try{do{refreshAgain=false;accept(await tool('xamlg_ui_read',{id:marker.id}));}while(refreshAgain&&!disposed);}
-    catch(failure){error(failure);if(String(failure.message).includes('replaced')||String(failure.message).includes('no longer available')){root.replaceChildren();entries.clear();snapshot=null;}}finally{refreshing=false;}
+    try{
+      do{
+        refreshAgain=false;const generation=epoch,id=marker.id;
+        try{const value=await tool('xamlg_ui_read',{id});if(current(generation))accept(value);}
+        catch(failure){if(current(generation)){error(failure);if(/replaced|released|no longer available|unknown_surface/.test(String(failure.message)))retireSurface();}}
+      }while(refreshAgain&&!disposed&&marker);
+    }finally{refreshing=false;}
   }
   async function receiveResult(result){
     if(!ready){queued=result;return;}if(result?.isError){error(result.content?.find(item=>item.type==='text')?.text||'Tool failed.');return;}
-    const value=result?.structuredContent;if(value?.format!=='xamlg.intelligent-ui/1'||typeof value.id!=='string'||typeof value.sessionId!=='string'||value.sessionId.length!==32)return;
-    marker=value;$('fallback').textContent=String(value.fallbackMarkdown||'');await refresh();
+    const value=result?.structuredContent;if(!validMarker(value))return;
+    const replaced=marker&&(value.id!==marker.id||value.sessionId!==marker.sessionId);
+    epoch++;marker=value;review=null;$('review').hidden=true;if(replaced)retireSurface();
+    $('fallback').textContent=String(value.fallbackMarkdown||'').slice(0,131072);await refresh();
   }
-  function context(value){if(!value)return;document.documentElement.style.colorScheme=value.theme==='dark'?'dark':'light';const size=value.containerDimensions;if(size?.height)root.style.maxHeight=px(Math.min(size.height,1600));}
-  function teardown(){if(disposed)return;disposed=true;resize.disconnect();window.removeEventListener('message',onMessage);for(const call of pending.values()){clearTimeout(call.timer);call.reject(new Error('UI disposed.'));}pending.clear();entries.clear();}
+  function context(value){if(!value)return;document.documentElement.style.colorScheme=value.theme==='dark'?'dark':'light';const size=value.containerDimensions;if(size?.height)root.style.maxHeight=px(Math.min(size.height,1600));scheduleLayout();}
+  function teardown(){if(disposed)return;disposed=true;ready=false;epoch++;queued=null;marker=null;review=null;resize.disconnect();boxResize.disconnect();cancelAnimationFrame(layoutFrame);window.removeEventListener('message',onMessage);for(const call of pending.values()){clearTimeout(call.timer);call.reject(new Error('UI disposed.'));}pending.clear();entries.clear();snapshot=null;root.replaceChildren();}
   function onMessage(event){
     if(disposed||event.source!==parent||!event.data||event.data.jsonrpc!=='2.0')return;const message=event.data;
     if(JSON.stringify(message).length>2097152)return;
@@ -197,9 +241,10 @@
     if(message.method==='ui/notifications/tool-result')receiveResult(message.params).catch(error);
     else if(message.method==='ui/notifications/host-context-changed')context(message.params);
     else if(message.method==='notifications/resources/updated'&&marker&&message.params?.uri==='xamlg://ui/'+encodeURIComponent(marker.id))refresh();
-    else if(message.method==='ui/notifications/tool-input-partial')status('Receiving UI update…');
+    else if(message.method==='ui/notifications/tool-input-partial'||message.method==='ui/notifications/tool-input')status('Receiving UI update…');
     else if(message.method==='ui/notifications/tool-cancelled')status('UI update cancelled. The last committed view is retained.');
   }
+  const boxResize=new ResizeObserver(changes=>{for(const change of changes){const entry=viewboxes.get(change.target);if(entry)layoutViewbox(entry);}});
   let lastHeight=0;const resize=new ResizeObserver(()=>{const height=Math.min(2000,Math.max(100,Math.ceil(document.body.scrollHeight)));if(ready&&height!==lastHeight){lastHeight=height;notify('ui/notifications/size-changed',{height});}});resize.observe(document.body);
   $('refresh').addEventListener('click',()=>{error('');refresh();});$('confirm').addEventListener('click',confirm);$('cancel').addEventListener('click',()=>{review=null;$('review').hidden=true;});
   window.addEventListener('message',onMessage);window.addEventListener('pagehide',teardown,{once:true});
