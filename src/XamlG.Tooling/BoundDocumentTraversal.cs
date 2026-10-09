@@ -56,7 +56,7 @@ public static class BoundDocumentTraversal
         BoundValueConverterExpression converter => new[] { converter.Value },
         BoundArrayExpression array => array.Values,
         BoundCollectionExpression collection => collection.Values,
-        BoundNewExpression creation => creation.Arguments,
+        BoundNewExpression creation => creation.Arguments.Concat(creation.Initializers.Select(initializer => initializer.Value)),
         BoundCallExpression call => call.Receiver == null ? call.Arguments.AsEnumerable() : call.Arguments.Prepend(call.Receiver),
         BoundDeferredExpression deferred => new[] { deferred.Content },
         BoundLambdaExpression lambda => new[] { lambda.Body },

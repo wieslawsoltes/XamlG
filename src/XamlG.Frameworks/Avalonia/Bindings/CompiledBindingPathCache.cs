@@ -41,7 +41,7 @@ internal static class CompiledBindingPathCache
                 case BoundCachedExpression { ShareAcrossDocuments: true } cached:
                     Part(cached.Key);
                     return true;
-                case BoundNewExpression creation when creation.Constructor.ContainingType.HasMetadataName(AvaloniaBindingMetadata.PathBuilder) && creation.Arguments.IsEmpty:
+                case BoundNewExpression creation when creation.Constructor.ContainingType.HasMetadataName(AvaloniaBindingMetadata.PathBuilder) && creation.Arguments.IsEmpty && creation.Initializers.IsEmpty:
                     return Symbol(creation.Constructor);
                 case BoundCallExpression call when call.Method.ContainingType.HasMetadataName(AvaloniaBindingMetadata.PathBuilder) ||
                     call.Method.ContainingType.HasMetadataName(AvaloniaBindingMetadata.AccessorFactory):

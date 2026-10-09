@@ -2,14 +2,13 @@ using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text;
-using Avalonia.Utilities;
 
-namespace Avalonia.Media
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Represents a box shadow which can be attached to an element or control.
     /// </summary>
-    public struct BoxShadow
+    internal struct BoxShadow
     {
         private readonly static char[] s_Separator = new char[] { ' ', '\t' };
         private const char OpeningParenthesis = '(';
@@ -119,7 +118,7 @@ namespace Avalonia.Media
                 _index = 0;
             }
 
-            public bool TryReadString([MaybeNullWhen(false)] out string s)
+            public bool TryReadString(out string? s)
             {
                 s = null;
                 if (_index >= _arr.Length)
@@ -140,16 +139,16 @@ namespace Avalonia.Media
                     throw new FormatException();
                 }
 
-                return rv;
+                return rv!;
             }
         }
 
         /// <inheritdoc/>
         public override string ToString()
         {
-            var sb = StringBuilderCache.Acquire();
+            var sb = new System.Text.StringBuilder();
             ToString(sb);
-            return StringBuilderCache.GetStringAndRelease(sb);
+            return sb.ToString();
         }
 
         internal void ToString(StringBuilder sb)
@@ -198,7 +197,7 @@ namespace Avalonia.Media
         /// </remarks>
         /// <param name="s">The input string to parse.</param>
         /// <returns>A new <see cref="BoxShadow"/></returns>
-        public static unsafe BoxShadow Parse(string s)
+        public static BoxShadow Parse(string s)
         {
             if (s == null)
             {
@@ -265,17 +264,6 @@ namespace Avalonia.Media
                 Color = color
             };
         }
-
-        /// <summary>
-        /// Transforms the specified bounding rectangle to account for the shadow's offset, spread, and blur.
-        /// </summary>
-        /// <param name="rect">The original bounding <see cref="Rect"/> to transform.</param>
-        /// <returns>
-        /// A new <see cref="Rect"/> that includes the shadow's offset, spread, and blur if the shadow is not inset;
-        /// otherwise, the original rectangle.
-        /// </returns>
-        public Rect TransformBounds(in Rect rect)
-            => IsInset ? rect : rect.Translate(new Vector(OffsetX, OffsetY)).Inflate(Spread + Blur);
 
         /// <summary>
         /// Determines whether two <see cref="BoxShadow"/> values are equal.

@@ -1,13 +1,12 @@
 using System;
 using System.ComponentModel;
-using Avalonia.Utilities;
 
-namespace Avalonia.Media
+namespace XamlG.Frameworks.Avalonia.Parsing
 {
     /// <summary>
     /// Represents a collection of <see cref="BoxShadow"/>s.
     /// </summary>
-    public struct BoxShadows
+    internal struct BoxShadows
     {
         private const char Separator = ',';
         private const char OpeningParenthesis = '(';
@@ -78,7 +77,7 @@ namespace Avalonia.Media
                 return "none";
             }
 
-            var sb = StringBuilderCache.Acquire();
+            var sb = new System.Text.StringBuilder();
             foreach (var boxShadow in this)
             {
                 boxShadow.ToString(sb);
@@ -86,7 +85,7 @@ namespace Avalonia.Media
                 sb.Append(' ');
             }
             sb.Remove(sb.Length - 2, 2);
-            return StringBuilderCache.GetStringAndRelease(sb);
+            return sb.ToString();
         }
 
         [EditorBrowsable(EditorBrowsableState.Never)]
@@ -146,24 +145,6 @@ namespace Avalonia.Media
             }
 
             return new BoxShadows(first, rest);
-        }
-
-        /// <summary>
-        /// Transforms the specified bounding rectangle to account for all shadow's offset, spread, and blur.
-        /// </summary>
-        /// <param name="rect">The original bounding <see cref="Rect"/> to transform.</param>
-        /// <returns>
-        /// A new <see cref="Rect"/> that includes all shadow's offset, spread, and blur in the collection.
-        /// </returns>
-        public Rect TransformBounds(in Rect rect)
-        {
-            var final = rect;
-            foreach (var shadow in this)
-            {
-                final = final.Union(shadow.TransformBounds(rect));
-            }
-
-            return final;
         }
 
         /// <summary>

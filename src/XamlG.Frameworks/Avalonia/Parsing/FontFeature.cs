@@ -2,12 +2,12 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Avalonia.Media;
+namespace XamlG.Frameworks.Avalonia.Parsing;
 
 /// <summary>
 /// Font feature
 /// </summary>
-public record FontFeature
+internal record FontFeature
 {
     private const int DefaultValue = 1;
     private const int InfinityEnd = -1;

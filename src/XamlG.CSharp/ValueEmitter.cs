@@ -20,7 +20,7 @@ internal sealed class ValueEmitter
             BoundStaticExpression or BoundParseExpression => false,
         BoundCastExpression cast => UsesFrame(cast.Value),
         BoundCachedExpression cached => UsesFrame(cached.Value),
-        BoundNewExpression creation => creation.Arguments.Any(UsesFrame),
+        BoundNewExpression creation => creation.Arguments.Any(UsesFrame) || creation.Initializers.Any(initializer => UsesFrame(initializer.Value)),
         BoundArrayExpression array => array.Values.Any(UsesFrame),
         BoundCollectionExpression collection => collection.Values.Any(UsesFrame),
         BoundCallExpression call => call.Receiver != null && UsesFrame(call.Receiver) || call.Arguments.Any(UsesFrame),
@@ -79,6 +79,8 @@ internal sealed class ValueEmitter
                 return collectionLocal;
             case BoundNewExpression creation:
                 var constructed = "new " + creation.Constructor.ContainingType.CSharpName() + "(" + string.Join(", ", EmitArguments(creation.Constructor, creation.Arguments, frame)) + ")";
+                if (!creation.Initializers.IsEmpty)
+                    constructed = new NewInitializerEmitter(_context, this).Emit(creation, constructed, frame);
                 if (creation.SuppressSourceInfo || creation.SourceInfoSpan is not { } sourceSpan || creation.Constructor.ContainingType.IsValueType || _context.Document.Runtime.SourceInfo == null) return constructed;
                 var located = _context.Locals.Declare(creation.Constructor.ContainingType.CSharpName(), constructed, "literal", inferred: true);
                 new SourceInfoEmitter(_context).EmitConstructed(located, sourceSpan);

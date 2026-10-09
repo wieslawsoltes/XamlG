@@ -2,7 +2,8 @@
 
 The original files were imported unchanged from Avalonia commit
 `a9429a328057befa287ffb5e981f58b86a86eda0`: colors in `5e53e44` and animation
-parsers/tokenizer in `5e70673`, and keyboard/cursor parsers in `74204d1`.
+parsers/tokenizer in `5e70673`, keyboard/cursor parsers in `74204d1`, and
+font-feature/shadow parsers and bracket splitter in `3b92450`.
 `upstream.json` records their original paths and SHA-256 hashes.
 The MIT license and original color-conversion notices are retained.
 
@@ -58,3 +59,19 @@ Keyboard/cursor adaptations:
 - Preserve the distinction between XamlX's case-sensitive cursor intrinsic and
   its parser fallback when attaching source metadata. Text-object conversion
   receives its original whitespace before content-property normalization.
+
+Font-feature/shadow adaptations:
+
+- Move the four copied types into the private compiler namespace and keep their
+  parsing algorithms, regular expression and constructor count semantics.
+- Remove shadow geometry-bound calculations, the unused unsafe modifier and an
+  unavailable nullable-analysis attribute. Retained formatting uses ordinary
+  `StringBuilder` instances.
+- Adapt the bracket splitter to .NET Standard 2.0: `IndexOf` for span membership,
+  `Substring` for string construction and enum value 2 for `TrimEntries`.
+- Emit ordinary typed C# object initializers for font features and shadows,
+  including init-only properties and packed colors. Shadow collections use the
+  matching public single-value or first-plus-array constructor.
+- Preserve invalid font-feature defaults, range overflow, empty-shadow counts,
+  bracket errors, optional-token behavior and fresh reference values. No runtime
+  parser or private compiler type appears in the generated application.

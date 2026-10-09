@@ -32,7 +32,8 @@ internal static class BoundTraversal
     public static IEnumerable<BoundExpression> Children(BoundExpression expression, bool includeDeferred) => expression switch
     {
         BoundChoiceExpression c => Expressions(c.Extension).Concat(c.Branches.SelectMany(b => new[] { b.Option, b.Value })).Concat(c.Default == null ? Array.Empty<BoundExpression>() : new[] { c.Default }),
-        BoundCastExpression c => new[] { c.Value }, BoundArrayExpression a => a.Values, BoundNewExpression n => n.Arguments,
+        BoundCastExpression c => new[] { c.Value }, BoundArrayExpression a => a.Values,
+        BoundNewExpression n => n.Arguments.Concat(n.Initializers.Select(initializer => initializer.Value)),
         BoundCollectionExpression c => c.Values,
         BoundCachedExpression c => new[] { c.Value },
         BoundValueConverterExpression c => new[] { c.Value },

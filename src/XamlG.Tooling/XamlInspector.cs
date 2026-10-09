@@ -88,7 +88,7 @@ public static class XamlInspector
             BoundValueConverterExpression c => ImmutableArray.Create(c.Value),
             BoundArrayExpression a => a.Values,
             BoundCollectionExpression c => c.Values,
-            BoundNewExpression n => n.Arguments,
+            BoundNewExpression n => n.Arguments.Concat(n.Initializers.Select(initializer => initializer.Value)),
             BoundCallExpression c => c.Receiver == null ? c.Arguments : c.Arguments.Insert(0, c.Receiver),
             BoundDeferredExpression d => ImmutableArray.Create(d.Content),
             BoundLambdaExpression l => l.Parameters.Cast<BoundExpression>().Append(l.Body).ToImmutableArray(),

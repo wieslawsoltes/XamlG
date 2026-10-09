@@ -1,7 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
-namespace Avalonia.Utilities;
+namespace XamlG.Frameworks.Avalonia.Parsing;
 
 /// <summary>
 /// Helpers for splitting strings.
@@ -53,7 +53,7 @@ internal static class StringSplitter
         int segStart = 0;
 
         bool removeEmptyEntries = options.HasFlag(StringSplitOptions.RemoveEmptyEntries);
-        bool trimEntries = options.HasFlag(StringSplitOptions.TrimEntries);
+        bool trimEntries = options.HasFlag((StringSplitOptions)2);
 
         for (int i = 0; i < span.Length; i++)
         {
@@ -66,7 +66,7 @@ internal static class StringSplitter
                     throw new FormatException($"Unmatched closing bracket '{closingBracket}' at position {i}.");
                 depth--;
             }
-            else if (separators.Contains(ch))
+            else if (separators.IndexOf(ch) >= 0)
             {
                 if (depth != 0)
                     continue;
@@ -87,7 +87,7 @@ internal static class StringSplitter
         for (int i = 0; i < ranges.Count; i++)
         {
             var r = ranges[i];
-            result[i] = new string(span.Slice(r.start, r.length));
+            result[i] = s.Substring(r.start, r.length);
         }
 
         return result;

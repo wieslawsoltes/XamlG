@@ -27,6 +27,7 @@ public sealed class TargetFrameExpressionTests
                 Field = target.TargetObject;
             }
             public object Field;
+            public object Initialized { init { Field = value; } }
             public object Property => Field;
             public object this[int index] => Field;
             public object Read() => Field;
@@ -35,7 +36,7 @@ public sealed class TargetFrameExpressionTests
         """;
 
     public static IEnumerable<object[]> Cases() =>
-        from kind in new[] { "call", "receiver", "property", "field", "indexer", "assignment", "lambda", "methodgroup" }
+        from kind in new[] { "call", "receiver", "property", "field", "indexer", "assignment", "lambda", "methodgroup", "initializer" }
         from services in new[] { false, true }
         select new object[] { kind, services };
 
@@ -86,6 +87,10 @@ public sealed class TargetFrameExpressionTests
                 "assignment" => new BoundAssignmentExpression(field, field, span),
                 "lambda" => new BoundLambdaExpression(func, ImmutableArray<BoundParameterExpression>.Empty, field, false, span),
                 "methodgroup" => new BoundMethodGroupExpression(read, probe, func, span),
+                "initializer" => new BoundPropertyAccessExpression(new BoundNewExpression(type.InstanceConstructors.Single(),
+                    ImmutableArray.Create<BoundExpression>(new BoundConstantExpression(null, serviceType, span)), span)
+                    { Initializers = ImmutableArray.Create(new BoundPropertyInitialization((IPropertySymbol)type.GetMembers("Initialized").Single(), field)) },
+                    (IPropertySymbol)type.GetMembers("Property").Single(), ImmutableArray<BoundExpression>.Empty, span),
                 _ => throw new InvalidOperationException(kind)
             };
             target.Assignments.Add(new BoundSetAssignment(member, expression, span));
