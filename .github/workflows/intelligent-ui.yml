@@ -47,7 +47,7 @@ jobs:
       - name: Build native contracts
         run: dotnet build XamlG.slnx -c Release --no-restore -warnaserror 2>&1 | tee artifacts/intelligent-ui/build.log
       - name: Test native contracts
-        run: dotnet test XamlG.slnx -c Release --no-build --logger 'trx;LogFilePrefix=intelligent-ui' --results-directory artifacts/intelligent-ui/tests 2>&1 | tee artifacts/intelligent-ui/tests.log
+        run: dotnet test XamlG.slnx -c Release --no-build --logger trx --results-directory artifacts/intelligent-ui/tests 2>&1 | tee artifacts/intelligent-ui/tests.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -56,4 +56,27 @@ jobs:
             artifacts/intelligent-ui/*.log
             artifacts/intelligent-ui/tests
           if-no-files-found: ignore
+          retention-days: 7
+  mcp-app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - working-directory: tools/XamlG.Playground
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          npx playwright test --config=playwright.ui.config.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: intelligent-ui-mcp-app-browser
+          path: |
+            tools/XamlG.Playground/ui-app-report
+            tools/XamlG.Playground/test-results
           retention-days: 7
