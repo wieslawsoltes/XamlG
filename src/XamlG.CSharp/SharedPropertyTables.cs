@@ -44,7 +44,7 @@ internal sealed record SharedPropertyTables(
                     if (set.Member.StaticSetter is { } custom && (!Accessible(custom.Method) ||
                         custom.Descriptors.Any(descriptor => descriptor.GeneratedMemberName != null || !Accessible(descriptor.Member)))) continue;
                     var accessor = PropertyAccessor.Create(owner.Type, set.Member);
-                    var ownerName = owner.Type.CSharpName();
+                    var ownerName = PropertyAccessor.ReceiverType(owner.Type, set.Member).CSharpName();
                     if (!groups.TryGetValue(ownerName, out var group))
                         groups.Add(ownerName, group = new(StringComparer.Ordinal));
                     var key = accessor.Key;

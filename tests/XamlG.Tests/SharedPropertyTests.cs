@@ -50,6 +50,59 @@ public sealed class SharedPropertyTests
     [Theory]
     [InlineData(1)]
     [InlineData(4)]
+    public void InheritedAccessorsShareAcrossDerivedOwnersWithoutMergingDistinctMembers(int concurrency)
+    {
+        const string model = """
+            namespace Shared {
+              public class Base { public virtual string Text { get; set; } }
+              public class First : Base { }
+              public class Second : Base { }
+              public class Override : Base {
+                public override string Text { get => base.Text; set => base.Text = "override:" + value; }
+              }
+              public class Hidden : Base { public new string Text { get; set; } }
+              public class Slot<T> { public T Value { get; set; } }
+              public class TextSlot : Slot<string> { }
+              public class NumberSlot : Slot<int> { }
+            }
+            """;
+        var compilation = CompilationFactory.Create(model).AddReferences(MetadataReference.CreateFromFile(typeof(XamlRuntimeContext).Assembly.Location));
+        static XamlProjectDocument Input(string type, string property, string value) => new(XamlSyntaxTree.Parse(
+            "<" + type + " xmlns='clr-namespace:Shared' " + property + "='" + value + "'/>", type + ".xaml"), type + ".xaml");
+        var documents = new[] { Input("First", "Text", "first"), Input("Second", "Text", "second"),
+            Input("Override", "Text", "initial"), Input("Hidden", "Text", "hidden"),
+            Input("TextSlot", "Value", "text"), Input("NumberSlot", "Value", "42") };
+        var compiler = new XamlProjectCompiler();
+        var options = new XamlCompilerOptions { MaxDegreeOfParallelism = concurrency };
+        var project = compiler.Compile(documents, compilation, options: options);
+        var assembly = Emit(compilation, project);
+        var first = Build(assembly, project, "First.xaml");
+        var second = Build(assembly, project, "Second.xaml");
+        var overridden = Build(assembly, project, "Override.xaml");
+        var hidden = Build(assembly, project, "Hidden.xaml");
+        var text = Build(assembly, project, "TextSlot.xaml");
+        var number = Build(assembly, project, "NumberSlot.xaml");
+        Update(first, "Text", "edited first"); Update(second, "Text", "edited second");
+        Update(overridden, "Text", "edited"); Update(hidden, "Text", "edited hidden");
+        Update(text, "Value", "edited text"); Update(number, "Value", 123);
+        Assert.Equal("edited first", Property(first, "Text"));
+        Assert.Equal("edited second", Property(second, "Text"));
+        Assert.Equal("override:edited", Property(overridden, "Text"));
+        Assert.Equal("edited hidden", Property(hidden, "Text"));
+        Assert.Null(assembly.GetType("Shared.Base")!.GetProperty("Text")!.GetValue(hidden));
+        Assert.Equal("edited text", Property(text, "Value")); Assert.Equal(123, Property(number, "Value"));
+        var sources = string.Join("\n", project.Documents.Select(document => document.Output.Source));
+        Assert.Equal(2, sources.Split("((global::Shared.Base)__target).@Text").Length - 1); // One getter and setter.
+        var changed = compiler.Compile(documents.Skip(1), compilation, options: options);
+        var survivor = Build(Emit(compilation, changed), changed, "Second.xaml");
+        Update(survivor, "Text", "survived"); Assert.Equal("survived", Property(survivor, "Text"));
+        var fresh = new XamlProjectCompiler().Compile(documents.Skip(1), compilation, options: options);
+        Assert.Equal(fresh.Documents.Select(document => document.Output.Source), changed.Documents.Select(document => document.Output.Source));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
     public void ChangedTableLayoutsReuseBindingsAndMatchFreshBuilds(int concurrency)
     {
         var compilation = Compilation(); var compiler = new XamlProjectCompiler();
