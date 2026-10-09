@@ -34,14 +34,32 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      - name: Restore public dependencies
+        run: dotnet restore XamlG.slnx
+      - name: Capture offline validation dependencies
+        if: github.head_ref == 'codex/intelligent-ui'
+        run: |
+          tar -C "$DOTNET_ROOT" -czf artifacts/intelligent-ui/dotnet.tar.gz .
+          tar -C "$HOME/.nuget/packages" -czf artifacts/intelligent-ui/packages.tar.gz .
+      - uses: actions/upload-artifact@v4
+        if: github.head_ref == 'codex/intelligent-ui'
+        with:
+          name: intelligent-ui-public-toolchain
+          path: |
+            artifacts/intelligent-ui/dotnet.tar.gz
+            artifacts/intelligent-ui/packages.tar.gz
+          retention-days: 1
+          compression-level: 0
       - name: Build native contracts
-        run: dotnet build XamlG.slnx -c Release -warnaserror
+        run: dotnet build XamlG.slnx -c Release --no-restore -warnaserror 2>&1 | tee artifacts/intelligent-ui/build.log
       - name: Test native contracts
-        run: dotnet test XamlG.slnx -c Release --no-build --logger 'trx;LogFilePrefix=intelligent-ui' --results-directory artifacts/intelligent-ui/tests
+        run: dotnet test XamlG.slnx -c Release --no-build --logger 'trx;LogFilePrefix=intelligent-ui' --results-directory artifacts/intelligent-ui/tests 2>&1 | tee artifacts/intelligent-ui/tests.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: intelligent-ui-test-results
-          path: artifacts/intelligent-ui/tests
+          path: |
+            artifacts/intelligent-ui/*.log
+            artifacts/intelligent-ui/tests
           if-no-files-found: ignore
           retention-days: 7
