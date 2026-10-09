@@ -1377,13 +1377,89 @@ bits against host BCL results under three cultures. Warm numeric, CSS/named
 color and named-enum parsing tests allocate zero token strings on .NET 10.
 
 Normal native validation passes **2,760 tests** with no failures or skips and
-warnings treated as errors. Full theme/catalog host validation and a paired
-compiler comparison are pending for this checkpoint. No end-to-end speedup or
-XamlX parity is claimed from the allocation tests alone. Generated-C# compilation
-remains separately measured with normal analyzers.
+warnings treated as errors. All **1,188 cases on each of headless, desktop and
+trimmed-browser ControlCatalog** pass, along with 14 pinned-source tests.
+
+[Six-pair CI comparison of `dc16784` and `8356d1f`](https://github.com/wieslawsoltes/XamlG/actions/runs/37983830022)
+confirms all 390 generated files are byte-identical. Generation medians are
+1.927→1.949s (Simple), 2.608→2.745s (Fluent) and 5.556→5.585s (catalog).
+Full-Csc CPU medians are 23.648→22.870s, 35.344→34.878s and 57.044→58.010s;
+captured-C# CPU medians are 20.792→19.125s, 30.235→29.426s and 47.360→48.417s.
+Generation did not improve; compiler CPU pairs are mixed. Captured C# is
+identical, so its timing changes cannot be attributed to a new source layout.
+No overall speedup is claimed from this parser round.
+
+The [independent `8356d1f` acceptance run](https://github.com/wieslawsoltes/XamlG/actions/runs/37983801591)
+also **fails parity**: Simple added cost is 6.993s versus XamlX 2.381s (2.94×),
+Fluent 10.344s versus 3.516s (2.94×), and catalog 16.358s versus 7.941s (2.06×).
+The dedicated profile reports generation separately as 1.654s, 2.228s and
+4.205s; its full-Csc wall medians are 9.122s, 13.056s and 21.064s, with
+captured-C# wall medians of 7.078s, 10.645s and 17.793s. These are independent,
+nonadditive runs, not components to subtract from the acceptance result.
 
 Further compiler work will use complete pipeline profiles, allocation samples
 and depth/width scaling measurements to select cache and traversal changes.
 Caches must respect compilation identity, framework configuration, concurrency,
 document invalidation and symbol lifetimes; changing APIs alone is not evidence
 of better total compiler performance.
+
+## Compiler algorithm and cache round
+
+The `8356d1f` baseline was frozen before changing code. Full compiler traces for
+all three projects retain normal analyzers, managed stacks and allocation ticks;
+all three traces report zero lost events. Managed thread-time samples include
+waits and are not presented as on-CPU time. The catalog allocation samples
+attribute approximately 22.6 MB to recursive object-iterator creation alone.
+Repeated source-element lookup and metadata inspection also appear in the
+profiles. The resulting changes are:
+
+- Bound-object traversal uses one iterator and an explicit stack of existing
+  expressions. Work is O(nodes + edges), instead of forwarding each result
+  through every ancestor iterator. Constructor arguments, assignments, choice
+  branches, descriptors, post-calls and optional deferred content retain order.
+- Each immutable syntax tree lazily owns a source-element interval index.
+  Building it costs O(n log n); repeated lookups cost O(log n) and allocate
+  nothing. Inclusive end cursors and equal-length preorder ties are preserved,
+  including malformed XML. Edited snapshots own separate indexes.
+- XML entity recovery searches only the already accepted 32-character window.
+  Runs of unterminated ampersands no longer rescan the entire remaining input.
+- Obsolete/experimental diagnostic descriptions, including negative results,
+  are cached by weak Roslyn symbol keys. Each use still reports its own source
+  span and applies the existing duplicate rule. Compilations are not retained.
+
+Run the scaling probe with
+`dotnet run -c Release --project tools/XamlG.Benchmarks -- --scaling 5`.
+The recorded comparison uses three alternating fresh-process pairs with five
+samples per size, `DOTNET_PROCESSOR_COUNT=2` and `DOTNET_TieredCompilation=0`.
+Disabling tiering is limited to these diagnostic probes; real compiler
+comparisons keep the normal runtime and analyzers. Baseline and candidate use
+the same probe executable with frozen compiler DLLs.
+
+| Diagnostic operation | Before | After | Allocated bytes before → after |
+| --- | ---: | ---: | ---: |
+| Walk a 1,024-deep bound tree | 14.672 ms | 0.043 ms | 303,400 → 176 |
+| Locate all 2,049 elements, existing index | 70.521 ms | 0.067 ms | 68,223,504 → 0 |
+| Parse and locate those elements, fresh tree | 83.076 ms | 0.927 ms | 69,142,400 → 1,280,264 |
+| Parse 65,536 unterminated ampersands | 115.911 ms | 1.015 ms | 3,284,736 → 3,284,744 |
+
+The deep walk scales approximately linearly after the change: 256, 512 and
+1,024 levels take 0.0084, 0.0176 and 0.0434 ms. All ten emitted-source hashes
+match across the six probe processes. Isolated 512-deep emission falls from
+6.366 to 4.230 ms and 4,063,762 to 3,912,093 allocated bytes; wide emission is
+mixed/slower in this noisy local run (3.616→4.019 ms), despite fewer allocations
+(4,432,702→4,219,787 bytes). This is not evidence of an overall emission win.
+
+A separate three-pair metadata probe over 10,000 repeated symbol occurrences
+measures 0.832→0.094 ms for unrelated attributes, and 20.971→7.012 ms for
+obsolete warnings, with warning allocations falling from 5,231,450 to
+3,551,450 bytes. Empty-attribute lookups also improve in this probe. These warm
+microbenchmarks do not establish cold source-generator or XamlX parity results.
+
+The 31 focused tests pass, covering every composite bound-expression kind,
+20,000 levels of nesting, source lookup differential tests, concurrent edits,
+XML recovery limits and cross-compilation diagnostic isolation. Full native
+validation passes **2,784 tests** with no failures or skips and warnings treated
+as errors. Host and paired compiler validation for this round is pending.
+Compact local evidence is under `artifacts/controlcatalog-performance/` in
+`compiler-modernization-profile`, `compiler-scaling-comparison` and
+`metadata-profile`; the source-generator chain remains `netstandard2.0`.
