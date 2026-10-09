@@ -21,7 +21,10 @@ public partial class App
             if (needsSource) await CaptureEditorsAsync();
             context.CancellationToken.ThrowIfCancellationRequested();
             if (!_ready || _busy || _disposed) throw new AutomationException("unavailable", "The IDE changed while capturing source.");
-            var result = await _automation.CallLocalAsync(name, arguments, context with { Caller = "Coding agent", PrincipalId = "browser-agent" });
+            // UI sessions belong to the originating task. Preserve the established artifact
+            // principal for other tools so external MCP revocation does not retire direct-agent artifacts.
+            var principal = name.StartsWith("xamlg_ui_", StringComparison.Ordinal) ? context.PrincipalId ?? "browser-agent" : "browser-agent";
+            var result = await _automation.CallLocalAsync(name, arguments, context with { Caller = "Coding agent", PrincipalId = principal });
             if (needsSource && tool.Effect != AutomationEffect.Read) await SaveDraftAsync();
             return result;
         }

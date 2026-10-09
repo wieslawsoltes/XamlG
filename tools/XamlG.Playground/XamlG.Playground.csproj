@@ -12,6 +12,7 @@
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/XamlG.IntelligentUI.Avalonia/XamlG.IntelligentUI.Avalonia.csproj" />
     <ProjectReference Include="../../src/XamlG.Tooling/XamlG.Tooling.csproj" />
     <ProjectReference Include="../../src/XamlG.Frameworks/XamlG.Frameworks.csproj" />
     <ProjectReference Include="../../src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" />

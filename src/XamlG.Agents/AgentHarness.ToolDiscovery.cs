@@ -4,11 +4,12 @@ namespace XamlG.Agents;
 
 public sealed partial class AgentHarness
 {
-    private const string DiscoveryDescription = "Find IDE tools by words or name; enable named tools for subsequent requests. All visual/logical tree, properties, XAML/designer, C#/Roslyn, generated code, files, build and computer tools are available. Empty query lists tools with paging. Discovery does not grant permissions.";
+    private const string DiscoveryDescription = "Find IDE tools by words or name; enable named tools for subsequent requests. All visual/logical tree, properties, XAML/designer, C#/Roslyn, generated code, files, build, intelligent UI and computer tools are available. Empty query lists tools with paging. Discovery does not grant permissions.";
     private static readonly HashSet<string> StarterTools = new(StringComparer.Ordinal)
     {
         "xamlg_project_get", "xamlg_document_read", "xamlg_source_edit", "xamlg_document_write",
         "xamlg_compiler_compile", "xamlg_runtime_run", "xamlg_build_read", "xamlg_wait",
+        "xamlg_ui_catalog", "xamlg_ui_present",
         "xamlg_computer_observe", "xamlg_computer_actions", "xamlg_agent_plan", "xamlg_agent_question", "xamlg_agent_tools"
     };
 

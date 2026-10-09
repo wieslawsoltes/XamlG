@@ -14,6 +14,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+defaults:
+  run:
+    shell: bash
 concurrency:
   group: intelligent-ui-${{ github.ref }}
   cancel-in-progress: true
@@ -28,11 +31,10 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - name: Restore dependencies
+      - name: Restore native dependencies
         run: |
           mkdir -p artifacts/intelligent-ui
           dotnet restore XamlG.slnx
-          dotnet restore tools/XamlG.Playground -p:WasmBuildNative=false
       - name: Check trusted MCP Apps script syntax
         run: |
           python - <<'PY'
@@ -41,12 +43,11 @@ jobs:
           Path('artifacts/intelligent-ui/ui-app.js').write_text(source.split('<script>', 1)[1].split('</script>', 1)[0])
           PY
           node --check artifacts/intelligent-ui/ui-app.js
+          node --check tools/XamlG.Playground/wwwroot/intelligent-ui.js
       - name: Build native contracts
         run: dotnet build XamlG.slnx -c Release --no-restore -warnaserror 2>&1 | tee artifacts/intelligent-ui/build.log
       - name: Test native contracts
         run: dotnet test XamlG.slnx -c Release --no-build --logger 'trx;LogFilePrefix=intelligent-ui' --results-directory artifacts/intelligent-ui/tests 2>&1 | tee artifacts/intelligent-ui/tests.log
-      - name: Build browser managed integration
-        run: dotnet build tools/XamlG.Playground -c Release --no-restore -p:WasmBuildNative=false -warnaserror 2>&1 | tee artifacts/intelligent-ui/browser-build.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
