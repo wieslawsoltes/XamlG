@@ -3,7 +3,7 @@ using Avalonia.Threading;
 
 namespace XamlG.IntelligentUI.Avalonia;
 
-/// <summary>Native surface lifetime with keyed reconciliation, state events and explicit action intents.
+/// <summary>Native surface lifetime with keyed reconciliation, local state actions and explicit external intents.
 /// All UI interaction is dispatcher-affine; store notifications may originate on any thread.</summary>
 public sealed class UiAvaloniaSession : IDisposable
 {
@@ -19,6 +19,7 @@ public sealed class UiAvaloniaSession : IDisposable
     public string? Diagnostic { get; private set; }
     public event Action? Updated;
     public event Action<string>? Failed;
+    /// <summary>Raised only for external actions. Local state actions are executed by the session.</summary>
     public event Action<UiActionCall>? ActionRequested;
 
     public UiAvaloniaSession(UiSessionStore store, UiPresentation presentation, string principal, UiAvaloniaCatalog? catalog = null)
@@ -65,7 +66,21 @@ public sealed class UiAvaloniaSession : IDisposable
         }
         catch (UiException error) { Refresh(); Diagnostic = error.Message; Failed?.Invoke(error.Message); }
     }
-    private void OnAction(UiActionCall call) { if (!_disposed) ActionRequested?.Invoke(call); }
+    private void OnAction(UiActionCall call)
+    {
+        if (_disposed || Snapshot == null) return;
+        try
+        {
+            var intent = _principal == null ? _store.PrepareActionLocal(call) : _store.PrepareAction(call, _principal);
+            if (intent.Kind == "state")
+            {
+                if (_principal == null) _store.ApplyStateActionLocal(call); else _store.ApplyStateAction(call, _principal);
+                Refresh();
+            }
+            else ActionRequested?.Invoke(call);
+        }
+        catch (UiException error) { Refresh(); Diagnostic = error.Message; Failed?.Invoke(error.Message); }
+    }
     private void OnChanged(UiSnapshot snapshot) { if (snapshot.Id == _id) ScheduleRefresh(); }
     private void OnReleased(string id) { if (id == _id) ScheduleRefresh(); }
     private void ScheduleRefresh()

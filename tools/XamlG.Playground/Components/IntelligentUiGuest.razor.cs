@@ -39,8 +39,6 @@ public partial class IntelligentUiGuest
                 FrameworkAssetPathResolver = file => new Uri(baseUri, "_content/Avalonia.Browser/" + file).AbsoluteUri,
                 RegisterAvaloniaServiceWorker = false
             });
-            // Use the same direct native control host as a Studio conversation card.
-            // Designer/reload surfaces have a separate lifetime and are not initialized here.
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 _renderer = new(); _renderer.StateChanged += StateChanged; _renderer.ActionRequested += ActionRequested;
@@ -95,7 +93,7 @@ public partial class IntelligentUiGuest
                 change = change with { ExpectedStateRevision = _snapshot.StateRevision };
                 var next = Mode == "execution" ? _executionStore!.ChangeState(change, "approved-execution") : await _bridge!.InvokeAsync<UiSnapshot>("tool", _lifetime.Token, "xamlg_ui_state", change);
                 await ReceiveSnapshot(next);
-                if (Mode == "mcp") await _bridge!.InvokeVoidAsync("context", _lifetime.Token, new { surfaceId = next.Id, next.Revision, next.StateRevision, next.State });
+                if (Mode == "mcp") await PublishContextAsync(next);
             }
             finally { _mutations.Release(); }
         }
@@ -106,12 +104,33 @@ public partial class IntelligentUiGuest
     {
         try
         {
-            if (Mode != "mcp") throw new UiException("action_disabled", "Full-C# preview has no editor or agent action authority.");
-            _review = await _bridge!.InvokeAsync<UiActionIntent>("tool", _lifetime.Token, "xamlg_ui_action", call);
-            _reviewCall = call; await InvokeAsync(StateHasChanged);
+            await _mutations.WaitAsync(_lifetime.Token);
+            try
+            {
+                if (_disposed) return;
+                var intent = Mode == "execution"
+                    ? _executionStore!.PrepareAction(call, "approved-execution")
+                    : await _bridge!.InvokeAsync<UiActionIntent>("tool", _lifetime.Token, "xamlg_ui_action", call);
+                if (intent.Kind == "state")
+                {
+                    var next = Mode == "execution"
+                        ? _executionStore!.ApplyStateAction(call, "approved-execution")
+                        : await _bridge!.InvokeAsync<UiSnapshot>("tool", _lifetime.Token, "xamlg_ui_state_action", call);
+                    await ReceiveSnapshot(next);
+                    if (Mode == "mcp") await PublishContextAsync(next);
+                    return;
+                }
+                if (Mode != "mcp") throw new UiException("action_disabled", "Full-C# preview has no editor or agent action authority.");
+                _review = intent; _reviewCall = call; await InvokeAsync(StateHasChanged);
+            }
+            finally { _mutations.Release(); }
         }
+        catch (OperationCanceledException) when (_disposed) { }
         catch (Exception error) { await ReceiveError(error.Message); }
     }
+    private async Task PublishContextAsync(UiSnapshot snapshot)
+        => await _bridge!.InvokeVoidAsync("context", _lifetime.Token,
+            new { surfaceId = snapshot.Id, snapshot.SessionId, snapshot.Revision, snapshot.StateRevision, snapshot.State });
     private void CancelReview() { _review = null; _reviewCall = null; }
     private async Task ConfirmAsync()
     {
@@ -131,12 +150,14 @@ public partial class IntelligentUiGuest
     public async Task<object> ExecuteApproved(UiPublish request)
     {
         if (Mode != "execution" || _executed || _disposed) throw new UiException("execution_not_approved", "Create a fresh reviewed execution frame.");
+        if (request.Actions?.Any(action => action == null || action.Kind != "state") == true)
+            throw new UiException("action_disabled", "Approved execution supports local state actions only, never external effects.");
         _executed = true;
         await Compiler.InitializeAsync(cancellationToken: _lifetime.Token);
         var metadata = Compiler.Analyze("<StackPanel xmlns=\"https://github.com/avaloniaui\"/>", "", cancellationToken: _lifetime.Token).Compilation.References;
         _fullCompiler = new(metadata, _ => true, maximumCompilations: 64);
         _executionStore = new(new UiCompiler(expressionCompiler: _fullCompiler));
-        var snapshot = _executionStore.Publish(request with { ExpectedRevision = 0, Sequence = 1, Actions = [] }, "approved-execution");
+        var snapshot = _executionStore.Publish(request with { ExpectedRevision = 0, Sequence = 1 }, "approved-execution");
         await ReceiveSnapshot(snapshot);
         return new { snapshot.Id, snapshot.Revision, snapshot.StateRevision, snapshot.FallbackMarkdown, expressionLanguage = "csharp-full" };
     }
