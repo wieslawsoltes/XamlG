@@ -101,6 +101,61 @@
       "source": "src/Avalonia.Base/Media/Transformation/TransformParser.cs",
       "destination": "src/XamlG.Frameworks/Avalonia/Parsing/TransformParser.cs",
       "sha256": "8a234c444ac98146cd2f462bcf07a4b5337f1b098063827dcdaa44c27b124a3c"
+    },
+    {
+      "source": "src/Avalonia.Base/PixelPoint.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/PixelPoint.cs",
+      "sha256": "82b308b0a7f2bb7185c7897e2056f4098d3640ee0030d4a27cf35986a8a84865"
+    },
+    {
+      "source": "src/Avalonia.Base/PixelSize.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/PixelSize.cs",
+      "sha256": "a619fe998a1b511f310f5cc7f7406de740e50080ae3eee92eac58fa174b0fea3"
+    },
+    {
+      "source": "src/Avalonia.Base/RelativeScalar.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/RelativeScalar.cs",
+      "sha256": "bed7e459e799d0483a61131f6f6610d80267482e8e7096efe4ad5534579f3050"
+    },
+    {
+      "source": "src/Avalonia.Base/RelativeRect.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/RelativeRect.cs",
+      "sha256": "d43751fc6d2f5321c3fea92da1ce027b5911db99f45b144935c3e71180d63a00"
+    },
+    {
+      "source": "src/Avalonia.Base/Vector3D.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Vector3D.cs",
+      "sha256": "7b840e3ed25b759063866497d7715b4e081ec416eef8021f958281963edb7c33"
+    },
+    {
+      "source": "src/Avalonia.Base/Matrix.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Matrix.cs",
+      "sha256": "1154e167efad2d6f3df5e8172ff8c4fa0f13685184e1a1898f1c1703b921fd75"
+    },
+    {
+      "source": "src/Avalonia.Controls/FlexPanel/FlexBasis.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/FlexBasis.cs",
+      "sha256": "0dc420c25c2e90d3839c0b14708eaf9173a22b03bc0064ed3efa51fbd05f2b6a"
+    },
+    {
+      "source": "src/Avalonia.Controls/FlexPanel/FlexBasisKind.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/FlexBasisKind.cs",
+      "sha256": "ac9ced5f63dacf1b3dbeec2f3cd5242063659a8afce76649808e47f3fe518057"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/UnicodeRange.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/UnicodeRange.cs",
+      "sha256": "902db249bac31ea34331794c9d3969ad5e9cf550809a140869a6a11281e01721"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/Fonts/OpenTypeTag.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/OpenTypeTag.cs",
+      "sha256": "4804ba1dd10d2fb02c48d4ec3095ab732a6423d770e275007348eacaa002f05b"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/FontVariationSettings.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/FontVariationSettings.cs",
+      "sha256": "85704b8938574b6a3bec4648b0c6649ed217ed9236262cc6d5b9c18978fe8805"
     }
   ]
 }
