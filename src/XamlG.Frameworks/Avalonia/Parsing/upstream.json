@@ -76,6 +76,26 @@
       "source": "src/Avalonia.Base/Input/Cursor.cs",
       "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Cursor.cs",
       "sha256": "40479c6084f5f654416f77f7edcd4b280dae783cbc5e0922cb1a5bf9e082c9d3"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/FontFeature.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/FontFeature.cs",
+      "sha256": "b2573b77ae12914109da8d92a9598a1adcc25d1973a0dc3622000e14f4631b33"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/BoxShadow.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/BoxShadow.cs",
+      "sha256": "43e26ba0b06a85e63386745c2aab042e55693acf6c3ac96e47f6a71537c2d269"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/BoxShadows.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/BoxShadows.cs",
+      "sha256": "9a1377429b06020e473295f081376b2fd2ff618559dff5d73f53a1f02eb441a5"
+    },
+    {
+      "source": "src/Avalonia.Base/Utilities/StringSplitter.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/StringSplitter.cs",
+      "sha256": "3f8e954f0cff47270a7f09e703159e30c037d549daaa655839c167808859e8c3"
     }
   ]
 }
