@@ -23,10 +23,12 @@ public static class SymbolExtensions
     public static bool HasMetadataName(this ISymbol symbol, string name)
     {
         if (name == null) return false;
-        // Constructed named types keep their definition's metadata leaf name.
-        // Reject unrelated types before Roslyn creates an OriginalDefinition
-        // wrapper; framework binding performs many such negative probes.
-        if (symbol is INamedTypeSymbol && !name.EndsWith(symbol.MetadataName, StringComparison.Ordinal)) return false;
+        // Constructed named types (including their containing types) keep the
+        // definition's metadata names. Avoid creating OriginalDefinition wrappers
+        // for positive probes as well as the much more frequent negative probes.
+        if (symbol is INamedTypeSymbol)
+            return name.EndsWith(symbol.MetadataName, StringComparison.Ordinal) &&
+                string.Equals(symbol.MetadataName(), name, StringComparison.Ordinal);
         var definition = symbol.OriginalDefinition;
         return name.EndsWith(definition.MetadataName, StringComparison.Ordinal) &&
             string.Equals(definition.MetadataName(), name, StringComparison.Ordinal);

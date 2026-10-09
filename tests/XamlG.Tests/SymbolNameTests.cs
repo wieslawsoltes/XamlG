@@ -23,6 +23,32 @@ public sealed class SymbolNameTests
     }
 
     [Fact]
+    public void ConstructedAndNullableMetadataChecksMatchTheirDefinitions()
+    {
+        var compilation = CompilationFactory.Create("""
+            #nullable enable
+            public class Holder<T> {
+                public System.Collections.Generic.Dictionary<string, T?>? Map;
+                public (int Number, string? Text) Pair;
+                public T[]? Array;
+                public T? Value;
+                public nint Integer;
+            }
+            """);
+        var holder = compilation.GetTypeByMetadataName("Holder`1")!;
+        var types = holder.GetMembers().OfType<IFieldSymbol>().Select(field => field.Type)
+            .Concat(holder.Construct(compilation.GetSpecialType(SpecialType.System_Int32)).GetMembers().OfType<IFieldSymbol>().Select(field => field.Type))
+            .Concat(new ITypeSymbol[] { holder, holder.ConstructUnboundGenericType() }).ToArray();
+        Parallel.ForEach(types, type =>
+        {
+            var expected = type.OriginalDefinition.MetadataName();
+            Assert.True(type.HasMetadataName(expected));
+            Assert.False(type.HasMetadataName("Different." + expected));
+            Assert.False(type.HasMetadataName(expected + "Different"));
+        });
+    }
+
+    [Fact]
     public void NewCompilationsDoNotReuseOldSymbolAttributes()
     {
         var first = CompilationFactory.Create("[System.Obsolete] public class View {} ").GetTypeByMetadataName("View")!;
