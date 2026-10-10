@@ -1,0 +1,78 @@
+name: Prepare workspace close lifecycle
+on:
+  push:
+    branches: [feat/msbuild-solution-workspaces]
+    paths: [.github/workflows/workspace-integration-repair.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate and prepare exact reviewed patch without updating a branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.sha }}
+        shell: python
+        run: |
+          import base64, gzip, hashlib, json, os, pathlib, subprocess, urllib.request
+          expected = os.environ['EXPECTED_HEAD']
+          repository = os.environ['GITHUB_REPOSITORY']
+          assert repository == 'wieslawsoltes/XamlG'
+          def api(path, data=None):
+              request = urllib.request.Request('https://api.github.com/repos/' + repository + path,
+                  data=None if data is None else json.dumps(data).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'})
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.load(response)
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip() == expected
+          assert api('/git/ref/heads/feat/msbuild-solution-workspaces')['object']['sha'] == expected
+          blob = api('/git/blobs/24d047021a456caa41bd518ab182d71135650953')
+          patch = gzip.decompress(base64.b64decode(blob['content']))
+          assert hashlib.sha256(patch).hexdigest() == 'ebc2399d65cb4ea1f1431454a45d12f4185eaf7ff1e34b55eb0556808ed4746f'
+          patch_path = pathlib.Path(os.environ['RUNNER_TEMP']) / 'workspace-close.patch'
+          patch_path.write_bytes(patch)
+          subprocess.run(['git', 'apply', '--check', str(patch_path)], check=True)
+          subprocess.run(['git', 'apply', str(patch_path)], check=True)
+          paths = [
+              '.github/workflows/workspaces.yml',
+              'tools/XamlG.Playground/wwwroot/studio.js',
+              'tools/XamlG.Playground/Workspaces/SolutionWorkspaceSession.cs',
+              'tools/XamlG.Playground/Components/WorkspaceDocumentView.razor',
+              'tools/XamlG.Playground/Components/SolutionExplorer.razor',
+              'tools/XamlG.Playground/asset-tests/workspace-dock-lifecycle.test.mjs',
+              'tools/XamlG.Playground/tests/solution-workspace.spec.mjs',
+              'docs/solution-workspaces.md']
+          subprocess.run(['git', 'add', '--', *paths], check=True)
+          changed = subprocess.check_output(['git', 'diff', '--cached', '--name-only', '-z']).decode().strip('\0').split('\0')
+          assert sorted(changed) == sorted(paths)
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          subprocess.run(['git', 'diff', '--cached', '--stat'], check=True)
+          subprocess.run(['node', '--test', 'asset-tests/solution-workspace.test.mjs', 'asset-tests/workspace-dock-lifecycle.test.mjs'], cwd='tools/XamlG.Playground', check=True)
+          subprocess.run(['node', '--check', 'tools/XamlG.Playground/tests/solution-workspace.spec.mjs'], check=True)
+          tree = [{'path': path, 'mode': '100644', 'type': 'blob', 'content': pathlib.Path(path).read_text()} for path in paths]
+          tree.append({'path': '.github/workflows/workspace-integration-repair.yml', 'mode': '100644', 'type': 'blob', 'sha': None})
+          base_tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+          created_tree = api('/git/trees', {'base_tree': base_tree, 'tree': tree})['sha']
+          commit = api('/git/commits', {'message': 'Protect workspace document closes and persist tab retirement transactionally', 'tree': created_tree, 'parents': [expected]})
+          result = {'parent': expected, 'commit': commit['sha'], 'tree': created_tree}
+          pathlib.Path('prepared-commit.json').write_text(json.dumps(result, indent=2))
+          print(json.dumps(result, indent=2), flush=True)
+          pathlib.Path('reviewed.patch').write_bytes(patch)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prepared-workspace-close
+          path: |
+            prepared-commit.json
+            reviewed.patch
+          retention-days: 7
+          if-no-files-found: warn
