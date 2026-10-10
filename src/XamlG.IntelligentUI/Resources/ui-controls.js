@@ -31,7 +31,7 @@ function create(node){
   if(node.type==='Button'||node.type==='RepeatButton')e.addEventListener('click',()=>prepare(entry));return entry;
 }
 function accept(value){
-  if(disposed)return;validSnapshot(value);
+  if(disposed)return;validSnapshot(value);const styleText=buildUiStyles(value);
   if(snapshot&&snapshot.sessionId===value.sessionId&&(value.revision<snapshot.revision||value.revision===snapshot.revision&&value.stateRevision<snapshot.stateRevision))return;
   snapshot=value;review=null;$('review').hidden=true;applying=true;const used=new Set();
   try{
@@ -47,7 +47,7 @@ function accept(value){
       }
       const children=node.children.map(child=>render(child,disabled,hidden));
       const widget=widgets.get(node.type);
-      if(widget){widget.update(entry,children,{disabled,hidden});applyAvaloniaFeatures(entry);return e;}
+      if(widget){widget.update(entry,children,{disabled,hidden});applyAvaloniaFeatures(entry);applyUiStyleIdentity(entry);return e;}
       if(p.Content!==undefined&&!children.length&&containers.has(node.type)&&node.type!=='ItemsControl')entry.slot.textContent=p.Content;
       else if(containers.has(node.type))reconcile(entry.slot,children);
       switch(node.type){
@@ -75,9 +75,10 @@ function accept(value){
         case 'TimePicker':entry.input.value=p.SelectedTime?.slice(0,8)||'';entry.input.step=String((p.MinuteIncrement??1)*60);break;
         case 'Rectangle':case 'Ellipse':case 'Line':{const width=p.Width??100,height=p.Height??60,s=entry.shape;e.setAttribute('viewBox',`0 0 ${width||1} ${height||1}`);e.style.width=px(width);e.style.height=px(height);s.setAttribute('fill',p.Fill?color(p.Fill):'none');s.setAttribute('stroke',p.Stroke?color(p.Stroke):'none');s.setAttribute('stroke-width',String(p.StrokeThickness??1));if(node.type==='Rectangle'){s.setAttribute('width',width);s.setAttribute('height',height);s.setAttribute('rx',p.RadiusX??0);s.setAttribute('ry',p.RadiusY??0);}else if(node.type==='Ellipse'){s.setAttribute('cx',width/2);s.setAttribute('cy',height/2);s.setAttribute('rx',width/2);s.setAttribute('ry',height/2);}else{const a=tuple(p.StartPoint??'0,0',-1000000,1000000),b=tuple(p.EndPoint??'0,0',-1000000,1000000);if(a.length!==2||b.length!==2)throw new Error('Line points require two coordinates.');s.setAttribute('x1',a[0]);s.setAttribute('y1',a[1]);s.setAttribute('x2',b[0]);s.setAttribute('y2',b[1]);}break;}
       }
-      applyAvaloniaFeatures(entry);return e;
+      applyAvaloniaFeatures(entry);applyUiStyleIdentity(entry);return e;
     }
     reconcile(root,value.roots.map(node=>render(node)));for(const [key,entry]of entries)if(!used.has(key)){retire(entry);entries.delete(key);}
+    uiStyleElement.textContent=styleText;
     $('fallback').textContent=String(value.fallbackMarkdown||'').slice(0,131072);
     status((value.isFinal?'Interactive UI':'Streaming UI')+' · revision '+value.revision+' · state '+value.stateRevision);$('refresh').disabled=busy||!capabilities.serverTools;scheduleLayout();
   }finally{applying=false;}
