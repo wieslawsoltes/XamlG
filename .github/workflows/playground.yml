@@ -55,6 +55,7 @@ jobs:
         if: always() && matrix.shard == 1
         with:
           name: intelligent-ui-studio-acceptance
+          overwrite: true
           path: |
             tools/XamlG.Playground/test-results
             tools/XamlG.Playground/playwright-report
@@ -95,6 +96,7 @@ jobs:
         if: always()
         with:
           name: playground-report-${{ matrix.shard }}
+          overwrite: true
           path: |
             tools/XamlG.Playground/test-results/results.json
             tools/XamlG.Playground/test-results/source-commit.txt
@@ -103,6 +105,7 @@ jobs:
         if: always()
         with:
           name: playground-validation-${{ matrix.shard }}
+          overwrite: true
           path: |
             tools/XamlG.Playground/test-results
             tools/XamlG.Playground/playwright-report
@@ -111,6 +114,7 @@ jobs:
         if: success() && matrix.shard == 1
         with:
           name: playground-site
+          overwrite: true
           path: artifacts/playground/wwwroot
           retention-days: 7
   browser:
@@ -130,12 +134,23 @@ jobs:
           EXPECTED_SOURCE: ${{ github.sha }}
         shell: python
         run: |
-          import json, os
+          import json, os, re
           from pathlib import Path
           reports = sorted(Path('reports').glob('*/results.json'))
           assert len(reports) == 8, f'Expected 8 completed shard reports, received {len(reports)}'
           seen = set()
           totals = {key: 0 for key in ('expected', 'unexpected', 'flaky', 'skipped')}
+          failures = []
+          def describe_failures(suites):
+              for suite in suites:
+                  for spec in suite.get('specs', []):
+                      for test in spec.get('tests', []):
+                          if test.get('status') in ('unexpected', 'flaky'):
+                              print('FAILED:', spec.get('file'), spec.get('title'), flush=True)
+                              for result in test.get('results', []):
+                                  for error in result.get('errors', []):
+                                      print(re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', error.get('message', ''))[:5000], flush=True)
+                  describe_failures(suite.get('suites', []))
           for path in reports:
               data = json.loads(path.read_text())
               shard = data['config']['shard']
@@ -143,11 +158,16 @@ jobs:
               assert shard['current'] not in seen, f'Duplicate shard: {shard}'
               seen.add(shard['current'])
               assert (path.parent / 'source-commit.txt').read_text().strip() == os.environ['EXPECTED_SOURCE'], 'A shard tested another revision'
-              assert not data.get('errors'), f'Global errors in shard {shard}'
+              describe_failures(data.get('suites', []))
+              if data.get('errors'):
+                  failures.append(f'Global errors in shard {shard}: {str(data["errors"])[:5000]}')
               stats = data['stats']
-              assert stats['expected'] > 0 and stats['unexpected'] == 0 and stats['flaky'] == 0, f'Incomplete or failing shard: {stats}'
+              print('SHARD:', shard['current'], json.dumps(stats, sort_keys=True), flush=True)
+              if stats['expected'] <= 0 or stats['unexpected'] != 0 or stats['flaky'] != 0:
+                  failures.append(f'Incomplete or failing shard {shard}: {stats}')
               for key in totals: totals[key] += stats[key]
-          print('ALL SHARDS:', json.dumps(totals, sort_keys=True))
+          print('ALL SHARDS:', json.dumps(totals, sort_keys=True), flush=True)
+          assert not failures, '\n'.join(failures)
           assert os.environ['SHARD_RESULT'] == 'success', 'Build, publication or acceptance failed in a shard'
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
               stream.write('All 8 exact-source browser shards passed.\n\n```json\n' + json.dumps(totals, indent=2) + '\n```\n')
