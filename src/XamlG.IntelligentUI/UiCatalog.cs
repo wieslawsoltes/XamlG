@@ -145,6 +145,6 @@ public sealed class UiCatalog
             if (name == "Line") properties.AddRange([("StartPoint", new(UiPropertyKind.Point, -1000000, 1000000)), ("EndPoint", new(UiPropertyKind.Point, -1000000, 1000000))]);
             C(name, properties: properties.ToArray());
         }
-        return new(components);
+        return new(UiAvaloniaFeatureSchema.Extend(components));
     }
 }
