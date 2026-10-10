@@ -2,7 +2,7 @@ name: Browser playground
 on:
   push:
     branches: [main]
-    paths: ['src/**', 'tools/XamlG.Playground/**', 'tools/XamlG.Studio.Host/**', 'Directory.*', 'scripts/prepare-pages.py', 'scripts/serve-playground.py', 'scripts/test-browser-studio.py', '.github/workflows/playground.yml']
+    paths: ['src/**', 'tools/XamlG.Playground/**', 'tools/XamlG.Studio.Host/**', 'Directory.*', 'scripts/prepare-pages.py', 'scripts/serve-playground.py', 'scripts/test-browser-studio.py', 'scripts/tests/test_browser_studio.py', '.github/workflows/playground.yml']
   pull_request:
   workflow_dispatch:
 permissions:
@@ -11,9 +11,14 @@ concurrency:
   group: playground-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  browser:
+  browser-shard:
+    name: Browser shard ${{ matrix.shard }}/8
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,6 +29,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Validate companion launcher options
+        run: python -m unittest discover -s scripts/tests -p test_browser_studio.py
       - name: Install browser toolchain
         run: dotnet workload install wasm-tools --skip-manifest-update
       - name: Prepare pinned editor and test assets
@@ -36,36 +43,131 @@ jobs:
         run: dotnet publish tools/XamlG.Playground/XamlG.Playground.csproj -c Release -p:NuGetAudit=false -o artifacts/playground
       - name: Prepare the existing GitHub Pages application
         run: python scripts/prepare-pages.py --commit "${{ github.sha }}"
+      - name: Build the real SDK companion
+        run: dotnet build tools/XamlG.Studio.Host -c Release -p:NuGetAudit=false -warnaserror
       - name: Intelligent UI native browser and provider acceptance
+        if: matrix.shard == 1
         working-directory: tools/XamlG.Playground
         env:
           PLAYGROUND_PAGES_PREVIEW: '1'
-        run: |
-          dotnet build ../XamlG.Studio.Host -c Release -warnaserror
-          python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/intelligent-ui-lifecycle.spec.mjs tests/intelligent-ui-parity.spec.mjs
+        run: python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/intelligent-ui-lifecycle.spec.mjs tests/intelligent-ui-parity.spec.mjs
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && matrix.shard == 1
         with:
           name: intelligent-ui-studio-acceptance
+          overwrite: true
           path: |
             tools/XamlG.Playground/test-results
             tools/XamlG.Playground/playwright-report
           if-no-files-found: ignore
-      - name: Browser acceptance tests
+      - name: All browser acceptance scenarios, isolated shard
         working-directory: tools/XamlG.Playground
         env:
           PLAYGROUND_PAGES_PREVIEW: '1'
-        run: python ../../scripts/test-browser-studio.py
+        run: python ../../scripts/test-browser-studio.py --shard "${{ matrix.shard }}/8"
+      - name: Summarize browser evidence
+        if: always()
+        shell: python
+        run: |
+          import json, os, re, subprocess
+          from pathlib import Path
+          root = Path('tools/XamlG.Playground/test-results')
+          root.mkdir(exist_ok=True)
+          (root / 'source-commit.txt').write_text(subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip())
+          report = root / 'results.json'
+          if report.exists():
+              data = json.loads(report.read_text())
+              summary = json.dumps({'shard': data.get('config', {}).get('shard'), 'stats': data.get('stats'), 'errors': data.get('errors')}, indent=2)
+              print(summary)
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream: stream.write('```json\n' + summary + '\n```\n')
+              def walk(suites):
+                  for suite in suites:
+                      for spec in suite.get('specs', []):
+                          for test in spec.get('tests', []):
+                              if test.get('status') in ('unexpected', 'flaky'):
+                                  print('FAILED:', spec.get('file'), spec.get('title'))
+                                  for result in test.get('results', []):
+                                      for error in result.get('errors', []): print(re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', error.get('message', ''))[:3000])
+                      walk(suite.get('suites', []))
+              walk(data.get('suites', []))
+          else:
+              print('No completed browser report; this shard cannot satisfy the aggregate gate.')
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playground-validation
+          name: playground-report-${{ matrix.shard }}
+          overwrite: true
+          path: |
+            tools/XamlG.Playground/test-results/results.json
+            tools/XamlG.Playground/test-results/source-commit.txt
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playground-validation-${{ matrix.shard }}
+          overwrite: true
           path: |
             tools/XamlG.Playground/test-results
             tools/XamlG.Playground/playwright-report
             artifacts/playground-studio.png
       - uses: actions/upload-artifact@v4
+        if: success() && matrix.shard == 1
         with:
           name: playground-site
+          overwrite: true
           path: artifacts/playground/wwwroot
           retention-days: 7
+  browser:
+    name: browser
+    needs: browser-shard
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: playground-report-*
+          path: reports
+      - name: Require all eight exact-source shards
+        env:
+          SHARD_RESULT: ${{ needs.browser-shard.result }}
+          EXPECTED_SOURCE: ${{ github.sha }}
+        shell: python
+        run: |
+          import json, os, re
+          from pathlib import Path
+          reports = sorted(Path('reports').glob('*/results.json'))
+          assert len(reports) == 8, f'Expected 8 completed shard reports, received {len(reports)}'
+          seen = set()
+          totals = {key: 0 for key in ('expected', 'unexpected', 'flaky', 'skipped')}
+          failures = []
+          def describe_failures(suites):
+              for suite in suites:
+                  for spec in suite.get('specs', []):
+                      for test in spec.get('tests', []):
+                          if test.get('status') in ('unexpected', 'flaky'):
+                              print('FAILED:', spec.get('file'), spec.get('title'), flush=True)
+                              for result in test.get('results', []):
+                                  for error in result.get('errors', []):
+                                      print(re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', error.get('message', ''))[:5000], flush=True)
+                  describe_failures(suite.get('suites', []))
+          for path in reports:
+              data = json.loads(path.read_text())
+              shard = data['config']['shard']
+              assert shard['total'] == 8 and 1 <= shard['current'] <= 8
+              assert shard['current'] not in seen, f'Duplicate shard: {shard}'
+              seen.add(shard['current'])
+              assert (path.parent / 'source-commit.txt').read_text().strip() == os.environ['EXPECTED_SOURCE'], 'A shard tested another revision'
+              describe_failures(data.get('suites', []))
+              if data.get('errors'):
+                  failures.append(f'Global errors in shard {shard}: {str(data["errors"])[:5000]}')
+              stats = data['stats']
+              print('SHARD:', shard['current'], json.dumps(stats, sort_keys=True), flush=True)
+              if stats['expected'] <= 0 or stats['unexpected'] != 0 or stats['flaky'] != 0:
+                  failures.append(f'Incomplete or failing shard {shard}: {stats}')
+              for key in totals: totals[key] += stats[key]
+          print('ALL SHARDS:', json.dumps(totals, sort_keys=True), flush=True)
+          assert not failures, '\n'.join(failures)
+          assert os.environ['SHARD_RESULT'] == 'success', 'Build, publication or acceptance failed in a shard'
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+              stream.write('All 8 exact-source browser shards passed.\n\n```json\n' + json.dumps(totals, indent=2) + '\n```\n')

@@ -9,6 +9,7 @@ namespace XamlG.Studio.Host;
 /// <summary>Companion account and MCP-operation integration over the reusable workbench session.</summary>
 public sealed class AgentWorkbench : AgentWorkbenchSession
 {
+    private readonly WorkspaceApi _workspaceApi = new();
     private readonly AutomationMcpTaskStore? _mcpTasks;
     private readonly ChatGptAccountManager? _chatGpt;
     private readonly string? _chatGptError;
@@ -31,6 +32,11 @@ public sealed class AgentWorkbench : AgentWorkbenchSession
 
     protected override async ValueTask<JsonElement> ExecuteExtensionAsync(string action, JsonElement arguments, CancellationToken cancellationToken, CancellationToken ownerSession)
     {
+        if (action.StartsWith("workspace_", StringComparison.Ordinal))
+        {
+            using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, ownerSession);
+            return await _workspaceApi.ExecuteAsync(action, arguments, lifetime.Token);
+        }
         switch (action)
         {
             case "chatgpt_sign_in":

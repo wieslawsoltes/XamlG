@@ -276,7 +276,7 @@ export function activateDockContent(manager, id, focus = true) {
 }
 export function reconcileDockDocuments(manager, ids, registered = []) {
     const current = new Set(ids);
-    const obsolete = dockyardContents(manager).filter(item => /^(document|generated):/.test(item.id) && !current.has(item.id));
+    const obsolete = dockyardContents(manager).filter(item => /^(document|generated|workspace):/.test(item.id) && !current.has(item.id));
     manager.Transaction('Retire removed documents', () => {
         for (const item of obsolete) {
             const model = manager.Find(item.id);
@@ -290,7 +290,7 @@ export function installDockyardWorkspace(manager, owner) {
     const pending = new Set(), permitted = new Set();
     const protect = operation => (_sender, args) => {
         const item = args.Model, id = item?.ContentId;
-        if (!id || permitted.has(id) || !(/^(document|generated):/.test(id) || id === 'agent' || id === 'agent-access')) return;
+        if (!id || permitted.has(id) || !(/^(document|generated|workspace):/.test(id) || id === 'agent' || id === 'agent-access')) return;
         args.Cancel = true;
         if (pending.has(id) || disposed) return;
         pending.add(id);
@@ -594,18 +594,30 @@ export async function beginChatGptSignIn(argumentsValue) {
     return result;
   } catch (error) { if (popup && !popup.closed) popup.close(); throw error; }
 }
-export async function agentRequest(action, argumentsValue = {}) {
+export async function agentRequest(action, argumentsValue = {}, { signal } = {}) {
     if (!agentConnection) throw new Error('Connect the local companion in Agent access first.');
     const connection = agentConnection;
-    const response = await fetch(`${connection.base}/agent/${encodeURIComponent(action)}`, {
-        method: 'POST', headers: { Authorization: `Bearer ${connection.token}`, 'X-Xamlg-Owner-Session': connection.session, 'Content-Type': 'application/json' },
-        body: JSON.stringify(argumentsValue), cache: 'no-store', signal: agentStream?.signal
-    });
-    const body = await response.text();
-    if (body.length > 16 * 1024 * 1024) throw new Error('Agent response is too large. Export a smaller thread.');
-    const result = JSON.parse(body);
-    if (!response.ok) throw new Error(result.error || `Companion returned ${response.status}.`);
-    return result;
+    // An owner operation may cancel its HTTP request, never the shared stream or
+    // another operation. Revoke/disconnect still cancels every linked request.
+    const controller = new AbortController(), subscriptions = [];
+    try {
+        for (const source of new Set([agentStream?.signal, signal].filter(Boolean))) {
+            const abort = () => controller.abort(source.reason);
+            if (source.aborted) abort();
+            else { source.addEventListener('abort', abort, { once: true }); subscriptions.push([source, abort]); }
+        }
+        controller.signal.throwIfAborted();
+        const response = await fetch(`${connection.base}/agent/${encodeURIComponent(action)}`, {
+            method: 'POST', headers: { Authorization: `Bearer ${connection.token}`, 'X-Xamlg-Owner-Session': connection.session, 'Content-Type': 'application/json' },
+            body: JSON.stringify(argumentsValue), cache: 'no-store', signal: controller.signal
+        });
+        const body = await response.text();
+        controller.signal.throwIfAborted();
+        if (body.length > 16 * 1024 * 1024) throw new Error('Agent response is too large. Export a smaller thread.');
+        const result = JSON.parse(body);
+        if (!response.ok) throw new Error(result.error || `Companion returned ${response.status}.`);
+        return result;
+    } finally { for (const [source, abort] of subscriptions) source.removeEventListener('abort', abort); }
 }
 async function startAgentStream() {
     agentStream?.abort(); agentStream = new AbortController();

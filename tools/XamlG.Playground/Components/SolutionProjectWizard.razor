@@ -1,0 +1,180 @@
+@using System.Text.Json
+@using XamlG.ProjectSystem
+@using XamlG.Playground.Workspaces
+
+@if (Visible)
+{
+    <div class="ws-dialog-backdrop">
+        <section class="ws-wizard" role="dialog" aria-modal="true" aria-labelledby="ws-wizard-title" @onkeydown="KeyDownAsync">
+            <header><div><small>@(Session.IsLocal ? "INSTALLED .NET SDK" : "BROWSER WORKSPACE")</small><h2 id="ws-wizard-title">@(Mode == "add" ? "Add a new project" : Mode == "solution" ? "Create a solution" : "Create a project")</h2></div><button aria-label="Close project wizard" @onclick="Cancel" disabled="@Session.Busy">×</button></header>
+            <div class="ws-wizard-body">
+                <aside class="ws-template-picker">
+                    <label class="ws-field">Search templates <input type="search" @bind="_search" @bind:event="oninput" autofocus /></label>
+                    @if (Mode == "solution")
+                    {
+                        <button class="ws-template @(_template == "solution" ? "selected" : "")" @onclick='() => SelectTemplate("solution")'><strong>Empty solution</strong><span>A solution file with no initial project.</span></button>
+                    }
+                    @foreach (var template in WorkspaceTemplates.All.Where(template => (template.Name + template.Description + template.Category).Contains(_search, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        <button class="ws-template @(_template == template.Id ? "selected" : "")" @onclick="() => SelectTemplate(template.Id)"><small>@template.Category</small><strong>@template.Name</strong><span>@template.Description</span></button>
+                    }
+                    @if (Session.IsLocal)
+                    {
+                        <button @onclick="Session.LoadTemplatesAsync" disabled="@(Session.Busy || !Session.Trusted)">Discover installed templates</button>
+                        @if (Session.TemplateCatalog is { } catalog && catalog.TryGetProperty("templates", out var templates))
+                        {
+                            @foreach (var item in templates.EnumerateArray().Where(item => item.GetProperty("name").GetString()!.Contains(_search, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                var shortName = (item.GetProperty("shortNames").GetString() ?? "").Split(',')[0].Trim();
+                                <button class="ws-template @(_template == shortName ? "selected" : "")" @onclick="() => SelectTemplate(shortName)"><strong>@item.GetProperty("name").GetString()</strong><span>@shortName · @item.GetProperty("language").GetString()</span></button>
+                            }
+                        }
+                    }
+                </aside>
+                <div class="ws-project-options">
+                    <h3>Configure @_template</h3>
+                    @if (Session.IsLocal)
+                    {
+                        <label class="ws-trust"><input type="checkbox" @bind="Session.Trusted" disabled="@Session.Busy" /> I authorize the installed SDK and selected template/package code to execute on this computer.</label>
+                        <p class="ws-hint">Installed templates are instantiated by <code>dotnet new</code>, including their options and post-actions. Creation stages output before publishing a new directory and never overwrites an existing destination.</p>
+                        <label class="ws-field">Installed template short name <input @bind="_template" /></label>
+                        <button @onclick="() => Session.TemplateHelpAsync(_template)" disabled="@(Session.Busy || !Session.Trusted || _template == "solution")">Template options / help</button>
+                    }
+                    else { <p class="ws-hint">Offline starters create editable source files without running the SDK. Install and use any additional .NET or Avalonia templates through a paired local workspace.</p> }
+                    <label class="ws-field">Name <input aria-label="New workspace name" @bind="_name" @bind:after="RefreshPreview" placeholder="MyApplication" /></label>
+                    @if (Mode == "add") { <p class="ws-hint">Adding to <code>@Session.Snapshot.EntryPath</code></p> }
+                    @if (Session.IsLocal)
+                    {
+                        <label class="ws-field">Existing parent directory (workspace-relative) <input @bind="_directory" placeholder="Leave empty for the configured root" /></label>
+                    }
+                    else if (_template != "solution")
+                    {
+                        <label class="ws-field">Project directory <input @bind="_directory" @bind:after="RefreshPreview" placeholder="Uses the project name when empty" /></label>
+                    }
+                    @if (_template != "solution")
+                    {
+                        <label class="ws-field">Root namespace <input @bind="_namespace" @bind:after="RefreshPreview" placeholder="Derived from the project name" /></label>
+                        <label class="ws-field">Target framework <input list="ws-frameworks" @bind="_framework" @bind:after="RefreshPreview" placeholder="Template default for native SDK" /></label>
+                        <datalist id="ws-frameworks"><option>net10.0</option><option>net9.0</option><option>net8.0</option><option>netstandard2.1</option></datalist>
+                        @if (!Session.IsLocal && _template.StartsWith("avalonia", StringComparison.Ordinal))
+                        {
+                            <label class="ws-field">Avalonia package version <input @bind="_avaloniaVersion" @bind:after="RefreshPreview" /></label>
+                            <label class="ws-field">Optional XamlG.Avalonia package version <input @bind="_xamlgVersion" @bind:after="RefreshPreview" placeholder="Leave empty for the normal Avalonia compiler" /></label>
+                        }
+                    }
+                    @if (Mode != "add")
+                    {
+                        <label><input type="checkbox" @bind="_createSolution" @bind:after="RefreshPreview" disabled="@(_template == "solution" || Mode == "solution")" /> Create a solution</label>
+                        @if (_createSolution) { <label class="ws-field">Solution format <select @bind="_format" @bind:after="RefreshPreview"><option value="slnx">XML solution (.slnx)</option><option value="sln">Visual Studio solution (.sln)</option></select></label> }
+                    }
+                    @if (Session.IsLocal)
+                    {
+                        <details><summary>Additional template options</summary><p>Enter a JSON object of long option names and string values, for example <code>{"langVersion":"latest"}</code>. Output/name/force and template-management overrides are refused.</p><textarea aria-label="Native template options" @bind="_optionsJson" rows="4"></textarea></details>
+                        <details><summary>Install a template package</summary>
+                            <label class="ws-field">NuGet template package <input @bind="_templatePackage" /></label>
+                            <label class="ws-field">Explicit package version <input @bind="_templateVersion" /></label>
+                            <button @onclick="InstallAsync" disabled="@(Session.Busy || !Session.Trusted)">Install trusted package</button>
+                            <p class="ws-hint">Template installation changes the local SDK template cache. Review the package publisher and version before installing.</p>
+                        </details>
+                        <details><summary>SDK template output</summary><pre>@Session.Output</pre></details>
+                    }
+                    else if (_previewPaths.Length != 0)
+                    {
+                        <details open><summary>Files to create (@_previewPaths.Length)</summary>@foreach (var path in _previewPaths) { <div><code>@path</code></div> }</details>
+                    }
+                    @if (_error != null || Session.Error != null) { <p class="ws-error" role="alert">@(_error ?? Session.Error)</p> }
+                </div>
+            </div>
+            <footer><span>@(Session.CancellationRequested ? "Cancellation requested…" : Session.Busy ? "Workspace operation running…" : "Existing files are never replaced by this wizard.")</span>
+                @if (Session.CanCancel || Session.CancellationRequested)
+                { <button @onclick="Session.CancelOperationAsync" disabled="@(!Session.CanCancel)">Cancel operation</button> }
+                <button @onclick="Cancel" disabled="@Session.Busy">Cancel</button><button class="primary" data-testid="create-workspace" @onclick="CreateAsync" disabled="@(Session.Busy || !Session.Ready || string.IsNullOrWhiteSpace(_name) || Session.IsLocal && !Session.Trusted)">Create</button></footer>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Visible { get; set; }
+    [Parameter] public string Mode { get; set; } = "solution";
+    [Parameter, EditorRequired] public SolutionWorkspaceSession Session { get; set; } = default!;
+    [Parameter] public EventCallback Cancel { get; set; }
+    [Parameter] public EventCallback Created { get; set; }
+    private bool _wasVisible, _createSolution = true;
+    private string _template = "avalonia.app", _name = "MyApplication", _directory = "", _namespace = "", _framework = "net10.0", _format = "slnx";
+    private string _avaloniaVersion = "12.1.3", _xamlgVersion = "", _search = "", _optionsJson = "{}", _templatePackage = "Avalonia.Templates", _templateVersion = "12.1.3";
+    private string? _error;
+    private string[] _previewPaths = [];
+    protected override void OnParametersSet()
+    {
+        if (Visible && !_wasVisible)
+        {
+            _createSolution = Mode == "solution";
+            _directory = ""; _error = null;
+            if (Mode != "solution" && _template == "solution") _template = "classlib";
+            if (Mode == "add")
+            {
+                _name = "NewProject";
+                if (Session.Snapshot.EntryPath is { } entry) _directory = WorkspacePath.Directory(entry);
+            }
+            RefreshPreview();
+        }
+        _wasVisible = Visible;
+    }
+    private void SelectTemplate(string template)
+    {
+        _template = template; if (template == "solution") _createSolution = true; RefreshPreview();
+    }
+    private ProjectTemplateRequest? ProjectRequest() => _template == "solution" ? null : new(_template, _name,
+        string.IsNullOrWhiteSpace(_directory) ? null : _directory,
+        string.IsNullOrWhiteSpace(_namespace) ? null : _namespace,
+        string.IsNullOrWhiteSpace(_framework) ? "net10.0" : _framework,
+        _avaloniaVersion, string.IsNullOrWhiteSpace(_xamlgVersion) ? null : _xamlgVersion);
+    private void RefreshPreview()
+    {
+        _error = null; _previewPaths = [];
+        if (Session.IsLocal || string.IsNullOrWhiteSpace(_name)) return;
+        try
+        {
+            WorkspacePath.ValidateName(_name);
+            _previewPaths = ProjectRequest() is { } request ? WorkspaceTemplates.CreateProject(request).Files.Keys.Order(StringComparer.Ordinal).ToArray() : [];
+            if (_createSolution && Mode != "add") _previewPaths = [ _name + "." + _format, .. _previewPaths ];
+        }
+        catch (Exception error) { _error = error.Message; }
+    }
+    private async Task CreateAsync()
+    {
+        _error = null;
+        try
+        {
+            await Session.CaptureAllAsync();
+            if (Mode != "add" && !await Session.ConfirmReplaceAsync()) return;
+            if (Session.IsLocal)
+            {
+                var solution = Mode == "add" ? Session.Snapshot.EntryPath : null;
+                var options = JsonSerializer.Deserialize<Dictionary<string, string>>(_optionsJson) ?? new();
+                await Session.CreateNativeAsync(new
+                {
+                    name = _name, template = _template,
+                    parentDirectory = string.IsNullOrWhiteSpace(_directory) ? null : _directory,
+                    createSolution = Mode != "add" && _createSolution,
+                    solutionFormat = _format,
+                    framework = _template == "solution" || string.IsNullOrWhiteSpace(_framework) ? null : _framework,
+                    @namespace = _template == "solution" || string.IsNullOrWhiteSpace(_namespace) ? null : _namespace,
+                    trust = Session.Trusted, templateOptions = options
+                });
+                if (Session.Error != null) return;
+                if (solution != null && Session.Snapshot.EntryPath is { } project)
+                {
+                    await Session.EditProjectAsync(solution, "solution-add", project);
+                    if (Session.Error != null) return;
+                    await Session.OpenEntryAsync(solution);
+                }
+            }
+            else await Session.CreateBrowserAsync(_name, _format, ProjectRequest(), _createSolution, Mode == "add");
+            if (Session.Error == null) await Created.InvokeAsync();
+        }
+        catch (Exception error) { _error = error.Message; }
+    }
+    private async Task InstallAsync() { await Session.InstallTemplatesAsync(_templatePackage, _templateVersion); if (Session.Error == null) await Session.LoadTemplatesAsync(); }
+    private Task KeyDownAsync(KeyboardEventArgs args) => args.Key == "Escape" && !Session.Busy ? Cancel.InvokeAsync() : Task.CompletedTask;
+}

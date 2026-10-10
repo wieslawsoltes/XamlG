@@ -78,3 +78,16 @@ export async function mutateRuntime(invoke, name, args) {
   const tree = await invoke('xamlg_runtime_tree');
   return invoke(name, { ...args, expectedRevision: tree.revision });
 }
+
+// Preview sources are intentionally separate from an MSBuild solution.
+// Open the disclosure through the UI, never by forcing a hidden file click.
+export async function openPreviewDocument(page, path) {
+  const preview = page.locator('.explorer .ws-preview-project');
+  if (await preview.getAttribute('open') === null)
+    await preview.locator(':scope > summary').click();
+  await preview.getByRole('button').filter({
+    has: page.locator('.file-path').filter({ hasText: new RegExp('^' + path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$') })
+  }).click();
+  // Other source documents may remain visible in another dock group.
+  await expect(page.locator(`.source-pane[data-document-path=${JSON.stringify(path)}] .code-editor`)).toBeVisible();
+}

@@ -26,7 +26,7 @@ test('project resources compile, capture immediate edits, export and survive dra
   await expect.poll(async () => (await savedProject(page)).resources['Resources/Palette.axaml']).toContain('#113399');
   const downloadPromise = page.waitForEvent('download');
   await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
-  await page.getByRole('button', { name: 'Export project', exact: true }).click();
+  await page.getByRole('button', { name: 'Export preview project', exact: true }).click();
   const download = await downloadPromise;
   const data = JSON.parse(await readFile(await download.path(), 'utf8'));
   expect(data.version).toBe(4);
@@ -37,7 +37,7 @@ test('project resources compile, capture immediate edits, export and survive dra
   await page.reload();
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
-  await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore preview draft', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Draft restored without executing');
   await page.getByTestId('run-preview').click();
   await expect(page.locator('.statusbar')).toContainText('Preview running');

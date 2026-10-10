@@ -11,6 +11,7 @@
     <Project Path="src/XamlG.Runtime/XamlG.Runtime.csproj" />
     <Project Path="src/XamlG.Generator/XamlG.Generator.csproj" />
     <Project Path="src/XamlG.Tooling/XamlG.Tooling.csproj" />
+    <Project Path="src/XamlG.ProjectSystem/XamlG.ProjectSystem.csproj" />
     <Project Path="src/XamlG.Workspaces/XamlG.Workspaces.csproj" />
     <Project Path="src/XamlG.LanguageServer/XamlG.LanguageServer.csproj" />
     <Project Path="src/XamlG.AvaloniaRuntime/XamlG.AvaloniaRuntime.csproj" />
