@@ -68,10 +68,29 @@ export async function saveWorkspace(state, expectedRevision) {
   });
 }
 
-export async function nativeRequest(action, args) {
-  if (typeof action !== 'string' || !action.startsWith('workspace_')) throw new Error('Invalid workspace action.');
-  const studio = await (globalThis.xamlgBoot?.importModule('studio.js') ?? import('./studio.js'));
-  return studio.agentRequest(action, args);
+const pendingNativeRequests = new Map();
+export async function nativeRequest(action, args, requestId = null) {
+  if (typeof action !== 'string' || !/^workspace_[a-z_]+$/.test(action)) throw new Error('Invalid workspace action.');
+  if (requestId !== null && (typeof requestId !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(requestId)))
+    throw new Error('Invalid workspace request identity.');
+  if (requestId !== null && pendingNativeRequests.has(requestId)) throw new Error('This workspace request is already running.');
+  const controller = new AbortController();
+  if (requestId !== null) pendingNativeRequests.set(requestId, controller);
+  try {
+    const studio = await (globalThis.xamlgBoot?.importModule('studio.js') ?? import('./studio.js'));
+    controller.signal.throwIfAborted();
+    const result = await studio.agentRequest(action, args, { signal: controller.signal });
+    controller.signal.throwIfAborted();
+    return result;
+  } finally {
+    if (requestId !== null && pendingNativeRequests.get(requestId) === controller) pendingNativeRequests.delete(requestId);
+  }
+}
+export function cancelNativeRequest(requestId) {
+  const controller = pendingNativeRequests.get(requestId);
+  if (!controller || controller.signal.aborted) return false;
+  controller.abort(new DOMException('Workspace operation cancelled. Completed filesystem effects are not rolled back.', 'AbortError'));
+  return true;
 }
 
 function pickFiles(kind) {

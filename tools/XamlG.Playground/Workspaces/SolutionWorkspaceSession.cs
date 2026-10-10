@@ -44,6 +44,8 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
     private readonly Dictionary<string, WorkspaceEditorDocument> _documents = new(StringComparer.Ordinal);
     private WorkspaceInventoryFile[] _inventory = [];
     private bool _disposed;
+    private string? _nativeRequestId;
+    private bool _cancelRequested;
     public event Action? Changed;
     public WorkspaceSnapshot Snapshot => _workspace.Current;
     public IReadOnlyDictionary<string, WorkspaceEditorDocument> Documents => _documents;
@@ -52,6 +54,8 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
     public bool IsLocal { get; private set; }
     public bool Ready { get; private set; }
     public bool Busy { get; private set; }
+    public bool CanCancel => _nativeRequestId != null && !_cancelRequested;
+    public bool CancellationRequested => _nativeRequestId != null && _cancelRequested;
     public bool Trusted { get; set; }
     public NativeWorkspaceStatus? LocalStatus { get; private set; }
     public string? SelectedProject { get; set; }
@@ -434,36 +438,38 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
     {
         RequireLocal(); RequireTrust(); await CaptureAllAsync(); await SaveCoreAsync(_documents.Values.ToArray());
         var path = (selectedTarget ? SdkTargetPath : Snapshot.EntryPath) ?? throw new InvalidOperationException("Choose an available solution, selected project or startup project build target.");
+        EvaluatedGraph = null;
+        Output = $"Running {operation} for {path}…";
         if (operation == "evaluate")
         {
-            EvaluatedGraph = await NativeAsync<JsonElement>("workspace_evaluate", new { path, trust = true, configuration = Configuration, platform = Platform, framework = Framework, includeCompilerDiagnostics = true });
+            EvaluatedGraph = await CancellableNativeAsync<JsonElement>("workspace_evaluate", new { path, trust = true, configuration = Configuration, platform = Platform, framework = Framework, includeCompilerDiagnostics = true });
             Output = JsonSerializer.Serialize(EvaluatedGraph, new JsonSerializerOptions { WriteIndented = true });
         }
         else
         {
-            var result = await NativeAsync<JsonElement>("workspace_build", new { path, operation, trust = true, configuration = Configuration, platform = Platform, framework = Framework });
+            var result = await CancellableNativeAsync<JsonElement>("workspace_build", new { path, operation, trust = true, configuration = Configuration, platform = Platform, framework = Framework });
             SetCommandOutput(result); EvaluatedGraph = null;
         }
     });
 
     public Task LoadTemplatesAsync() => ExecuteAsync(async () =>
     {
-        RequireLocal(); RequireTrust(); TemplateCatalog = await NativeAsync<JsonElement>("workspace_templates", new { trust = true });
+        RequireLocal(); RequireTrust(); TemplateCatalog = await CancellableNativeAsync<JsonElement>("workspace_templates", new { trust = true });
         SetCommandOutput(TemplateCatalog.Value.GetProperty("command"));
     });
     public Task TemplateHelpAsync(string template) => ExecuteAsync(async () =>
     {
-        RequireLocal(); RequireTrust(); SetCommandOutput(await NativeAsync<JsonElement>("workspace_template_help", new { template, trust = true }));
+        RequireLocal(); RequireTrust(); SetCommandOutput(await CancellableNativeAsync<JsonElement>("workspace_template_help", new { template, trust = true }));
     });
     public Task InstallTemplatesAsync(string package, string version) => ExecuteAsync(async () =>
     {
-        RequireLocal(); RequireTrust(); SetCommandOutput(await NativeAsync<JsonElement>("workspace_template_install", new { package, version, trust = true }));
+        RequireLocal(); RequireTrust(); SetCommandOutput(await CancellableNativeAsync<JsonElement>("workspace_template_install", new { package, version, trust = true }));
         TemplateCatalog = null;
     });
     public Task CreateNativeAsync(object request) => ExecuteAsync(async () =>
     {
         RequireLocal(); RequireTrust();
-        var result = await NativeAsync<JsonElement>("workspace_create", request);
+        var result = await CancellableNativeAsync<JsonElement>("workspace_create", request);
         SetCommandOutput(result.GetProperty("command"));
         if (result.GetProperty("command").GetProperty("exitCode").GetInt32() != 0) return;
         _inventory = await NativeAsync<WorkspaceInventoryFile[]>("workspace_list", new { });
@@ -541,6 +547,30 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
         foreach (var id in _documents.Values.Where(document => document.Path == path).Select(document => document.Id).ToArray()) _documents.Remove(id);
     }
     private async Task<T> NativeAsync<T>(string action, object arguments) => await _module!.InvokeAsync<T>("nativeRequest", action, arguments);
+
+    public async Task CancelOperationAsync()
+    {
+        if (_disposed || !CanCancel || _module == null) return;
+        var id = _nativeRequestId;
+        _cancelRequested = true; Notify();
+        try { await _module.InvokeAsync<bool>("cancelNativeRequest", id); }
+        catch (JSException error) { Error = "Could not request cancellation: " + error.Message; }
+        finally { Notify(); }
+    }
+
+    private async Task<T> CancellableNativeAsync<T>(string action, object arguments)
+    {
+        var id = Guid.NewGuid().ToString("N");
+        _nativeRequestId = id; _cancelRequested = false; Notify();
+        try { return await _module!.InvokeAsync<T>("nativeRequest", action, arguments, id); }
+        catch (JSException error) when (_cancelRequested)
+        { throw new OperationCanceledException("Workspace cancellation requested. Completed filesystem effects are not rolled back; refresh before retrying.", error); }
+        finally
+        {
+            if (_nativeRequestId == id) { _nativeRequestId = null; _cancelRequested = false; }
+            Notify();
+        }
+    }
     private void SetCommandOutput(JsonElement result)
     {
         Output = result.GetProperty("standardOutput").GetString() + "\n" + result.GetProperty("standardError").GetString() +
@@ -554,6 +584,7 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
         if (!await _operations.WaitAsync(0)) { Error = "Another workspace operation is running."; Notify(); return; }
         Busy = true; Error = null; Notify();
         try { await operation(); }
+        catch (OperationCanceledException error) { Output = error.Message; Error = error.Message; EvaluatedGraph = null; }
         catch (Exception error) { Error = error.Message; }
         finally { Busy = false; _operations.Release(); Notify(); }
     }
@@ -565,7 +596,11 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
         _disposed = true;
         if (_module != null)
         {
-            try { await _module.InvokeVoidAsync("setUnsavedChanges", false); await _module.DisposeAsync(); }
+            try
+            {
+                if (_nativeRequestId != null) await _module.InvokeAsync<bool>("cancelNativeRequest", _nativeRequestId);
+                await _module.InvokeVoidAsync("setUnsavedChanges", false); await _module.DisposeAsync();
+            }
             catch (JSDisconnectedException) { }
         }
     }

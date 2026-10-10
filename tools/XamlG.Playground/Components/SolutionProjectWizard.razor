@@ -85,7 +85,10 @@
                     @if (_error != null || Session.Error != null) { <p class="ws-error" role="alert">@(_error ?? Session.Error)</p> }
                 </div>
             </div>
-            <footer><span>@(Session.Busy ? "Workspace operation running…" : "Existing files are never replaced by this wizard.")</span><button @onclick="Cancel" disabled="@Session.Busy">Cancel</button><button class="primary" data-testid="create-workspace" @onclick="CreateAsync" disabled="@(Session.Busy || !Session.Ready || string.IsNullOrWhiteSpace(_name) || Session.IsLocal && !Session.Trusted)">Create</button></footer>
+            <footer><span>@(Session.CancellationRequested ? "Cancellation requested…" : Session.Busy ? "Workspace operation running…" : "Existing files are never replaced by this wizard.")</span>
+                @if (Session.CanCancel || Session.CancellationRequested)
+                { <button @onclick="Session.CancelOperationAsync" disabled="@(!Session.CanCancel)">Cancel operation</button> }
+                <button @onclick="Cancel" disabled="@Session.Busy">Cancel</button><button class="primary" data-testid="create-workspace" @onclick="CreateAsync" disabled="@(Session.Busy || !Session.Ready || string.IsNullOrWhiteSpace(_name) || Session.IsLocal && !Session.Trusted)">Create</button></footer>
         </section>
     </div>
 }

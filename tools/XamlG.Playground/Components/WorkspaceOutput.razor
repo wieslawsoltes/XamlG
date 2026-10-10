@@ -2,7 +2,10 @@
 @using XamlG.Playground.Workspaces
 
 <section class="ws-output" aria-label="Workspace output">
-    <div class="ws-document-toolbar"><strong>Workspace output</strong><span class="toolbar-spacer"></span><small>@(Session.Busy ? "Operation running" : Session.IsLocal ? "Local SDK" : "Browser · structural inspection")</small></div>
+    <div class="ws-document-toolbar"><strong>Workspace output</strong><span class="toolbar-spacer"></span><small>@(Session.CancellationRequested ? "Cancellation requested" : Session.Busy ? "Operation running" : Session.IsLocal ? "Local SDK" : "Browser · structural inspection")</small>
+        @if (Session.CanCancel || Session.CancellationRequested)
+        { <button @onclick="Session.CancelOperationAsync" disabled="@(!Session.CanCancel)">Cancel operation</button> }
+    </div>
     @if (Session.Error != null) { <p class="ws-error" role="alert">@Session.Error</p> }
     @if (Session.EvaluatedGraph is { } graph)
     {

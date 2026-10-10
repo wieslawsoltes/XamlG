@@ -69,3 +69,22 @@ Tab removal is persisted before releasing the buffer; a storage conflict leaves
 the tab and dirty text available. Retiring or replacing a workspace also removes
 its obsolete dock panes. Acceptance covers close cancellation, save/discard,
 reload without closed tabs, and quota failure during close.
+
+## Cancelling trusted SDK operations
+
+The Explorer, workspace output pane and project wizard expose **Cancel operation**
+while restore/build/rebuild/clean/test, Roslyn evaluation or installed-template
+operations are waiting for the companion. Cancellation aborts only that HTTP
+request. It does not revoke the paired owner session, disconnect the coding-agent
+stream, cancel a sibling request, or discard editor buffers. Session revocation
+still cancels all requests linked to that owner. The existing companion request
+cancellation token flows through the serialized SDK service to the process runner.
+
+Cancellation is not rollback: a build, restore, package installation or template
+may already have changed files. The UI makes that boundary explicit and does not
+automatically repeat an interrupted operation or treat cancelled creation as a
+success. Local file saves are completed before starting the cancellable SDK
+request. Browser tests exercise the real Cancel control with a held HTTP request,
+then perform actual companion restore/build/evaluation on the same connection.
+Native tests verify running/queued cancellation and release of the SDK operation
+lease. Neither fixture represents an OS-level process-termination measurement.

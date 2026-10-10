@@ -115,7 +115,10 @@
             <label class="ws-field">Build configuration <input @bind="Session.Configuration" /></label>
             <label class="ws-field">Build platform <input @bind="Session.Platform" /></label>
             <label class="ws-field">Target framework <input @bind="Session.Framework" placeholder="All project targets" /></label>
-            <div class="ws-toolbar">@foreach (var operation in new[] { "restore", "build", "rebuild", "clean", "test", "evaluate" }) { <button @onclick="() => BuildAsync(operation)" disabled="@(Disabled || !Session.Trusted || Session.SdkTargetPath == null)">@operation</button> }</div>
+            <div class="ws-toolbar">@foreach (var operation in new[] { "restore", "build", "rebuild", "clean", "test", "evaluate" }) { <button @onclick="() => BuildAsync(operation)" disabled="@(Disabled || !Session.Trusted || Session.SdkTargetPath == null)">@operation</button> }
+                @if (Session.CanCancel || Session.CancellationRequested)
+                { <button @onclick="Session.CancelOperationAsync" disabled="@(!Session.CanCancel)">Cancel operation</button> }
+            </div>
         }
         else { <p>Standalone browser workspaces edit and inspect source. Pair the local companion to use the installed SDK for restore, builds, tests and real MSBuild/Roslyn evaluation.</p> }
         <button @onclick="OutputRequested">Show workspace output</button>

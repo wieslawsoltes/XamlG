@@ -156,6 +156,43 @@ test('paired owner creates an actual SDK solution and builds and evaluates the s
   await trust.check();
   await pane.getByRole('combobox', { name: 'Build target', exact: true }).selectOption('project');
   const output = page.getByRole('region', { name: 'Workspace output', exact: true });
+  // Hold exactly one browser request to exercise the production C#/JS Cancel
+  // control deterministically. The subsequent SDK operations still use the real
+  // companion, proving that cancellation did not revoke the paired connection.
+  await page.evaluate(() => {
+    const original = window.fetch;
+    window.workspaceCancellationFetch = original;
+    window.fetch = function (address, options) {
+      if (String(address).endsWith('/agent/workspace_build')) {
+        window.fetch = original;
+        window.workspaceCancellationStarted = true;
+        return new Promise((_resolve, reject) => {
+          if (!options?.signal) { reject(new Error('Missing per-operation cancellation signal')); return; }
+          if (options.signal.aborted) { reject(options.signal.reason); return; }
+          options.signal.addEventListener('abort', () => {
+            window.workspaceCancellationObserved = true;
+            reject(options.signal.reason);
+          }, { once: true });
+        });
+      }
+      return original.call(this, address, options);
+    };
+  });
+  try {
+    await pane.getByRole('button', { name: 'build', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.workspaceCancellationStarted)).toBe(true);
+    await expect(output.getByRole('button', { name: 'Cancel operation', exact: true })).toBeEnabled();
+    await output.getByRole('button', { name: 'Cancel operation', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.workspaceCancellationObserved)).toBe(true);
+    await expect(pane.getByRole('tree')).toHaveAttribute('aria-busy', 'false');
+    await expect(output.getByRole('log')).toContainText('not rolled back');
+    expect((await api(page, 'workspace_status')).enabled).toBe(true);
+  } finally {
+    await page.evaluate(() => {
+      window.fetch = window.workspaceCancellationFetch;
+      delete window.workspaceCancellationFetch;
+    });
+  }
   for (const operation of ['restore', 'build']) {
     await pane.getByRole('button', { name: operation, exact: true }).click();
     await expect(pane.getByRole('tree')).toHaveAttribute('aria-busy', 'true');
