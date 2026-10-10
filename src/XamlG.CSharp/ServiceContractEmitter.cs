@@ -28,7 +28,7 @@ internal sealed class ServiceContractEmitter
             foreach (var value in BoundTraversal.Objects(_context.Document.Root!, includeDeferred: true))
             {
                 _context.Cancellation.ThrowIfCancellationRequested();
-                if (visited.Add(value.Scope)) scopes[NamespaceMapEmitter.ScopeKey(value.Scope)] = value.Scope;
+                if (visited.Add(value.Scope)) scopes[_context.NamespacePlan.GetScope(value.Scope).Key] = value.Scope;
             }
         }
         var factories = scopes.Select((entry, index) => (entry.Key, Name: "CreateNamespaces" + index, Scope: entry.Value)).ToArray();

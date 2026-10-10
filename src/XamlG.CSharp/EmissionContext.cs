@@ -35,6 +35,8 @@ internal sealed class EmissionContext : IDisposable
     public ConstructionFactoryEmitter ConstructionFactories => _constructionFactories ??= new(this);
     public ConstructionParameters? ConstructionParameters { get; set; }
     public CSharpWriter Writer { get; } = new();
+    private NamespaceEmissionPlan? _namespacePlan;
+    public NamespaceEmissionPlan NamespacePlan => _namespacePlan ??= new(this);
     private TemporaryLocalPool? _locals;
     public TemporaryLocalPool Locals => _locals ??= new(this);
     public List<XamlDiagnostic> Diagnostics { get; } = new();

@@ -11,6 +11,7 @@ var measurements = new List<Measurement>();
 var pipelineSignature = PipelineProbe.Run(Measure);
 var emissionSignature = EmissionScalingProbe.Run(Measure);
 var analysisSignature = EmissionAnalysisProbe.Run(Measure);
+var namespaceSignature = NamespaceEmissionProbe.Run(Measure);
 var generatedSources = NamedFieldProbe.Run(Measure);
 var markupAssignments = MarkupAssignmentProbe.Run(Measure);
 var semanticInputs = new List<string>
@@ -91,6 +92,7 @@ using (var writer = new BinaryWriter(snapshot, Encoding.UTF8, leaveOpen: true))
     writer.Write(pipelineSignature);
     writer.Write(emissionSignature);
     writer.Write(analysisSignature);
+    writer.Write(namespaceSignature);
     foreach (var source in generatedSources) writer.Write(source);
     foreach (var markup in markupAssignments) writer.Write(markup.SemanticSignature);
 }
