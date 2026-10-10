@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<meta charset="utf-8">
+<title>XamlG Git workbench acceptance harness</title>
+<link rel="stylesheet" href="../../tools/XamlG.Playground/wwwroot/git/workbench.css">
+<style>
+*{box-sizing:border-box}body{margin:0;font:13px system-ui;color:#e3e7ef;background:#141820}h1{font-size:18px;padding:12px;margin:0} .grid{display:grid;grid-template-columns:300px minmax(450px,1fr) 340px;grid-template-rows:400px 500px;gap:6px;padding:6px} .tool,.documents{min-width:0;min-height:0;border:1px solid #374155;overflow:auto}.documents{grid-column:2;grid-row:1 / 3;display:flex;flex-direction:column}.tabs{display:flex;flex-wrap:wrap;gap:3px;padding:5px}.document{height:100%;min-height:0}.doc-host{flex:1;min-height:0}.tool{height:100%}button{cursor:pointer}
+</style>
+<h1>XamlG · Git workbench acceptance harness <small>(not the production Dockyard host)</small></h1>
+<div class="grid">
+  <div id="repositories" class="tool"></div>
+  <div class="documents"><div class="tabs" id="tabs"></div><div class="doc-host" id="document"></div><button id="close-document">Close active document</button></div>
+  <div id="changes" class="tool"></div>
+  <div id="branches" class="tool"></div>
+  <div id="history" class="tool"></div>
+</div>
+<div id="github" class="tool"></div>
+<script type="module">
+import { mountTool, mountDocument } from '../../tools/XamlG.Playground/wwwroot/git/workbench.mjs';
+window.studioSources = {}; window.documents = new Map(); let currentView, active;
+const host = document.getElementById('document');
+const dotnet = { async invokeMethodAsync(method, data) {
+  if (method === 'ImportGitSource') { window.studioSources[data.path] = data.text; return; }
+  if (method === 'ReadStudioSource') return window.studioSources[data];
+  if (method !== 'OpenGitDocument') throw new Error(method);
+  window.documents.set(data.id, data); await show(data.id); updateTabs();
+}};
+async function show(id) { currentView?.dispose(); active = id; currentView = await mountDocument(host, 'browser-tests', id, dotnet); }
+function updateTabs() { const tabs = document.getElementById('tabs'); tabs.replaceChildren(); for(const [id, data] of window.documents) { const button = document.createElement('button'); button.textContent = data.title; button.onclick = () => show(id); tabs.append(button); } }
+document.getElementById('close-document').onclick = () => { currentView?.dispose(); currentView = null; window.documents.delete(active); active = null; updateTabs(); };
+for (const kind of ['repositories','changes','branches','history','github']) mountTool(document.getElementById(kind), 'browser-tests', 'git-' + kind, dotnet);
+window.harnessReady = true;
+</script>
+</html>
