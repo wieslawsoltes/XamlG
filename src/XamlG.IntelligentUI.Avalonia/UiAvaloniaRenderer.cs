@@ -123,10 +123,20 @@ public sealed class UiAvaloniaRenderer : IDisposable
             entry.Styles = styles;
         }
         entry.Node = node;
-        bool Changed(string key) => entry.Node.Properties.TryGetValue(key, out var old) != node.Properties.TryGetValue(key, out var next) || !JsonElement.DeepEquals(old, next);
+        bool Changed(string key)
+        {
+            var had = entry.Node.Properties.TryGetValue(key, out var old);
+            var has = node.Properties.TryGetValue(key, out var next);
+            return had != has || had && !JsonElement.DeepEquals(old, next);
+        }
     }
     private static bool SameName(UiElement left, UiElement right)
-        => left.Properties.TryGetValue("Name", out var a) == right.Properties.TryGetValue("Name", out var b) && JsonElement.DeepEquals(a, b);
+    {
+        var hasLeft = left.Properties.TryGetValue("Name", out var a);
+        var hasRight = right.Properties.TryGetValue("Name", out var b);
+        // Undefined JsonElements are not JSON values and cannot be passed to DeepEquals.
+        return hasLeft == hasRight && (!hasLeft || JsonElement.DeepEquals(a, b));
+    }
     private void Subscribe(Entry entry)
     {
         entry.PropertyChanged = (_, args) =>
