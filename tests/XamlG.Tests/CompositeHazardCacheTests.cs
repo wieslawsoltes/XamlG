@@ -6,14 +6,17 @@ namespace XamlG.Tests;
 
 public sealed class CompositeHazardCacheTests
 {
-    [Fact]
-    public void RepeatedCompositeDagIsAnalyzedByIdentityRatherThanByOccurrence()
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(5)]
+    public void RepeatedCompositeDagIsAnalyzedByIdentityRatherThanByOccurrence(int arity)
     {
         var f = new EmissionAnalysisFixture();
         BoundExpression value = new BoundConstantExpression(null, f.Root.Type, default);
-        // Only 33 distinct expressions; occurrence expansion exceeds four billion.
+        // Only 33 distinct expressions; even binary expansion exceeds four billion.
         // This is an analysis test, not a request to emit an exponentially large program.
-        for (var i = 0; i < 32; i++) value = new BoundArrayExpression([value, value], f.ArrayType, default);
+        for (var i = 0; i < 32; i++) value = new BoundArrayExpression([.. Enumerable.Repeat(value, arity)], f.ArrayType, default);
         var assignment = new BoundSetAssignment(f.Member, value, default);
         // Bound a regression's work: an accidentally restored occurrence walk
         // must cancel rather than pinning the entire native test job indefinitely.
@@ -21,6 +24,7 @@ public sealed class CompositeHazardCacheTests
         using var context = new EmissionContext(f.Document, watchdog.Token);
         Assert.False(context.Locals.ContainsReference(assignment));
         Assert.False(context.Locals.ContainsReference(assignment with { Span = new(1, 0) }));
+        Assert.Equal(arity <= 2 ? 8 : 32, CacheCount(context.Locals));
     }
 
     [Theory]
@@ -100,7 +104,17 @@ public sealed class CompositeHazardCacheTests
             var left = nodes[random.Next(nodes.Count)];
             var right = nodes[random.Next(nodes.Count)];
             if (i % 3 == 0)
-                nodes.Add((new BoundArrayExpression([left.Value, right.Value, left.Value], f.ArrayType, default), left.Flags | right.Flags));
+            {
+                System.Collections.Immutable.ImmutableArray<BoundExpression> children = (i % 4) switch
+                {
+                    0 => [left.Value],
+                    1 => [left.Value, right.Value],
+                    2 => [left.Value, right.Value, left.Value],
+                    _ => [left.Value, right.Value, left.Value, right.Value, left.Value]
+                };
+                nodes.Add((new BoundArrayExpression(children, f.ArrayType, default),
+                    children.Length == 1 ? left.Flags : left.Flags | right.Flags));
+            }
             else if (i % 3 == 1)
                 nodes.Add((new BoundCastExpression(left.Value, f.Root.Type, default), left.Flags));
             else
@@ -114,6 +128,27 @@ public sealed class CompositeHazardCacheTests
             Assert.Equal(nodes[i].Flags, Convert.ToInt32(analyze.Invoke(warm.Locals, [nodes[i].Value])));
             Assert.Equal(nodes[i].Flags, Convert.ToInt32(analyze.Invoke(cold.Locals, [nodes[i].Value])));
         }
+    }
+
+    [Theory]
+    [InlineData(8, 17)]
+    [InlineData(12, 273)]
+    public void UnsharedBinaryTreesRetainOnlyBoundedSegmentRoots(int depth, int expectedEntries)
+    {
+        var f = new EmissionAnalysisFixture();
+        BoundExpression Build(int level) => level == 0
+            ? new BoundConstantExpression(null, f.Root.Type, default)
+            : new BoundArrayExpression([Build(level - 1), Build(level - 1)], f.ArrayType, default);
+        using var context = new EmissionContext(f.Document, default);
+        Assert.False(context.Locals.ContainsReference(new BoundSetAssignment(f.Member, Build(depth), default)));
+        Assert.Equal(expectedEntries, CacheCount(context.Locals));
+    }
+
+    private static int CacheCount(TemporaryLocalPool pool)
+    {
+        var field = typeof(TemporaryLocalPool).GetField("_expressions",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        return Assert.IsAssignableFrom<System.Collections.IDictionary>(field.GetValue(pool)).Count;
     }
 
     [Fact]

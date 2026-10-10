@@ -6,7 +6,7 @@ PR #28's tested expression sequences, ASCII literal formatting or wide-helper in
 
 ## Lifetime analysis
 
-`TemporaryLocalPool` now caches completed non-leaf expression hazards by reference
+`TemporaryLocalPool` caches completed composite-expression hazards by reference
 identity within one emission context. Existing object and assignment caches remain.
 A shared acyclic expression graph is analyzed in expected O(V + E) rather than
 expanding every occurrence along every parent path. Common constant, reference and
@@ -21,8 +21,20 @@ use. Later siblings are still visited after a capture so raw code retains its
 conservative document-wide effect on local reuse. Cancellation never publishes a
 partial parent result. No global cache retains bound documents or compilations.
 
-The extra dictionary can cost time and memory on unshared composite trees. Both
-shared DAGs and unshared trees are measured independently. Recursive analysis is
+To reduce dictionary overhead on unshared trees, unary casts and arrays with at
+most two children use four-level segments: cache the segment root and traverse at
+most three further low-fanout levels without retaining their intermediate results.
+Every other composite shape is cached immediately and starts a new segment. The
+work per outgoing edge is bounded by seven skipped low-fanout nodes and eight
+cache-boundary lookups. Thus even high-fanout parents retain expected O(V + E)
+analysis with a fixed constant, including shared DAGs. It
+never evicts a completed result or caps the cache in a way that could restore
+unbounded occurrence expansion. A depth-12 unshared binary tree retains 273 cached
+segment roots instead of all 4,095 composite nodes; explicit tests pin this bound.
+
+The dictionary can still add work and memory to unshared trees. Both shared DAGs
+and unshared trees are measured independently; segmenting trades a bounded amount
+of recomputation on DAGs for smaller unshared-tree caches. Recursive analysis is
 still recursive; this is not a cyclic-IR or arbitrary-depth stack-safety claim.
 
 ## Metadata construction
