@@ -17,7 +17,9 @@ function teardown(){
   for(const entry of entries.values())entry.dispose?.();entries.clear();drafts.clear();submitting.clear();snapshot=null;root.replaceChildren();
 }
 function onMessage(event){
-  if(disposed||event.source!==parent||!event.data||event.data.jsonrpc!=='2.0')return;const message=event.data;if(JSON.stringify(message).length>2097152)return;
+  if(disposed||event.source!==parent||!event.data||event.data.jsonrpc!=='2.0'||origin!==null&&event.origin!==origin)return;
+  const message=event.data;
+  try{if(JSON.stringify(message).length>2097152)return;}catch{return;}
   if(message.id!==undefined&&!message.method){const call=pending.get(message.id);if(!call)return;if(call.method==='ui/initialize')origin=event.origin;clearTimeout(call.timer);pending.delete(message.id);if(message.error)call.reject(new Error(message.error.message||'Host rejected request.'));else call.resolve(message.result);return;}
   if(message.method==='ui/notifications/tool-result'&&!ready){queued=message.params;return;}if(!ready||origin===null)return;
   if(message.id!==undefined){if(message.method==='ui/resource-teardown'){post({jsonrpc:'2.0',id:message.id,result:{}});teardown();return;}post({jsonrpc:'2.0',id:message.id,...(message.method==='ping'?{result:{}}:{error:{code:-32601,message:'Unsupported UI request'}})});return;}
@@ -25,7 +27,7 @@ function onMessage(event){
   else if(message.method==='notifications/resources/updated'&&marker&&message.params?.uri==='xamlg://ui/'+encodeURIComponent(marker.id))refresh();
   else if(message.method==='ui/notifications/tool-input-partial'||message.method==='ui/notifications/tool-input')status('Receiving UI update…');else if(message.method==='ui/notifications/tool-cancelled')status('UI update cancelled. The last committed view is retained.');
 }
-const boxResize=new ResizeObserver(changes=>{for(const change of changes){const entry=viewboxes.get(change.target);if(entry)layoutViewbox(entry);}});
+const boxResize=new ResizeObserver(changes=>{for(const change of changes){const entry=viewboxes.get(change.target);if(entry?.layout)entry.layout();else if(entry)layoutViewbox(entry);}});
 let lastHeight=0;const resize=new ResizeObserver(()=>{const height=Math.min(2000,Math.max(100,Math.ceil(document.body.scrollHeight)));if(ready&&height!==lastHeight){lastHeight=height;notify('ui/notifications/size-changed',{height});}});resize.observe(document.body);
 $('refresh').addEventListener('click',()=>{error('');refresh();});$('confirm').addEventListener('click',confirm);$('cancel').addEventListener('click',()=>{review=null;$('review').hidden=true;});
 window.addEventListener('message',onMessage);window.addEventListener('pagehide',teardown,{once:true});
