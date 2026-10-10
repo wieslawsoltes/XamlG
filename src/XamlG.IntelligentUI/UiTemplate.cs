@@ -18,6 +18,21 @@ public sealed class UiTemplate
         lowered = UiFormSemantics.Apply(resolved, lowered, _catalog);
         return UiFormProjection.Apply(lowered, previous, state, data, _templateId, _catalog, _limits);
     }
+    private UiControlTemplate? ResolveControlTemplate(UiPlanControlTemplate? template, JsonElement state, JsonElement data, JsonElement? item)
+    {
+        if (template is null) return null;
+        UiControlTemplateNode Resolve(UiPlanControlTemplateNode part) => new(part.Type,
+            part.Properties.ToImmutableDictionary(p => p.Key, p => _catalog.Components[part.Type].Properties[p.Key].Validate(p.Value.Resolve(state, data, item)), StringComparer.Ordinal),
+            part.Bindings, part.Children.Select(Resolve).ToImmutableArray())
+        { Styles = ResolveStyles(part.Styles, state, data, item) };
+        return new(template.Target, Resolve(template.Root));
+    }
+    private static ImmutableArray<UiStyleRule> ResolveStyles(ImmutableArray<UiPlanStyle> styles, JsonElement state, JsonElement data, JsonElement? item) =>
+        styles.Select(style => new UiStyleRule(style.Selector, style.Properties.ToImmutableDictionary(
+            p => p.Key, p => style.Target.Properties[p.Key].Validate(p.Value.Resolve(state, data, item)), StringComparer.Ordinal))).ToImmutableArray();
+    private UiControlTheme? ResolveControlTheme(UiPlanControlTheme? theme, JsonElement state, JsonElement data, JsonElement? item) => theme is null ? null :
+        new(theme.Target, theme.Properties.ToImmutableDictionary(p => p.Key, p => _catalog.Components[theme.Target].Properties[p.Key].Validate(p.Value.Resolve(state, data, item)), StringComparer.Ordinal),
+            ResolveControlTemplate(theme.Template, state, data, item), ResolveStyles(theme.Styles, state, data, item));
     private ImmutableArray<UiElement> RenderNode(UiPlanNode node, JsonElement state, JsonElement data, JsonElement? item, string scope, HashSet<string> keys, ref int count, bool expanded = false)
     {
         if (node.Each != null && !expanded)
@@ -50,8 +65,13 @@ public sealed class UiTemplate
         foreach (var child in node.Children) children.AddRange(RenderNode(child, state, data, item, scope, keys, ref count));
         var element = new UiElement(nodeKey, node.Component.Name, properties, children.ToImmutable(), node.StateKey, node.ActionId)
         { ActionItem = node.ActionId == null ? null : item,
+            ControlTemplate = ResolveControlTemplate(node.ControlTemplate, state, data, item),
+            ControlTheme = ResolveControlTheme(node.ControlTheme, state, data, item),
             Styles = node.Styles.Select(style => new UiStyleRule(style.Selector, style.Properties.ToImmutableDictionary(
                 p => p.Key, p => style.Target.Properties[p.Key].Validate(p.Value.Resolve(state, data, item)), StringComparer.Ordinal))).ToImmutableArray() };
+        count += UiControlTemplates.Validate(element.ControlTemplate, element.Type, _catalog);
+        count += UiControlTemplates.Validate(element.ControlTheme, element.Type, _catalog);
+        if (count > _limits.Nodes) throw new UiException("node_limit", "Instantiated control templates exceed the surface node budget.");
         UiStyles.Validate(element.Styles, _catalog, _limits.TextCharacters);
         UiTreeValidation.ValidateElement(element, node.Component, _limits.TextCharacters);
         return [element];

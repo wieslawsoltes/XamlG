@@ -58,6 +58,7 @@ internal sealed partial class UiXamlAuthoring(UiCatalog catalog, UiLimits limits
             if (element.Attribute("Name") is { } named && named.Value != xname) throw Error("invalid_property", "Name conflicts with x:Name.");
             element.SetAttributeValue("Name", xname);
         }
+        NormalizeControlAuthoring(element, scope, path, depth);
         ExpandItemTemplate(element, scope, path, depth);
         ExpandContentTemplate(element, scope, path, depth);
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -122,6 +123,12 @@ internal sealed partial class UiXamlAuthoring(UiCatalog catalog, UiLimits limits
     }
     private string Scalar(XElement node, Scope scope)
     {
+        if (node.Name == Ns + "TemplateBinding")
+        {
+            CheckAttributes(node, "Property", "Mode"); CheckText(node);
+            if (node.HasElements) throw Error("invalid_template", "TemplateBinding has no children.");
+            return "{TemplateBinding " + Required(node, "Property") + (node.Attribute("Mode") is { } mode ? ", Mode=" + mode.Value : "") + "}";
+        }
         if (node.Name == Ns + "Binding" || node.Name == Ns + "CompiledBinding") return BindingMarkup(node);
         if (node.Name == X + "Null") { CheckAttributes(node); CheckText(node); if (node.HasElements) throw Error("invalid_resource", "Invalid null value."); return "{ui:Expr null}"; }
         if (node.Name == X + "Array")
@@ -206,7 +213,8 @@ internal sealed partial class UiXamlAuthoring(UiCatalog catalog, UiLimits limits
         foreach (var key in local)
         {
             var resource = scope.Values[key];
-            if (resource.Node.Name == Ns + "DataTemplate") ValidateUnusedTemplate(resource);
+            if (resource.Node.Name.Namespace == Ns && resource.Node.Name.LocalName is "ControlTemplate" or "ControlTheme") ValidateUnusedControlAuthoring(resource);
+            else if (resource.Node.Name == Ns + "DataTemplate") ValidateUnusedTemplate(resource);
             else ResourceValue(resource);
         }
     }

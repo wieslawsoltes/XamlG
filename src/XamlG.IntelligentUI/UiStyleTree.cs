@@ -14,7 +14,25 @@ public static class UiStyleTree
             if (brushes.Count > 512 || (brushText += source.Length) > 1048576) throw new UiException("invalid_brush", "Whole-surface brush budget exceeded.");
         }
         var nodes = 0; var rules = 0; var setters = 0; long text = 0;
-        foreach (var node in UiSessionStore.Flatten(roots))
+        IEnumerable<UiElement> BudgetNodes()
+        {
+            IEnumerable<UiElement> Parts(UiControlTemplateNode part)
+            {
+                yield return new("part", part.Type, part.Properties, []) { Styles = part.Styles };
+                foreach (var child in part.Children) foreach (var nested in Parts(child)) yield return nested;
+            }
+            foreach (var node in UiSessionStore.Flatten(roots))
+            {
+                yield return node;
+                if (node.ControlTemplate != null) foreach (var part in Parts(node.ControlTemplate.Root)) yield return part;
+                if (node.ControlTheme is { } theme)
+                {
+                    yield return new("theme", theme.TargetType, theme.Properties, []) { Styles = theme.Styles };
+                    if (theme.Template != null) foreach (var part in Parts(theme.Template.Root)) yield return part;
+                }
+            }
+        }
+        foreach (var node in BudgetNodes())
         {
             if (++nodes > 4096 || node.Styles.IsDefault) throw new UiException("invalid_style", "Invalid styled tree.");
             foreach (var property in node.Properties) BrushBudget(property.Key, property.Value);

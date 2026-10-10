@@ -17,6 +17,8 @@ internal sealed record UiPlanNode(string Key, UiComponent Component, ImmutableDi
     ImmutableArray<UiPlanNode> Children, string? StateKey, string? ActionId, IUiExpression? When, IUiExpression? Each, IUiExpression? ItemKey)
 {
     internal ImmutableArray<UiPlanStyle> Styles { get; init; } = [];
+    internal UiPlanControlTemplate? ControlTemplate { get; init; }
+    internal UiPlanControlTheme? ControlTheme { get; init; }
     internal UiValue? Context { get; init; }
 }
 
@@ -154,7 +156,7 @@ public sealed partial class UiCompiler(UiCatalog? catalog = null, UiLimits? limi
         foreach (var child in element.Elements()) children.Add(Parse(child, key + "." + children.Count, depth + 1, keys, ref count));
         if (children.Count > component.MaximumChildren || component.ChildTypes is { } allowed && children.Any(child => !allowed.Contains(child.Component.Name, StringComparer.Ordinal))) throw new UiException("invalid_content", "Invalid children for " + component.Name);
         if (children.Count != 0 && (properties.ContainsKey("ItemsSource") || properties.ContainsKey("Content"))) throw new UiException("invalid_content", "Do not combine child elements with scalar Content or ItemsSource.");
-        return new(key, component, properties.ToImmutable(), children.ToImmutable(), stateKey, actionId, when, each, itemKey) { Styles = CompileStyles(element), Context = context };
+        return new(key, component, properties.ToImmutable(), children.ToImmutable(), stateKey, actionId, when, each, itemKey) { Styles = CompileStyles(element), Context = context, ControlTemplate = CompileControlTemplate(element.Annotation<UiControlTemplateSource>()), ControlTheme = CompileControlTheme(element.Annotation<UiControlThemeSource>()) };
     }
     private UiValue Value(string text, UiProperty property, string bindingRoot = "data")
     {
