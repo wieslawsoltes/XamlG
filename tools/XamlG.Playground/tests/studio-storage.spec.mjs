@@ -69,7 +69,13 @@ test('source documents, document tabs and undo history survive browser restart',
   await openStudio(page);
   const invoke = (name, args) => call(page, name, args);
   await writeDocument(invoke, 'Saved.cs', 'namespace Playground; public class Saved { public const int Value = 1; }');
-  await page.locator('.file').filter({ hasText: 'Saved.cs' }).click();
+  // Preview sources are intentionally separate from the solution workspace.
+  // Open their disclosure through the UI instead of clicking a hidden file.
+  const previewProject = page.locator('.ws-preview-project');
+  await previewProject.locator(':scope > summary').click();
+  const savedFile = previewProject.locator('.file').filter({ hasText: 'Saved.cs' });
+  await expect(savedFile).toBeVisible();
+  await savedFile.click();
   await expect(page.locator('.dock-source[data-document-path="Saved.cs"]')).toBeVisible();
   await writeDocument(invoke, 'Saved.cs', 'namespace Playground; public class Saved { public const int Value = 2; }');
   await expect.poll(() => page.evaluate(async () => (await (await xamlgBoot.importModule('studio.js')).loadStudioState('project'))?.codeFiles?.['Saved.cs'])).toContain('Value = 2');
