@@ -54,7 +54,12 @@ public sealed class UiInputFeatureTests
         var exported = Assert.IsType<StackPanel>(AvaloniaRuntimeXamlLoader.Load(UiSourceExporter.Xaml(snapshot)));
         Assert.Equal(KeyboardNavigationMode.Cycle, KeyboardNavigation.GetTabNavigation(exported));
         renderer.Apply(store.Publish(new("input", snapshot.Revision, 2, $"<StackPanel {Ns} ui:Key=\"root\"><TextBox ui:Key=\"text\" Text=\"abcdef\"/><Slider ui:Key=\"slider\"/><RepeatButton ui:Key=\"repeat\"/></StackPanel>"), "owner"));
-        Assert.Same(text, renderer.Find("/text")); Assert.True(text.IsTabStop); Assert.Equal(0, text.TabIndex);
+        // Compare with the installed native control rather than a guessed framework default.
+        // Avalonia puts an unspecified TabIndex after explicitly indexed controls.
+        var defaults = new TextBox();
+        Assert.Same(text, renderer.Find("/text")); Assert.Equal(defaults.IsTabStop, text.IsTabStop);
+        Assert.Equal(defaults.TabIndex, text.TabIndex);
+        Assert.False(text.IsSet(InputElement.TabIndexProperty)); Assert.False(text.IsSet(InputElement.IsTabStopProperty));
         Assert.Null(AutomationProperties.GetAutomationId(text)); Assert.Null(AutomationProperties.GetHelpText(text));
         Assert.Equal(1, slider.SmallChange); Assert.Equal(10, slider.LargeChange); Assert.False(slider.IsDirectionReversed);
         Assert.Equal(300, repeat.Delay); Assert.Equal(100, repeat.Interval); Assert.False(repeat.IsDefault); Assert.False(repeat.IsCancel);
