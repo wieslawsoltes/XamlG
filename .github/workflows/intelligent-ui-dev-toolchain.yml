@@ -9,13 +9,16 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      DOTNET_INSTALL_DIR: ${{ runner.temp }}/xamlg-validation/dotnet
-      NUGET_PACKAGES: ${{ runner.temp }}/xamlg-validation/packages
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Initialize isolated toolchain paths
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/xamlg-validation"
+          echo "DOTNET_INSTALL_DIR=$RUNNER_TEMP/xamlg-validation/dotnet" >> "$GITHUB_ENV"
+          echo "NUGET_PACKAGES=$RUNNER_TEMP/xamlg-validation/packages" >> "$GITHUB_ENV"
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
