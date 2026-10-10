@@ -94,7 +94,7 @@ public sealed class XamlRuntimeSession : IDisposable
         CheckThread();
         if (expectedRevision != Revision) return new(false, Revision, "The live view has a different revision.");
         if (_applying) return new(false, Revision, "A reentrant update is not permitted.");
-        var pending = new List<(XamlRuntimePropertyBinding Property, object? Before, object? After)>();
+        var pending = new List<(XamlRuntimePropertyBinding Property, object? Before, object? After)>(InitialMutationCapacity(updates));
         var keys = new HashSet<(string, string)>();
         foreach (var update in updates)
         {
@@ -147,6 +147,17 @@ public sealed class XamlRuntimeSession : IDisposable
         catch (Exception cleanupFailure)
         { throw new AggregateException("XAML construction and cleanup both failed.", constructionFailure, cleanupFailure); }
     }
+    private static int InitialMutationCapacity(IReadOnlyList<XamlPropertyUpdate> updates) => updates switch
+    {
+        // The capacity is a bounded hint, not a request to evaluate arbitrary
+        // IReadOnlyList.Count/indexers before the original enumeration. Known BCL
+        // containers avoid geometric copying of target/accessor snapshots. Cap the
+        // reservation so an early-invalid large batch cannot force a huge buffer.
+        XamlPropertyUpdate[] array => Math.Min(array.Length, 1024),
+        List<XamlPropertyUpdate> list => Math.Min(list.Count, 1024),
+        _ => 0
+    };
+
     private void CheckThread()
     {
         if (_disposed) throw new ObjectDisposedException(nameof(XamlRuntimeSession));

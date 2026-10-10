@@ -34,7 +34,7 @@ Resource edge snapshots are keyed by immutable bound root identity, allowing dia
 
 A generated property table lazily publishes one immutable accessor per used slot. The accessor holds only its table/index; it never retains a control. Session dictionaries hold the explicit target. Public registration and exception order stay unchanged, including null-session, invalid-slot and disposed-session cases.
 
-This removes per-target accessor objects but adds one nullable accessor-reference array per table and larger inline values in table-backed dictionaries. Pending mutation entries are larger than before, and mixed delegate/table registrations can allocate two dictionaries. The new probes measure table registration, delegate-only registration and mutation batches independently; an improvement in construction is not evidence of an improvement in every editing workload. Public defensive metadata copies, thread affinity and rollback semantics remain required.
+This removes per-target accessor objects but adds one nullable accessor-reference array per table and larger inline values in table-backed dictionaries. Pending mutation entries are larger than before, and mixed delegate/table registrations can allocate two dictionaries. Known arrays and List batches now provide a capacity hint capped at 1,024 entries, avoiding geometric copying without invoking arbitrary IReadOnlyList.Count/indexers or reserving unbounded buffers for early-invalid input. The new probes measure table registration, delegate-only registration and mutation batches independently; an improvement in construction is not evidence of an improvement in every editing workload. Public defensive metadata copies, thread affinity and rollback semantics remain required.
 
 ## Quality gates
 
