@@ -10,7 +10,7 @@ async function receiveResult(result){
   const value=result?.structuredContent;if(!validMarker(value))return;const replaced=marker&&(value.id!==marker.id||value.sessionId!==marker.sessionId);
   epoch++;marker=value;drafts.clear();submitting.clear();review=null;$('review').hidden=true;if(replaced)retireSurface();$('fallback').textContent=String(value.fallbackMarkdown||'').slice(0,131072);await refresh();
 }
-function context(value){if(!value)return;document.documentElement.style.colorScheme=value.theme==='dark'?'dark':'light';const size=value.containerDimensions;if(size?.height)root.style.maxHeight=px(Math.min(size.height,1600));scheduleLayout();}
+function context(value){applyHostContext(value);scheduleLayout();}
 function teardown(){
   if(disposed)return;disposed=true;ready=false;epoch++;queued=null;marker=null;review=null;resize.disconnect();boxResize.disconnect();cancelAnimationFrame(layoutFrame);window.removeEventListener('message',onMessage);
   for(const call of pending.values()){clearTimeout(call.timer);call.reject(new Error('UI disposed.'));}pending.clear();
