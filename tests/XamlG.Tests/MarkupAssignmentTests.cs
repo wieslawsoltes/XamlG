@@ -141,6 +141,27 @@ public sealed class MarkupAssignmentTests
                 Xaml.Substring(mapping.SourceSpan.Start, mapping.SourceSpan.Length) == literal);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void String_constants_keep_their_type_inside_object_valued_extension_properties(bool project)
+    {
+        var model = Model.Replace("private string _extra;", "private object _extra;", StringComparison.Ordinal)
+            .Replace("public string Extra", "public object Extra", StringComparison.Ordinal);
+        foreach (var enabled in new[] { false, true })
+        {
+            using var code = CompiledXaml.Create(Xaml, model, Profile, shareAcrossDocuments: project,
+                options: new() { ShareMarkupAssignments = enabled });
+            var root = code.Build();
+            Assert.Equal(First + "," + Second, Events(code));
+            Assert.Equal(enabled, code.Emission.Source.Contains("private static void __XamlGAssignMarkup_", StringComparison.Ordinal));
+            var children = (IList)root.GetType().GetProperty("Children")!.GetValue(root)!;
+            var extension = children[0]!.GetType().GetProperty("Value")!.GetValue(children[0])!;
+            Assert.Equal("a", extension.GetType().GetProperty("Extra")!.GetValue(extension));
+            Assert.True(XamlRuntimeSession.TryGet(root, out var session)); session!.Dispose();
+        }
+    }
+
     private static XamlFrameworkProfile Profile => XamlFrameworkProfile.Portable with
     { MemberBindingRules = ImmutableArray.Create<IXamlMemberBindingRule>(new DescriptorRule()) };
     private static CompiledXaml Compile(bool enabled, bool project = false) => CompiledXaml.Create(Xaml, Model, Profile,

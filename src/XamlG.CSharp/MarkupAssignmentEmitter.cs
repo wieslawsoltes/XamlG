@@ -98,7 +98,7 @@ internal sealed class MarkupAssignmentEmitter(EmissionContext context, ValueEmit
     {
         parameters = null!;
         key = string.Empty;
-        if (assignment.RegisterName || owner.Type.TypeKind != TypeKind.Class || !owner.Type.IsReferenceType || !ReferenceEquals(owner.Scope, context.Document.Root!.Scope) ||
+        if (assignment.RegisterName || assignment.Value.Type?.TypeKind == TypeKind.Dynamic || owner.Type.TypeKind != TypeKind.Class || !owner.Type.IsReferenceType || !ReferenceEquals(owner.Scope, context.Document.Root!.Scope) ||
             assignment.Member is not { Kind: BoundMemberKind.Property, StaticSetter: null,
                 Symbol: IPropertySymbol { IsStatic: false, IsIndexer: false } property,
                 Getter: { } getter, Setter: { IsInitOnly: false } setter } member ||
@@ -110,14 +110,14 @@ internal sealed class MarkupAssignmentEmitter(EmissionContext context, ValueEmit
             markup.Method.Parameters.Length > 1 || markup.Method.Parameters.Any(parameter => parameter.RefKind != RefKind.None)) return false;
         var extension = markup.Extension;
         if (extension.IsRoot || extension.Name != null || !extension.Type.IsReferenceType || extension.FactoryMethod != null ||
-            extension.Constructor == null || extension.Arguments.Length != extension.Constructor.Parameters.Length ||
+            extension.Constructor == null || !SymbolEqualityComparer.Default.Equals(extension.Constructor.ContainingType, extension.Type) || extension.Arguments.Length != extension.Constructor.Parameters.Length ||
             !ReferenceEquals(extension.Scope, owner.Scope) || extension.Constructor.Parameters.Any(parameter => parameter.RefKind != RefKind.None)) return false;
         var arguments = new List<(BoundConstantExpression Value, ITypeSymbol Type)>();
         for (var i = 0; i < extension.Arguments.Length; i++)
         {
             if (extension.Arguments[i] is not BoundConstantExpression constant ||
                 !CanPass(constant, extension.Constructor.Parameters[i].Type)) return false;
-            arguments.Add((constant, extension.Constructor.Parameters[i].Type));
+            arguments.Add((constant, ParameterType(constant, extension.Constructor.Parameters[i].Type)));
         }
         foreach (var item in extension.Assignments)
         {
@@ -131,18 +131,46 @@ internal sealed class MarkupAssignmentEmitter(EmissionContext context, ValueEmit
                 !SymbolEqualityComparer.Default.Equals(extensionGetter, extensionProperty.GetMethod) ||
                 !SymbolEqualityComparer.Default.Equals(extensionSetter, extensionProperty.SetMethod) ||
                 !CanPass(constant, set.Member.ValueType)) return false;
-            arguments.Add((constant, set.Member.ValueType));
+            arguments.Add((constant, ParameterType(constant, set.Member.ValueType)));
         }
+        if (!DistinctParameters(arguments)) return false;
         var signature = new StringBuilder(owner.Type.CSharpName()).Append('\0').Append(PropertyAccessor.Create(owner.Type, member).Key)
             .Append('\0').Append(Symbol(extension.Constructor)).Append('\0').Append(Symbol(markup.Method))
-            .Append('\0').Append(extension.SupportsInitialize);
+            .Append('\0').Append(markup.Method.ReturnType.CSharpName()).Append('\0').Append(extension.SupportsInitialize);
         for (var value = assignment.Value; value is BoundCastExpression cast; value = cast.Value)
             signature.Append("\0cast:").Append(cast.TargetType.CSharpName());
         foreach (var item in extension.Assignments.Cast<BoundSetAssignment>())
             signature.Append("\0property:").Append(PropertyAccessor.Create(extension.Type, item.Member).Key);
+        foreach (var argument in arguments) signature.Append("\0parameter:").Append(argument.Type.CSharpName());
         parameters = new(new[] { extension }, arguments.ToArray());
         key = signature.ToString();
         return true;
+    }
+
+    private static bool DistinctParameters(List<(BoundConstantExpression Value, ITypeSymbol Type)> parameters)
+    {
+        // Substitution is by expression identity. A shared null expression can
+        // appear at both object and string parameter positions; using its first
+        // parameter for both would change C# conversion binding. Keep such DAGs
+        // on the original path. The small scan is bounded; large lists use O(K)
+        // expected hash work instead of introducing quadratic discovery.
+        if (parameters.Count <= 8)
+        {
+            for (var i = 1; i < parameters.Count; i++)
+                for (var j = 0; j < i; j++)
+                    if (ReferenceEquals(parameters[i].Value, parameters[j].Value)) return false;
+            return true;
+        }
+        var seen = new HashSet<BoundConstantExpression>(ConstantIdentity.Instance);
+        foreach (var parameter in parameters) if (!seen.Add(parameter.Value)) return false;
+        return true;
+    }
+
+    private sealed class ConstantIdentity : IEqualityComparer<BoundConstantExpression>
+    {
+        public static readonly ConstantIdentity Instance = new();
+        public bool Equals(BoundConstantExpression? left, BoundConstantExpression? right) => ReferenceEquals(left, right);
+        public int GetHashCode(BoundConstantExpression value) => RuntimeHelpers.GetHashCode(value);
     }
 
     private static BoundExpression Unwrap(BoundExpression value)
@@ -153,10 +181,18 @@ internal sealed class MarkupAssignmentEmitter(EmissionContext context, ValueEmit
 
     // Do not move boxing, narrowing, user conversions or service-dependent values
     // ahead of the constructor. Strings and null reference conversions are inert.
-    private static bool CanPass(BoundConstantExpression value, ITypeSymbol parameter) => value.Value == null
-        ? parameter.SpecialType is SpecialType.System_String or SpecialType.System_Object
-        : ValueEmitter.ConstantType(value.Value) is var type && type != SpecialType.None &&
-            (type == parameter.SpecialType || type == SpecialType.System_String && parameter.SpecialType == SpecialType.System_Object);
+    private static bool CanPass(BoundConstantExpression value, ITypeSymbol parameter) => parameter.TypeKind != TypeKind.Dynamic &&
+        (value.Value == null
+            ? parameter.SpecialType is SpecialType.System_String or SpecialType.System_Object
+            : value.Type?.TypeKind != TypeKind.Dynamic && ValueEmitter.ConstantType(value.Value) is var type &&
+                type != SpecialType.None && value.Type?.SpecialType == type &&
+                (type == parameter.SpecialType || type == SpecialType.System_String && parameter.SpecialType == SpecialType.System_Object));
+
+    // Keep the literal's static type. An extension's object-valued property may
+    // still use the existing string-typed scalar helper inside our body. Widening
+    // that literal to an object parameter would change overload binding there.
+    private static ITypeSymbol ParameterType(BoundConstantExpression value, ITypeSymbol destination) =>
+        value.Value == null ? destination : value.Type!;
 
     private string Symbol(ISymbol symbol)
     {
