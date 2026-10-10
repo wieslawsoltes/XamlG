@@ -1,0 +1,39 @@
+name: Workspace browser gate diagnostics
+on:
+  push:
+    branches: [diagnostics/workspace-browser-58901]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Extract cancellation and first browser failures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          gh api "repos/$GH_REPO/actions/jobs/114267627830/logs" > "$RUNNER_TEMP/browser-job.log"
+          gh api "repos/$GH_REPO/actions/jobs/114267627830" --jq '{conclusion,started_at,completed_at,check_run_url,steps}'
+          python - <<'PY'
+          import os, re
+          from pathlib import Path
+          text = Path(os.environ['RUNNER_TEMP'], 'browser-job.log').read_text(errors='replace')
+          lines = text.splitlines()
+          first = []
+          for index, line in enumerate(lines):
+              if re.search(r'✘|\bfailed\b|Timed out|TimeoutError|Error:|##\[error\]|exceeded', line, re.I):
+                  first.append((index, line))
+          print('\nMATCH COUNT:', len(first))
+          for index, line in first[:45]:
+              print(f'{index + 1}: {line[:1200]}')
+          print('\nFIRST FAILURE CONTEXT:')
+          candidates = [index for index, line in first if '✘' in line or 'TimeoutError' in line or '##[error]' in line]
+          if candidates:
+              index = candidates[0]
+              print('\n'.join(lines[max(0, index - 15):index + 55])[:18000])
+          print('\nFINAL LOG CONTEXT:\n' + '\n'.join(lines[-110:])[-18000:])
+          PY
