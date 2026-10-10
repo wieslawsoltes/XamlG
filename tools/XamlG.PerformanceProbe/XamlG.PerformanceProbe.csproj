@@ -8,6 +8,7 @@
     <ProjectReference Include="../../src/XamlG.Syntax/XamlG.Syntax.csproj" />
     <ProjectReference Include="../../src/XamlG.Runtime/XamlG.Runtime.csproj" />
     <ProjectReference Include="../../src/XamlG.CSharp/XamlG.CSharp.csproj" />
+    <ProjectReference Include="../../src/XamlG.Generator/XamlG.Generator.csproj" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
   </ItemGroup>
 </Project>
