@@ -69,8 +69,7 @@ test(`local ${provider} relay keeps provider credentials on the server and needs
     await pane.getByLabel('Model', { exact: true }).fill('test-model');
     await section(pane, 'Tasks'); await pane.getByRole('button', { name: 'Create task', exact: true }).click();
     await pane.getByLabel('Message', { exact: true }).fill('Reply through the local relay.');
-    await pane.getByRole('button', { name: 'Run', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Review agent run' }).getByRole('button', { name: 'Confirm run', exact: true }).click();
+    await pane.getByRole('button', { name: 'Send message', exact: true }).click();
     await expect(pane.locator('.agent-task-status')).toContainText('completed');
     await expect(pane.locator('.agent-thread')).toContainText('Local relay response.');
     expect(requests).toHaveLength(1); expect(failures).toEqual([]);
