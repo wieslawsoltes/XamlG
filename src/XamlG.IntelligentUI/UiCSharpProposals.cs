@@ -18,7 +18,7 @@ public sealed class UiCSharpProposals(UiSessionStore workspace)
     public event Action? Changed;
     public void Register(AutomationCatalog catalog)
     {
-        catalog.Add<UiPublish, UiCSharpProposal>("xamlg_ui_csharp_propose", "Propose a full Roslyn C# intelligent UI for explicit local owner review. Does NOT compile, execute, request provider inference, grant permissions or open a frame. The owner uses Intelligent UI workspace to inspect the exact source and start a disposable isolated frame. Use ordinary JsonElement C# APIs for state/data. No action authority is available inside that frame.", AutomationScope.Agent, AutomationEffect.Edit,
+        catalog.Add<UiPublish, UiCSharpProposal>("xamlg_ui_csharp_propose", "Propose a full Roslyn C# intelligent UI for explicit local owner review. Does NOT compile, execute, request inference, grant permissions or open a frame. The owner reviews exact source, data and local state-action code, then starts a disposable isolated frame. Use ordinary JsonElement C# APIs for state/data. Only declared state actions are allowed; no external tool, message, link or clipboard action authority is available.", AutomationScope.Agent, AutomationEffect.Edit,
             (args, context) => { context.CancellationToken.ThrowIfCancellationRequested(); return ValueTask.FromResult(Propose(args, Owner(context))); });
         catalog.Add<UiCSharpProposalRead, UiCSharpProposal>("xamlg_ui_csharp_status", "Read the status and bounded result of this caller's full-C# UI proposal. Pending means the owner has not run it. Never describe a proposal as executed before the status says completed.", AutomationScope.Agent, AutomationEffect.Read,
             (args, context) =>
@@ -33,12 +33,7 @@ public sealed class UiCSharpProposals(UiSessionStore workspace)
     {
         try
         {
-            UiJson.Identifier(request.Id, "Surface ID");
-            if (request.Xaml == null || request.Xaml.Length > workspace.Compiler.Limits.SourceCharacters || request.Actions?.Length > 0 || !request.IsFinal)
-                throw new UiException("invalid_proposal", "Supply complete bounded XAML without host actions.");
-            var normalized = request with { ExpectedRevision = 0, Sequence = 1, Actions = [],
-                InitialState = UiJson.Object(request.InitialState, workspace.Compiler.Limits.DataBytes, "State"),
-                Data = UiJson.Object(request.Data, workspace.Compiler.Limits.DataBytes, "Data") };
+            var normalized = UiCSharpDeclaration.Normalize(request, workspace.Compiler.Limits);
             var json = JsonSerializer.Serialize(normalized, AutomationJson.Options);
             var proposal = new UiCSharpProposal(Guid.NewGuid().ToString("N"), Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(json))), normalized, "pending");
             lock (_gate)

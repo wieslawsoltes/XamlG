@@ -6,18 +6,23 @@
 @inject NavigationManager Navigation
 @inject IntelligentUiWorkspaceContext Workspace
 <details class="ui-full-csharp"><summary>Full C# execution · owner review required</summary>
-    <p>Full Roslyn C# runs in a disposable opaque-origin frame, not in the editor. It receives no provider keys, agent permissions or workspace-storage access. The frame is not a hard CPU/memory sandbox. Only run code you trust.</p>
+    <p>Full Roslyn C# runs in a disposable opaque-origin frame, not in the editor. It receives no provider keys, agent permissions or workspace-storage access. The frame is not a hard CPU/memory sandbox. Only run code you trust. Local state-action expressions are also executable C# and must be reviewed.</p>
     @foreach (var proposal in Workspace.Proposals?.SnapshotLocal() ?? [])
     { <button disabled="@_running" @onclick="() => SelectProposal(proposal)">Review proposal @proposal.Id[..8] · @proposal.Status</button> }
     <button disabled="@(_running || Workspace.Proposals?.SnapshotLocal().Count is not > 0)" @onclick="ClearProposals">Clear C# proposals</button>
     <label>Intelligent XAML with full C#<textarea aria-label="Full C# intelligent XAML" @bind="_xaml" @bind:event="oninput" @bind:after="InvalidateReview" disabled="@_running"></textarea></label>
     <label>Initial state JSON<textarea aria-label="Full C# initial state" @bind="_state" @bind:event="oninput" @bind:after="InvalidateReview" disabled="@_running"></textarea></label>
     <label>Data JSON<textarea aria-label="Full C# data" @bind="_data" @bind:event="oninput" @bind:after="InvalidateReview" disabled="@_running"></textarea></label>
+    <label>Local state actions JSON<textarea aria-label="Full C# local state actions" @bind="_actions" @bind:event="oninput" @bind:after="InvalidateReview" disabled="@_running"></textarea></label>
+    <p>Only actions with kind <code>state</code> are accepted. No host tools, messages, links or clipboard actions are available.</p>
     <button @onclick="Review" disabled="@_running">Review full C#</button><button @onclick="ResetAsync">Reset execution frame</button>
     @if (_reviewed != null)
     {
-        <section aria-label="Review full C# execution"><h3>Review exact source and data</h3><pre>@_reviewed.Xaml</pre><pre>@_reviewed.InitialState</pre><pre>@_reviewed.Data</pre>
-            <p>Hash: <code>@_reviewHash</code>. Expressions run again when you interact with this UI.</p>
+        <section aria-label="Review full C# execution"><h3>Review exact source, data and action code</h3>
+            <h4>Intelligent XAML</h4><pre>@_reviewed.Xaml</pre>
+            <h4>Initial state</h4><pre>@_reviewed.InitialState</pre><h4>Data</h4><pre>@_reviewed.Data</pre>
+            <h4>Local state actions</h4><pre>@JsonSerializer.Serialize(_reviewed.Actions, AutomationJson.Options)</pre>
+            <p>Hash: <code>@_reviewHash</code>. This hash includes the action code. Expressions run again when you interact with this UI.</p>
             <button @onclick="RunApprovedAsync" disabled="@_running">Approve and run full C#</button>
         </section>
     }
@@ -31,7 +36,7 @@
     private UiCSharpProposal? _proposal;
     private string? _error, _reviewHash;
     private string _status = "No code has run.";
-    private string _state = "{\"n\":3}", _data = "{}";
+    private string _state = "{\"n\":3}", _data = "{}", _actions = "[]";
     private string _xaml = UiCSharpExamples.Sum().Xaml;
     private bool _running, _disposed;
     private long _generation;
@@ -62,16 +67,23 @@
     {
         InvalidateReview(); _proposal = proposal; _xaml = proposal.Request.Xaml;
         _state = proposal.Request.InitialState?.GetRawText() ?? "{}"; _data = proposal.Request.Data?.GetRawText() ?? "{}";
+        _actions = JsonSerializer.Serialize(proposal.Request.Actions ?? [], AutomationJson.Options);
     }
     private void Review()
     {
         try
         {
             WatchWorkspace(); _workspaceToken.ThrowIfCancellationRequested(); _error = null;
-            if (_xaml.Length > 65536 || _state.Length > 131072 || _data.Length > 131072) throw new InvalidOperationException("The declaration exceeds its bounds.");
+            if (_xaml.Length > 65536 || _state.Length > 131072 || _data.Length > 131072 || _actions.Length > 131072)
+                throw new InvalidOperationException("The declaration exceeds its bounds.");
             using var state = JsonDocument.Parse(_state); using var data = JsonDocument.Parse(_data);
-            if (state.RootElement.ValueKind != JsonValueKind.Object || data.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("State and data must be objects.");
-            _reviewed = _proposal?.Request ?? new("approved-" + Guid.NewGuid().ToString("N"), 0, 1, _xaml, state.RootElement.Clone(), data.RootElement.Clone(), []);
+            if (state.RootElement.ValueKind != JsonValueKind.Object || data.RootElement.ValueKind != JsonValueKind.Object)
+                throw new InvalidOperationException("State and data must be objects.");
+            var actions = JsonSerializer.Deserialize<UiAction[]>(_actions, AutomationJson.Options)
+                ?? throw new InvalidOperationException("Local state actions must be a JSON array.");
+            var request = _proposal?.Request ?? new("approved-" + Guid.NewGuid().ToString("N"), 0, 1, _xaml, state.RootElement.Clone(), data.RootElement.Clone(), actions);
+            // This validates data and allowed effects only. It never compiles or evaluates C#.
+            _reviewed = UiCSharpDeclaration.Normalize(request);
             var json = JsonSerializer.Serialize(_reviewed, AutomationJson.Options);
             _reviewHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(json)));
         }

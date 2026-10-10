@@ -32,7 +32,13 @@ public sealed record UiRelease(string Id, long ExpectedRevision);
 
 /// <summary>Resolved, inert operations. No CLR type, executable delegate, or markup loader crosses this boundary.</summary>
 public sealed record UiElement(string Key, string Type, ImmutableDictionary<string, JsonElement> Properties,
-    ImmutableArray<UiElement> Children, string? StateKey = null, string? ActionId = null);
+    ImmutableArray<UiElement> Children, string? StateKey = null, string? ActionId = null)
+{
+    // Captured by the compiler; neither serialized nor accepted in action requests.
+    internal JsonElement? ActionItem { get; init; }
+    public UiFormAnnotation? Form { get; init; }
+    public UiFormInteraction? FormState { get; init; }
+}
 public sealed record UiSnapshot(string Id, long Revision, long StateRevision, long Sequence, bool IsFinal,
     string Xaml, JsonElement State, JsonElement Data, ImmutableArray<UiElement> Roots,
     ImmutableArray<UiAction> Actions, ImmutableArray<UiDiagnostic> Diagnostics, string FallbackMarkdown, string SessionId);

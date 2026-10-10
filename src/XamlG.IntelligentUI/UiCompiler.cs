@@ -35,7 +35,7 @@ public sealed class UiCompiler(UiCatalog? catalog = null, UiLimits? limits = nul
             if (document?.Root == null) return new(null, diagnostics.ToImmutable(), false);
             var keys = new HashSet<string>(StringComparer.Ordinal); var count = 0;
             var root = Parse(document.Root, "root", 0, keys, ref count);
-            return new(new UiTemplate(root, Limits), diagnostics.ToImmutable(), diagnostics.Count == 0);
+            return new(new UiTemplate(root, Limits, Catalog), diagnostics.ToImmutable(), diagnostics.Count == 0);
         }
         catch (Exception error) when (error is UiException or XmlException)
         {
@@ -84,8 +84,12 @@ public sealed class UiCompiler(UiCatalog? catalog = null, UiLimits? limits = nul
     private UiPlanNode Parse(XElement element, string implicitKey, int depth, HashSet<string> keys, ref int count)
     {
         if (++count > Limits.Nodes || depth > Limits.Depth) throw new UiException("node_limit", "XAML exceeds tree limits.");
-        if (element.Name.NamespaceName != UiCatalog.AvaloniaNamespace) throw new UiException("unknown_namespace", "Only the declared Avalonia component namespace is allowed.");
-        var component = Catalog.Get(element.Name.LocalName);
+        UiComponent component;
+        if (element.Name.NamespaceName == UiCatalog.AvaloniaNamespace) component = Catalog.Get(element.Name.LocalName);
+        else if (element.Name.NamespaceName == UiCatalog.UiNamespace)
+            component = UiCompositeCatalog.Components.TryGetValue(element.Name.LocalName, out var composite) ? composite
+                : throw new UiException("unknown_component", "Unknown response component: " + element.Name.LocalName);
+        else throw new UiException("unknown_namespace", "Only declared Avalonia and intelligent UI component namespaces are allowed.");
         XNamespace ui = UiCatalog.UiNamespace; XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
         var key = (string?)element.Attribute(ui + "Key") ?? (string?)element.Attribute(x + "Name") ?? implicitKey;
         UiJson.Identifier(key, "UI key");
@@ -145,99 +149,5 @@ public sealed class UiCompiler(UiCatalog? catalog = null, UiLimits? limits = nul
         const string prefix = "{ui:Expr ";
         if (!source.StartsWith(prefix, StringComparison.Ordinal) || !source.EndsWith('}')) throw new UiException("invalid_expression", "Use {ui:Expr <C# expression>}; arbitrary markup extensions require application compilation.");
         return CompileExpression(source[prefix.Length..^1]);
-    }
-}
-
-public sealed class UiTemplate
-{
-    private readonly UiPlanNode _root;
-    private readonly UiLimits _limits;
-    internal UiTemplate(UiPlanNode root, UiLimits limits) { _root = root; _limits = limits; }
-    public ImmutableArray<UiElement> Render(JsonElement state, JsonElement data)
-    {
-        var count = 0; var keys = new HashSet<string>(StringComparer.Ordinal);
-        return RenderNode(_root, state, data, null, "", keys, ref count);
-    }
-    private ImmutableArray<UiElement> RenderNode(UiPlanNode node, JsonElement state, JsonElement data, JsonElement? item, string scope, HashSet<string> keys, ref int count, bool expanded = false)
-    {
-        if (node.Each != null && !expanded)
-        {
-            var items = node.Each.Evaluate(state, data, item);
-            if (items.ValueKind != JsonValueKind.Array || items.GetArrayLength() > _limits.Nodes) throw new UiException("invalid_repeat", "Repeat source must be a bounded JSON array.");
-            var result = ImmutableArray.CreateBuilder<UiElement>();
-            foreach (var child in items.EnumerateArray())
-            {
-                var identity = node.ItemKey!.Evaluate(state, data, child);
-                if (identity.ValueKind is not (JsonValueKind.String or JsonValueKind.Number)) throw new UiException("invalid_repeat", "Item keys must be strings or numbers.");
-                var key = UiJson.Text(UiJson.Value(identity));
-                if (key.Length is 0 or > 80) throw new UiException("invalid_repeat", "Invalid item key length.");
-                result.AddRange(RenderNode(node, state, data, child, scope + "/" + node.Key + "[" + Uri.EscapeDataString(key) + "]", keys, ref count, true));
-            }
-            return result.ToImmutable();
-        }
-        if (node.When != null && !UiExpression.Bool(UiJson.Value(node.When.Evaluate(state, data, item)))) return [];
-        if (++count > _limits.Nodes) throw new UiException("node_limit", "Expanded UI exceeds the node limit.");
-        var nodeKey = scope + "/" + node.Key;
-        if (!keys.Add(nodeKey)) throw new UiException("duplicate_key", "Duplicate rendered item key: " + nodeKey);
-        var properties = node.Properties.ToImmutableDictionary(p => p.Key, p => node.Component.Properties[p.Key].Validate(p.Value.Resolve(state, data, item)), StringComparer.Ordinal);
-        if (node.StateKey != null)
-        {
-            if (!state.TryGetProperty(node.StateKey, out var value)) throw new UiException("invalid_binding", "Missing state: " + node.StateKey);
-            properties = properties.SetItem(node.Component.InputProperty!, node.Component.Properties[node.Component.InputProperty!].Validate(value));
-        }
-        var children = ImmutableArray.CreateBuilder<UiElement>();
-        foreach (var child in node.Children) children.AddRange(RenderNode(child, state, data, item, scope, keys, ref count));
-        var element = new UiElement(nodeKey, node.Component.Name, properties, children.ToImmutable(), node.StateKey, node.ActionId);
-        UiTreeValidation.ValidateElement(element, node.Component, _limits.TextCharacters);
-        return [element];
-    }
-}
-
-/// <summary>Cross-property checks shared by interpreted and transport-provided resolved trees.</summary>
-public static class UiTreeValidation
-{
-    public static void ValidateElement(UiElement node, UiComponent component, int textLimit = 16384)
-    {
-        if (node.Children.IsDefault || node.Properties == null || node.Children.Length > component.MaximumChildren ||
-            component.ChildTypes is { } allowed && node.Children.Any(child => !allowed.Contains(child.Type, StringComparer.Ordinal))) throw new UiException("invalid_content", "Invalid child container.");
-        if (node.ActionId != null && !component.SupportsAction || node.StateKey != null && component.InputProperty == null) throw new UiException("invalid_tree", "Undeclared input or action capability.");
-        var properties = node.Properties;
-        foreach (var property in properties)
-        {
-            if (!component.Properties.TryGetValue(property.Key, out var definition)) throw new UiException("unknown_property", "Undeclared property.");
-            definition.ValidateValue(property.Value);
-            if (property.Value.ValueKind == JsonValueKind.String && property.Value.GetString()!.Length > textLimit) throw new UiException("text_limit", "Computed property text exceeds the limit.");
-        }
-        if (node.Children.Length != 0 && (properties.ContainsKey("ItemsSource") || properties.ContainsKey("Content"))) throw new UiException("invalid_content", "Child elements conflict with Content or ItemsSource.");
-        if (node.Type is "Slider" or "ProgressBar" or "NumericUpDown")
-        {
-            var min = properties.TryGetValue("Minimum", out var lower) ? lower.GetDecimal() : node.Type == "NumericUpDown" ? -1000000 : 0;
-            var max = properties.TryGetValue("Maximum", out var upper) ? upper.GetDecimal() : node.Type == "NumericUpDown" ? 1000000 : 100;
-            var value = properties.TryGetValue("Value", out var current) && current.ValueKind != JsonValueKind.Null ? current.GetDecimal() : (decimal?)null;
-            if (min >= max || value is { } number && (number < min || number > max)) throw new UiException("invalid_range", "Range requires Minimum < Maximum and Value within that range.");
-        }
-        if (properties.TryGetValue("SelectedIndex", out var selected))
-        {
-            var count = properties.TryGetValue("ItemsSource", out var items) ? items.GetArrayLength() : node.Children.Length;
-            if (selected.GetDecimal() >= count) throw new UiException("invalid_selection", "SelectedIndex is outside the current items.");
-        }
-        foreach (var property in properties.Where(p => p.Key is "ColumnDefinitions" or "RowDefinitions")) ValidateDefinitions(property.Value.GetString()!);
-        if (properties.TryGetValue("FormatString", out var format)) ValidateFormat(format.GetString()!);
-    }
-    private static void ValidateFormat(string format)
-    {
-        if (format.Length > 64 || format.Length > 1 && char.IsAsciiLetter(format[0]) && format.AsSpan(1).IndexOfAnyExceptInRange('0', '9') < 0 &&
-            (!int.TryParse(format.AsSpan(1), out var precision) || precision > 16)) throw new UiException("invalid_format", "Numeric format strings are limited to 64 characters and precision 16.");
-    }
-    private static void ValidateDefinitions(string source)
-    {
-        var parts = source.Split(',');
-        if (parts.Length > 64) throw new UiException("invalid_property", "At most 64 grid definitions are allowed.");
-        foreach (var raw in parts)
-        {
-            var value = raw.Trim(); if (value is "Auto" or "*") continue;
-            if (value.EndsWith('*')) value = value[..^1];
-            if (!decimal.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var number) || number < 0 || number > 10000) throw new UiException("invalid_property", "Invalid grid definition.");
-        }
     }
 }

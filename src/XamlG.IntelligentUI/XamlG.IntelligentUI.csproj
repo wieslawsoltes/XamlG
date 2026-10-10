@@ -7,5 +7,6 @@
     <ProjectReference Include="../XamlG.Automation/XamlG.Automation.csproj" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <EmbeddedResource Include="Resources/intelligent-ui.html" />
+    <EmbeddedResource Include="Resources/ui-*.js" />
   </ItemGroup>
 </Project>

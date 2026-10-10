@@ -20,14 +20,13 @@ public partial class IntelligentUiGuest
     private IJSObjectReference? _module, _bridge;
     private AvaloniaView? _view;
     private UiAvaloniaRenderer? _renderer;
-    private UiCSharpExpressionCompiler? _fullCompiler;
-    private UiSessionStore? _executionStore;
     private UiSnapshot? _snapshot;
     private UiActionIntent? _review;
     private UiActionCall? _reviewCall;
     private string _status = "Starting native Avalonia…";
-    private string? _error, _lastFallback;
-    private bool _disposed, _executed;
+    private string? _error, _lastFallback, _activeId, _activeSession;
+    private long _surfaceEpoch;
+    private bool _disposed;
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
@@ -39,12 +38,10 @@ public partial class IntelligentUiGuest
                 FrameworkAssetPathResolver = file => new Uri(baseUri, "_content/Avalonia.Browser/" + file).AbsoluteUri,
                 RegisterAvaloniaServiceWorker = false
             });
-            // Use the same direct native control host as a Studio conversation card.
-            // Designer/reload surfaces have a separate lifetime and are not initialized here.
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 _renderer = new(); _renderer.StateChanged += StateChanged; _renderer.ActionRequested += ActionRequested;
-                _view = new AvaloniaView(_elementId) { Content = _renderer.View };
+                InitializeFormBehavior(); _view = new AvaloniaView(_elementId) { Content = _renderer.View };
             });
             _reference = DotNetObjectReference.Create(this);
             _module = await JavaScript.InvokeAsync<IJSObjectReference>("import", new Uri(baseUri, "ui-native-guest.js").AbsoluteUri);
@@ -54,101 +51,154 @@ public partial class IntelligentUiGuest
         }
         catch (Exception error) { await ReceiveError(error.Message); }
     }
+    private bool IsCurrent(long epoch) => !_disposed && _surfaceEpoch == epoch;
+    private bool CanApply(UiSnapshot snapshot)
+        => !_disposed && (Mode != "mcp" || _activeId == snapshot.Id && _activeSession == snapshot.SessionId) &&
+           !(_snapshot?.SessionId == snapshot.SessionId && (snapshot.Revision < _snapshot.Revision ||
+             snapshot.Revision == _snapshot.Revision && snapshot.StateRevision < _snapshot.StateRevision));
+    [JSInvokable]
+    public async Task BeginSurface(string id, string sessionId)
+    {
+        if (_disposed || Mode != "mcp") return;
+        if (string.IsNullOrEmpty(id) || id.Length > 80 || !id.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-') ||
+            sessionId.Length != 32 || !sessionId.All(char.IsAsciiHexDigit)) throw new UiException("invalid_snapshot", "Invalid UI identity.");
+        if (_activeId == id && _activeSession == sessionId) return;
+        var old = _snapshot; var epoch = ++_surfaceEpoch;
+        _activeId = id; _activeSession = sessionId; _snapshot = null; CancelReview(); _error = null; _submittingForms.Clear();
+        _status = "Loading the selected native UI…";
+        if (old != null && _renderer != null) await Dispatcher.UIThread.InvokeAsync(() => { if (IsCurrent(epoch)) ApplyNative(old with { Roots = [] }); });
+        if (IsCurrent(epoch)) await InvokeAsync(StateHasChanged);
+    }
+    [JSInvokable]
+    public async Task RetireSurface()
+    {
+        if (_disposed) return;
+        var old = _snapshot; var epoch = ++_surfaceEpoch;
+        _activeId = null; _activeSession = null; _snapshot = null; CancelReview(); _submittingForms.Clear();
+        _status = "This UI session is no longer available.";
+        if (old != null && _renderer != null) await Dispatcher.UIThread.InvokeAsync(() => { if (IsCurrent(epoch)) ApplyNative(old with { Roots = [] }); });
+        if (IsCurrent(epoch)) await InvokeAsync(StateHasChanged);
+    }
     [JSInvokable]
     public async Task ReceiveSnapshot(UiSnapshot snapshot)
     {
         if (_disposed || _renderer == null) return;
-        if (snapshot.Id.Length > 80 || snapshot.SessionId.Length != 32 || snapshot.Revision < 1 || snapshot.StateRevision < 0) throw new UiException("invalid_snapshot", "Invalid UI identity.");
-        if (_snapshot?.SessionId == snapshot.SessionId && (snapshot.Revision < _snapshot.Revision || snapshot.Revision == _snapshot.Revision && snapshot.StateRevision < _snapshot.StateRevision)) return;
-        await Dispatcher.UIThread.InvokeAsync(() => _renderer.Apply(snapshot));
-        _snapshot = snapshot; _lastFallback = snapshot.FallbackMarkdown; CancelReview();
-        _status = $"Native Avalonia · revision {snapshot.Revision} · state {snapshot.StateRevision}";
-        await InvokeAsync(StateHasChanged);
+        if (snapshot.Id.Length > 80 || snapshot.SessionId.Length != 32 || snapshot.Revision < 1 || snapshot.StateRevision < 0)
+            throw new UiException("invalid_snapshot", "Invalid UI identity.");
+        var epoch = _surfaceEpoch;
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (!IsCurrent(epoch) || !CanApply(snapshot)) return;
+            ApplyNative(snapshot); _snapshot = snapshot; _lastFallback = snapshot.FallbackMarkdown; CancelReview();
+            _status = $"Native Avalonia · revision {snapshot.Revision} · state {snapshot.StateRevision}";
+        });
+        if (IsCurrent(epoch)) await InvokeAsync(StateHasChanged);
     }
     [JSInvokable]
     public async Task ReceiveError(string message)
     {
-        _error = message.Length > 4096 ? message[..4096] : message;
-        if (_disposed) return;
-        if (message.Contains("released", StringComparison.OrdinalIgnoreCase) || message.Contains("replaced", StringComparison.OrdinalIgnoreCase) || message.Contains("unknown_surface", StringComparison.Ordinal) || message.Contains("no longer available", StringComparison.OrdinalIgnoreCase))
-        {
-            var snapshot = _snapshot; _snapshot = null; CancelReview();
-            if (snapshot != null && _renderer != null) await Dispatcher.UIThread.InvokeAsync(() => _renderer.Apply(snapshot with { Roots = [] }));
-            _status = "This UI session is no longer available.";
-        }
-        await InvokeAsync(StateHasChanged);
+        if (_disposed) return; _error = message.Length > 4096 ? message[..4096] : message;
+        if (message.Contains("released", StringComparison.OrdinalIgnoreCase) || message.Contains("replaced", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("unknown_surface", StringComparison.Ordinal) || message.Contains("no longer available", StringComparison.OrdinalIgnoreCase)) await RetireSurface();
+        if (!_disposed) await InvokeAsync(StateHasChanged);
     }
     [JSInvokable]
     public async Task HostContextChanged(JsonElement context)
     {
-        if (context.ValueKind == JsonValueKind.Object && context.TryGetProperty("theme", out var theme))
-            await Dispatcher.UIThread.InvokeAsync(() => { if (global::Avalonia.Application.Current is { } app) app.RequestedThemeVariant = theme.GetString() == "dark" ? ThemeVariant.Dark : ThemeVariant.Light; });
+        if (!_disposed && context.ValueKind == JsonValueKind.Object && context.TryGetProperty("theme", out var theme))
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!_disposed && global::Avalonia.Application.Current is { } app)
+                    app.RequestedThemeVariant = theme.GetString() == "dark" ? ThemeVariant.Dark : ThemeVariant.Light;
+            });
     }
     private async void StateChanged(UiStateChange change)
     {
+        var epoch = _surfaceEpoch;
         try
         {
             await _mutations.WaitAsync(_lifetime.Token);
             try
             {
-                if (_snapshot == null || _snapshot.Id != change.Id || _snapshot.Revision != change.ExpectedRevision) throw new UiException("revision_conflict", "The UI changed before input was applied.");
+                if (!IsCurrent(epoch)) return;
+                if (_snapshot == null || _snapshot.Id != change.Id || _snapshot.Revision != change.ExpectedRevision)
+                    throw new UiException("revision_conflict", "The UI changed before input was applied.");
                 change = change with { ExpectedStateRevision = _snapshot.StateRevision };
-                var next = Mode == "execution" ? _executionStore!.ChangeState(change, "approved-execution") : await _bridge!.InvokeAsync<UiSnapshot>("tool", _lifetime.Token, "xamlg_ui_state", change);
-                await ReceiveSnapshot(next);
-                if (Mode == "mcp") await _bridge!.InvokeVoidAsync("context", _lifetime.Token, new { surfaceId = next.Id, next.Revision, next.StateRevision, next.State });
+                var next = Mode == "execution" ? await ExecuteCommandAsync<UiSnapshot>("state", change)
+                    : await _bridge!.InvokeAsync<UiSnapshot>("tool", _lifetime.Token, "xamlg_ui_state", change);
+                if (!IsCurrent(epoch)) return; await ReceiveSnapshot(next);
+                if (Mode == "mcp") await PublishContextAsync(next);
             }
             finally { _mutations.Release(); }
         }
         catch (OperationCanceledException) when (_disposed) { }
-        catch (Exception error) { await ReceiveError(error.Message); if (_snapshot != null && !_disposed) await ReceiveSnapshot(_snapshot); }
+        catch (Exception error)
+        {
+            if (!IsCurrent(epoch)) return; await ReceiveError(error.Message);
+            if (_snapshot != null && IsCurrent(epoch)) await ReceiveSnapshot(_snapshot);
+        }
     }
-    private async void ActionRequested(UiActionCall call)
+    private async void DispatchAction(UiActionCall call)
     {
+        var epoch = _surfaceEpoch;
         try
         {
-            if (Mode != "mcp") throw new UiException("action_disabled", "Full-C# preview has no editor or agent action authority.");
-            _review = await _bridge!.InvokeAsync<UiActionIntent>("tool", _lifetime.Token, "xamlg_ui_action", call);
-            _reviewCall = call; await InvokeAsync(StateHasChanged);
+            await _mutations.WaitAsync(_lifetime.Token);
+            try
+            {
+                if (!IsCurrent(epoch) || _snapshot == null) return;
+                if (UiActionRouting.IsStateAction(_snapshot, call))
+                {
+                    var next = Mode == "execution" ? await ExecuteCommandAsync<UiSnapshot>("state_action", call)
+                        : await _bridge!.InvokeAsync<UiSnapshot>("tool", _lifetime.Token, "xamlg_ui_state_action", call);
+                    if (!IsCurrent(epoch)) return; await ReceiveSnapshot(next);
+                    if (Mode == "mcp") await PublishContextAsync(next); return;
+                }
+                if (Mode != "mcp") throw new UiException("action_disabled", "Full-C# preview has no editor or agent action authority.");
+                var intent = await _bridge!.InvokeAsync<UiActionIntent>("tool", _lifetime.Token, "xamlg_ui_action", call);
+                if (!IsCurrent(epoch)) return; _review = intent; _reviewCall = call; await InvokeAsync(StateHasChanged);
+            }
+            finally { _mutations.Release(); }
         }
-        catch (Exception error) { await ReceiveError(error.Message); }
+        catch (OperationCanceledException) when (_disposed) { }
+        catch (Exception error) { if (IsCurrent(epoch)) await ReceiveError(error.Message); }
+    }
+    private async Task PublishContextAsync(UiSnapshot snapshot)
+    {
+        if (_disposed || !ReferenceEquals(_snapshot, snapshot)) return;
+        await _bridge!.InvokeVoidAsync("context", _lifetime.Token,
+            new { surfaceId = snapshot.Id, snapshot.SessionId, snapshot.Revision, snapshot.StateRevision, snapshot.State });
     }
     private void CancelReview() { _review = null; _reviewCall = null; }
     private async Task ConfirmAsync()
     {
         if (_review == null || _reviewCall == null || _bridge == null) return;
-        var reviewed = _review; var call = _reviewCall; CancelReview();
+        var epoch = _surfaceEpoch; var reviewed = _review; var call = _reviewCall; CancelReview();
         try
         {
             var current = await _bridge.InvokeAsync<UiActionIntent>("tool", _lifetime.Token, "xamlg_ui_action", call);
-            if (!JsonElement.DeepEquals(JsonSerializer.SerializeToElement(current), JsonSerializer.SerializeToElement(reviewed))) throw new UiException("revision_conflict", "The action changed. Review it again.");
+            if (!IsCurrent(epoch)) return;
+            if (!JsonElement.DeepEquals(JsonSerializer.SerializeToElement(current), JsonSerializer.SerializeToElement(reviewed)))
+                throw new UiException("revision_conflict", "The action changed. Review it again.");
             await _bridge.InvokeVoidAsync("action", _lifetime.Token, current);
         }
-        catch (Exception error) { await ReceiveError(error.Message); }
+        catch (Exception error) { if (IsCurrent(epoch)) await ReceiveError(error.Message); }
     }
     private async Task RefreshAsync()
-    { try { if (_bridge != null) await _bridge.InvokeVoidAsync("refresh", _lifetime.Token); } catch (Exception error) { await ReceiveError(error.Message); } }
-    [JSInvokable]
-    public async Task<object> ExecuteApproved(UiPublish request)
     {
-        if (Mode != "execution" || _executed || _disposed) throw new UiException("execution_not_approved", "Create a fresh reviewed execution frame.");
-        _executed = true;
-        await Compiler.InitializeAsync(cancellationToken: _lifetime.Token);
-        var metadata = Compiler.Analyze("<StackPanel xmlns=\"https://github.com/avaloniaui\"/>", "", cancellationToken: _lifetime.Token).Compilation.References;
-        _fullCompiler = new(metadata, _ => true, maximumCompilations: 64);
-        _executionStore = new(new UiCompiler(expressionCompiler: _fullCompiler));
-        var snapshot = _executionStore.Publish(request with { ExpectedRevision = 0, Sequence = 1, Actions = [] }, "approved-execution");
-        await ReceiveSnapshot(snapshot);
-        return new { snapshot.Id, snapshot.Revision, snapshot.StateRevision, snapshot.FallbackMarkdown, expressionLanguage = "csharp-full" };
+        var epoch = _surfaceEpoch;
+        try { if (_bridge != null) await _bridge.InvokeVoidAsync("refresh", _lifetime.Token); }
+        catch (Exception error) { if (IsCurrent(epoch)) await ReceiveError(error.Message); }
     }
     public async ValueTask DisposeAsync()
     {
-        if (_disposed) return; _disposed = true; _lifetime.Cancel();
+        if (_disposed) return; _disposed = true; _surfaceEpoch++; _lifetime.Cancel(); _submittingForms.Clear();
+        await DisposeExecutionAsync();
         if (_bridge != null) { try { await _bridge.InvokeVoidAsync("dispose"); } catch (JSDisconnectedException) { } await _bridge.DisposeAsync(); }
         if (_module != null) await _module.DisposeAsync(); _reference?.Dispose();
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (_view != null) _view.Content = null;
-            _renderer?.Dispose(); _executionStore?.Clear(); _fullCompiler?.Dispose();
+            _forms?.Dispose(); _forms = null; if (_view != null) _view.Content = null; _renderer?.Dispose();
             if ((object?)_view is IDisposable disposable) disposable.Dispose(); _view = null;
         });
         _lifetime.Dispose();

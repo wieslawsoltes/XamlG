@@ -118,7 +118,6 @@ public sealed class UiAvaloniaRenderer : IDisposable
         {
             if (_applying || _disposed || _snapshot == null || entry.Node.StateKey == null) return;
             JsonElement? value = entry.Registration.ReadInput?.Invoke(entry.Control, args);
-            // Preserve existing custom catalogs that rely on the original native input families.
             if (value == null && entry.Registration.ReadInput == null)
             {
                 if (entry.Control is TextBox text && args.Property == TextBox.TextProperty) value = JsonSerializer.SerializeToElement(text.Text ?? "");
@@ -152,6 +151,8 @@ public sealed class UiAvaloniaRenderer : IDisposable
                     panel.Children.Remove(children[i]); panel.Children.Insert(i, children[i]);
                 }
                 break;
+            // Viewbox is a Control with its own logical child, not a Decorator.
+            case Viewbox viewbox: if (!ReferenceEquals(viewbox.Child, children.FirstOrDefault())) viewbox.Child = children.FirstOrDefault(); break;
             case Decorator decorator: if (!ReferenceEquals(decorator.Child, children.FirstOrDefault())) decorator.Child = children.FirstOrDefault(); break;
             case ItemsControl items when !itemsSource:
                 for (var i = items.Items.Count - 1; i >= 0; i--) if (items.Items[i] is not Control control || !children.Contains(control)) items.Items.RemoveAt(i);
@@ -170,6 +171,7 @@ public sealed class UiAvaloniaRenderer : IDisposable
     private static void Detach(Control control)
     {
         if (control.Parent is Panel panel) panel.Children.Remove(control);
+        else if (control.Parent is Viewbox viewbox && ReferenceEquals(viewbox.Child, control)) viewbox.Child = null;
         else if (control.Parent is Decorator decorator && ReferenceEquals(decorator.Child, control)) decorator.Child = null;
         else if (control.Parent is ContentControl content && ReferenceEquals(content.Content, control)) content.Content = null;
         else if (control.Parent is ItemsControl items && items.ItemsSource == null) items.Items.Remove(control);

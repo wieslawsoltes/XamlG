@@ -4,19 +4,21 @@ XamlG provides interactive agent responses using Avalonia XAML, C# expressions, 
 
 The architectural reference is [OpenUI's article](https://www.openui.com/blog/how-chatgpt-intelligent-ui-works). It is a third-party observation, not an OpenAI protocol specification. Public interoperability targets [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview); no undocumented ChatGPT wire format is guessed or advertised as compatible.
 
+See [rich authoring and the parity matrix](intelligent-ui-parity.md) for local state actions, row-scoped actions, the 18 response composites, form validation, examples and explicit remaining scope.
+
 ## Studio workflows
 
 **Coding agent → Intelligent UI → Try intelligent UI** creates a native Avalonia pricing card without a provider key. Its inputs update C# expressions and computed fallback without model inference. **Inspect UI** exposes intelligent XAML, bound JSON, current state, revisions, static XAML export, reactive C# export and snapshot export. Example prices are fictional.
 
 The **Intelligent UI workspace** button opens owner-only controls. Enable **Allow local UI workspace storage**, then use **Save UI workspace**, **Restore saved UI** or **Forget saved UI**. Data is stored in IndexedDB for the current Studio origin and project identity. Save first preserves the normal project draft and its identity so a page reload finds the same archive. Storage is explicit; no archive is silently loaded or overwritten. Another tab's save/delete rejects stale versions. Invalid archives leave the live workspace intact, and restoration invalidates old action reviews. Forget removes the archive, not current in-memory cards.
 
-The same panel contains **Full C# execution**. An agent may submit a proposal, or the owner may enter intelligent XAML and JSON. **Review full C#** freezes the exact source/data and displays its hash. **Approve and run full C#** creates a fresh, disposable opaque-origin frame. **Reset execution frame**, closing the panel, or changing the workspace discards the frame. The frame does not start Studio, receive provider credentials, access the editor's storage, or acquire tool authority. Full C# is executable code: the frame is not a hard CPU/memory quota or an OS process sandbox. Only run trusted code.
+The same panel contains **Full C# execution**. An agent may submit a proposal, or the owner may enter intelligent XAML and JSON. **Review full C#** freezes the exact source/data/local actions and displays their hash. **Approve and run full C#** creates a fresh, disposable opaque-origin frame. **Reset execution frame**, closing the panel, or changing the workspace discards the frame. The frame does not start Studio, receive provider credentials, access the editor's storage, or acquire tool authority. Declared local state actions may run there; external effects are not permitted. Expressions execute in a dedicated worker behind another opaque supervisor, not in the rendering frame. The supervisor terminates over-deadline commands (20 seconds for publication, 3 seconds for interactions), and the worker runtime has an engine-enforced linear-memory maximum of at most 512 MiB. These are not an OS process sandbox, whole-browser memory quota, or process-wide CPU accounting. Only run trusted code. See [form workflows and execution limits](intelligent-ui-parity.md#toucheddirty-state-keyboard-behavior-and-asynchronous-validation).
 
-Direct provider agents and paired companion agents share the catalog. The provider's native tool result and continuation are preserved; HTML does not replace tool history. UI messages fill the normal Studio composer rather than starting inference. Tool actions require an additional user review and use ordinary schema/revision validation; they do not grant permissions to the coding agent.
+Direct provider agents and paired companion agents share the catalog. The provider's native tool result and continuation are preserved; HTML does not replace tool history. UI messages fill the normal Studio composer rather than starting inference. Tool actions require an additional user review and use ordinary schema/revision validation; they do not grant permissions to the coding agent. Declared `state` actions compute locally through the store, with no inference or external-effect authority.
 
 ## Component catalog
 
-The default catalog has **42 components**, with explicitly typed properties and matching native factories:
+The default native catalog has **42 controls**, with explicitly typed properties and matching native factories:
 
 | Category | Components |
 | --- | --- |
@@ -27,7 +29,9 @@ The default catalog has **42 components**, with explicitly typed properties and 
 | Dates/time | DatePicker, CalendarDatePicker, Calendar, TimePicker |
 | Shapes | Rectangle, Ellipse, Line |
 
-Shared properties include sizing, alignment, opacity, visibility/enabling, thickness, accessible names, tooltips, Grid positions/spans, DockPanel placement and Canvas coordinates. Component-specific descriptors cover ranges, selection, item lists, headers, nullable date/time/numeric inputs, and shape geometry. Numeric formats, integer indices, array sizes, selected indices, child types and conflicting content/items are validated before native mutation. A component name is not permission to set arbitrary CLR properties.
+**18 source-only composites** add headings, paragraphs, badges, cards, callouts, metrics, key/value rows, code blocks, tables/rows, bar/line/scatter charts/data points, and forms/fields/submit buttons/validation summaries. They use the `ui:` namespace and lower to the same validated native controls. `xamlg_ui_catalog` returns both catalogs and complete examples. Generated nodes, geometry and validation messages obey the original tree budgets.
+
+Shared properties include sizing, alignment, opacity, visibility/enabling, thickness, accessible names, tooltips, Grid positions/spans, DockPanel placement and Canvas coordinates. Component-specific descriptors cover ranges, selection, item lists, headers, nullable date/time/numeric inputs, and shape geometry. Numeric formats, integer indices, array sizes, selected indices, input text limits, child types and conflicting content/items are validated before native mutation. A component name is not permission to set arbitrary CLR properties.
 
 Extend `UiCatalog` and `UiAvaloniaCatalog` together with trusted application factories, typed setters and input adapters. The native renderer retains controls by stable key, detaches event handlers on retirement and reconciles content/item containers. It validates transport-provided trees independently and recovers the previous snapshot on setter/conversion failure. Custom application controls require corresponding registration; this is not a claim to cover every third-party Avalonia control automatically.
 
@@ -43,7 +47,7 @@ Extend `UiCatalog` and `UiAvaloniaCatalog` together with trusted application fac
 </StackPanel>
 ```
 
-Publish initial state `{ "seats": 8 }`, data `{ "unitPrice": 29 }`, and action `{ "id": "continue", "kind": "message", "text": "Discuss this configuration" }`. `ui:Key` defines identity; `ui:Bind` connects the component's typed input property. `ui:When` controls conditional realization; `ui:Each` and `ui:ItemKey` provide keyed repetition. Collections for `ItemsSource` are bounded arrays of strings; use keyed child elements for richer content.
+Publish initial state `{ "seats": 8 }`, data `{ "unitPrice": 29 }`, and action `{ "id": "continue", "kind": "message", "text": "Discuss this configuration" }`. `ui:Key` defines identity; `ui:Bind` connects the component's typed input property. `ui:When` controls conditional realization; `ui:Each` and `ui:ItemKey` provide keyed repetition. Collections for `ItemsSource` are bounded arrays of strings; use keyed child elements for richer content. Repeated action expressions can read their current innermost `item`, captured inside the owning store rather than supplied by the view.
 
 The default `csharp-pure` interpreter uses Roslyn syntax trees without compiling or loading model code. It supports literals, JSON members/indices, checked decimal arithmetic, comparisons, short-circuit booleans, null coalescing/conditional access, casts, formatted interpolation, pure math/string functions, and bounded collection queries with lexical lambdas. Filtering, projection, ordering, grouping, aggregation and dictionaries share an evaluation budget. It deliberately rejects arbitrary construction, assignment, reflection, file/network access, and unknown calls even in dead branches. Numeric/text properties remain typed: write `"$" + value`, not a bare number, for a text property.
 
@@ -51,13 +55,13 @@ The full C# backend is separate and opt-in. `UiCSharpExpressionCompiler` compile
 
 ```csharp
 {
-    var count = state.GetProperty("n").GetInt32();
+    var count = checked((int)state.GetProperty("n").GetDecimal());
     int Square(int value) => value * value;
     return Enumerable.Range(1, count).Select(Square).Sum().ToString();
 }
 ```
 
-The embedding host must approve a `UiCSharpExecutionRequest`, including exact source/generated source, reference identities and hash. Cached compilation still requires approval. Compilation count and result-size limits do not make arbitrary C# a sandbox. The Studio workflow places this backend only in the explicitly approved execution guest. Full-C# archives require the same selected language/compiler and renewed host approval; default pure stores reject them.
+The embedding host must approve a `UiCSharpExecutionRequest`, including exact source/generated source, reference identities and hash. Cached compilation still requires approval. Compilation count and result-size limits do not make arbitrary C# a sandbox. The Studio workflow places this backend only in the dedicated worker behind the explicitly approved execution guest. Full-C# archives require the same selected language/compiler and renewed host approval; default pure stores reject them.
 
 `x:Class`, arbitrary markup extensions, CLR namespaces, DTDs and executable XAML event handlers are not silently enabled by either expression backend. Trusted complete projects use the existing XamlG project compiler and its explicit preview execution workflow.
 
@@ -65,7 +69,7 @@ The embedding host must approve a `UiCSharpExecutionRequest`, including exact so
 
 A new `UiPublish` uses `expectedRevision=0`, `sequence=1`. Read the current snapshot before subsequent publications, use its exact revision and increment its sequence by one. An `isFinal=false` growing XAML prefix may render complete parsed tags while exposing diagnostics for an unfinished suffix. A final malformed document never replaces the last valid view. Partial provider arguments are not executed speculatively.
 
-Document/data revisions and input-state revisions are separate. State mutations and action preparation check both. Delayed data binds check the source revision and workspace lifetime. Each creation has a session identity distinct from its logical ID: release/recreate cannot attach an old transcript card to a new owner's surface. Local archive replacement preserves session identities for transcript reconnection but issues fresh revisions so old reviews cannot become valid again.
+Document/data revisions and input-state revisions are separate. State mutations and action preparation check both. Delayed data binds check the source revision and workspace lifetime. Each creation has a session identity distinct from its logical ID: release/recreate cannot attach an old transcript card to a new owner's surface. Local archive replacement preserves session identities for transcript reconnection but issues fresh revisions so old reviews cannot become valid again. Local state actions validate and render the full replacement patch before one atomic state-revision commit; no-op actions do not advance revisions.
 
 ## Retained tool data
 
@@ -100,13 +104,15 @@ Pass this to `xamlg_ui_data_bind`. Copy the actual handle/version from discovery
 
 | Tools | Purpose |
 | --- | --- |
-| `xamlg_ui_catalog`, `xamlg_ui_present`, `xamlg_ui_native_present` | Discover the schema and publish a portable or native MCP response |
-| `xamlg_ui_read`, `xamlg_ui_state`, `xamlg_ui_data` | Inspect and update committed UI state/data |
+| `xamlg_ui_catalog`, `xamlg_ui_present`, `xamlg_ui_native_present` | Discover schemas/examples and publish a portable or native MCP response |
+| `xamlg_ui_read`, `xamlg_ui_state`, `xamlg_ui_state_action`, `xamlg_ui_data` | Inspect/update state/data and apply declared local actions |
 | `xamlg_ui_action`, `xamlg_ui_release`, `xamlg_ui_export` | Prepare inert actions, retire sessions and export source |
 | `xamlg_ui_data_put`, `xamlg_ui_data_list`, `xamlg_ui_data_read`, `xamlg_ui_data_release`, `xamlg_ui_data_bind` | Owner-scoped retained results, bounded resolution and atomic binding |
+| `xamlg_ui_form_read`, `xamlg_ui_form_touch`, `xamlg_ui_form_submit`, `xamlg_ui_form_reset` | Inspect interaction history, record blur, validate submission and reset active form values |
+| `xamlg_ui_form_validate_start`, `xamlg_ui_form_validate` | Start or await a trusted registered asynchronous validator without granting effect permissions |
 | `xamlg_ui_csharp_propose`, `xamlg_ui_csharp_status` | Non-executing full-C# proposals and their owner-approved results |
 
-All 16 tools are discoverable through the shared agent/MCP catalog. Proposal creation is not execution, and a pending proposal must not be described as completed. Persistence and full-C# approval controls are owner UI actions, not permission-bypassing remote tools.
+All 23 tools are discoverable through the full shared agent/MCP registration. Proposal creation is not execution, and a pending proposal must not be described as completed. Persistence and full-C# approval controls are owner UI actions, not permission-bypassing remote tools. A valid form never implies approval of an external action.
 
 ## Embedding
 
@@ -120,10 +126,11 @@ var snapshot = store.Publish(UiExamples.Pricing(), "application-user");
 using var view = new UiAvaloniaSession(
     store, UiPresentation.From(snapshot), "application-user");
 // Put view.View in your Avalonia host; construct/dispose on the UI thread.
+// Declared local state actions are handled by the session.
 view.ActionRequested += call =>
 {
     var intent = store.PrepareAction(call, "application-user");
-    // Review intent and then use your existing authorized command path.
+    // Review external intent and use your existing authorized command path.
 };
 ```
 
@@ -149,7 +156,7 @@ For desktop persistence, choose a private trusted directory outside source contr
 
 ## Exports
 
-Static XAML exports resolved properties, nullable values as `x:Null`, and item values as real XAML objects rather than serialized JSON attributes. It is intentionally a static view. Reactive C# exports reconstruct the intelligent source, state, data and action intents using `UiSessionStore`/`UiAvaloniaSession`, and expose `UpdateData` for new application results. The constructor accepts an optional `UiCompiler` and native catalog for trusted extensions. Export never executes code. The normal package consumer compiles and executes generated C# against NuGet references only.
+Static XAML exports resolved properties, nullable values as `x:Null`, and item values as real XAML objects rather than serialized JSON attributes. Rich composites lower to native controls. It is intentionally a static view. Reactive C# exports reconstruct the intelligent source, state, data and action intents using `UiSessionStore`/`UiAvaloniaSession`, and expose `UpdateData` for new application results. The constructor accepts an optional `UiCompiler` and native catalog for trusted extensions. Export never executes code. The normal package consumer compiles and executes generated C# against NuGet references only.
 
 ## MCP host rendering
 
@@ -163,11 +170,11 @@ Views call tools through their host and never inherit permission from an annotat
 
 ## Validation and provenance
 
-`tests/XamlG.IntelligentUI.Tests` covers pure/full C#, component/input adapters, transactional state/source/data errors, archives and conflicts, owner isolation, native reconciliation, MCP round trips, proposal non-execution and exported XAML loaded by Avalonia. The test-only runtime XAML loader is not a production dependency.
+`tests/XamlG.IntelligentUI.Tests` covers pure/full C#, component/input adapters, composites, contextual actions, form validation, transactional state/source/data errors, archives and conflicts, owner isolation, native reconciliation, MCP round trips, proposal non-execution and exported XAML loaded by Avalonia. The test-only runtime XAML loader is not a production dependency.
 
-`tools/XamlG.Playground/ui-app-tests` executes the real embedded portable resource and IndexedDB adapter, including all 42 default types, nullable/date/selection messages, action reviews, hostile text, parent-source checks, stale sessions, cross-tab writes and reloads.
+`tools/XamlG.Playground/ui-app-tests` executes the real embedded portable resource and IndexedDB adapter, including all 42 default types, nullable/date/selection messages, local state actions, action reviews, hostile text, parent-source checks, stale sessions, cross-tab writes and reloads.
 
-`tools/XamlG.Playground/tests/intelligent-ui.spec.mjs` covers native Studio cards and deterministic OpenAI/Anthropic/Gemini continuations. `intelligent-ui-lifecycle.spec.mjs` covers owner-controlled archive reload/forget, proposed full C# execution in an actual opaque-origin Wasm frame, and the native MCP resource communicating through a real companion and public host protocol. These fixtures use synthetic credentials and do not claim successful paid inference or testing inside every commercial MCP host.
+`tools/XamlG.Playground/tests/intelligent-ui.spec.mjs` covers native Studio cards and deterministic OpenAI/Anthropic/Gemini continuations. `intelligent-ui-lifecycle.spec.mjs` covers owner-controlled archive reload/forget, proposed full C# execution in an actual opaque-origin Wasm frame, and the native MCP resource communicating through a real companion and public host protocol. `intelligent-ui-parity.spec.mjs` additionally covers native local actions, chart updates, surface replacement, form submission and contextual actions after keyed row reordering. These fixtures use synthetic credentials and do not claim successful paid inference or testing inside every commercial MCP host.
 
 ```sh
 dotnet test tests/XamlG.IntelligentUI.Tests -c Release -warnaserror
@@ -176,7 +183,7 @@ npm ci --ignore-scripts --no-audit --no-fund
 npx playwright install chromium
 npx playwright test --config=playwright.ui.config.mjs
 # After a real production publish and Release build of the companion:
-python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/intelligent-ui-lifecycle.spec.mjs
+python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/intelligent-ui-lifecycle.spec.mjs tests/intelligent-ui-parity.spec.mjs
 ```
 
-The browser workflow publishes the real Wasm/Skia app; `WasmBuildNative=false` is not working-browser evidence. Strict builds use warnings as errors and explicit bash pipefail. CI checks apply to their exact commit, not later source. Release-manifest inclusion, successful package validation, merge status, public Pages deployment and NuGet publication are separate facts; current evidence is recorded in PR #18.
+The browser workflow publishes the real Wasm/Skia app; `WasmBuildNative=false` is not working-browser evidence. Strict builds use warnings as errors and explicit bash pipefail. CI checks apply to their exact commit, not later source. Release-manifest inclusion, successful package validation, merge status, public Pages deployment and NuGet publication are separate facts. PR #18 records the preceding implementation; PR #19 tracks the expanded parity work and its exact-commit evidence.
