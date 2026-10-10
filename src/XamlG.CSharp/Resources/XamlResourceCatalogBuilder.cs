@@ -27,7 +27,7 @@ public static class XamlResourceCatalogBuilder
             string uri;
             try { uri = Address(input, types, profile); }
             catch (ArgumentException) { continue; }
-            var context = new BindingContext(input.Syntax, types, profile, options, cancellationToken);
+            var context = BindingContext.CreateSignatureProbe(input.Syntax, types, profile, options, cancellationToken);
             var typeArguments = scope.Directive(root, "TypeArguments");
             var type = context.ResolveTypeAtSource(root.Name, scope, root.NameSpan, typeArguments?.Value, report: false, typeArgumentSpan: typeArguments?.ValueSpan);
             if (type != null)
@@ -65,7 +65,7 @@ public static class XamlResourceCatalogBuilder
         if (type.IsUnboundGenericType || type.TypeArguments.Any(argument => argument is ITypeParameterSymbol || argument is INamedTypeSymbol nested && HasUnboundParameters(nested))) return true;
         return type.ContainingType != null && HasUnboundParameters(type.ContainingType);
     }
-    public static string Address(XamlProjectDocument input, RoslynTypeSystem types, XamlFrameworkProfile profile) => input.ResourceUri == null
-        ? XamlResourceUri.Create(profile.ResourceScheme, types.Compilation.AssemblyName ?? "Application", input.LogicalPath)
-        : XamlResourceUri.Normalize(input.ResourceUri);
+    public static string Address(XamlProjectDocument document, RoslynTypeSystem types, XamlFrameworkProfile profile) =>
+        document.ResourceUri == null ? XamlResourceUri.Create(profile.ResourceScheme, types.Compilation.AssemblyName ?? "Application", document.LogicalPath)
+            : XamlResourceUri.Normalize(document.ResourceUri);
 }

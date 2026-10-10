@@ -11,8 +11,6 @@ internal static class RuntimeNamespaceResolver
     public static ImmutableArray<XmlNamespaceMapping> Collect(BindingContext context)
     {
         var mappings = context.Types.NamespaceMappings.ToBuilder();
-        var assemblies = ImmutableArray.Create(context.Types.Compilation.Assembly)
-            .AddRange(context.Types.Compilation.SourceModule.ReferencedAssemblySymbols);
         var declarations = context.Syntax.Root?.DescendantsAndSelf()
             .SelectMany(e => e.Attributes).Where(a => a.IsNamespace).Select(a => a.Value).Distinct(StringComparer.Ordinal)
             ?? Enumerable.Empty<string>();
