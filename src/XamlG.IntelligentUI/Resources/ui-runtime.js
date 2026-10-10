@@ -13,7 +13,7 @@ const notify=(method,params)=>post({jsonrpc:'2.0',method,params});
 const current=generation=>!disposed&&epoch===generation;
 function request(method,params){
   if(disposed||pending.size>=16)return Promise.reject(new Error('UI request limit reached.'));
-  const id=++nextId;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(id);reject(new Error('The host request timed out.'));},30000);pending.set(id,{resolve,reject,timer,method,params});post({jsonrpc:'2.0',id,method,params});});
+  const id=++nextId;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{pending.delete(id);reject(new Error('The host request timed out.'));},30000);pending.set(id,{resolve,reject,timer,method});post({jsonrpc:'2.0',id,method,params});});
 }
 async function tool(name,args){
   if(!ready||!capabilities.serverTools)throw new Error('This host does not allow UI tool calls. Use the text fallback.');
