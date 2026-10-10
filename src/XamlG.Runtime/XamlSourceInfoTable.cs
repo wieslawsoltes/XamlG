@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Threading;
 
 namespace XamlG.Runtime;
@@ -42,8 +41,8 @@ public sealed class XamlSourceInfoTable
         while (offset < records.Length)
         {
             var end = records.IndexOf(':', offset);
-            if (end < 0 || !int.TryParse(records.Substring(offset, end - offset), NumberStyles.None,
-                CultureInfo.InvariantCulture, out var length) || length > records.Length - end - 1)
+            if (end < 0 || !XamlMetadataNumbers.TryRead(records, offset, end, allowSign: false, out var length) ||
+                length > records.Length - end - 1)
                 throw new FormatException("Invalid source metadata record length.");
             offset = end + 1;
             spans.Add((offset, length));
@@ -82,8 +81,8 @@ public sealed class XamlSourceInfoTable
         int Number()
         {
             var end = record.IndexOf(':', offset, limit - offset);
-            if (end < 0 || !int.TryParse(record.Substring(offset, end - offset), NumberStyles.AllowLeadingSign,
-                CultureInfo.InvariantCulture, out var value)) throw new FormatException("Invalid source metadata number.");
+            if (end < 0 || !XamlMetadataNumbers.TryRead(record, offset, end, allowSign: true, out var value))
+                throw new FormatException("Invalid source metadata number.");
             offset = end + 1;
             return value;
         }
@@ -113,6 +112,6 @@ public sealed class XamlSourceInfoTable
             declarations.Add(key, value);
         }
         if (offset != limit) throw new FormatException("Unexpected trailing source metadata.");
-        return new(_path, start, length, identity, fingerprint, declarations, _version);
+        return XamlSourceInfo.FromDecoded(_path, start, length, identity, fingerprint, declarations, _version);
     }
 }

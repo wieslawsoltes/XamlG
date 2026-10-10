@@ -269,6 +269,7 @@ public partial class App
         _startupCancellation.Dispose();
         CancelAutomaticUpdate();
         RetireDocumentBuffers();
+        await DisposeGitAsync();
         if (_dockHooks != null) { await _dockHooks.InvokeVoidAsync("dispose"); await _dockHooks.DisposeAsync(); }
         _dockReference?.Dispose();
         if (_shellHooks != null) { await _shellHooks.InvokeVoidAsync("dispose"); await _shellHooks.DisposeAsync(); }

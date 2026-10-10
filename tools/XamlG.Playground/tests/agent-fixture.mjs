@@ -118,7 +118,7 @@ export async function withAgentWorkbench({ page, request, baseURL }, handle, exe
   }
 }
 
-export async function createAgentTask(pane, name, model = 'test-model') {
+export async function createAgentTask(pane, name, model = 'test-model', { directSend = false } = {}) {
   await agentSection(pane, 'Connection');
   await pane.getByLabel('Model', { exact: true }).fill(model);
   await agentSection(pane, 'Tasks');
@@ -127,13 +127,19 @@ export async function createAgentTask(pane, name, model = 'test-model') {
   await create.getByLabel('Task name', { exact: true }).fill(name);
   await create.getByRole('button', { name: 'Create task', exact: true }).click();
   await expect(pane.getByLabel('Rename task', { exact: true })).toHaveValue(name);
+  if (!directSend) {
+    await agentSection(pane, 'Permissions');
+    await pane.getByLabel('Review every run before sending').check();
+    await pane.getByLabel('Automatically send queued follow-ups').uncheck();
+    await agentSection(pane, 'Conversation');
+  }
   return pane.getByLabel('Task', { exact: true }).inputValue();
 }
 
 export async function reviewAgentRun(page, pane, text) {
   await agentSection(pane, 'Conversation');
   await pane.getByLabel('Message', { exact: true }).fill(text);
-  await pane.getByRole('button', { name: 'Run', exact: true }).click();
+  await pane.getByRole('button', { name: 'Send message', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Review agent run' });
   await expect(review).toContainText(text);
   await review.getByRole('button', { name: 'Confirm run', exact: true }).click();
@@ -149,4 +155,9 @@ export async function completedTask(api, id) {
     const task = (await api('state')).tasks.find(task => task.id === id);
     return task.status === 'completed' && task.events.at(-1)?.kind === 'changes';
   }).toBe(true);
+}
+
+export async function composerActions(pane) {
+  const menu = pane.locator('.agent-composer-more');
+  if (await menu.getAttribute('open') === null) await menu.locator('summary').click();
 }

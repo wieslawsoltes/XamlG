@@ -40,7 +40,7 @@
     private bool _error;
     private bool IsTool => Kind.StartsWith("tool", StringComparison.Ordinal);
     private string Title => IsTool ? ToolName == null ? "Tool result" : Humanize(ToolName.Replace("xamlg_", "", StringComparison.Ordinal)) : Humanize(Kind);
-    private string Status => _error ? "Failed" : Kind == "tool_started" ? Historical ? "Started" : Running ? "Running" : "Interrupted" : "Completed";
+    private string Status => Kind == "tool_skipped" ? "Skipped" : _error ? "Failed" : Kind == "tool_started" ? Historical ? "Started" : Running ? "Running" : "Interrupted" : "Completed";
     private string PrettyText => _value != null && ResultPreview == null ? JsonSerializer.Serialize(_value, new JsonSerializerOptions { WriteIndented = true }) : Text;
     protected override void OnParametersSet()
     {

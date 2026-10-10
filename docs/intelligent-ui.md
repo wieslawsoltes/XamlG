@@ -4,7 +4,7 @@ XamlG provides interactive agent responses using Avalonia XAML, C# expressions, 
 
 The architectural reference is [OpenUI's article](https://www.openui.com/blog/how-chatgpt-intelligent-ui-works). It is a third-party observation, not an OpenAI protocol specification. Public interoperability targets [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview); no undocumented ChatGPT wire format is guessed or advertised as compatible.
 
-See [rich authoring and the parity matrix](intelligent-ui-parity.md) for local state actions, row-scoped actions, the 18 response composites, form validation, examples and explicit remaining scope.
+See [rich authoring and the parity matrix](intelligent-ui-parity.md) for local state actions, row-scoped actions, the 18 response composites, form validation, examples and explicit remaining scope. The [Avalonia fidelity and contract audit](intelligent-ui-avalonia-fidelity.md) covers viewport/lifetime fixes, drawing/typography/scrolling capabilities, public host context, literal grammars and the remaining work toward broader Avalonia parity.
 
 ## Studio workflows
 
@@ -18,20 +18,22 @@ Direct provider agents and paired companion agents share the catalog. The provid
 
 ## Component catalog
 
-The default native catalog has **42 controls**, with explicitly typed properties and matching native factories:
+The default native catalog has **47 controls**, with explicitly typed properties and matching native factories:
 
 | Category | Components |
 | --- | --- |
-| Layout | StackPanel, Grid, Panel, Canvas, WrapPanel, DockPanel, UniformGrid, Border, ScrollViewer, Viewbox, ContentControl, UserControl |
-| Text/actions | TextBlock, SelectableTextBlock, Button, RepeatButton, Separator |
+| Layout | StackPanel, Grid, Panel, Canvas, WrapPanel, DockPanel, UniformGrid, Border, ScrollViewer, Viewbox, LayoutTransformControl, ContentControl, UserControl |
+| Text/actions | TextBlock, SelectableTextBlock, Label, Button, RepeatButton, Separator |
 | Inputs/ranges | TextBox, Slider, CheckBox, ToggleButton, RadioButton, ToggleSwitch, ProgressBar, NumericUpDown |
 | Selection/hierarchy | ItemsControl, ListBox, ListBoxItem, ComboBox, ComboBoxItem, TabControl, TabItem, TreeView, TreeViewItem, Expander |
 | Dates/time | DatePicker, CalendarDatePicker, Calendar, TimePicker |
-| Shapes | Rectangle, Ellipse, Line |
+| Shapes | Rectangle, Ellipse, Line, Path, Polyline, Polygon |
 
 **18 source-only composites** add headings, paragraphs, badges, cards, callouts, metrics, key/value rows, code blocks, tables/rows, bar/line/scatter charts/data points, and forms/fields/submit buttons/validation summaries. They use the `ui:` namespace and lower to the same validated native controls. `xamlg_ui_catalog` returns both catalogs and complete examples. Generated nodes, geometry and validation messages obey the original tree budgets.
 
-Shared properties include sizing, alignment, opacity, visibility/enabling, thickness, accessible names, tooltips, Grid positions/spans, DockPanel placement and Canvas coordinates. Component-specific descriptors cover ranges, selection, item lists, headers, nullable date/time/numeric inputs, and shape geometry. Numeric formats, integer indices, array sizes, selected indices, input text limits, child types and conflicting content/items are validated before native mutation. A component name is not permission to set arbitrary CLR properties.
+Shared properties include sizing, alignment, opacity, visibility/enabling, signed margins, accessible names, tooltips, Grid positions/spans, DockPanel placement, Canvas coordinates, Z-order, hit testing, layout rounding, flow direction, matrices, transform origins and geometry clipping. Registered controls additionally expose typed typography, content alignment, scrolling policies and shape pen properties. Component-specific descriptors cover ranges, selection, item lists, headers, nullable date/time/numeric inputs, and shape geometry. Numeric formats, integer indices, array sizes, selected indices, input text limits, child types and conflicting content/items are validated before native mutation. A component name is not permission to set arbitrary CLR properties.
+
+Drawing matrices use `matrix(m11,m12,m21,m22,offsetX,offsetY)` or `none`; geometry and point lists use bounded grammars documented in the [fidelity audit](intelligent-ui-avalonia-fidelity.md#literal-grammars-and-budgets). `UiDrawingExamples.LayoutAndDrawing()` and catalog discovery's `drawingExample` demonstrate a finite viewport, scrolling and the new vector controls. The default catalog still does not expose all Avalonia templates, resources, controls or rendering APIs.
 
 Extend `UiCatalog` and `UiAvaloniaCatalog` together with trusted application factories, typed setters and input adapters. The native renderer retains controls by stable key, detaches event handlers on retirement and reconciles content/item containers. It validates transport-provided trees independently and recovers the previous snapshot on setter/conversion failure. Custom application controls require corresponding registration; this is not a claim to cover every third-party Avalonia control automatically.
 
@@ -162,7 +164,7 @@ Static XAML exports resolved properties, nullable values as `x:Null`, and item v
 
 Both resources use `text/html;profile=mcp-app`, `_meta.ui.resourceUri` and extension identifier `io.modelcontextprotocol/ui`. The view/host handshake targets MCP Apps `2026-01-26`; the existing official MCP SDK continues to handle transport versions independently.
 
-**Portable** (`ui://xamlg/intelligent-ui/v1`) is a small trusted DOM projection covering the default catalog with typed inputs, safe text nodes, shapes and content/selection containers. Its CSP denies external network, scripts and frames. CSS layouts and browser-native widgets are functional projections, not pixel-equivalent Avalonia rendering.
+**Portable** (`ui://xamlg/intelligent-ui/v1`) is a small trusted DOM projection covering the default catalog with typed inputs, safe text nodes, shapes and content/selection containers. Its CSP denies external network, scripts and frames. CSS layouts and browser-native widgets are functional projections, not pixel-equivalent Avalonia rendering. The portable host-context adapter handles partial theme/style-token updates, locale/timezone metadata, safe-area insets and bounded fixed/maximum container dimensions without enabling arbitrary stylesheets or remote font assets.
 
 **Native** (`ui://xamlg/intelligent-ui/native-v1`) uses an outer MCP Apps bridge and a separately sandboxed URL guest running actual Avalonia/Skia/Wasm. Its resource metadata declares the precise nested frame origin. The outer document needs no `unsafe-eval`; the inner URL document has a deployment-relative runtime CSP. Only the actual parent/guest windows can exchange bounded messages. Native controls use the same renderer as Studio, including theme, state and disposal behavior. A host may restrict nested frames, Wasm or asset loading; the portable resource and computed text remain the interoperability fallback. Native rendering is not a promise of identical pixels across differing fonts, devices, scaling or host policies.
 
@@ -172,7 +174,7 @@ Views call tools through their host and never inherit permission from an annotat
 
 `tests/XamlG.IntelligentUI.Tests` covers pure/full C#, component/input adapters, composites, contextual actions, form validation, transactional state/source/data errors, archives and conflicts, owner isolation, native reconciliation, MCP round trips, proposal non-execution and exported XAML loaded by Avalonia. The test-only runtime XAML loader is not a production dependency.
 
-`tools/XamlG.Playground/ui-app-tests` executes the real embedded portable resource and IndexedDB adapter, including all 42 default types, nullable/date/selection messages, local state actions, action reviews, hostile text, parent-source checks, stale sessions, cross-tab writes and reloads.
+`tools/XamlG.Playground/ui-app-tests` executes the real embedded portable resource and IndexedDB adapter, including all 47 default types, nullable/date/selection messages, local state actions, action reviews, hostile text, parent-source/origin checks, stale sessions, cross-tab writes and reloads. Fidelity tests additionally cover vector properties, keyed visual resets, layout transforms, editing tabs, host context and nested content alignment.
 
 `tools/XamlG.Playground/tests/intelligent-ui.spec.mjs` covers native Studio cards and deterministic OpenAI/Anthropic/Gemini continuations. `intelligent-ui-lifecycle.spec.mjs` covers owner-controlled archive reload/forget, proposed full C# execution in an actual opaque-origin Wasm frame, and the native MCP resource communicating through a real companion and public host protocol. `intelligent-ui-parity.spec.mjs` additionally covers native local actions, chart updates, surface replacement, form submission and contextual actions after keyed row reordering. These fixtures use synthetic credentials and do not claim successful paid inference or testing inside every commercial MCP host.
 
@@ -186,4 +188,4 @@ npx playwright test --config=playwright.ui.config.mjs
 python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/intelligent-ui-lifecycle.spec.mjs tests/intelligent-ui-parity.spec.mjs
 ```
 
-The browser workflow publishes the real Wasm/Skia app; `WasmBuildNative=false` is not working-browser evidence. Strict builds use warnings as errors and explicit bash pipefail. CI checks apply to their exact commit, not later source. Release-manifest inclusion, successful package validation, merge status, public Pages deployment and NuGet publication are separate facts. PR #18 records the preceding implementation; PR #19 tracks the expanded parity work and its exact-commit evidence.
+The browser workflow publishes the real Wasm/Skia app; `WasmBuildNative=false` is not working-browser evidence. Strict builds use warnings as errors and explicit bash pipefail. CI checks apply to their exact commit, not later source. Release-manifest inclusion, successful package validation, merge status, public Pages deployment and NuGet publication are separate facts. PR #18 records the preceding implementation; PR #19 tracks rich-authoring parity, and PR #22 tracks the Avalonia fidelity audit, extensions and exact-revision evidence.

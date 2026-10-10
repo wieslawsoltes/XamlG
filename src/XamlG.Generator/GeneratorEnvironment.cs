@@ -10,6 +10,7 @@ internal sealed class GeneratorEnvironment
     public GeneratorEnvironment(CSharpCompilation compilation, GeneratorOptions options)
     {
         Compilation = compilation; Options = options;
+        if (!options.Enabled) { Profile = XamlFrameworkProfile.Portable; return; }
         try
         {
             Profile = KnownFrameworkProfiles.Select(compilation, options.Framework, options.CompileBindingsByDefault, options.CreateSourceInfo);

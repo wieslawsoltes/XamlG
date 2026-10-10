@@ -114,6 +114,10 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await workbench.getByRole('button', { name: 'Create task', exact: true }).click();
     await agentSection(workbench, 'Permissions');
     await workbench.getByLabel('Task permission profile').selectOption('autoEdit');
+  await agentSection(workbench, 'Permissions');
+  await workbench.getByLabel('Review every run before sending').check();
+  await workbench.getByLabel('Automatically send queued follow-ups').uncheck();
+  await agentSection(workbench, 'Conversation');
     await page.route('**/agent/draft', async route => {
       const response = await route.fetch();
       await composerDraftResponse.promise;
@@ -151,11 +155,13 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await expect.poll(() => requests.length).toBe(1);
     await agentSection(workbench, 'Conversation');
     await workbench.getByLabel('Message', { exact: true }).fill('First queued follow-up');
+    if (await workbench.locator('.agent-composer-more').getAttribute('open') === null) await workbench.locator('.agent-composer-more > summary').click();
     await workbench.getByRole('button', { name: 'Queue follow-up', exact: true }).click();
     await agentSection(workbench, 'Conversation');
     await expect(workbench.getByLabel('Message', { exact: true })).toHaveValue('');
     await agentSection(workbench, 'Conversation');
     await workbench.getByLabel('Message', { exact: true }).fill('Keep this message queued');
+    if (await workbench.locator('.agent-composer-more').getAttribute('open') === null) await workbench.locator('.agent-composer-more > summary').click();
     await workbench.getByRole('button', { name: 'Queue follow-up', exact: true }).click();
     await expect(workbench.locator('.agent-queue summary')).toContainText('2 queued follow-ups');
     await page.route('**/agent/queue_move', async route => {
@@ -294,6 +300,7 @@ test(`workbench runs ${provider} official SDK tools, reviews the source change a
     await page.getByRole('dialog', { name: 'Review source restore' }).getByRole('button', { name: 'Confirm source restore', exact: true }).click();
     await expect.poll(async () => (await page.evaluate(() => window.xamlgAutomation.call('xamlg_document_read', { path: 'View.axaml' }))).text).toBe(original.text);
     await agentSection(workbench, 'Conversation');
+    if (await workbench.locator('.agent-composer-more').getAttribute('open') === null) await workbench.locator('.agent-composer-more > summary').click();
     await workbench.getByRole('button', { name: 'Compact context' }).click();
     await expect(review).toContainText('Review context compaction');
     expect(requests).toHaveLength(5);

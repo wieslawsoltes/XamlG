@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="agent-workbench.css" />
 <link rel="stylesheet" href="intelligent-ui.css" />
 <link rel="stylesheet" href="runtime-workbench.css" />
+<link rel="stylesheet" href="git/workbench.css" />
 <link rel="stylesheet" href="solution-workspace.css" />
 <SolutionWorkspaceLifetime Session="_solutionSession" Changed="SolutionWorkspaceChangedAsync" />
 <div class="studio" inert="@(_renameVisible || _actionsVisible || _fileMoveVisible || _solutionWizardVisible)" data-ready="@(_ready ? "true" : "false")">
@@ -86,6 +87,7 @@
             <span class="active-document" title="@_activeDocumentPath">@_activeDocumentPath</span>
         }
         <span class="toolbar-spacer"></span>
+        <button @onclick='() => ShowPaneAsync("git-repositories")' disabled="@(!_dockReady)" data-testid="git-workbench">Git</button>
         <button @onclick='() => ShowPaneAsync("agent")' disabled="@(!_dockReady)" data-testid="agent-workbench">Coding agent</button>
         <button @onclick='() => ShowPaneAsync("agent-access")' disabled="@(!_dockReady)" data-testid="agent-access"><span class="@(_sharing ? "success-dot" : "access-dot")"></span><span>Agent access</span></button>
     </div>
@@ -111,6 +113,16 @@
     </BrowserTemplate>
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("workspace-output")" Context="pane">
         <WorkspaceOutput Session="_solutionSession" SourceRequested="OpenWorkspaceFileAsync" />
+    </BrowserTemplate>
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("git-tool")" Context="pane">
+        <GitTool SessionId="@_panePrefix" Kind="@(pane.GetProperty("ContentId").GetString()!)" OpenRequested="OpenGitDocumentAsync" />
+    </BrowserTemplate>
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("git-document")" Context="pane">
+        @if (_gitDocuments.TryGetValue(pane.GetProperty("ContentId").GetString()!, out var gitDocument))
+        {
+            <GitDocument @key="gitDocument.Id" SessionId="@_panePrefix" DocumentId="@gitDocument.Id"
+                OpenRequested="OpenGitDocumentAsync" ImportRequested="ImportGitSourceAsync" ReadStudioRequested="ReadStudioSourceAsync" />
+        }
     </BrowserTemplate>
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("document")" Context="pane">
         @if (DocumentForId(pane.GetProperty("ContentId").GetString()!) is { } buffer)

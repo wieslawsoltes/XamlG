@@ -88,3 +88,76 @@ jobs:
           retention-days: 7
           path: artifacts/source
           if-no-files-found: error
+  performance:
+    name: Compiler performance comparison
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DOTNET_PROCESSOR_COUNT: 2
+      BASELINE_REF: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect compiler and runtime changes
+        id: changes
+        run: |
+          python3 - <<'PY'
+          import os, subprocess
+          paths = ['src/XamlG.Syntax', 'src/XamlG.Roslyn', 'src/XamlG.Compiler', 'src/XamlG.CSharp',
+                   'src/XamlG.Frameworks', 'src/XamlG.Generator', 'src/XamlG.Runtime',
+                   'tools/XamlG.PerformanceProbe', 'scripts/compare-fast-paths.py',
+                   'scripts/compare-controlcatalog-compilers.py', 'scripts/verify-compiler-performance.py',
+                   'scripts/test-compiler-performance-gates.py', '.github/workflows/ci.yml']
+          changed = subprocess.check_output(['git', 'diff', '--name-only', os.environ['BASELINE_REF'], 'HEAD', '--', *paths], text=True)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('run=' + str(bool(changed.strip())).lower() + '\n')
+          print(changed)
+          PY
+      - uses: actions/setup-dotnet@v4
+        if: steps.changes.outputs.run == 'true'
+        with:
+          dotnet-version: '10.0.401'
+      - name: Compare parser allocation and runtime initialization against the PR baseline
+        if: steps.changes.outputs.run == 'true'
+        run: python3 scripts/compare-fast-paths.py --baseline-ref "$BASELINE_REF" --pairs 3
+      - name: Prepare pinned catalog and compare generator and generated C# cost
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          python3 scripts/prepare-controlcatalog.py
+          python3 scripts/compare-controlcatalog-compilers.py --baseline-ref "$BASELINE_REF" --iterations 3
+      - name: Enforce complete semantic and byte-identical generated-source evidence
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          python3 scripts/test-compiler-performance-gates.py
+          python3 scripts/verify-compiler-performance.py --baseline "$BASELINE_REF" --candidate "$(git rev-parse HEAD)" --require-identical-sources
+      - name: Publish measurements and generated-source identities
+        if: ${{ !cancelled() && steps.changes.outputs.run == 'true' }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          summaries = []
+          for directory in ['fast-path-comparison', 'controlcatalog-comparison']:
+              path = Path('artifacts') / directory / 'summary.md'
+              if path.exists(): summaries.append(path.read_text())
+          path = Path('artifacts/controlcatalog-comparison/results.json')
+          if path.exists():
+              for project in json.loads(path.read_text())['projects']:
+                  before, after = project['sources']['before'], project['sources']['after']
+                  line = f"{project['project']}: generated source SHA256 maps equal = {before['sha256'] == after['sha256']}; files {before['files']} -> {after['files']}"
+                  print(line)
+                  summaries.append(line)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('\n\n'.join(summaries))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.changes.outputs.run == 'true' }}
+        with:
+          name: compiler-performance-comparison
+          retention-days: 14
+          path: |
+            artifacts/fast-path-comparison
+            artifacts/controlcatalog-comparison

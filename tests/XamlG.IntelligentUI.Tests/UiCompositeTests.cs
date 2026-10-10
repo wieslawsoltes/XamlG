@@ -14,9 +14,10 @@ public sealed class UiCompositeTests
     [Fact]
     public void Composite_catalog_is_separate_from_native_control_contract()
     {
-        Assert.Equal(42, UiCatalog.Default.Components.Count);
+        Assert.Equal(47, UiCatalog.Default.Components.Count);
         Assert.Equal(18, UiCompositeCatalog.Components.Count);
         Assert.All(UiCompositeCatalog.Components.Values, component => Assert.StartsWith("ui:", component.Name));
+        Assert.Empty(UiCatalog.Default.Components.Keys.Intersect(UiCompositeCatalog.Components.Keys, StringComparer.Ordinal));
     }
 
     [Fact]

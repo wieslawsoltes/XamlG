@@ -18,6 +18,11 @@ public partial class App
         new("runtime-styles", "Styles", DefaultOpen: false), new("runtime-resources", "Runtime resources", DefaultOpen: false),
         new("runtime-events", "Events", DefaultOpen: false), new("runtime-input", "Input", DefaultOpen: false),
         new("runtime-accessibility", "Accessibility", DefaultOpen: false), new("runtime-tools", "Runtime tools", DefaultOpen: false),
+        new("git-repositories", "Git repositories", "Left", DefaultOpen: false),
+        new("git-changes", "Git changes", "Right", DefaultOpen: false),
+        new("git-branches", "Git branches and stashes", "Left", DefaultOpen: false),
+        new("git-history", "Git history", DefaultOpen: false),
+        new("git-github", "GitHub", "Right", DefaultOpen: false),
         new("agent", "Coding agent", "Right"), new("agent-access", "Agent access", "Right")
     ];
     private readonly string _panePrefix = "xamlg-" + Guid.NewGuid().ToString("N") + "-";
@@ -34,7 +39,7 @@ public partial class App
     private DockContent PaneContent(string id, string title, string template) => new()
     {
         ContentId = id, Title = title, CanClose = id != "preview",
-        Content = BrowserFunction.RazorTemplate(PaneTemplate(template is "explorer" or "preview" or "problems" or "agent" or "agent-access" or "document" or "workspace-document" or "workspace-output" ? template : "inspector"), fields: ["ContentId", "Title"])
+        Content = BrowserFunction.RazorTemplate(PaneTemplate(template == "git-document" ? "git-document" : template.StartsWith("git-", StringComparison.Ordinal) ? "git-tool" : template is "explorer" or "preview" or "problems" or "agent" or "agent-access" or "document" or "workspace-document" or "workspace-output" ? template : "inspector"), fields: ["ContentId", "Title"])
     };
     private async Task InitializeDockyardAsync(IJSObjectReference manager)
     {
@@ -81,7 +86,7 @@ public partial class App
         catch (Exception error) { Report(error); }
         StateHasChanged();
     }
-    private string[] AllowedDockIds() => ToolPanes.Select(tool => tool.Id).Concat(AllDocumentIds()).ToArray();
+    private string[] AllowedDockIds() => ToolPanes.Select(tool => tool.Id).Concat(AllDocumentIds()).Concat(_gitDocuments.Keys).ToArray();
     private async Task RestoreInitialDockLayoutAsync()
     {
         if (!_dockReady || _initialLayoutRestored || _module == null) return;

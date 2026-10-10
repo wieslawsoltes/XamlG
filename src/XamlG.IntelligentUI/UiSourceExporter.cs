@@ -16,12 +16,17 @@ public static class UiSourceExporter
         {
             var element = new XElement(ns + node.Type);
             var items = new List<XElement>();
+            var values = new List<XElement>();
             foreach (var property in node.Properties.OrderBy(property => property.Key, StringComparer.Ordinal))
             {
                 if (property.Key == "ItemsSource" && property.Value.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var item in property.Value.EnumerateArray()) items.Add(new XElement(x + "String", item.GetString()));
                     continue;
+                }
+                if (UiBrushValues.IsProperty(property.Key) && property.Value.ValueKind == JsonValueKind.Object)
+                {
+                    values.Add(new XElement(ns + (node.Type + "." + property.Key), UiBrushValues.ToXaml(property.Value))); continue;
                 }
                 var value = property.Value.ValueKind switch
                 {
@@ -32,6 +37,27 @@ public static class UiSourceExporter
                 };
                 if (property.Value.ValueKind == JsonValueKind.String && value.StartsWith('{')) value = "{}" + value;
                 element.Add(new XAttribute(property.Key, value));
+            }
+            foreach (var value in values) element.Add(value);
+            if (!node.Styles.IsDefaultOrEmpty)
+            {
+                var styles = new XElement(ns + (node.Type + ".Styles"));
+                foreach (var rule in node.Styles)
+                {
+                    var style = new XElement(ns + "Style", new XAttribute("Selector", rule.Selector));
+                    foreach (var setter in rule.Properties.OrderBy(p => p.Key, StringComparer.Ordinal))
+                    {
+                        if (UiBrushValues.IsProperty(setter.Key) && setter.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Null)
+                        {
+                            style.Add(new XElement(ns + "Setter", new XAttribute("Property", setter.Key), new XElement(ns + "Setter.Value", UiBrushValues.ToXaml(setter.Value)))); continue;
+                        }
+                        var value = setter.Value.ValueKind == JsonValueKind.String ? setter.Value.GetString()! : setter.Value.GetRawText();
+                        if (value.StartsWith('{')) value = "{}" + value;
+                        style.Add(new XElement(ns + "Setter", new XAttribute("Property", setter.Key), new XAttribute("Value", value)));
+                    }
+                    styles.Add(style);
+                }
+                element.Add(styles);
             }
             foreach (var item in items) element.Add(item);
             foreach (var child in node.Children) element.Add(Convert(child));

@@ -53,9 +53,9 @@ public partial class AgentWorkbench
         try
         {
             var runtime = BrowserRuntime ?? throw new InvalidOperationException("The browser agent session is not ready.");
-            if (action is "run" or "compact" or "models" or "model_choices")
+            if (action is "run" or "compact" or "models" or "model_choices" || action == "send" && !runtime.Session.IsRunning)
             {
-                if (action is "run" or "compact" && Selected?.ProviderId != _provider)
+                if (action is "run" or "compact" or "send" && Selected?.ProviderId != _provider)
                     throw new InvalidOperationException("Select the task's provider before entering its API key.");
                 if (IsDirect) runtime.Configure(_provider, _apiKey, _acceptBrowserExposure);
                 else runtime.ConfigureRelay(_provider, _relayUrl, _relayToken);

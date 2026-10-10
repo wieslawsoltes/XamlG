@@ -12,6 +12,8 @@ public sealed record XamlCompilerOptions
     public bool GenerateBuildMethod { get; init; } = true;
     public bool GenerateInitializeComponent { get; init; } = true;
     public bool GenerateNamedFields { get; init; } = true;
+    /// <summary>Share repeated scalar-parameter markup assignment bodies as ordinary typed methods.</summary>
+    public bool ShareMarkupAssignments { get; init; } = true;
     public bool AdaptLoaderCalls { get; init; } = true;
     public XamlLoaderConfiguration? SourceLoader { get; init; }
     public string GeneratedNamespace { get; init; } = "XamlG.Generated";

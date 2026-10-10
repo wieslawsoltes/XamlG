@@ -8,8 +8,13 @@
     "release.yml",
     "controlcatalog.yml",
     "intelligent-ui.yml",
+    "git-workspaces.yml",
     "workspaces.yml"
   ],
-  "diagnostic": ["compiler-profile.yml", "workspace-integration-repair.yml"],
-  "deployment": ["pages.yml"]
+  "diagnostic": [
+    "compiler-profile.yml"
+  ],
+  "deployment": [
+    "pages.yml"
+  ]
 }

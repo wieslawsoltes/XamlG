@@ -50,6 +50,8 @@ public partial class AgentWorkbench
                 foreach (var (key, id) in saved.Selected) LastSelectedTasks[key] = id;
                 foreach (var (key, backend) in saved.TaskConnections) TaskConnections[key] = backend;
                 foreach (var (key, editor) in saved.QueueEditors) _queueEditors[key] = editor;
+                foreach (var (key, submission) in saved.Submissions ?? []) Submissions[key] = submission;
+                foreach (var (key, revision) in saved.DraftVersions ?? []) DraftVersions[key] = revision;
                 _toolFilter = saved.ToolFilter; _toolScope = saved.ToolScope;
                 _agentActivityFilter = saved.ActivityFilter; _activityCurrentTask = saved.ActivityCurrentTask;
                 _rememberNewAccount = saved.RememberNewAccount;
@@ -93,7 +95,7 @@ public partial class AgentWorkbench
             _taskPreferences, ComposerDrafts, LastSelectedTasks, TaskConnections, _queueEditors,
             _toolFilter, _toolScope, _agentActivityFilter, _activityCurrentTask, _rememberNewAccount,
             ReviewStates.ToDictionary(pair => pair.Key, pair => new SavedReview(pair.Value.LatestRun, pair.Value.Unified,
-                pair.Value.Path, pair.Value.Feedback, pair.Value.FeedbackPath, pair.Value.LineLimit)));
+                pair.Value.Path, pair.Value.Feedback, pair.Value.FeedbackPath, pair.Value.LineLimit)), Submissions, DraftVersions);
         var text = JsonSerializer.Serialize(saved, SavedJson);
         if (text == _lastSavedUi || text == _failedSavedUi) return;
         try
@@ -109,5 +111,5 @@ public partial class AgentWorkbench
         Dictionary<string, SavedConnection> Connections, Dictionary<string, TaskPreferences> Preferences,
         Dictionary<string, string> Drafts, Dictionary<string, string> Selected, Dictionary<string, string> TaskConnections,
         Dictionary<string, QueueEditor> QueueEditors, string ToolFilter, string ToolScope, string ActivityFilter, bool ActivityCurrentTask, bool RememberNewAccount,
-        Dictionary<string, SavedReview>? Reviews = null);
+        Dictionary<string, SavedReview>? Reviews = null, Dictionary<string, ComposerSubmission>? Submissions = null, Dictionary<string, long>? DraftVersions = null);
 }

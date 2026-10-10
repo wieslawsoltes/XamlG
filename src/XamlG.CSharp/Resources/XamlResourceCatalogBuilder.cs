@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Threading;
+using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
 using XamlG.Compiler.Resources;
@@ -11,9 +12,12 @@ namespace XamlG.CSharp.Resources;
 /// <summary>Indexes local root signatures and referenced export metadata without compiling or executing a factory.</summary>
 public static class XamlResourceCatalogBuilder
 {
+    private static readonly ConditionalWeakTable<RoslynTypeSystem, Exports> ReferencedExports = new();
+    private sealed record Exports(ImmutableArray<XamlResourceDescriptor> Resources);
     public static XamlResourceCatalog Create(IReadOnlyList<XamlProjectDocument> documents, RoslynTypeSystem types,
         XamlFrameworkProfile profile, XamlCompilerOptions options, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var resources = new List<XamlResourceDescriptor>();
         foreach (var input in documents)
         {
@@ -27,7 +31,12 @@ public static class XamlResourceCatalogBuilder
             string uri;
             try { uri = Address(input, types, profile); }
             catch (ArgumentException) { continue; }
-            var context = new BindingContext(input.Syntax, types, profile, options, cancellationToken);
+            // Custom rules can observe eager runtime diagnostics before reading
+            // Runtime. Preserve their historical context; only the built-in path
+            // may defer the contract and document namespace walk.
+            var context = profile.TypeBindingRules.IsDefaultOrEmpty
+                ? BindingContext.CreateSignatureProbe(input.Syntax, types, profile, options, cancellationToken)
+                : new BindingContext(input.Syntax, types, profile, options, cancellationToken);
             var typeArguments = scope.Directive(root, "TypeArguments");
             var type = context.ResolveTypeAtSource(root.Name, scope, root.NameSpan, typeArguments?.Value, report: false, typeArgumentSpan: typeArguments?.ValueSpan);
             if (type != null)
@@ -40,11 +49,22 @@ public static class XamlResourceCatalogBuilder
                 });
             }
         }
+        if (!ReferencedExports.TryGetValue(types, out var exports))
+            exports = ReferencedExports.GetValue(types, owner => ReadExports(owner, cancellationToken));
+        cancellationToken.ThrowIfCancellationRequested();
+        resources.AddRange(exports.Resources);
+        return new(resources);
+    }
+
+    private static Exports ReadExports(RoslynTypeSystem types, CancellationToken cancellationToken)
+    {
+        var resources = ImmutableArray.CreateBuilder<XamlResourceDescriptor>();
         foreach (var assembly in types.Compilation.SourceModule.ReferencedAssemblySymbols)
         {
             cancellationToken.ThrowIfCancellationRequested();
             foreach (var attribute in assembly.GetAttributes())
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (attribute.AttributeClass?.HasMetadataName(XamlResourceMetadata.ExportAttribute) != true || attribute.ConstructorArguments.Length != 3) continue;
                 if (attribute.ConstructorArguments[0].Value is not string uri ||
                     attribute.ConstructorArguments[1].Value is not INamedTypeSymbol factory ||
@@ -58,7 +78,8 @@ public static class XamlResourceCatalogBuilder
                 resources.Add(new(uri, (INamedTypeSymbol)methods[0].ReturnType, null, string.Empty, methods[0]));
             }
         }
-        return new(resources);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new(resources.ToImmutable());
     }
     private static bool HasUnboundParameters(INamedTypeSymbol type)
     {
