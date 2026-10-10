@@ -3,30 +3,55 @@ on:
   push:
     branches: [diagnostics/workspace-browser-58901]
 permissions:
-  contents: write
+  contents: read
+  actions: read
 jobs:
-  prepare:
+  diagnose:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          ref: c46f262f2063748e02162ae09482ee356c292160
-          fetch-depth: 200
-          persist-credentials: false
-      - name: Merge without replacing either parent's work
-        env:
-          GH_TOKEN: ${{ github.token }}
+          name: playground-validation
+          run-id: 38070784803
+          github-token: ${{ github.token }}
+          path: evidence
+      - name: Inspect layout constraints recorded by the failing scenario
+        shell: python
         run: |
-          gh auth setup-git
-          git fetch --depth=200 origin prepared/workspace-browser-contracts-58901
-          test "$(git rev-parse FETCH_HEAD)" = c692efb9e4e8b69acfe94d17904d92c1a92932fb
-          git -c user.name='Wiesław Šoltés' -c user.email=wieslawsoltes@users.noreply.github.com merge --no-ff FETCH_HEAD -m 'Integrate browser gate repairs with validated compiler and IntelligentUI main'
-          git diff --check HEAD^ HEAD
-          python -m unittest discover -s scripts/tests -p test_browser_studio.py
-          node --check tools/XamlG.Playground/tests/live-preview.mjs
-          node --check tools/XamlG.Playground/tests/dock-documents.spec.mjs
-          node --check tools/XamlG.Playground/tests/agent-layout.spec.mjs
-          git diff --stat HEAD^ HEAD
-          git push origin HEAD:refs/heads/prepared/workspace-browser-integrated
-          git rev-parse HEAD HEAD^{tree}
+          import json, re, zipfile
+          from pathlib import Path
+          for path in Path('evidence').rglob('trace.zip'):
+              if 'agent-layout' not in str(path): continue
+              with zipfile.ZipFile(path) as archive:
+                  printed = set()
+                  def walk(value):
+                      if isinstance(value, dict):
+                          classes = value.get('class', '')
+                          if isinstance(classes, str) and ('ad-layout' in classes or 'ad-panel' in classes or 'ad-anchorable-pane' in classes):
+                              line = json.dumps({key: item for key, item in value.items() if key in ('class', 'style', 'aria-label')})
+                              if line not in printed and len(printed) < 65: print('LAYOUT:', line); printed.add(line)
+                          for child in value.values(): walk(child)
+                      elif isinstance(value, list):
+                          for child in value: walk(child)
+                  for name in archive.namelist():
+                      if name.endswith('.trace'):
+                          for line in archive.read(name).splitlines():
+                              try: event = json.loads(line)
+                              except ValueError: continue
+                              if event.get('type') == 'frame-snapshot': walk(event.get('snapshot', {}).get('html', []))
+                      if name.endswith('.network'):
+                          for line in archive.read(name).splitlines():
+                              try: event = json.loads(line)
+                              except ValueError: continue
+                              resource = event.get('snapshot', {})
+                              url = resource.get('request', {}).get('url', '')
+                              if 'dockyard' not in url.lower() or not url.split('?')[0].endswith('.js'): continue
+                              content = resource.get('response', {}).get('content', {})
+                              sha = content.get('_sha1')
+                              if not sha or 'resources/' + sha not in archive.namelist(): continue
+                              text = archive.read('resources/' + sha).decode(errors='replace')
+                              print('DOCKING SCRIPT:', url)
+                              for keyword in ['gridTemplateColumns', 'DockMinWidth', 'DockWidth', 'ResizeObserver']:
+                                  locations = [match.start() for match in re.finditer(re.escape(keyword), text)]
+                                  for at in locations[:2]: print(keyword, text[max(0, at - 300):at + 1100])
