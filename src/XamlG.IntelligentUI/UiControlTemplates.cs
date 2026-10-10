@@ -64,7 +64,7 @@ public static class UiControlTemplates
         foreach (var property in theme.Properties.Keys) UiStyles.ValidateProperty(component, property);
         UiTreeValidation.ValidateElement(new("theme", targetType, theme.Properties, []), component);
         UiStyles.Validate(theme.Styles, catalog);
-        if (theme.Styles.Any(rule => UiStyles.ParseSelector(rule.Selector).Target != targetType)) throw Invalid("Nested theme styles must target the theme owner.");
+        if (theme.Styles.Any(rule => !UiStyleSelectors.IsThemeSelector(UiStyles.ParseSelector(rule.Selector), targetType))) throw Invalid("Nested theme styles must start at the theme owner.");
         return Validate(theme.Template, targetType, catalog);
     }
     public static bool Equivalent<T>(T? left, T? right) where T : class => ReferenceEquals(left, right) ||

@@ -23,14 +23,17 @@ internal static class UiAvaloniaStyles
             try
             {
                 var type = probe.GetType();
-                var style = new Style(selector =>
+                var types = new Dictionary<string, Type>(StringComparer.Ordinal) { [parsed.Target] = type };
+                Type Resolve(string name)
                 {
-                    var current = nesting ? selector.Nesting() : selector.OfType(type);
-                    if (parsed.Name != null) current = current.Name(parsed.Name);
-                    foreach (var name in parsed.Classes) current = current.Class(name);
-                    foreach (var name in parsed.PseudoClasses) current = current.Class(":" + name);
-                    return current;
-                });
+                    if (types.TryGetValue(name, out var known)) return known;
+                    if (!catalog.Registrations.TryGetValue(name, out var adapter))
+                        throw new UiException("invalid_style", "Selector has no registered native type.");
+                    var instance = adapter.Create();
+                    try { return types[name] = instance.GetType(); }
+                    finally { adapter.Retire?.Invoke(instance); }
+                }
+                var style = new Style(selector => UiAvaloniaSelectors.Build(selector, parsed, Resolve, nesting));
                 var properties = AvaloniaPropertyRegistry.Instance.GetRegistered(type);
                 foreach (var pair in rule.Properties)
                 {
