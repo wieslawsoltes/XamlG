@@ -1,6 +1,10 @@
 @using XamlG.Playground.Git
 @implements IAsyncDisposable
 @inject IJSRuntime JavaScript
+@if (_loadError is not null)
+{
+    <p class="git-error" role="alert">@_loadError</p>
+}
 <div @ref="_host" style="height:100%;min-height:0"></div>
 
 @code {
@@ -13,12 +17,27 @@
     private IJSObjectReference? _module, _view;
     private DotNetObjectReference<GitDocument>? _reference;
     private bool _disposed;
+    private string? _loadError;
     private Task? _initializing;
 
     protected override Task OnAfterRenderAsync(bool firstRender) =>
         firstRender && !_disposed ? _initializing = InitializeAsync() : Task.CompletedTask;
 
     private async Task InitializeAsync()
+    {
+        try { await InitializeCoreAsync(); }
+        catch (JSException error)
+        {
+            if (!_disposed)
+            {
+                _loadError = "The Git workbench could not be loaded. Check the application assets, then close and reopen this pane. " + error.Message;
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException) when (_disposed) { }
+    }
+
+    private async Task InitializeCoreAsync()
     {
         _reference = DotNetObjectReference.Create(this);
         var shared = await JavaScript.InvokeAsync<IJSObjectReference>("xamlgBoot.importModule", "git/workbench.mjs");

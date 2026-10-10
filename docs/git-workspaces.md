@@ -1,28 +1,42 @@
 # Git workspaces
 
-The Git workbench is being implemented on `feat/git-workspaces`. This document describes the implementation contract; it is not a claim that every item below is already available.
+The implementation and capability ledger is in
+[Git workspaces: implementation and acceptance](git-workspaces-implementation.md).
 
-## Architecture
+## Current branch status
 
-- Dockyard tool windows for repositories, changes, branches, history and GitHub. File editors, comparisons and commit details open as documents rather than replacing the compiler editor.
-- A browser-persistent GitHub virtual provider supports opening a repository over HTTPS, lazy file reads, independent worktree/index snapshots, local commits and explicit fast-forward-only publication through GitHub's Git Database API.
-- A private, owner-authenticated Git companion runs native Git for HTTPS clones and advanced operations. It does not evaluate arbitrary shell commands. This separates complete Git object/protocol semantics from browser CORS restrictions without sending credentials through public CORS proxies.
-- A reusable GitHub REST/GraphQL client supports PAT authentication and a companion-assisted authorization-code OAuth flow with PKCE, single-use state and a fixed callback. Secrets remain outside repository data and browser persistence.
-- Source synchronization with the compiler is explicit. Loading a repository does not execute code, restore automatic preview, run hooks, initialize submodules or silently discard editor changes.
+PR #24 now includes virtual and native Git engines, GitHub PAT/PKCE/device sign-in,
+rotating OAuth credentials, docked Git tools/documents, Studio integration and tests.
+The shared `wwwroot/git/core.mjs` dependency is still missing from the branch because
+the connected write tool blocked its creation. The PR remains draft and unmerged.
 
-## Correctness and security acceptance
+The complete local source overlay passes 140 Node tests, including a real authenticated
+smart-HTTPS Git roundtrip. This is not a passing test result for the incomplete remote
+checkout. Razor, actual Dockyard/browser integration and registered-app OAuth consent
+remain unverified. See the ledger for remaining feature-parity boundaries.
 
-Separate worktree, index and HEAD; preserve binary files and executable/symlink/gitlink metadata; reject traversal and `.git` writes; serialize mutations; detect stale editor revisions; preserve local work after network errors; reject non-fast-forward publication; never automatically retry a mutation with an uncertain result; never persist tokens in Git configuration or workspace snapshots.
+## Local companion
 
-Native operations use an argument vector, bounded output, cancellation/timeouts, a private repository root, disabled external hooks/configuration and explicit confirmation for destructive operations. OAuth and API requests are origin-bound and owner-authenticated; credentials are never accepted from repository content.
+```sh
+XAMLG_GIT_ORIGINS='https://wieslawsoltes.github.io' \
+node tools/git-companion/server.mjs
+```
 
-## Validation
+Paste the printed loopback origin and owner credential only into a trusted Studio's
+GitHub tool. Native Git is restricted to explicitly configured HTTPS hosts and private
+managed repository directories. Credentials are not saved in repository configuration.
+For authorization-code OAuth, configure `XAMLG_GITHUB_CLIENT_ID` and the server-only
+`XAMLG_GITHUB_CLIENT_SECRET`; device sign-in additionally requires device flow enabled
+on the registered application. The default callback is
+`http://127.0.0.1:47831/oauth/callback`.
 
-The editing environment has Node and native Git but no .NET SDK. Node/native integration tests can run locally. Razor/Blazor and production-browser acceptance must be verified by the repository's actual exact-head CI before merge. Final results and capability boundaries will be recorded here and in the PR.
+## Validation commands
 
-## Primary protocol references
+```sh
+node --test tests/git/*.test.mjs
+python tests/git/browser_test.py
+```
 
-- https://docs.github.com/en/rest/git
-- https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
-- https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api
-- https://git-scm.com/docs
+The browser fixture requires Playwright and Chromium and exercises the JS workbench,
+not the production Razor/Dockyard host. Do not treat the fixture as a production
+acceptance test or merge while the shared dependency is absent.

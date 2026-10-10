@@ -1,0 +1,41 @@
+name: Git workspaces
+on:
+  pull_request:
+    paths:
+      - 'tools/git-companion/**'
+      - 'tools/XamlG.Playground/wwwroot/git/**'
+      - 'tools/XamlG.Playground/Components/Git*.razor'
+      - 'tools/XamlG.Playground/Git/**'
+      - 'tools/XamlG.Playground/App.*'
+      - 'tests/git/**'
+      - '.github/workflows/git-workspaces.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/git-companion/**'
+      - 'tools/XamlG.Playground/wwwroot/git/**'
+      - 'tools/XamlG.Playground/Components/Git*.razor'
+      - 'tools/XamlG.Playground/Git/**'
+      - 'tools/XamlG.Playground/App.*'
+      - 'tests/git/**'
+      - '.github/workflows/git-workspaces.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: git-workspaces-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  node-git:
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test tests/git/*.test.mjs

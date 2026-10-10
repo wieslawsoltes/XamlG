@@ -92,6 +92,7 @@ public partial class App
             await using var interop = await shared.InvokeAsync<IJSObjectReference>("createWorkbenchInterop");
             await interop.InvokeVoidAsync("retireSession", _panePrefix);
         }
-        catch (JSDisconnectedException) { }
+        // Asset/network failures must not prevent disposal of the remaining Studio services.
+        catch (JSException) { }
     }
 }
