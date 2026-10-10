@@ -4,13 +4,16 @@ import { GitError, LIMITS, requireValue } from './core.mjs';
 export class GitHubClient {
     #token = ''; #fetch; #broker = null; #authEpoch = 0;
     constructor(fetcher = globalThis.fetch) { this.#fetch = fetcher; this.user = null; this.rateLimit = null; }
-    async signIn(token) {
+    async signIn(token, { signal, isCurrent = () => true, expectedUser } = {}) {
         requireValue(typeof token === 'string' && token.trim().length >= 8 && !/[\r\n\0]/.test(token), 'invalid_token', 'Enter a GitHub personal access token.');
         const epoch = ++this.#authEpoch, candidate = new GitHubClient(this.#fetch);
         candidate.#token = token.trim();
-        const user = await candidate.request('GET', '/user');
-        requireValue(epoch === this.#authEpoch, 'stale_auth', 'This sign-in was canceled or superseded.');
-        this.#token = candidate.#token; this.#broker = null; this.user = user; return user;
+        const user = await candidate.request('GET', '/user', undefined, { signal });
+        requireValue(user && typeof user.login === 'string' && user.login.length > 0, 'invalid_user', 'GitHub returned an invalid user identity.');
+        requireValue(!expectedUser || (expectedUser.id !== undefined ? user.id === expectedUser.id : user.login === expectedUser.login), 'identity_changed', 'Token refresh changed the authenticated account; sign in again.');
+        // Check the enclosing OAuth/session lifetime before installing, not afterwards.
+        requireValue(epoch === this.#authEpoch && !signal?.aborted && isCurrent(), 'stale_auth', 'This sign-in was canceled or superseded.');
+        this.#token = candidate.#token; this.#broker = null; this.user = user; this.rateLimit = candidate.rateLimit; return user;
     }
     useBroker(broker) { this.#authEpoch++; this.#token = ''; this.#broker = broker; this.user = null; }
     signOut() { this.#authEpoch++; this.#token = ''; this.#broker = null; this.user = null; this.rateLimit = null; }
