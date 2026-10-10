@@ -65,6 +65,9 @@ internal static class UiAvaloniaFeatureSchema
             components[name] = component with { Properties = component.Properties.SetItems(component.Properties
                 .Where(p => UiBrushValues.IsProperty(p.Key)).Select(p => new KeyValuePair<string, UiProperty>(p.Key, new(UiPropertyKind.Brush, Nullable: true)))) };
         }
+        components.Add("ContentPresenter", components["ContentControl"] with { Name = "ContentPresenter" });
+        components.Add("ItemsPresenter", components["Viewbox"] with { Name = "ItemsPresenter", MaximumChildren = 0,
+            Properties = components["Viewbox"].Properties.Remove("Stretch").Remove("StretchDirection") });
         return components.Values;
     }
 

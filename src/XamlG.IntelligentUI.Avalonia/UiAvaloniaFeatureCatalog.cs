@@ -32,6 +32,9 @@ internal static class UiAvaloniaFeatureCatalog
             Retire = control => control.ClearValue(LayoutTransformControl.UseRenderTransformProperty)
         });
         entries.Add("Label", entries["ContentControl"] with { Create = () => new Label() });
+        entries.Add("ContentPresenter", entries["ContentControl"] with { Create = () => new global::Avalonia.Controls.Presenters.ContentPresenter() });
+        entries.Add("ItemsPresenter", entries["Viewbox"] with { Create = () => new global::Avalonia.Controls.Presenters.ItemsPresenter(),
+            Setters = entries["Viewbox"].Setters.Remove("Stretch").Remove("StretchDirection") });
         var setters = new Dictionary<string, Action<Control, JsonElement?>>(StringComparer.Ordinal)
         {
             ["Classes"] = (control, value) =>

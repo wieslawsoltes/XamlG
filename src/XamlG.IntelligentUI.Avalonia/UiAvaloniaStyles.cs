@@ -9,7 +9,7 @@ namespace XamlG.IntelligentUI.Avalonia;
 /// pseudoclasses, scoped cascading, theme precedence and local-value precedence.</summary>
 internal static class UiAvaloniaStyles
 {
-    internal static ImmutableArray<Style> Create(ImmutableArray<UiStyleRule> rules, UiAvaloniaCatalog catalog)
+    internal static ImmutableArray<Style> Create(ImmutableArray<UiStyleRule> rules, UiAvaloniaCatalog catalog, bool nesting = false)
     {
         var result = ImmutableArray.CreateBuilder<Style>();
         foreach (var rule in rules)
@@ -25,7 +25,7 @@ internal static class UiAvaloniaStyles
                 var type = probe.GetType();
                 var style = new Style(selector =>
                 {
-                    var current = selector.OfType(type);
+                    var current = nesting ? selector.Nesting() : selector.OfType(type);
                     if (parsed.Name != null) current = current.Name(parsed.Name);
                     foreach (var name in parsed.Classes) current = current.Class(name);
                     foreach (var name in parsed.PseudoClasses) current = current.Class(":" + name);
