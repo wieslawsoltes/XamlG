@@ -3,6 +3,7 @@
 @inject IJSRuntime JavaScript
 
 <section class="agent-workbench" aria-label="Coding agent workbench">
+    <div class="agent-shell">
     <header class="agent-heading">
         <span class="agent-avatar"><AgentIcon Name="Agent" /></span>
         <div class="agent-heading-title"><h2>Coding agent</h2><button class="agent-connection-shortcut" @onclick='() => SelectSectionAsync("Connection")' aria-label="Open agent connection"><span class="agent-connection-dot @(_connected && ProviderReady ? "is-ready" : "")"></span>@ConnectionLabel</button></div>
@@ -13,18 +14,17 @@
     <nav class="agent-navigation" aria-label="Agent sections">
         @foreach (var section in Sections)
         {
-            <button aria-label="@section" title="@section" aria-pressed='@(PaneVisible(section) ? "true" : "false")' @onclick="() => SelectSectionAsync(section)"><AgentIcon Name="@section" /><span class="agent-navigation-label">@section</span>@if (SectionCount(section) is > 0 and var count) { <span class="agent-count" aria-hidden="true">@count</span> }</button>
+            <button aria-label="@section" title="@section" aria-pressed='@(PaneVisible(section) ? "true" : "false")' @onclick="() => SelectSectionAsync(section)"><AgentIcon Name="@section" /><span class="agent-navigation-label">@(section == "Tasks" ? "Threads" : section)</span>@if (SectionCount(section) is > 0 and var count) { <span class="agent-count" aria-hidden="true">@count</span> }</button>
         }
+        <div class="agent-sidebar-threads">
+            <div class="agent-sidebar-caption">Threads <button class="agent-icon-button" aria-label="Create thread" @onclick='() => SelectSectionAsync("Tasks")'><AgentIcon Name="Plus" /></button></div>
+            @foreach (var thread in _state.Tasks)
+            {
+                <button class="agent-sidebar-thread" aria-current="@(thread.Id == _selectedId ? "page" : null)" @onclick="() => SelectThreadAsync(thread.Id)"><span class="agent-thread-dot" data-status="@thread.Status"></span><span>@thread.Name</span>@if (thread.Queue.Messages.Length > 0) { <small>@thread.Queue.Messages.Length</small> }</button>
+            }
+            @if (_state.Tasks.Length == 0) { <p>Your conversations will appear here.</p> }
+        </div>
     </nav>
-    @if (UiStore != null)
-    {
-        <details class="intelligent-ui-demo"><summary>Intelligent UI</summary>
-            <p>Reactive Avalonia XAML and C# expressions. This example runs locally and needs no provider key.</p>
-            <button @onclick="ShowIntelligentUiDemo" disabled="@(!UiReady)">Try intelligent UI</button>
-            @if (_uiDemo != null)
-            { <IntelligentUiCard Store="UiStore" Presentation="_uiDemo" Ready="UiReady" MessageRequested="UseUiMessageAsync" ToolRequested="UiToolRequested" Tools="UiTools" /> }
-        </details>
-    }
     @if (_connected && _state.Tasks.Length > 0)
     {
         <div class="agent-task-context">
@@ -49,6 +49,15 @@
     <div class="agent-content @(PaneVisible("Conversation") && Selected != null ? "is-conversation" : "")" @ref="_contentElement">
     <section class="agent-section agent-section-connection" hidden="@(!PaneVisible("Connection"))" aria-label="Agent connection settings">
     <div class="agent-section-heading"><div><h3>Connect your agent</h3><p>Choose where it runs and how to sign in.</p></div><AgentIcon Name="Connection" /></div>
+    @if (UiStore != null)
+    {
+        <details class="intelligent-ui-demo"><summary>Intelligent UI</summary>
+            <p>Reactive Avalonia XAML and C# expressions. This example runs locally and needs no provider key.</p>
+            <button @onclick="ShowIntelligentUiDemo" disabled="@(!UiReady)">Try intelligent UI</button>
+            @if (_uiDemo != null)
+            { <IntelligentUiCard Store="UiStore" Presentation="_uiDemo" Ready="UiReady" MessageRequested="UseUiMessageAsync" ToolRequested="UiToolRequested" Tools="UiTools" /> }
+        </details>
+    }
     <div class="agent-card">
     <label>Agent connection <select aria-label="Agent connection" value="@_connectionMode" @onchange="ConnectionChangedAsync" disabled="@(AnyRunning || _modelsBusy || _runReview != null)">
         <option value="direct">Direct API · run in this browser</option><option value="relay">Local provider relay · API keys stay local</option><option value="companion">Paired companion · server and account agents</option>
@@ -184,7 +193,7 @@
             <div class="agent-thread" role="log" tabindex="0" aria-label="Agent thread" aria-live="off" data-task-id="@selected.Id" @ref="_threadElement">
                 @if (!VisibleEvents.Any() && VisibleLiveText.Length == 0)
                 {
-                    <div class="agent-empty agent-thread-empty"><h3>What would you like to build?</h3><p>Ask about the project, describe a change, or investigate a runtime issue.</p></div>
+                    <div class="agent-empty agent-thread-empty"><span class="agent-welcome-mark"><AgentIcon Name="Agent" /></span><h3>Let’s build something.</h3><p>Start with an idea, a question, or a change to your project.</p><div class="agent-starters"><button @onclick='() => UseStarter("Explain the structure of this project and where I should start.")'><AgentIcon Name="Tools" />Explore this project</button><button @onclick='() => UseStarter("/plan Improve the current view’s layout and keyboard navigation.")'><AgentIcon Name="Plan" />Plan a change</button><button @onclick='() => UseStarter("Inspect the current diagnostics and fix the underlying issue.")'><AgentIcon Name="Changes" />Fix an issue</button></div></div>
                 }
                 @foreach (var entry in VisibleThread)
                 {
@@ -242,20 +251,62 @@
                 </section>
             }
             </div>
-            <div class="agent-composer">
-            <label><textarea aria-label="Message" title="Enter to review a run · Shift+Enter for a new line" @ref="_composerElement" data-task-id="@selected.Id" data-can-submit="@(CanRun ? "true" : "false")" value="@_draft" @oninput="DraftChangedAsync" rows="2" maxlength="262144" placeholder="Message the agent…" /></label>
-            <div class="agent-run-actions">
-                <button class="primary" @onclick="RunAsync" disabled="@(!CanRun)">Run <AgentIcon Name="Arrow" /></button>
-                <button title="Resume a paused task" @onclick="ResumeAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || selected.Status != "paused" || selected.RetryAfterUtc > DateTimeOffset.UtcNow)">Resume</button>
-                <button aria-label="Queue follow-up" title="Queue follow-up" @onclick="QueueDraftAsync" disabled="@(selected.IsPreviousWorkspace || _queueBusy || string.IsNullOrWhiteSpace(_draft) || selected.Status is "cancelled" or "failed")"><AgentIcon Name="Queue" /><span class="agent-action-label">Queue</span></button>
-                <button class="agent-danger" aria-label='@("Stop & revoke")' title="Stop and revoke this run's permissions" @onclick='() => CommandAsync("stop", new { })' disabled="@(!_state.Tasks.Any(IsRunning))"><AgentIcon Name="Stop" /><span class="agent-action-label">Stop</span></button>
-                <button aria-label="Compact context" title="Compact context" @onclick="ReviewCompaction" disabled="@(selected.IsPreviousWorkspace || AnyRunning)"><AgentIcon Name="Compact" /><span class="agent-action-label">Compact</span></button>
+            @if (selected.ProposedPlan is { Accepted: false } proposal)
+            {
+                <div class="agent-plan-ready"><AgentIcon Name="Plan" /><span><strong>Plan ready</strong><small>Review the approach before implementation.</small></span><button @onclick='() => SelectSectionAsync("Plan")'>View plan</button><button class="primary" @onclick="ImplementPlan" disabled="@AnyRunning">Implement plan</button></div>
+            }
+            @if (selected.ActiveGoal is { } goal)
+            {
+                <details class="agent-goal-card"><summary><AgentIcon Name="Goal" /><span>@goal.Objective</span><span class="agent-status" data-status="@goal.Status">@goal.Status</span></summary>
+                    <p>@goal.Evidence</p><p class="agent-help">@goal.TokensUsed.ToString("N0") tokens@(goal.TokenBudget is { } budget ? $" / {budget:N0}" : "") · @goal.Continuations continuations</p>
+                    @if (goal.Status == "active") { <button @onclick='() => CommandAsync("goal_pause", new { id = selected.Id })'>Pause goal</button> }
+                    else if (goal.Status != "complete")
+                    {
+                        @if (goal.Status == "budgetLimited") { <label>New goal token budget <input type="number" min="1" @bind="_goalBudget" /></label> }
+                        <button @onclick="ResumeGoalAsync" disabled="@AnyRunning">Resume goal</button>
+                    }
+                    <button @onclick='() => CommandAsync("goal_clear", new { id = selected.Id })'>Clear goal</button>
+                </details>
+            }
+            @if (selected.Queue.Messages.Length > 0)
+            {
+                <div class="agent-inline-queue" aria-label="Queued messages">
+                    <button class="agent-queue-heading" @onclick='() => SelectSectionAsync("Queue")'><AgentIcon Name="Queue" />@selected.Queue.Messages.Length queued<span>Manage</span></button>
+                    @foreach (var message in selected.Queue.Messages.Take(3))
+                    {
+                        <div class="agent-queued-message" @key="message.Id"><small>@(message.Delivery == "steer" ? "Steering" : "Next")</small><span>@message.Text</span><button class="agent-icon-button" aria-label="Remove queued message" @onclick='() => ChangeQueueAsync("queue_remove", new { id = selected.Id, messageId = message.Id, expectedRevision = selected.Queue.Revision })'><AgentIcon Name="Close" /></button></div>
+                    }
+                </div>
+            }
+            @if (selected.Status == "paused")
+            { <div class="agent-resume-banner" role="status"><span>@selected.StatusReason</span><button @onclick="ResumeAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || selected.RetryAfterUtc > DateTimeOffset.UtcNow)">Resume</button></div> }
+            @if (IsRunning(selected)) { <div class="agent-working" role="status"><span class="agent-working-dot"></span>@(selected.Status == "awaitingAnswer" ? "Waiting for your answer" : selected.Status == "awaitingApproval" ? "Waiting for approval" : selected.Mode == "plan" ? "Planning" : "Working")<span>Follow-ups are queued for the next turn.</span></div> }
+            <div class="agent-composer" data-mode="@selected.Mode">
+            <label><textarea aria-label="Message" title="Enter to send · Shift+Enter for a new line" @ref="_composerElement" data-task-id="@selected.Id" data-can-submit="@(CanSend ? "true" : "false")" data-can-stop="@(IsRunning(selected) ? "true" : "false")" value="@_draft" @oninput="DraftChangedAsync" rows="2" maxlength="100000" placeholder="@ComposerPlaceholder" /></label>
+            <div class="agent-composer-toolbar">
+                <details class="agent-composer-more"><summary aria-label="More composer actions" title="More actions"><AgentIcon Name="Plus" /></summary><div>
+                    <button @onclick="RunAsync" disabled="@(!CanRun)">Run</button>
+                    <button aria-label="Queue follow-up" @onclick="QueueDraftAsync" disabled="@(selected.IsPreviousWorkspace || _queueBusy || string.IsNullOrWhiteSpace(_draft))"><AgentIcon Name="Queue" />Queue follow-up</button>
+                    <button @onclick="OpenGoalEditor" disabled="@(AnyRunning || selected.ActiveGoal is { Status: not "complete" })"><AgentIcon Name="Goal" />Set a goal</button>
+                    <button aria-label="Compact context" @onclick="ReviewCompaction" disabled="@(selected.IsPreviousWorkspace || AnyRunning)"><AgentIcon Name="Compact" />Compact context</button>
+                </div></details>
+                <select class="agent-mode-picker" aria-label="Collaboration mode" value="@selected.Mode" @onchange="ChangeModeAsync" disabled="@(AnyRunning || _sending)"><option value="default">Code</option><option value="plan">Plan</option></select>
+                <button class="agent-model-chip" title="@selected.Model" @onclick='() => SelectSectionAsync("Connection")'>@selected.Model</button>
+                <span class="tab-spacer"></span>
+                @if (IsRunning(selected))
+                {
+                    @if (!string.IsNullOrWhiteSpace(_draft)) { <button class="agent-steer-button" @onclick="() => SendDraftAsync(true)" disabled="@(!CanSend)" title="Apply this guidance at the next safe tool boundary">Steer now</button> }
+                    <button class="agent-icon-button agent-stop-button" aria-label="Stop &amp; revoke" title="Stop and keep progress" @onclick='() => CommandAsync("stop", new { })'><AgentIcon Name="Stop" /></button>
+                }
+                <button class="primary agent-send-button" aria-label="@(IsRunning(selected) ? "Queue message" : "Send message")" title="@(IsRunning(selected) ? "Queue for the next turn" : "Send message")" @onclick="() => SendDraftAsync()" disabled="@(!CanSend)"><AgentIcon Name="@(IsRunning(selected) ? "Queue" : "Send")" /></button>
             </div>
-            @if (!ProviderReady) { <button class="agent-composer-notice" @onclick='() => SelectSectionAsync("Connection")'>Complete provider access in Connection to run this task <AgentIcon Name="Arrow" /></button> }
+            @if (!ProviderReady) { <button class="agent-composer-notice" @onclick='() => SelectSectionAsync("Connection")'>Connect a provider to start <AgentIcon Name="Arrow" /></button> }
             </div>
+            <div class="agent-composer-footer"><button @onclick='() => SelectSectionAsync("Permissions")'><AgentIcon Name="Permissions" />@(_profile == "autoEdit" ? "Auto edit" : _profile == "fullAccess" ? "Full access" : _profile == "readOnly" ? "Read only" : "Ask before changes")</button><span>Enter to send · ⇧ Enter for a new line</span></div>
             </section>
             <section class="agent-section agent-section-permissions" hidden="@(!PaneVisible("Permissions"))" aria-label="Agent permissions">
             <div class="agent-section-heading"><div><h3>Permissions &amp; limits</h3><p>Control what this task can do and spend.</p></div><AgentIcon Name="Permissions" /></div>
+            <div class="agent-card"><h4>Sending</h4><label><input type="checkbox" @bind="Preferences.ReviewBeforeSend" /> Review every run before sending</label><label><input type="checkbox" @bind="Preferences.ContinueQueue" /> Automatically send queued follow-ups</label><p class="agent-help">Follow-ups share the current run’s limits. Steering takes effect at the next safe boundary.</p></div>
             @if (_state.ActivePermissions is { } active)
             {
                 <section class="agent-active-permissions"><h3>Active run authority</h3><p>@active.Policy.Profile · expires @active.ExpiresAt.ToLocalTime().ToString("T")</p>
@@ -314,12 +365,14 @@
             </section>
             <section class="agent-section agent-section-plan" hidden="@(!PaneVisible("Plan"))" aria-label="Agent plan">
             <div class="agent-section-heading"><div><h3>Task plan</h3><p>Track the agent’s approach and progress.</p></div><AgentIcon Name="Plan" /></div>
+            @if (selected.ProposedPlan is { } proposed)
+            { <div class="agent-proposed-plan"><AgentMarkdown Text="@proposed.Markdown" CopyRequested="CopyTextAsync" /><div class="agent-inline-actions"><button @onclick="() => CopyTextAsync(proposed.Markdown)">Copy plan</button><button class="primary" @onclick="ImplementPlan" disabled="@(AnyRunning || proposed.Accepted)">@(proposed.Accepted ? "Plan accepted" : "Implement plan")</button></div></div> }
             @if (selected.Plan.Length > 0)
             {
                 <div class="agent-plan-progress"><span>@selected.Plan.Count(step => step.Status == "completed") of @selected.Plan.Length complete</span><progress value="@selected.Plan.Count(step => step.Status == "completed")" max="@selected.Plan.Length" aria-label="Plan progress"></progress></div>
                 <ol class="agent-plan">@foreach (var step in selected.Plan) { <li data-status="@step.Status"><div><strong class="agent-status" data-status="@step.Status">@(step.Status == "inProgress" ? "in progress" : step.Status)</strong><p>@step.Text</p></div></li> }</ol>
             }
-            @if (selected.Plan.Length == 0) { <div class="agent-empty"><span class="agent-empty-icon"><AgentIcon Name="Plan" /></span><h3>No plan yet</h3><p>The agent has not published a plan for this task. Ask it to plan the work in Conversation.</p><button @onclick='() => SelectSectionAsync("Conversation")'>Open conversation</button></div> }
+            @if (selected.Plan.Length == 0 && selected.ProposedPlan == null) { <div class="agent-empty"><span class="agent-empty-icon"><AgentIcon Name="Plan" /></span><h3>No plan yet</h3><p>The agent has not published a plan for this task. Ask it to plan the work in Conversation.</p><button @onclick='() => SelectSectionAsync("Conversation")'>Open conversation</button></div> }
             <p class="muted">Plan status is reported by the agent. Check its validation evidence in the conversation.</p>
             </section>
             <section class="agent-section agent-section-queue" hidden="@(!PaneVisible("Queue"))" aria-label="Agent queue">
@@ -458,6 +511,11 @@
             </section>
     }
     </div>
+    </div>
+    @if (_showGoalEditor)
+    {
+        <div class="authoring-backdrop"><section class="authoring-dialog agent-dialog" role="dialog" aria-modal="true" aria-label="Set a goal"><h2>What should be true when we’re done?</h2><p>The agent keeps working toward this objective across turns. You can pause or resume it at any time.</p><label>Goal <textarea @bind="_goalObjective" @bind:event="oninput" rows="5" maxlength="100000" placeholder="Describe the outcome and how to verify it…" /></label><label>Token budget (optional) <input type="number" @bind="_goalBudget" min="1" max="100000000" placeholder="No goal-specific limit" /></label><footer><button @onclick="() => _showGoalEditor = false">Cancel</button><button class="primary" @onclick="StartGoalAsync" disabled="@(_sending || _goalBusy || string.IsNullOrWhiteSpace(_goalObjective))">Start goal</button></footer></section></div>
+    }
     @if (_deleteTaskId is { } deleting)
     {
         <div class="authoring-backdrop"><section class="authoring-dialog agent-dialog" role="dialog" aria-modal="true" aria-label="Delete agent task"><h2>Delete task?</h2>

@@ -89,15 +89,14 @@ public partial class AgentWorkbench
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
     }
     [JSInvokable] public Task AgentRefresh() => RefreshAsync();
-    [JSInvokable] public async Task AgentComposerSubmit(string taskId, string value)
+    [JSInvokable] public async Task AgentComposerSubmit(string taskId, string value, bool steer = false)
     {
         if (_disposed || !_connected || taskId != _selectedId || value.Length > 262144 || _runReview != null || _restoreReview != null || _handoff != null) return;
         _draft = value;
-        if (!CanRun) return;
-        RunAsync(); StateHasChanged();
-        try { await RequestAsync<JsonElement>("draft", new { id = taskId, text = value }); }
-        catch (JSException error) { _error = error.Message; StateHasChanged(); }
+        await SendDraftAsync(steer); StateHasChanged();
     }
+    [JSInvokable] public Task AgentComposerStop(string taskId) => taskId == _selectedId && Selected is { } task && IsRunning(task)
+        ? CommandAsync("stop", new { }) : Task.CompletedTask;
     [JSInvokable] public void AgentDisconnected() { if (IsBrowser) return; _connected = false; _liveText = ""; _runReview = null; _restoreReview = null; _handoff = null; _fullAccessAcknowledged = false; _signInLaunchUrl = null; _signInLaunchId = null; StateHasChanged(); }
     [JSInvokable] public void AgentStreamError(string message) { if (IsBrowser) return; _error = message; StateHasChanged(); }
     [JSInvokable] public Task AgentStream(EventView item) => IsBrowser ? Task.CompletedTask : ProcessStreamAsync(item);
@@ -183,7 +182,7 @@ public partial class AgentWorkbench
     {
         _draft = args.Value?.ToString() ?? "";
         if (Selected != null)
-            try { await RequestAsync<JsonElement>("draft", new { id = _selectedId, text = _draft }); }
+            try { await RequestAsync<JsonElement>("draft", new { id = _selectedId, text = _draft, revision = NextDraftRevision(_selectedId) }); }
             catch (JSException error) { _error = error.Message; }
     }
     private async Task CreateAsync()
@@ -212,6 +211,7 @@ public partial class AgentWorkbench
     }
     private object Options() => new
     {
+        mode = Selected?.Mode ?? "default", continueQueuedMessages = Preferences.ContinueQueue,
         policy = new { profile = _profile, scopes = _scopes, tools = JsonSerializer.Deserialize<Dictionary<string, string>>(_toolRules), neverAsk = _neverAsk },
         limits = new { requestsPerRun = _requests, toolsPerRun = _tools, outputTokensPerRequest = _outputTokens, totalTaskTokens = _taskTokens,
             contextBytes = _contextBytes, toolResultBytes = _toolResultBytes, automaticRetries = _retries, requestTimeout = TimeSpan.FromMinutes(_timeoutMinutes) },
@@ -219,24 +219,28 @@ public partial class AgentWorkbench
         compaction = new { automaticInputTokens = Preferences.Numeric.AutomaticInputTokens, modelContextWindowTokens = Preferences.Numeric.ModelContextWindowTokens,
             recentCompleteTurns = Preferences.Numeric.RecentCompleteTurns, checkpointOutputTokens = Preferences.Numeric.CheckpointOutputTokens }
     };
-    private void ReviewRun(string? message, QueuedMessageView? queued = null, bool compact = false)
+    private void ReviewRun(string? message, QueuedMessageView? queued = null, bool compact = false, long? planRevision = null)
     {
         if (Selected == null || Selected.IsPreviousWorkspace || AnyRunning) return;
         try
         {
             _error = null;
             var options = JsonSerializer.SerializeToElement(Options());
+            if (planRevision != null)
+            {
+                var fields = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(options)!;
+                fields["mode"] = JsonSerializer.SerializeToElement("default"); options = JsonSerializer.SerializeToElement(fields);
+            }
             _runReview = new(Selected.Id, Selected.Name, ProviderLabel(Selected.ProviderId) + (Selected.Account == null ? "" : " · " + Selected.Account.Label), Selected.Model, _profile, message,
-                queued?.Id, queued == null ? null : Selected.Queue.Revision, compact ? "Generate a paid, tool-free public checkpoint. Keep the original goal, latest request and complete recent native turns. This does not send the composer draft or run IDE operations." : queued?.Text ?? message, options,
+                queued?.Id, queued == null ? null : Selected.Queue.Revision, compact ? "Generate a paid, tool-free public checkpoint. Keep the original goal, latest request and complete recent native turns. This does not send the composer draft or run IDE operations." : planRevision != null ? Selected.ProposedPlan?.Markdown : queued?.Text ?? message, options,
                 $"{_requests:N0} requests and {_tools:N0} tool calls per run; {_outputTokens:N0} output tokens per request; {_taskTokens:N0} cumulative task tokens. " +
                 (Selected.Account == null ? "" : "ChatGPT plan usage: output allowance is a local estimate, not a server cap. A response can exceed the remaining token budget. ") +
-                $"{_contextBytes:N0} context bytes, {_toolResultBytes:N0} bytes per tool result, {_retries} automatic retries, {_timeoutMinutes}-minute requests and a {_leaseMinutes}-minute permission lease.", compact);
+                $"{_contextBytes:N0} context bytes, {_toolResultBytes:N0} bytes per tool result, {_retries} automatic retries, {_timeoutMinutes}-minute requests and a {_leaseMinutes}-minute permission lease.", compact, planRevision);
             _fullAccessAcknowledged = false; _focusRunReview = true;
         }
         catch (Exception error) when (error is JsonException or ArgumentException) { _error = error.Message; }
     }
     private void RunAsync() { if (!CanRun) return; if (_draft.Trim() == "/compact") ReviewRun(null, compact: true); else ReviewRun(_draft); }
-    private void ResumeAsync() => ReviewRun(null);
     private void ReviewCompaction() => ReviewRun(null, compact: true);
     private void ReviewQueuedRun()
     { if (Selected?.Queue.Messages.FirstOrDefault(message => message.Id == QueueEdit.Id) is { } queued) ReviewRun(null, queued); }
@@ -249,8 +253,10 @@ public partial class AgentWorkbench
         {
             _error = null;
             if (review.Compact) await RequestAsync<JsonElement>("compact", new { id = review.Id, options = review.Options, confirmed = true });
+            else if (review.Message != null)
+                await SubmitTextAsync(review.Id, review.Message, review.Options, fullAccessAcknowledged: _fullAccessAcknowledged);
             else await RequestAsync<JsonElement>("run", new { id = review.Id, message = review.Message, options = review.Options,
-                confirmed = true, fullAccessAcknowledged = _fullAccessAcknowledged, queuedMessageId = review.QueuedId, expectedQueueRevision = review.QueueRevision });
+                confirmed = true, fullAccessAcknowledged = _fullAccessAcknowledged, queuedMessageId = review.QueuedId, expectedQueueRevision = review.QueueRevision, planRevision = review.PlanRevision });
             _runReview = null; _fullAccessAcknowledged = false;
             await RefreshAsync();
         }
@@ -338,8 +344,9 @@ public partial class AgentWorkbench
     {
         public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string Status { get; set; } = ""; public string? StatusReason { get; set; }
         public string ProviderId { get; set; } = ""; public string Model { get; set; } = "";
+        public string Mode { get; set; } = "default"; public ProposedPlanView? ProposedPlan { get; set; } public GoalView? ActiveGoal { get; set; }
         public AccountBindingView? Account { get; set; }
-        public string Draft { get; set; } = ""; public int PublicEventCount { get; set; } public long TotalTokens { get; set; } public int CheckpointCount { get; set; }
+        public string Draft { get; set; } = ""; public long DraftRevision { get; set; } public int PublicEventCount { get; set; } public long TotalTokens { get; set; } public int CheckpointCount { get; set; }
         public bool IsPreviousWorkspace { get; set; }
         public ChangeView? LatestRunChanges { get; set; }
         public long ReportedTokens { get; set; } public long EstimatedTokens { get; set; } public int NativeContextBytes { get; set; }
@@ -362,8 +369,8 @@ public partial class AgentWorkbench
     public sealed class ChangeView { public string ReviewId { get; set; } = ""; public long ReviewVersion { get; set; } public long Revision { get; set; } public FileChange[] Files { get; set; } = []; }
     public sealed class FileChange { public string Path { get; set; } = ""; public string ContentId { get; set; } = ""; public string? Before { get; set; } public string? After { get; set; } public int? BeforeLength { get; set; } public int? AfterLength { get; set; } }
     public sealed class QueueView { public long Revision { get; set; } public QueuedMessageView[] Messages { get; set; } = []; }
-    public sealed class QueuedMessageView { public string Id { get; set; } = ""; public string Text { get; set; } = ""; }
+    public sealed class QueuedMessageView { public string Id { get; set; } = ""; public string Text { get; set; } = ""; public string Delivery { get; set; } = "queue"; }
     private sealed class QueueEditor { public string Id = "", Text = ""; public long Revision; }
     private sealed record RunReview(string Id, string Name, string Provider, string Model, string Profile, string? Message,
-        string? QueuedId, long? QueueRevision, string? Preview, JsonElement Options, string Limits, bool Compact = false);
+        string? QueuedId, long? QueueRevision, string? Preview, JsonElement Options, string Limits, bool Compact = false, long? PlanRevision = null);
 }

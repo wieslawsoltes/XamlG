@@ -95,10 +95,15 @@ test('agent onboarding and all panels remain usable in a narrow dock and floatin
   await pane.getByRole('button', { name: 'Continue to tasks' }).click();
   await pane.getByLabel('Task name', { exact: true }).fill('Review the workspace layout');
   await pane.getByRole('button', { name: 'Create task', exact: true }).click();
+  await agentSection(pane, 'Permissions');
+  await pane.getByLabel('Review every run before sending').check();
+  await pane.getByLabel('Automatically send queued follow-ups').uncheck();
+  await agentSection(pane, 'Conversation');
   await pane.getByLabel('Message', { exact: true }).fill('Prepare a follow-up without interrupting the current work.');
+  if (await pane.locator('.agent-composer-more').getAttribute('open') === null) await pane.locator('.agent-composer-more > summary').click();
   await pane.getByRole('button', { name: 'Queue follow-up', exact: true }).click();
   await pane.getByLabel('Message', { exact: true }).fill('Plan a workspace review.');
-  await pane.getByRole('button', { name: 'Run', exact: true }).click();
+  await pane.getByRole('button', { name: 'Send message', exact: true }).click();
   await page.getByRole('dialog', { name: 'Review agent run' }).getByRole('button', { name: 'Confirm run', exact: true }).click();
   await expect(pane.locator('.agent-task-status')).toContainText('completed');
   await expect(pane.getByRole('log')).toContainText('Review detail 20');
@@ -137,16 +142,16 @@ test('agent onboarding and all panels remain usable in a narrow dock and floatin
     }
   }
   await agentSection(pane, 'Conversation');
-  for (const [selector, maximum] of [['.agent-heading', 40], ['.agent-navigation', 36], ['.agent-task-context', 36], ['.agent-composer', 110]]) {
+  for (const [selector, maximum] of [['.agent-heading', 48], ['.agent-navigation', 36], ['.agent-task-context', 44], ['.agent-composer', 140]]) {
     expect((await pane.locator(selector).boundingBox()).height, `${selector} remains compact`).toBeLessThanOrEqual(maximum);
   }
-  const navigationRows = await pane.getByRole('navigation').getByRole('button').evaluateAll(buttons => new Set(buttons.map(button => Math.round(button.getBoundingClientRect().top))).size);
+  const navigationRows = await pane.getByRole('navigation').locator(':scope > button').evaluateAll(buttons => new Set(buttons.map(button => Math.round(button.getBoundingClientRect().top))).size);
   expect(navigationRows).toBe(1);
   await expect(pane.getByLabel('Message', { exact: true })).toHaveValue('Keep this draft while browsing panels.');
   const composer = await pane.locator('.agent-composer').boundingBox(), bounds = await pane.boundingBox();
   expect(composer.y + composer.height).toBeLessThanOrEqual(bounds.y + bounds.height + 1);
   await pane.getByRole('log').evaluate(element => { element.scrollTop = 0; });
-  await expect(pane.getByRole('button', { name: 'Run', exact: true })).toBeInViewport();
+  await expect(pane.getByRole('button', { name: 'Send message', exact: true })).toBeInViewport();
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.locator('[data-tab-id="agent"]').click({ button: 'right' });

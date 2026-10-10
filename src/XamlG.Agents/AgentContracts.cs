@@ -195,6 +195,7 @@ public sealed class AgentTask
     public long PlanRevision { get; internal set; }
     public int CheckpointCount { get; internal set; }
     public string Draft { get; set; } = "";
+    public long DraftRevision { get; internal set; }
     public IReadOnlyList<AgentPlanStep> Plan { get; internal set; } = [];
     public IReadOnlyList<AgentEvent> Events { get { lock (Sync) return PublicEvents.ToArray(); } }
     public IReadOnlyList<string> QueuedMessages { get { lock (Sync) return FollowUps.Select(message => message.Text).ToArray(); } }

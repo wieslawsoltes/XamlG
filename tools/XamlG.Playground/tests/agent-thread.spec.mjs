@@ -268,11 +268,11 @@ test('Stop cancels the provider stream and retains its incomplete public reply f
     await expect(pane.getByRole('log')).toContainText('Streamed draft before Stop.');
     await agentSection(pane, 'Conversation');
     await pane.getByRole('button', { name: 'Stop & revoke', exact: true }).click();
-    await expect(pane.locator('.agent-task-status')).toContainText('cancelled');
+    await expect(pane.locator('.agent-task-status')).toContainText('paused');
     await expect(pane.locator('.agent-assistant_incomplete')).toContainText('Streamed draft before Stop.');
     await expect(pane.locator('.agent-assistant')).toHaveCount(0);
     await agentSection(pane, 'Conversation');
-    await expect(pane.getByRole('button', { name: 'Resume', exact: true })).toBeDisabled();
+    await expect(pane.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
     await expect.poll(() => closed).toBe(true);
     const exported = JSON.parse(await api('export', { id }));
     expect(JSON.stringify(exported)).toContain('assistant_incomplete');

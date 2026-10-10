@@ -206,8 +206,10 @@ public sealed class AgentWorkflowTests
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), Token);
         await session.ExecuteAsync("send", args, Token);
         release.SetResult(); await Idle(session);
+        session.Harness.QueueMessage(task.Id, "An unrelated manually retained follow-up");
         await session.ExecuteAsync("send", args, Token); await Idle(session);
         Assert.Single(provider.Requests); Assert.Single(task.Events, item => item.Kind == "user");
+        Assert.Single(task.Queue.Messages);
         using var restored = new AgentWorkbenchSession(new AutomationCatalog(), [provider]);
         restored.RestoreSession(session.Harness.CaptureSession(), Token);
         await restored.ExecuteAsync("send", args, Token); await Idle(restored);
@@ -235,6 +237,22 @@ public sealed class AgentWorkflowTests
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Token); timeout.CancelAfter(TimeSpan.FromSeconds(5));
         while (session.IsRunning) await Task.Delay(10, timeout.Token);
+    }
+
+    [Fact]
+    public async Task Late_draft_writes_cannot_restore_sent_text_or_erase_new_typing()
+    {
+        var provider = new ScriptedAgentProvider(); provider.Add(ScriptedAgentProvider.Done());
+        using var session = new AgentWorkbenchSession(new AutomationCatalog(), [provider]);
+        var task = session.Harness.CreateTask("Draft", provider, "fixture", Token);
+        await session.ExecuteAsync("draft", AutomationJson.Element(new { id = task.Id, text = "Sent text", revision = 1 }), Token);
+        await session.ExecuteAsync("send", AutomationJson.Element(new { id = task.Id, text = "Sent text", clientMessageId = "one", draftRevision = 2, options = Options }), Token);
+        await session.ExecuteAsync("draft", AutomationJson.Element(new { id = task.Id, text = "Sent text", revision = 1 }), Token);
+        Assert.Equal("", task.Draft); Assert.Equal(2, task.DraftRevision);
+        await session.ExecuteAsync("draft", AutomationJson.Element(new { id = task.Id, text = "Next draft", revision = 3 }), Token);
+        await session.ExecuteAsync("send", AutomationJson.Element(new { id = task.Id, text = "Sent text", clientMessageId = "one", draftRevision = 2, options = Options }), Token);
+        Assert.Equal("Next draft", task.Draft); Assert.Equal(3, task.DraftRevision);
+        await Idle(session); Assert.Single(provider.Requests);
     }
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
     private static AgentToolCall Edit(string id, int value) => new(id, "edit", AutomationJson.Element(new EditArgs(value)));

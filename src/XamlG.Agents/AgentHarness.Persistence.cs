@@ -29,7 +29,7 @@ public sealed partial class AgentHarness
                 Mode = task.Mode, ProposedPlan = task.ProposedPlan, ActiveGoal = task.ActiveGoal,
                 ReportedTokens = task.ReportedTokens, EstimatedTokens = task.EstimatedTokens, LastUsage = task.LastUsage,
                 RetryAfterUtc = task.RetryAfterUtc, OutputLimitToExceed = task.OutputLimitToExceed, NativeContextBytes = task.NativeContextBytes,
-                PlanRevision = task.PlanRevision, CheckpointCount = task.CheckpointCount, Draft = task.Draft, Plan = task.Plan.ToArray(),
+                PlanRevision = task.PlanRevision, CheckpointCount = task.CheckpointCount, Draft = task.Draft, DraftRevision = task.DraftRevision, Plan = task.Plan.ToArray(),
                 Events = task.PublicEvents.Where(item => item.Kind != "text_delta").ToArray(), Queue = task.Queue,
                 Submissions = new Dictionary<string, string>(task.Submissions, StringComparer.Ordinal),
                 Changes = task.Changes, LatestRunChanges = task.LatestRunChanges, BeforeRun = task.BeforeRun, BeforeLatestRun = task.BeforeLatestRun,
@@ -70,7 +70,7 @@ public sealed partial class AgentHarness
                         ? activeGoal with { Status = AgentGoalStatus.Paused, Evidence = "Session restored. Resume the goal to continue." } : saved.ActiveGoal,
                     LastUsage = saved.LastUsage, RetryAfterUtc = saved.RetryAfterUtc, OutputLimitToExceed = saved.OutputLimitToExceed,
                     NativeContextBytes = saved.NativeContextBytes, PlanRevision = saved.PlanRevision, CheckpointCount = saved.CheckpointCount,
-                    Draft = saved.Draft, Plan = saved.Plan.ToArray(), QueueRevision = saved.Queue.Revision,
+                    Draft = saved.Draft, DraftRevision = saved.DraftRevision, Plan = saved.Plan.ToArray(), QueueRevision = saved.Queue.Revision,
                     Changes = RebaseReview(saved.Changes), LatestRunChanges = RebaseReview(saved.LatestRunChanges),
                     BeforeRun = saved.BeforeRun, BeforeLatestRun = saved.BeforeLatestRun, Goal = saved.Goal, LatestRequest = saved.LatestRequest
                 };

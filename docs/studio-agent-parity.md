@@ -32,7 +32,7 @@ have independent browser-owned authority.
 | Modern workbench navigation | Implemented | Conversation, tasks, connection, plan, changes, queue, permissions, tools and activity with compact responsive navigation. |
 | Threads and rendering | Implemented | Preserve Markdown/copy, tool expansion, waiting/streaming/partial states, Enter/IME, reading position and bounded paging in both modes. |
 | Limits, recovery and compaction | Implemented | Keep presets, cumulative accounting, failed usage, no-replay resume, retry deadlines and atomic checkpoints in direct browser execution. |
-| Queued follow-ups | Implemented | Retain explicit dispatch, optimistic queue revision, editable/reorderable local queue, review and task/workspace isolation. |
+| Queued follow-ups | Implemented | Automatic next-turn dispatch, safe-boundary steering, optimistic queue revisions, editable/reorderable queue, optional manual dispatch and task/workspace isolation. |
 | Changes and selective restoration | Implemented | Preserve task/run baselines, exact patch/block restoration, stale guards, feedback, source navigation and normal Undo with document tabs. |
 | ChatGPT account mode | Implemented | Preserve sign-in, account binding, consent, persistence choices and sign-out; direct API mode must not silently use account billing. |
 | Coding agent as a Dockyard tool | Implemented | Proper close/reopen/floating lifecycle and modern contents; closing cancels work and clears live SDK clients while preserving saved connections. |
@@ -57,3 +57,28 @@ All 21 shipping packages also pass inventory and clean consumer acceptance, incl
 CLI/LSP/companion installation and standalone automation/MCP/agent use. Package and
 native evidence uses `b602ab3`; the following layout fix changes browser JavaScript
 only. Full UI and current-head CI results are recorded in the PR.
+
+## Codex-style thread workflows (2026-10-10)
+
+[PR #21](https://github.com/wieslawsoltes/XamlG/pull/21) adds explicit collaboration
+mode and goal state to the shared browser/companion harness. Plan mode exposes
+inspection tools only, enforces every declared tool effect, saves a proposed plan,
+and accepts that exact revision when the user chooses **Implement plan**. Ordinary
+requests do not create goals. `/goal <objective>` starts a persistent goal;
+`/goal pause`, `/goal resume` and `/goal clear` control it. Goals retain token
+accounting and verification evidence across reloads. Reloaded goals wait for an
+explicit resume. Planning and turns without tool progress cannot spin an automatic
+continuation loop.
+
+**Send** accepts a message with a durable client identity. During work it becomes
+a queued follow-up; **Steer now** applies guidance at a safe boundary and closes
+unstarted tool calls with explicit skipped results. Automatic follow-ups and goal
+continuations share the active run's limits and permission lease. Stop retains
+completed results and makes the thread resumable. Delayed draft writes cannot
+restore already-sent text. Manual dispatch and a review before every run remain
+available in **Permissions → Sending**; Full Access still requires acknowledgement.
+
+The conversation adds a mode picker, proposed-plan handoff, goal status, inline
+queue, resume state and a responsive thread sidebar. This is an ongoing overhaul;
+native workflow tests and a successful UI build do not establish complete visual
+or provider parity. Current browser and CI evidence belongs in the PR.

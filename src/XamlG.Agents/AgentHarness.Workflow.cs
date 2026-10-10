@@ -132,6 +132,8 @@ public sealed partial class AgentHarness
     private async Task<bool> ContinueTurnAsync(AgentTask task, AgentRunOptions options, AutomationLease lease, int workCalls)
     {
         lease.Token.ThrowIfCancellationRequested();
+        if (!task.GoalBlockedThisTurn && task.ActiveGoal is { Status: AgentGoalStatus.Active, BlockedTurns: > 0 } progressingGoal)
+            task.ActiveGoal = progressingGoal with { BlockedTurns = 0 };
         var hasFollowUp = HasSteering(task) || options.ContinueQueuedMessages && task.Queue.Messages.Count > 0;
         if (hasFollowUp)
         {

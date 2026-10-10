@@ -29,6 +29,7 @@ public sealed record AgentTaskSnapshot
     public long PlanRevision { get; init; }
     public int CheckpointCount { get; init; }
     public string Draft { get; init; } = "";
+    public long DraftRevision { get; init; }
     public IReadOnlyList<AgentPlanStep> Plan { get; init; } = [];
     public IReadOnlyList<AgentEvent> Events { get; init; } = [];
     public AgentQueueSnapshot Queue { get; init; } = new(0, []);

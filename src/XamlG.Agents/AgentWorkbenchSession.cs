@@ -95,7 +95,7 @@ public class AgentWorkbenchSession : IDisposable
                     providers = ProviderIds.Order(StringComparer.Ordinal), toolCount = _harness.ToolCatalog.Count, constraints = _harness.Constraints, activePermissions = _harness.ActivePermissions,
                     chatGpt = accounts, chatGptError = accountError, tasks = _harness.Tasks.Select(task => new
                     {
-                        task.Id, task.Name, task.ProviderId, task.Model, task.Status, task.StatusReason, task.Draft, task.IsPreviousWorkspace,
+                        task.Id, task.Name, task.ProviderId, task.Model, task.Status, task.StatusReason, task.Draft, task.DraftRevision, task.IsPreviousWorkspace,
                         task.Mode, task.ProposedPlan, task.ActiveGoal,
                         account = DescribeAccount(task.Provider),
                         task.TotalTokens, task.ReportedTokens, task.EstimatedTokens, task.CheckpointCount, task.Plan, task.PlanRevision, task.Queue,
@@ -145,9 +145,13 @@ public class AgentWorkbenchSession : IDisposable
             case "rename":
                 var rename = Read<TextArgs>(arguments); _harness.RenameTask(rename.Id, rename.Text); break;
             case "draft":
-                var draft = Read<TextArgs>(arguments);
+                var draft = Read<DraftArgs>(arguments);
                 if (draft.Text.Length > 262144) throw new ArgumentException("Draft is too large.");
-                _harness.GetTask(draft.Id).Draft = draft.Text; break;
+                var draftTask = _harness.GetTask(draft.Id);
+                lock (draftTask.Sync)
+                    if (draft.Revision == null || draft.Revision > draftTask.DraftRevision)
+                    { draftTask.Draft = draft.Text; draftTask.DraftRevision = draft.Revision ?? checked(draftTask.DraftRevision + 1); }
+                break;
             case "delete":
                 var deleted = _harness.GetTask(Read<IdArgs>(arguments).Id); _harness.DeleteTask(deleted.Id);
                 if (_harness.Tasks.Count == 0) _harness.CreateTask("New task", deleted.Provider, deleted.Model, ownerSession, _workspaceIdentity?.Invoke());
@@ -294,7 +298,12 @@ public class AgentWorkbenchSession : IDisposable
             // explicit submission starts a new run, never to broaden an active lease.
             if (_run is not { IsCompleted: false }) options = _harness.ValidateOptions(options);
             _harness.QueueMessage(args.Id, args.Text, args.Delivery, args.ClientMessageId);
-            if (task.Draft == args.Text) task.Draft = "";
+            lock (task.Sync)
+            {
+                if (args.DraftRevision is { } sentRevision && sentRevision > task.DraftRevision)
+                { task.DraftRevision = sentRevision; task.Draft = ""; }
+                else if (args.DraftRevision == null && task.Draft == args.Text) { task.Draft = ""; task.DraftRevision++; }
+            }
             if (_runningId == args.Id && task.Status == AgentTaskStatus.Completed) finishing = _run;
         }
         // Acknowledgment means durable acceptance, not just that a provider request was scheduled.
@@ -303,13 +312,15 @@ public class AgentWorkbenchSession : IDisposable
         lock (_gate)
         {
             var queue = task.Queue;
-            if (_run is not { IsCompleted: false } && task.Status is AgentTaskStatus.Ready or AgentTaskStatus.Completed && queue.Messages.Count > 0)
+            if (_run is not { IsCompleted: false } && task.Status is AgentTaskStatus.Ready or AgentTaskStatus.Completed &&
+                queue.Messages.FirstOrDefault(message => message.Id == args.ClientMessageId) is { } submitted)
             {
                 options = _harness.ValidateOptions(options);
                 ownerSession.ThrowIfCancellationRequested();
                 var accountLife = task.Provider is IAgentProviderSession account ? account.GetSessionLifetime() : default;
+                var next = options.ContinueQueuedMessages ? queue.Messages[0] : submitted;
                 StartRun(new(args.Id, null, options, Confirmed: true, FullAccessAcknowledged: args.FullAccessAcknowledged,
-                    QueuedMessageId: queue.Messages[0].Id, ExpectedQueueRevision: queue.Revision), ownerSession, accountLife);
+                    QueuedMessageId: next.Id, ExpectedQueueRevision: queue.Revision), ownerSession, accountLife);
             }
         }
         return AutomationJson.Element(new { accepted = true, messageId = args.ClientMessageId, queue = task.Queue });
@@ -409,12 +420,13 @@ public class AgentWorkbenchSession : IDisposable
     }
     public sealed record IdArgs(string Id);
     public sealed record TextArgs(string Id, string Text);
+    public sealed record DraftArgs(string Id, string Text, long? Revision = null);
     public sealed record ProviderArgs(string Provider, string? AccountId = null);
     public sealed record CreateArgs(string Name, string Provider, string Model, string? AccountId = null);
     public sealed record RunArgs(string Id, string? Message, AgentRunOptions Options, bool Confirmed = false,
         bool FullAccessAcknowledged = false, string? QueuedMessageId = null, long? ExpectedQueueRevision = null, long? PlanRevision = null);
     public sealed record SubmitArgs(string Id, string Text, AgentMessageDelivery Delivery = AgentMessageDelivery.Queue,
-        string? ClientMessageId = null, AgentRunOptions? Options = null, bool FullAccessAcknowledged = false);
+        string? ClientMessageId = null, AgentRunOptions? Options = null, bool FullAccessAcknowledged = false, long? DraftRevision = null);
     public sealed record ModeArgs(string Id, AgentCollaborationMode Mode);
     public sealed record GoalArgs(string Id, string? Objective = null, long? TokenBudget = null);
     public sealed record QueueArgs(string Id, long ExpectedRevision);
