@@ -14,6 +14,9 @@ public sealed record AgentTaskSnapshot
     public string? Account { get; init; }
     public required string Model { get; init; }
     public AgentTaskStatus Status { get; init; }
+    public AgentCollaborationMode Mode { get; init; }
+    public AgentPlanProposal? ProposedPlan { get; init; }
+    public AgentGoal? ActiveGoal { get; init; }
     public string? StatusReason { get; init; }
     public bool PreviousWorkspace { get; init; }
     public string? WorkspaceIdentity { get; init; }
@@ -29,6 +32,7 @@ public sealed record AgentTaskSnapshot
     public IReadOnlyList<AgentPlanStep> Plan { get; init; } = [];
     public IReadOnlyList<AgentEvent> Events { get; init; } = [];
     public AgentQueueSnapshot Queue { get; init; } = new(0, []);
+    public IReadOnlyDictionary<string, string> Submissions { get; init; } = new Dictionary<string, string>();
     public AgentChangeReview? Changes { get; init; }
     public AgentChangeReview? LatestRunChanges { get; init; }
     public AgentWorkspaceSnapshot? BeforeRun { get; init; }

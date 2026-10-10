@@ -8,6 +8,19 @@ public enum AgentTaskStatus { Ready, Preparing, Running, AwaitingApproval, Await
 public enum AgentMessageKind { User, Assistant, ToolResult }
 public enum AgentApproval { Deny, AllowOnce, AllowToolForRun }
 public enum AgentStepStatus { Pending, InProgress, Completed }
+public enum AgentCollaborationMode { Default, Plan }
+public enum AgentMessageDelivery { Queue, Steer }
+public enum AgentGoalStatus { Active, Paused, Blocked, Complete, BudgetLimited }
+public sealed record AgentPlanProposal(long Revision, string Markdown, bool Accepted = false);
+public sealed record AgentGoal(string Objective, AgentGoalStatus Status, DateTimeOffset CreatedAt)
+{
+    public DateTimeOffset UpdatedAt { get; init; } = CreatedAt;
+    public long? TokenBudget { get; init; }
+    public long TokensUsed { get; init; }
+    public int Continuations { get; init; }
+    public int BlockedTurns { get; init; }
+    public string? Evidence { get; init; }
+}
 public sealed record AgentPlanStep(string Id, string Text, AgentStepStatus Status);
 public sealed record AgentToolCall(string Id, string Name, JsonElement Arguments);
 public sealed record AgentUsage(long InputTokens, long OutputTokens, bool Estimated = false)
@@ -20,7 +33,10 @@ public sealed record AgentEvent(long Sequence, DateTimeOffset Time, string TaskI
     public IReadOnlyList<AutomationImage>? Images { get; init; }
 }
 public sealed record AgentQuestion(string Question, IReadOnlyList<string>? Options = null);
-public sealed record AgentQueuedMessage(string Id, string Text);
+public sealed record AgentQueuedMessage(string Id, string Text)
+{
+    public AgentMessageDelivery Delivery { get; init; }
+}
 public sealed record AgentQueueSnapshot(long Revision, IReadOnlyList<AgentQueuedMessage> Messages);
 public sealed record AgentWorkspaceSnapshot(long Revision, IReadOnlyDictionary<string, string> Documents);
 public sealed record AgentFileChange(string Path, string? Before, string? After);
@@ -128,6 +144,8 @@ public sealed record AgentLimits
 
 public sealed record AgentRunOptions
 {
+    public AgentCollaborationMode Mode { get; init; }
+    public bool ContinueQueuedMessages { get; init; } = true;
     public bool FullToolCatalog { get; init; }
     public AgentLimits Limits { get; init; } = new();
     public AutomationPolicy Policy { get; init; } = new();
@@ -162,6 +180,9 @@ public sealed class AgentTask
     public string ProviderId => Provider.Id;
     public string Model { get; }
     public AgentTaskStatus Status { get; internal set; }
+    public AgentCollaborationMode Mode { get; internal set; }
+    public AgentPlanProposal? ProposedPlan { get; internal set; }
+    public AgentGoal? ActiveGoal { get; internal set; }
     public string? StatusReason { get; internal set; }
     public bool IsPreviousWorkspace => WorkspaceLifetime.IsCancellationRequested;
     public long ReportedTokens { get; internal set; }
@@ -188,6 +209,7 @@ public sealed class AgentTask
     internal List<string> UserRequests { get; } = [];
     internal List<AgentEvent> PublicEvents { get; } = [];
     internal List<AgentQueuedMessage> FollowUps { get; } = [];
+    internal Dictionary<string, string> Submissions { get; } = new(StringComparer.Ordinal);
     internal long QueueRevision;
     internal AgentWorkspaceSnapshot? BeforeRun;
     internal AgentWorkspaceSnapshot? BeforeLatestRun;
@@ -198,4 +220,5 @@ public sealed class AgentTask
     internal string? LatestRequest;
     internal HashSet<string> EnabledTools { get; } = new(StringComparer.Ordinal);
     internal string? ExecutingToolId;
+    internal bool GoalBlockedThisTurn;
 }

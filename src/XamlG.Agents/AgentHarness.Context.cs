@@ -6,18 +6,32 @@ namespace XamlG.Agents;
 
 public sealed partial class AgentHarness
 {
-    public void QueueMessage(string id, string message)
+    public void QueueMessage(string id, string message, AgentMessageDelivery delivery = AgentMessageDelivery.Queue, string? clientMessageId = null)
     {
         var task = GetTask(id); EnsureCurrentWorkspace(task);
         ValidateQueuedText(message);
         lock (task.Sync)
         {
+            if (clientMessageId != null && (string.IsNullOrWhiteSpace(clientMessageId) || clientMessageId.Length > 100))
+                throw new ArgumentException("A client message ID must contain 1–100 characters.");
+            var fingerprint = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(delivery + "\n" + message)));
+            if (clientMessageId != null && task.Submissions.TryGetValue(clientMessageId, out var existing))
+            {
+                if (fingerprint != existing) throw new AutomationException("revision_conflict", "This message ID was already used for different content.");
+                return;
+            }
             if (task.Status is AgentTaskStatus.Failed or AgentTaskStatus.Cancelled) throw new InvalidOperationException("Start a new task after cancellation or failure.");
             if (task.FollowUps.Count >= 16 || task.FollowUps.Sum(item => item.Text.Length) + message.Length > 200000)
                 throw new InvalidOperationException("The queue is limited to 16 messages and 200,000 total characters.");
-            task.FollowUps.Add(new(Guid.NewGuid().ToString("N"), message)); task.QueueRevision++;
+            if (!Enum.IsDefined(delivery)) throw new ArgumentException("Unknown message delivery mode.");
+            task.FollowUps.Add(new(clientMessageId ?? Guid.NewGuid().ToString("N"), message) { Delivery = delivery }); task.QueueRevision++;
+            if (clientMessageId != null)
+            {
+                task.Submissions.Add(clientMessageId, fingerprint);
+                if (task.Submissions.Count > 256) task.Submissions.Remove(task.Submissions.Keys.First());
+            }
         }
-        Publish(task, "queue_changed", "A follow-up was queued locally. Sending requires a new run.");
+        Publish(task, "queue_changed", delivery == AgentMessageDelivery.Steer ? "Steering will apply at the next safe boundary." : "A follow-up was queued for the next turn.");
     }
 
     public AgentQueuedMessage GetQueuedMessage(string id, string messageId, long expectedRevision)
