@@ -4,43 +4,34 @@ on:
     branches: [diagnostics/workspace-browser-58901]
 permissions:
   contents: read
+  actions: read
 jobs:
-  responsive-dock:
+  summarize:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          ref: 8348cf3e396acf0f85fd9fa6cba94e71e02efd60
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Install pinned Chromium test runner
-        working-directory: tools/XamlG.Playground
-        run: |
-          npm ci --ignore-scripts --no-audit --no-fund
-          npx playwright install --with-deps chromium
-      - name: Exercise exact production docking CSS
-        working-directory: tools/XamlG.Playground
-        env:
-          PLAYGROUND_URL: 'http://127.0.0.1:9/'
-        run: npx playwright test dock-responsive.spec.mjs --retries=0
-      - name: Summarize bounded test results
-        if: always()
+          pattern: playground-report-*
+          run-id: 38076950172
+          github-token: ${{ github.token }}
+          path: reports
+      - name: Print completed shard assertions
         shell: python
         run: |
-          import json
+          import json, re
           from pathlib import Path
-          path = Path('tools/XamlG.Playground/test-results/results.json')
-          if path.exists():
-              report = json.loads(path.read_text())
-              print('RESPONSIVE DOCK:', json.dumps(report['stats']))
-              for suite in report.get('suites', []):
+          def walk(suites):
+              for suite in suites:
                   for spec in suite.get('specs', []):
-                      print(spec['title'], [test['status'] for test in spec['tests']])
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: responsive-dock-validation
-          path: tools/XamlG.Playground/test-results
+                      for test in spec.get('tests', []):
+                          if test.get('status') not in ('unexpected', 'flaky'): continue
+                          print('FAIL:', spec.get('file'), spec.get('title'))
+                          for result in test.get('results', []):
+                              for error in result.get('errors', []): print(re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', error.get('message', ''))[:4200])
+                  walk(suite.get('suites', []))
+          for path in sorted(Path('reports').rglob('results.json')):
+              data = json.loads(path.read_text())
+              print('\nSHARD:', data.get('config', {}).get('shard'), json.dumps(data.get('stats')))
+              print('GLOBAL:', json.dumps(data.get('errors', []))[:5000])
+              walk(data.get('suites', []))
