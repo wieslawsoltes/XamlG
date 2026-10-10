@@ -14,7 +14,7 @@ public static class XamlTypeNameParser
     {
         if (Simple(text)) return ImmutableArray.Create(new XamlTypeNameSyntax(text, ImmutableArray<XamlTypeNameSyntax>.Empty, false, new(span.Start, text.Length)));
         var position = 0; var failed = false; string? failure = null;
-        void Space() { while (position < text.Length && char.IsWhiteSpace(text[position])) position++; }
+        void Space() => position = XamlTextScanner.SkipWhitespace(text, position, text.Length);
         XamlTypeNameSyntax? Read(int depth)
         {
             Space(); var start = position;
