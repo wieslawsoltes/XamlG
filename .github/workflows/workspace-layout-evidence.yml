@@ -1,0 +1,40 @@
+name: Inspect compact workbench geometry
+on:
+  push:
+    branches: ['diag/workspace-23-evidence-20261010']
+    paths: ['.github/workflows/workspace-layout-evidence.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: wieslawsoltes/XamlG
+          run-id: 38076950172
+          name: playground-validation-1
+          path: evidence
+      - name: Print retained layout measurements only
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          root = Path('evidence')
+          for path in root.rglob('*'):
+              if path.is_file() and path.suffix == '.json' and 'compact-layout' in path.name and path.stat().st_size < 100000:
+                  print('MEASUREMENTS:', path, path.read_text()[:20000], flush=True)
+          for path in root.rglob('results.json'):
+              if path.stat().st_size > 16000000: continue
+              def walk(suites):
+                  for suite in suites:
+                      for spec in suite.get('specs', []):
+                          if 'narrow dock' in spec.get('title', ''):
+                              for test in spec.get('tests', []):
+                                  for result in test.get('results', []):
+                                      print('ATTACHMENTS:', json.dumps(result.get('attachments', []))[:12000], flush=True)
+                      walk(suite.get('suites', []))
+              walk(json.loads(path.read_text()).get('suites', []))
