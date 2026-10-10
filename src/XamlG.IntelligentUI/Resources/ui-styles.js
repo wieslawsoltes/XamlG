@@ -25,21 +25,7 @@ function uiStyleClasses(value){
   if(names.length>32||new Set(names).size!==names.length||names.some(name=>!styleIdentifier.test(name)))throw new Error('Invalid style class identifier.');
   return names;
 }
-function uiStyleSelector(value){
-  if(typeof value!=='string'||!value.length||value.length>512)throw new Error('Invalid style selector.');
-  const tokens=value.match(/[.#:]?[A-Za-z_][A-Za-z0-9_-]*/g);
-  if(!tokens||tokens.join('')!==value||tokens.length>17||/^[.#:]/.test(tokens[0]))throw new Error('Unsupported style selector.');
-  const target=tokens[0];if(!types.has(target)&&!Object.hasOwn(drawingTags,target)&&!['Label','LayoutTransformControl'].includes(target))throw new Error('Unknown style target.');
-  let css='[data-ui-type="'+target+'"]',named=false;const classes=new Set(),pseudos=new Set();
-  for(const token of tokens.slice(1)){
-    const name=token.slice(1);if(!styleIdentifier.test(name))throw new Error('Invalid style selector identifier.');
-    if(token[0]==='.') {if(classes.has(name))throw new Error('Duplicate class.');classes.add(name);css+='[data-ui-classes~="'+name+'"]';}
-    else if(token[0]==='#') {if(named)throw new Error('Duplicate name.');named=true;css+='[data-ui-name="'+name+'"]';}
-    else if(token[0]===':'&&Object.hasOwn(stylePseudo,name)&&!pseudos.has(name)){pseudos.add(name);css+=stylePseudo[name];}
-    else throw new Error('Unsupported style pseudoclass.');
-  }
-  return {target,css,conditional:classes.size>0||pseudos.size>0};
-}
+function uiStyleSelector(value){return parseUiSelector(value);}
 function validateUiStyleValue(type,name,value){
   if(!Object.hasOwn(styleCss,name))throw new Error('Style property is not a presentation capability.');
   const text=styleText.has(type),templated=styleTemplated.has(type),shape=styleShapes.has(type),panel=stylePanels.has(type),border=type==='Border';
@@ -100,6 +86,7 @@ function uiStyleDeclarations(type,p){
 }
 function buildUiStyles(value){
   let rules=0,setters=0,characters=0,cssLength=0;const output=[],conditional=[];
+  const logical=uiSelectorIndex(value),budget={work:0,paths:0,characters:0};
   function visit(node){
     const p=node.properties;
     if(p.Classes!==undefined)uiStyleClasses(p.Classes);
@@ -121,7 +108,8 @@ function buildUiStyles(value){
           nested&&['display','justify-content','align-items'].includes(name)?slot:normal;
         list.push(name+':'+v+' !important;');
       }
-      const scope='[data-ui-key="'+CSS.escape(node.key)+'"]',target=':where('+scope+selector.css+','+scope+' '+selector.css+')';
+      const targets=uiSelectorTargets(selector,node,logical,budget);if(!targets.length)continue;
+      const target=':is('+targets.join(',')+')';
       const text=target+'{'+normal.join('')+'}'+(shape.length?target+' > :is(path,polyline,polygon,rect,ellipse,line){'+shape.join('')+'}':'')+
         (slot.length?target+' > [data-ui-style-slot]{'+slot.join('')+'}':'');
       if((cssLength+=text.length)>2097152)throw new Error('Projected stylesheet budget exceeded.');(selector.conditional?conditional:output).push(text);
