@@ -131,11 +131,14 @@ public static class WorkspaceTemplates
                 """);
             var dataType = mvvm ? $"xmlns:vm=\"using:{ns}.ViewModels\" x:DataType=\"vm:MainWindowViewModel\"" : "";
             var text = mvvm ? "{Binding Greeting}" : "Welcome to Avalonia";
+            // Names are XML attribute data, not XAML syntax. Escape both XML
+            // metacharacters and leading markup-extension braces as literal text.
+            var title = new XAttribute("Title", "{}" + request.Name);
             Add("MainWindow.axaml", $$"""
                 <Window xmlns="https://github.com/avaloniaui"
                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                         x:Class="{{ns}}.MainWindow" {{dataType}}
-                        Width="900" Height="600" Title="{{request.Name}}">
+                        Width="900" Height="600" {{title}}>
                     <Grid>
                         <TextBlock Text="{{text}}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="24" />
                     </Grid>
