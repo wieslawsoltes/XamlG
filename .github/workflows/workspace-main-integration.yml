@@ -1,0 +1,117 @@
+name: Workspace main integration
+on:
+  pull_request:
+    paths: ['.github/workflows/workspace-main-integration.yml']
+permissions:
+  contents: read
+jobs:
+  reconcile:
+    if: github.event.pull_request.number == 23 && github.head_ref == 'feat/msbuild-solution-workspaces' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: '46c58c95de5bf2414c5e46cd8c8ed636c5b0cbd5'
+          fetch-depth: 0
+      - name: Reconcile reviewed integration points and publish a candidate branch only
+        shell: python
+        env:
+          SOURCE_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          import os, subprocess
+          from pathlib import Path
+          source = '46c58c95de5bf2414c5e46cd8c8ed636c5b0cbd5'
+          main = '4599636974aaf37d547e136d4161dfe775df1059'
+          head = os.environ['SOURCE_HEAD']
+          branch = 'refs/heads/feat/msbuild-solution-workspaces'
+          candidate = 'refs/heads/integration/msbuild-git-23-4599636'
+          def git(*args, input=None):
+              return subprocess.check_output(['git', *args], input=input, text=True).strip()
+          def remote(ref):
+              return git('ls-remote', 'origin', ref).split()[0]
+          if remote(branch) != head or remote('refs/heads/main') != main:
+              raise RuntimeError('The source or target changed; refusing to integrate stale inputs.')
+          git('fetch', 'origin', head, main)
+          git('config', 'user.name', 'Wiesław Šoltés')
+          git('config', 'user.email', 'wieslawsoltes@users.noreply.github.com')
+          result = subprocess.run(['git', 'merge', '--no-commit', '--no-ff', main], text=True)
+          allowed = {
+              'tools/XamlG.Playground/App.Dockyard.cs',
+              'tools/XamlG.Playground/App.razor',
+              'tools/XamlG.Playground/App.razor.cs',
+              'tools/XamlG.Playground/wwwroot/startup.js'
+          }
+          conflicts = set(git('diff', '--name-only', '--diff-filter=U').splitlines())
+          if result.returncode not in (0, 1) or not conflicts.issubset(allowed):
+              raise RuntimeError('Unexpected integration conflicts: ' + repr(sorted(conflicts)))
+          def read(path):
+              return subprocess.check_output(['git', 'show', source + ':' + path]).decode('utf-8')
+          def replace(text, old, new):
+              if text.count(old) != 1:
+                  raise RuntimeError('Integration anchor must occur exactly once: ' + old)
+              return text.replace(old, new)
+          def write(path, text):
+              Path(path).write_bytes(text.encode('utf-8'))
+              git('add', '--', path)
+          path = 'tools/XamlG.Playground/App.Dockyard.cs'
+          text = read(path)
+          text = replace(text, '        new("agent", "Coding agent", "Right"),',
+              '        new("git-repositories", "Git repositories", "Left", DefaultOpen: false),\n'
+              '        new("git-changes", "Git changes", "Right", DefaultOpen: false),\n'
+              '        new("git-branches", "Git branches and stashes", "Left", DefaultOpen: false),\n'
+              '        new("git-history", "Git history", DefaultOpen: false),\n'
+              '        new("git-github", "GitHub", "Right", DefaultOpen: false),\n'
+              '        new("agent", "Coding agent", "Right"),')
+          text = replace(text, 'PaneTemplate(template is "explorer"',
+              'PaneTemplate(template == "git-document" ? "git-document" : template.StartsWith("git-", StringComparison.Ordinal) ? "git-tool" : template is "explorer"')
+          text = replace(text, '.Concat(AllDocumentIds()).ToArray();', '.Concat(AllDocumentIds()).Concat(_gitDocuments.Keys).ToArray();')
+          write(path, text)
+          path = 'tools/XamlG.Playground/App.razor'
+          text = read(path)
+          text = replace(text, '<link rel="stylesheet" href="runtime-workbench.css" />',
+              '<link rel="stylesheet" href="runtime-workbench.css" />\n<link rel="stylesheet" href="git/workbench.css" />')
+          button = '        <button @onclick=\'() => ShowPaneAsync("agent")\''
+          text = replace(text, button,
+              '        <button @onclick=\'() => ShowPaneAsync("git-repositories")\' disabled="@(!_dockReady)" data-testid="git-workbench">Git</button>\n' + button)
+          anchor = '    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("document")" Context="pane">'
+          templates = '''    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("git-tool")" Context="pane">
+                  <GitTool SessionId="@_panePrefix" Kind="@(pane.GetProperty("ContentId").GetString()!)" OpenRequested="OpenGitDocumentAsync" />
+              </BrowserTemplate>
+              <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("git-document")" Context="pane">
+                  @if (_gitDocuments.TryGetValue(pane.GetProperty("ContentId").GetString()!, out var gitDocument))
+                  {
+                      <GitDocument @key="gitDocument.Id" SessionId="@_panePrefix" DocumentId="@gitDocument.Id"
+                          OpenRequested="OpenGitDocumentAsync" ImportRequested="ImportGitSourceAsync" ReadStudioRequested="ReadStudioSourceAsync" />
+                  }
+              </BrowserTemplate>
+          '''
+          # The YAML block indentation is removed by the workflow parser; retain
+          # ordinary four-space Razor indentation in the inserted fragment.
+          templates = '\n'.join(line[8:] if line.startswith('        ') else line for line in templates.splitlines()) + '\n'
+          text = replace(text, anchor, templates + anchor)
+          write(path, text)
+          path = 'tools/XamlG.Playground/App.razor.cs'
+          text = replace(read(path), '        RetireDocumentBuffers();', '        RetireDocumentBuffers();\n        await DisposeGitAsync();')
+          write(path, text)
+          path = 'tools/XamlG.Playground/wwwroot/startup.js'
+          text = replace(read(path), "'solution-workspace.js']);", "'solution-workspace.js', 'git/workbench.mjs']);")
+          write(path, text)
+          if git('diff', '--name-only', '--diff-filter=U'):
+              raise RuntimeError('Unresolved merge entries remain.')
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          tree = git('write-tree')
+          commit = git('commit-tree', tree, '-p', head, '-p', main,
+              input='Merge main Git workbench into validated solution workspaces\n\nPreserve both document registries, template factories, module allowlists and lifecycle cleanup.\n')
+          if remote(branch) != head or remote('refs/heads/main') != main:
+              raise RuntimeError('The source or target advanced during integration.')
+          # This one-time workflow is absent from the candidate tree. Never push
+          # main or the feature ref here: the connector will inspect the candidate.
+          git('push', '--force-with-lease=' + candidate + ':', 'origin', commit + ':' + candidate)
+          print('CANDIDATE_COMMIT=' + commit, flush=True)
+          print('CANDIDATE_TREE=' + tree, flush=True)
+          print('SOURCE_PARENT=' + head, flush=True)
+          print('MAIN_PARENT=' + main, flush=True)
+          print(git('diff', '--stat', main, commit), flush=True)
