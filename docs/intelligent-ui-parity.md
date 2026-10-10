@@ -4,7 +4,7 @@ This guide describes rich authoring introduced in PR #19, extending the core con
 
 ## Current vocabulary
 
-The reusable compiler has **47 native controls plus 18 source-only composites**. `xamlg_ui_catalog` returns both schemas, limits, namespaces, authoring guidance and complete pricing, counter, dashboard, form and vector-drawing examples. The normal Studio/companion registration exposes **23 tools**, including `xamlg_ui_state_action`; the six form-lifecycle tools retain ordinary authorization and grant no new authority.
+The reusable compiler has **49 native controls plus 18 source-only composites**. `xamlg_ui_catalog` returns both schemas, limits, namespaces, authoring guidance and complete pricing, counter, dashboard, form and vector-drawing examples. The normal Studio/companion registration exposes **23 tools**, including `xamlg_ui_state_action`; the six form-lifecycle tools retain ordinary authorization and grant no new authority.
 
 | Composite family | Elements |
 | --- | --- |
@@ -156,3 +156,5 @@ python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/
 ```
 
 Source tests, completed CI runs, a merged PR, published NuGet packages and a deployed Pages site are distinct evidence. PR #19 and PR #22 record checks by exact commit; a passing parent does not certify a later head.
+
+See [selectors and input authoring](intelligent-ui-selectors-input.md) for the newer keyboard, nullable-input, control-template and logical-selector contracts and their remaining native/portable boundaries.

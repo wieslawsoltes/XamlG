@@ -46,7 +46,8 @@ public static class UiControlTemplates
                     throw Invalid("TemplateBinding requires registered, nonconflicting properties.");
                 if (pair.Key is "Name" or "Classes" || pair.Value.Property is "Name" or "Classes" || pair.Key.Contains('.') || pair.Value.Property.Contains('.'))
                     throw Invalid("TemplateBinding requires a single native property, not a path or collection.");
-                if (source.Kind != destination.Kind) throw Invalid("TemplateBinding property types disagree.");
+                if (source.Kind != destination.Kind || source.Nullable && !destination.Nullable)
+                    throw Invalid("TemplateBinding property types disagree.");
                 if (pair.Value.Mode is not ("OneWay" or "TwoWay")) throw Invalid("TemplateBinding supports OneWay and TwoWay.");
                 if (pair.Value.Mode == "TwoWay" && (pair.Key != component.InputProperty || pair.Value.Property != owner.InputProperty))
                     throw Invalid("TwoWay template binding is restricted to the registered input pair.");
@@ -64,7 +65,7 @@ public static class UiControlTemplates
         foreach (var property in theme.Properties.Keys) UiStyles.ValidateProperty(component, property);
         UiTreeValidation.ValidateElement(new("theme", targetType, theme.Properties, []), component);
         UiStyles.Validate(theme.Styles, catalog);
-        if (theme.Styles.Any(rule => UiStyles.ParseSelector(rule.Selector).Target != targetType)) throw Invalid("Nested theme styles must target the theme owner.");
+        if (theme.Styles.Any(rule => !UiStyleSelectors.IsThemeSelector(UiStyles.ParseSelector(rule.Selector), targetType))) throw Invalid("Nested theme styles must start at the theme owner.");
         return Validate(theme.Template, targetType, catalog);
     }
     public static bool Equivalent<T>(T? left, T? right) where T : class => ReferenceEquals(left, right) ||

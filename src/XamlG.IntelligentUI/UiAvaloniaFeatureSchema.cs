@@ -68,7 +68,7 @@ internal static class UiAvaloniaFeatureSchema
         components.Add("ContentPresenter", components["ContentControl"] with { Name = "ContentPresenter" });
         components.Add("ItemsPresenter", components["Viewbox"] with { Name = "ItemsPresenter", MaximumChildren = 0,
             Properties = components["Viewbox"].Properties.Remove("Stretch").Remove("StretchDirection") });
-        return components.Values;
+        return UiInputFeatureSchema.Extend(components.Values);
     }
 
     internal static readonly string[] TemplatedControls =

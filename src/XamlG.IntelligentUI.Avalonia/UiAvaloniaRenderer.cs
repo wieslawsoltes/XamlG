@@ -118,7 +118,13 @@ public sealed class UiAvaloniaRenderer : IDisposable
     {
         var setters = entry.Registration.Setters;
         foreach (var old in entry.Node.Properties.Keys.Where(key => !node.Properties.ContainsKey(key)).ToArray()) setters[old](entry.Control, null);
-        foreach (var property in node.Properties.OrderBy(p => p.Key == "Minimum" ? 0 : p.Key == "Maximum" ? 1 : p.Key == "Value" ? 3 : 2))
+        // Text must exist before Avalonia clamps a caret/selection. Unchanged selection
+        // declarations are not reapplied on each input echo, preserving local editing.
+        foreach (var property in node.Properties.OrderBy(p => p.Key switch
+        {
+            "Minimum" => 0, "Maximum" => 1, "Text" => 2, "Value" => 4,
+            "CaretIndex" => 5, "SelectionStart" => 6, "SelectionEnd" => 7, _ => 3
+        }))
         {
             if (property.Key == "SelectedIndex") continue;
             if (initial || property.Key == _schema.Components[node.Type].InputProperty || !entry.Node.Properties.TryGetValue(property.Key, out var previous) || !JsonElement.DeepEquals(previous, property.Value) || property.Key == "Value" && (Changed("Minimum") || Changed("Maximum"))) setters[property.Key](entry.Control, property.Value);
@@ -163,7 +169,7 @@ public sealed class UiAvaloniaRenderer : IDisposable
             {
                 if (entry.Control is TextBox text && args.Property == TextBox.TextProperty) value = JsonSerializer.SerializeToElement(text.Text ?? "");
                 else if (entry.Control is Slider slider && args.Property == RangeBase.ValueProperty) value = JsonSerializer.SerializeToElement(slider.Value);
-                else if (entry.Control is CheckBox toggle && args.Property == ToggleButton.IsCheckedProperty) value = JsonSerializer.SerializeToElement(toggle.IsChecked == true);
+                else if (entry.Control is CheckBox toggle && args.Property == ToggleButton.IsCheckedProperty) value = JsonSerializer.SerializeToElement(toggle.IsChecked);
             }
             if (value is { } changed) StateChanged?.Invoke(new(_snapshot.Id, _snapshot.Revision, _snapshot.StateRevision, entry.Node.StateKey, changed));
         };

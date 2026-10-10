@@ -8,7 +8,7 @@ This is the data-only response dialect, not unrestricted application XAML. Its `
 
 Property elements, `x:Name`, `Classes`, scalar resources, inline merged dictionaries, `StaticResource` and `DynamicResource` references are supported. Resource references resolve in their declaration scope during publication. Local dictionaries override merged entries, and resource cycles, unknown values and duplicate local keys are rejected. No resource include fetches an external URL. `DynamicResource` currently participates in revisioned regeneration, not an independent live CLR resource graph.
 
-Scoped `Styles` lower to real Avalonia styles in the native renderer and validated package-owned CSS in the portable resource. Registered control types, class/name qualifiers, supported pseudoclasses and nested `^` selectors are available. Typed presentation setters use the native catalog's converters; explicit local properties retain precedence. State/action/visibility authority cannot be introduced through a style. Selector combinators, arbitrary includes, control themes and model-authored control templates are not part of this increment.
+Scoped `Styles` lower to real Avalonia styles in the native renderer and validated package-owned CSS in the portable resource. Registered control types, class/name qualifiers, supported pseudoclasses and nested `^` selectors are available. Typed presentation setters use the native catalog's converters; explicit local properties retain precedence. State/action/visibility authority cannot be introduced through a style. Logical child/descendant/template combinators, derived/negated/positional predicates and source groups are supported. Arbitrary includes and behavior-changing setters remain excluded. Bounded native control templates/themes are described below.
 
 ## Bindings and inherited data contexts
 
@@ -53,7 +53,7 @@ Unqualified paths begin at the current JSON context: initially `data`, inherited
 
 Templates retain lexical resource scopes. Compatible keyed native controls survive data replacement, and repeated/template actions capture their current item in the owning store. A view cannot forge action context. Unused templates also undergo compiler validation, including unknown properties, forbidden expression syntax and cycles; unreferenced declarations are not an execution loophole.
 
-Templates expand to bounded primitive trees. They are not virtualized Avalonia IDataTemplate instances and do not add control-template parts, templated-parent binding, hierarchical templates or arbitrary object construction. Generated content-context holders count against existing node/depth limits.
+Templates expand to bounded primitive trees. These data templates are not virtualized Avalonia IDataTemplate instances and do not add hierarchical templates or arbitrary object construction. The separate native ControlTemplate/ControlTheme contract supports private parts and typed TemplateBinding. Generated content-context holders count against existing node/depth limits.
 
 ## Structured brushes
 
@@ -98,4 +98,8 @@ Portable SVG shapes use prepared, snapshot-owned paint servers; identical brush 
 
 A test definition is not a passing run. PR #22 records results by exact head and synthetic merge. Headless/native property tests, portable Chromium tests, production browser acceptance, package checks, merging and deployment are separate evidence.
 
-Full authoring parity still requires additional control families, control themes/templates, broader binding/selector semantics, virtualized and hierarchical data views, image/drawing brushes, effects/animation, owner-scoped rich assets/references, advanced charts/tables and independent host/platform conformance. See the [fidelity audit](intelligent-ui-avalonia-fidelity.md) and [rich response guide](intelligent-ui-parity.md). This increment closes concrete resource/style/binding/template/brush gaps; it does not relabel all remaining Avalonia APIs as supported.
+Full authoring parity still requires additional control families, broader live theme/resource graphs and binding/selector semantics, virtualized and hierarchical data views, image/drawing brushes, effects/animation, owner-scoped rich assets/references, advanced charts/tables and independent host/platform conformance. See the [fidelity audit](intelligent-ui-avalonia-fidelity.md) and [rich response guide](intelligent-ui-parity.md). This increment closes concrete resource/style/binding/template/brush gaps; it does not relabel all remaining Avalonia APIs as supported.
+
+## Native control templates, selectors and input authoring
+
+Bounded ControlTemplate, ControlTheme/BasedOn and typed TemplateBinding are implemented by the native adapter (PR #27). [Selectors and input authoring](intelligent-ui-selectors-input.md) documents PR #30: logical child/descendant/template relationships, :is/:not/positional predicates, keyboard groups, nullable toggles, caret/selection, range increments and repeat lifecycles. The portable resource projects standalone presenters and ordinary controls; it does not instantiate native themes/templates. The current default catalog has 49 entries.

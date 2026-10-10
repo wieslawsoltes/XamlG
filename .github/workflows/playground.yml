@@ -50,7 +50,7 @@ jobs:
         working-directory: tools/XamlG.Playground
         env:
           PLAYGROUND_PAGES_PREVIEW: '1'
-        run: python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/intelligent-ui-lifecycle.spec.mjs tests/intelligent-ui-parity.spec.mjs
+        run: python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/intelligent-ui-lifecycle.spec.mjs tests/intelligent-ui-parity.spec.mjs tests/intelligent-ui-authoring.spec.mjs tests/intelligent-ui-input.spec.mjs
       - uses: actions/upload-artifact@v4
         if: always() && matrix.shard == 1
         with:
