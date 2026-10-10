@@ -7,7 +7,7 @@ namespace XamlG.Automation.Tests;
 public sealed class AgentCompactionTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
-    private static AgentRunOptions Options => new() { AutomaticCompaction = false };
+    private static AgentRunOptions Options => new() { AutomaticCompaction = false, ContinueQueuedMessages = false };
 
     [Fact]
     public async Task Checkpoint_is_tool_free_preserves_requirements_plan_and_complete_native_turns()
@@ -113,7 +113,7 @@ public sealed class AgentCompactionTests
     }
 
     [Fact]
-    public async Task Cancellation_after_one_tool_never_allows_compaction_of_the_remaining_partial_batch()
+    public async Task Stop_closes_the_remaining_batch_before_compaction_and_resume()
     {
         var effects = new List<int>(); var provider = new ScriptedAgentProvider();
         provider.Add(ScriptedAgentProvider.Call(Edit("one", 1), Edit("two", 2)));
@@ -121,11 +121,13 @@ public sealed class AgentCompactionTests
         harness.EventPublished += item => { if (item.Kind == "tool_completed") harness.Stop(); };
         var task = harness.CreateTask("Partial", provider, "fixture", Token);
         await harness.RunAsync(task.Id, "Change twice", Options with { Policy = new() { Profile = PermissionProfile.AutoEdit } }, cancellationToken: Token);
-        Assert.Equal([1], effects); Assert.Equal(AgentTaskStatus.Cancelled, task.Status);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.CompactAsync(task.Id, Options, Token));
-        Assert.Single(provider.Requests); Assert.Equal(0, task.CheckpointCount);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.RunAsync(task.Id, null, Options, cancellationToken: Token));
-        Assert.Equal([1], effects);
+        Assert.Equal([1], effects); Assert.Equal(AgentTaskStatus.Paused, task.Status);
+        provider.Add(ScriptedAgentProvider.Done("The first edit ran; the second was skipped."));
+        Assert.True(await harness.CompactAsync(task.Id, Options, Token));
+        Assert.Equal(1, task.CheckpointCount);
+        provider.Add(ScriptedAgentProvider.Done("Inspected the completed operation."));
+        await harness.RunAsync(task.Id, null, Options, cancellationToken: Token);
+        Assert.Equal(AgentTaskStatus.Completed, task.Status); Assert.Equal([1], effects);
     }
 
     [Fact]

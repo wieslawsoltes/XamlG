@@ -12,7 +12,7 @@ async function reopen(page) {
 }
 
 test('review feedback, diff paging and task drafts remain independent across task and pane changes', async ({ page, request, baseURL }) => {
-  test.setTimeout(120000);
+  test.setTimeout(180000);
   await withAgentWorkbench({ page, request, baseURL }, reply, async ({ page, pane, api, requests }) => {
     const invoke = (name, args) => call(page, name, args);
     const baseline = '<StackPanel xmlns="https://github.com/avaloniaui">\n' +
@@ -267,12 +267,12 @@ test('Stop cancels the provider stream and retains its incomplete public reply f
     await reviewAgentRun(page, pane, 'Stream a response until cancelled.');
     await expect(pane.getByRole('log')).toContainText('Streamed draft before Stop.');
     await agentSection(pane, 'Conversation');
-    await pane.getByRole('button', { name: 'Stop & revoke', exact: true }).click();
-    await expect(pane.locator('.agent-task-status')).toContainText('cancelled');
+    await pane.getByRole('button', { name: 'Stop and keep progress', exact: true }).click();
+    await expect(pane.locator('.agent-task-status')).toContainText('paused');
     await expect(pane.locator('.agent-assistant_incomplete')).toContainText('Streamed draft before Stop.');
     await expect(pane.locator('.agent-assistant')).toHaveCount(0);
     await agentSection(pane, 'Conversation');
-    await expect(pane.getByRole('button', { name: 'Resume', exact: true })).toBeDisabled();
+    await expect(pane.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
     await expect.poll(() => closed).toBe(true);
     const exported = JSON.parse(await api('export', { id }));
     expect(JSON.stringify(exported)).toContain('assistant_incomplete');

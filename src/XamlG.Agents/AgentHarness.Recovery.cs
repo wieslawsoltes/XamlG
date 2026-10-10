@@ -26,6 +26,17 @@ public sealed partial class AgentHarness
             if (budget.Requests >= options.Limits.RequestsPerRun) { Pause(task, "Request limit reached."); return null; }
             if (task.TotalTokens >= options.Limits.TotalTaskTokens) { Pause(task, "Task token budget reached."); return null; }
             var remaining = options.Limits.TotalTaskTokens - task.TotalTokens - inputEstimate;
+            if (task.ActiveGoal is { Status: AgentGoalStatus.Active, TokenBudget: { } goalBudget } goal)
+            {
+                var goalRemaining = goalBudget - goal.TokensUsed - inputEstimate;
+                if (goalRemaining < 1)
+                {
+                    task.ActiveGoal = goal with { Status = AgentGoalStatus.BudgetLimited, Evidence = "The remaining goal budget cannot fit the next request.", UpdatedAt = DateTimeOffset.UtcNow };
+                    Pause(task, "Goal token budget reached. Increase the goal budget to resume.");
+                    return null;
+                }
+                remaining = Math.Min(remaining, goalRemaining);
+            }
             if (remaining < 1) { Pause(task, "The remaining task budget cannot fit the estimated input. Review the token limit."); return null; }
             var effective = request with { MaxOutputTokens = (int)Math.Min(request.MaxOutputTokens, remaining) };
             if (!checkpoint && task.OutputLimitToExceed is { } previous && effective.MaxOutputTokens <= previous)
@@ -106,11 +117,13 @@ public sealed partial class AgentHarness
         if (usage.Estimated) task.EstimatedTokens = checked(task.EstimatedTokens + usage.Total);
         else task.ReportedTokens = checked(task.ReportedTokens + usage.Total);
         task.LastUsage = usage;
+        if (task.ActiveGoal is { Status: AgentGoalStatus.Active } goal)
+            task.ActiveGoal = goal with { TokensUsed = checked(goal.TokensUsed + usage.Total), UpdatedAt = DateTimeOffset.UtcNow };
     }
 
     private bool ReserveToolResults(AgentTask task, AgentRunOptions options, IReadOnlyList<AutomationTool> tools, int? contextBytes = null)
     {
-        var request = new AgentRequest(task.Model, RunInstructions(options), task.Messages.ToArray(), tools, options.Limits.OutputTokensPerRequest);
+        var request = new AgentRequest(task.Model, RunInstructions(options, task), task.Messages.ToArray(), tools, options.Limits.OutputTokensPerRequest);
         task.NativeContextBytes = contextBytes ?? task.Provider.GetContextBytes(request);
         var otherTasks = _tasks.Values.Where(other => other != task).Sum(other => (long)other.NativeContextBytes);
         var available = Math.Min(options.Limits.ContextBytes, 64_000_000 - otherTasks) - task.NativeContextBytes;

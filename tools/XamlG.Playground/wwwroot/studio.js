@@ -437,28 +437,44 @@ export function releaseAgentViews(ownerId) { for (const kind of ['thread', 'comp
 const agentComposerBindings = new WeakMap();
 export function bindAgentComposer(element, taskId, owner, ownerId) {
     rememberAgentView(ownerId, 'composer', element);
+    if (element) resizeAgentComposer(element);
     if (!element || agentComposerBindings.get(element)?.taskId === taskId) return;
     releaseAgentComposer(element);
     let composing = false;
     const start = () => { composing = true; };
     const end = () => { composing = false; };
+    const input = () => resizeAgentComposer(element);
+    const menu = element.closest('.agent-composer')?.querySelector('.agent-composer-more');
+    const closeMenu = event => { if (event.target.closest('button')) menu?.removeAttribute('open'); };
+    menu?.addEventListener('click', closeMenu);
     const key = event => {
+        if (event.key === 'Escape' && element.dataset.canStop === 'true' && !composing && !event.isComposing) {
+            event.preventDefault(); event.stopPropagation();
+            owner.invokeMethodAsync('AgentComposerStop', taskId).catch(() => {}); return;
+        }
         if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229 || composing) return;
         if (element.dataset.taskId !== taskId || element.dataset.canSubmit !== 'true') return;
         event.preventDefault(); event.stopPropagation();
         if (event.repeat) return;
-        // The managed review state rejects duplicate submissions. Draft persistence
-        // may still be pending after the user cancels a review and submits again.
-        owner.invokeMethodAsync('AgentComposerSubmit', taskId, element.value)
+        owner.invokeMethodAsync('AgentComposerSubmit', taskId, element.value,
+            (event.metaKey || event.ctrlKey) && element.dataset.canStop === 'true')
             .catch(() => {});
     };
-    element.addEventListener('compositionstart', start); element.addEventListener('compositionend', end); element.addEventListener('keydown', key);
-    agentComposerBindings.set(element, { taskId, start, end, key });
+    element.addEventListener('compositionstart', start); element.addEventListener('compositionend', end); element.addEventListener('keydown', key); element.addEventListener('input', input);
+    agentComposerBindings.set(element, { taskId, start, end, key, input, menu, closeMenu });
+}
+function resizeAgentComposer(element) {
+    const style = getComputedStyle(element);
+    if (style.display === 'none' || !element.clientWidth) return;
+    element.style.height = 'auto';
+    element.style.height = Math.max(parseFloat(style.minHeight) || 48, Math.min(element.scrollHeight, parseFloat(style.maxHeight) || 200)) + 'px';
 }
 export function releaseAgentComposer(element) {
     const binding = element && agentComposerBindings.get(element);
     if (!binding) return;
     element.removeEventListener('compositionstart', binding.start); element.removeEventListener('compositionend', binding.end); element.removeEventListener('keydown', binding.key);
+    element.removeEventListener('input', binding.input);
+    binding.menu?.removeEventListener('click', binding.closeMenu);
     agentComposerBindings.delete(element);
 }
 const agentDiffPositions = new Map(Object.entries(viewPreferences.diffs || {}));

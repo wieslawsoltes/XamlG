@@ -48,8 +48,7 @@ test(`direct ${provider} uses browser SDK, source approval and native tool conti
   await pane.getByLabel('Task name', { exact: true }).fill('Direct SDK test');
   await pane.getByRole('button', { name: 'Create task', exact: true }).click();
   await pane.getByLabel('Message', { exact: true }).fill('Change and compile the current XAML.');
-  await pane.getByRole('button', { name: 'Run', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Review agent run' }).getByRole('button', { name: 'Confirm run', exact: true }).click();
+  await pane.getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(pane.locator('.agent-pending')).toContainText('Direct browser edit');
   await expect(pane.locator('.agent-pending')).toContainText('Before');
   await expect(pane.locator('.agent-pending')).toContainText('After');
@@ -124,13 +123,13 @@ test('direct credentials are remembered per provider while closure and workspace
     await pane.getByLabel('Accept browser key exposure').check();
     await section(pane, 'Conversation');
     await pane.getByLabel('Message', { exact: true }).fill('Wait for a response.');
-    await pane.getByRole('button', { name: 'Run', exact: true }).click();
+    await pane.getByRole('button', { name: 'Send message', exact: true }).click();
     await page.getByRole('dialog', { name: 'Review agent run' }).getByRole('button', { name: 'Confirm run', exact: true }).click();
     await arrived.promise;
     await page.locator('.ad-anchorable-pane[aria-label="Coding agent"] > .ad-pane-title').getByRole('button', { name: 'Hide tool window', exact: true }).click();
     response.resolve();
     await page.getByTestId('agent-workbench').click();
-    await expect(pane.locator('.agent-task-status')).toContainText('cancelled');
+    await expect(pane.locator('.agent-task-status')).toContainText('paused');
     await expect(pane.locator('.agent-assistant')).toHaveCount(0);
     await section(pane, 'Connection');
     await expect(pane.getByLabel('API key', { exact: true })).toHaveValue(key);

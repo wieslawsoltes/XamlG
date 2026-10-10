@@ -86,10 +86,13 @@ Open **Coding agent → Connection** to choose a transport:
 - **Paired companion** retains server-run agents and ChatGPT account mode. Its
   agent run policy and the browser sharing policy both apply.
 
-Conversation, Connection, Tasks, Plan, Changes, Queue, Permissions, Tools and
+Conversation, Connection, Threads, Plan, Changes, Queue, Permissions, Tools and
 Activity organize the workbench. Permissions show the current host ceiling and
 active lease/grants separately from preferences for the next run. Source approvals
 include revision-bound Before/After excerpts with a full-review download.
+**Expand agent workspace** opens a wide conversation and thread sidebar;
+**Return to dock** restores the normal IDE pane. The composer stays visible while
+the conversation, queue and status details scroll above it.
 
 Each source or generated file opens in a Dockyard document tab. Closing a source
 tab captures its pending edits and keeps the project file. Inspector and Agent
@@ -209,19 +212,32 @@ provides local download/release controls, searchable capabilities and metadata-o
 activity filtering, pause/follow, export and clearing. It records no tool arguments,
 results or credentials.
 
-Queued follow-ups stay local until an explicit `RunQueuedAsync` accepts their ID
-and reviewed queue revision. The queue supports editing, reordering and removal,
+Sending accepts a durable client message ID before starting a turn. Retries and
+reloads reuse that identity, and ordered draft revisions prevent delayed saves
+from restoring sent text. While the agent works, Send queues the follow-up for
+automatic dispatch after its response. **Steer now** applies guidance at the next
+safe operation boundary. Unstarted tool calls receive skipped results so native
+provider history remains valid. The queue supports editing, reordering and removal,
 including during generation, with limits of 16 messages, 100,000 characters per
 message and 200,000 total characters. Queue text is excluded from provider context
 and transcript exports until accepted. Invalid run arguments and stale queue reviews
-leave the message queued; a paused turn must be resumed before dispatching another
-message. The workbench preserves its separate composer draft and offers these queue
-controls alongside a run review showing the captured task, provider, model, request,
-permissions and limits. Every Full Access run requires a fresh acknowledgement.
+leave the message queued. Automatic follow-ups share the current run's limits and
+permission lease. **Permissions → Sending** offers manual dispatch and review
+before every run; manual `RunQueuedAsync` checks the selected ID and queue revision.
+The workbench preserves its separate composer draft. Run review shows the captured
+task, provider, model, request, permissions and limits. Every Full Access run
+requires a fresh acknowledgement. Stop preserves completed operations and pauses
+the thread; Resume continues without replaying them.
 Request timeout, retry count and tool-result size are independently editable.
 
-Enter or Ctrl+Enter in the message composer opens the same run review as **Run**;
-Shift+Enter inserts a line and IME composition never submits. Completed messages
+Enter sends or queues; Ctrl/Cmd+Enter steers an active turn. Escape stops work.
+Shift+Enter inserts a line and IME composition never submits. The composer's
+Code/Plan picker separates read-only investigation from implementation. A completed
+plan has a revision-checked **Implement plan** handoff. `/goal <objective>` or
+**Set a goal** creates an explicit persistent objective with optional token budget;
+pause, resume and clear are user controls. Goal completion requires evidence, and
+automatic continuation stops for planning, exhausted budgets or no tool progress.
+Restored goals wait for explicit resume. Completed messages
 render a bounded Markdown subset with copyable fenced code and HTTP(S) links.
 HTML, images and embeds remain text. **Earlier messages** and **Newer messages**
 page through retained public history; **Follow latest** returns to the current
