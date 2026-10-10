@@ -10,24 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: 58901d52f999755bb0dc330914272652e7504326
-          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: playground-validation
           run-id: 38070784803
           github-token: ${{ github.token }}
           path: evidence
-      - name: Inspect failed viewport geometry and changed command contracts
+      - name: Read bounding box results and nearby layout snapshots
         shell: python
         run: |
           import json, zipfile
           from pathlib import Path
           for path in Path('evidence').rglob('trace.zip'):
               if 'agent-layout' not in str(path): continue
-              print('GEOMETRY:', path)
               with zipfile.ZipFile(path) as archive:
                   for name in archive.namelist():
                       if not name.endswith('.trace'): continue
@@ -38,12 +33,10 @@ jobs:
                           if event.get('type') == 'before': calls[event.get('callId')] = event
                           if event.get('type') == 'after':
                               before = calls.get(event.get('callId'), {})
-                              title = str(before.get('title') or before.get('apiName') or before.get('method') or '')
-                              if 'bounding' in title.lower():
-                                  print(title, before.get('params', {}), event.get('result', {}))
-          needles = ['Restore draft', 'Export project', 'Manage C# files', 'Manage XAML resources', "locator('.explorer')", 'Compile project']
-          for path in sorted(Path('tools/XamlG.Playground/tests').glob('*.mjs')):
-              for number, line in enumerate(path.read_text().splitlines(), 1):
-                  if any(needle in line for needle in needles): print(f'{path}:{number}: {line[:400]}')
-          path = Path('tools/XamlG.Playground/wwwroot/agent-workbench.css')
-          print('\nAGENT CSS END:\n' + '\n'.join(path.read_text().splitlines()[355:]))
+                              method = str(before.get('method', ''))
+                              if method in ('boundingBox', 'setViewportSize'):
+                                  print(name, method, before.get('params', {}), event.get('result', {}))
+                          if event.get('type') == 'frame-snapshot':
+                              snapshot = event.get('snapshot', {})
+                              if snapshot.get('snapshotName', '').endswith('after@call@178'):
+                                  print('Snapshot:', str(snapshot)[:2000])
