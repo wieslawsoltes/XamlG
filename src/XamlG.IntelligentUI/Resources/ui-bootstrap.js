@@ -12,6 +12,7 @@ async function receiveResult(result){
 }
 function context(value){applyHostContext(value);scheduleLayout();}
 function teardown(){
+  retireUiBrushes();
   if(disposed)return;disposed=true;ready=false;epoch++;queued=null;marker=null;review=null;resize.disconnect();boxResize.disconnect();cancelAnimationFrame(layoutFrame);window.removeEventListener('message',onMessage);
   for(const call of pending.values()){clearTimeout(call.timer);call.reject(new Error('UI disposed.'));}pending.clear();
   for(const entry of entries.values())entry.dispose?.();entries.clear();drafts.clear();submitting.clear();snapshot=null;root.replaceChildren();

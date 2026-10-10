@@ -31,8 +31,11 @@ function create(node){
   if(node.type==='Button'||node.type==='RepeatButton')e.addEventListener('click',()=>prepare(entry));return entry;
 }
 function accept(value){
-  if(disposed)return;validSnapshot(value);const styleText=buildUiStyles(value);
+  if(disposed)return;validSnapshot(value);
   if(snapshot&&snapshot.sessionId===value.sessionId&&(value.revision<snapshot.revision||value.revision===snapshot.revision&&value.stateRevision<snapshot.stateRevision))return;
+  const previousBrushes=brushRegistry,candidateBrushes=prepareUiBrushes(value);let styleText;
+  brushRegistry=candidateBrushes;
+  try{styleText=buildUiStyles(value);}catch(failure){brushRegistry=previousBrushes;throw failure;}
   snapshot=value;review=null;$('review').hidden=true;applying=true;const used=new Set();
   try{
     function render(node,disabled=false,hidden=false){
@@ -58,8 +61,8 @@ function accept(value){
         case 'WrapPanel':e.style.display='flex';e.style.flexWrap='wrap';e.style.flexDirection=p.Orientation==='Vertical'?'column':'row';children.forEach(child=>{if(p.ItemWidth!==undefined)child.style.width=px(p.ItemWidth);if(p.ItemHeight!==undefined)child.style.height=px(p.ItemHeight);});break;
         case 'DockPanel':e.style.display='flex';e.style.flexWrap='wrap';children.forEach((child,i)=>{const side=node.children[i].properties['DockPanel.Dock'];if(side==='Top'||side==='Bottom')child.style.flexBasis='100%';if(i===children.length-1&&p.LastChildFill!==false)child.style.flex='1';});break;
         case 'UniformGrid':{const cols=p.Columns||Math.max(1,Math.ceil(Math.sqrt(children.length+(p.FirstColumn||0))));e.style.display='grid';e.style.gridTemplateColumns='repeat('+integer(cols,1,64)+',minmax(0,1fr))';if(p.Rows)e.style.gridTemplateRows='repeat('+integer(p.Rows,1,64)+',minmax(0,1fr))';if(children[0]&&p.FirstColumn)children[0].style.gridColumnStart=String(p.FirstColumn+1);break;}
-        case 'Border':e.style.padding=thickness(p.Padding??0);e.style.borderRadius=radius(p.CornerRadius??0);e.style.borderStyle='solid';e.style.borderWidth=thickness(p.BorderThickness??0,16);if(p.BorderBrush)e.style.borderColor=color(p.BorderBrush);break;
-        case 'TextBlock':case 'SelectableTextBlock':e.classList.add('text');e.textContent=p.Text||'';if(p.FontSize)e.style.fontSize=px(p.FontSize,.1,512);e.style.fontWeight=({Normal:'400',Medium:'500',SemiBold:'600',Bold:'700'})[p.FontWeight]||'400';if(p.Foreground)e.style.color=color(p.Foreground);e.style.whiteSpace=p.TextWrapping==='Wrap'?'pre-wrap':'pre';e.style.textAlign=({Left:'left',Center:'center',Right:'right',Justify:'justify'})[p.TextAlignment]||'left';break;
+        case 'Border':e.style.padding=thickness(p.Padding??0);e.style.borderRadius=radius(p.CornerRadius??0);e.style.borderStyle='solid';e.style.borderWidth=thickness(p.BorderThickness??0,16);if(p.BorderBrush)e.style.borderColor=brushSolid(p.BorderBrush);break;
+        case 'TextBlock':case 'SelectableTextBlock':e.classList.add('text');e.textContent=p.Text||'';if(p.FontSize)e.style.fontSize=px(p.FontSize,.1,512);e.style.fontWeight=({Normal:'400',Medium:'500',SemiBold:'600',Bold:'700'})[p.FontWeight]||'400';if(p.Foreground)e.style.color=brushSolid(p.Foreground);e.style.whiteSpace=p.TextWrapping==='Wrap'?'pre-wrap':'pre';e.style.textAlign=({Left:'left',Center:'center',Right:'right',Justify:'justify'})[p.TextAlignment]||'left';break;
         case 'Button':case 'RepeatButton':if(!children.length)e.textContent=p.Content||'Action';e.disabled=disabled||busy||!node.actionId;break;
         case 'TextBox':{const text=drafts.has(node.key)?drafts.get(node.key):p.Text||'';if(entry.input.value!==text)entry.input.value=text;entry.input.placeholder=p.PlaceholderText||'';entry.input.maxLength=integer(p.MaxLength??16384,1,16384);entry.input.rows=p.AcceptsReturn?3:1;entry.input.readOnly=p.IsReadOnly===true;break;}
         case 'Slider':case 'NumericUpDown':entry.input.min=String(number(p.Minimum??(node.type==='NumericUpDown'?-1000000:0),-1000000,1000000));entry.input.max=String(number(p.Maximum??(node.type==='NumericUpDown'?1000000:100),-1000000,1000000));entry.input.step=node.type==='NumericUpDown'?String(p.Increment??1):p.IsSnapToTickEnabled?String(p.TickFrequency??1):'any';entry.input.value=p.Value==null?'':String(p.Value);if(p.Orientation==='Vertical')entry.input.style.writingMode='vertical-lr';break;
@@ -73,7 +76,7 @@ function accept(value){
         case 'TabControl':{const selected=p.SelectedIndex??0;entry.nav.replaceChildren(...node.children.map((child,index)=>{const tab=document.createElement('button');tab.type='button';tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(index===selected));tab.textContent=child.properties.Header||label(child);tab.disabled=disabled||busy;tab.onclick=()=>node.stateKey?changeState(entry,index).catch(error):localTab(index);return tab;}));localTab(selected);function localTab(index){children.forEach((child,i)=>{child.hidden=i!==index||hidden||node.children[i].properties.IsVisible===false;});[...entry.nav.children].forEach((tab,i)=>tab.setAttribute('aria-selected',String(i===index)));}break;}
         case 'DatePicker':case 'CalendarDatePicker':case 'Calendar':entry.input.value=p.SelectedDate?.slice(0,10)||'';break;
         case 'TimePicker':entry.input.value=p.SelectedTime?.slice(0,8)||'';entry.input.step=String((p.MinuteIncrement??1)*60);break;
-        case 'Rectangle':case 'Ellipse':case 'Line':{const width=p.Width??100,height=p.Height??60,s=entry.shape;e.setAttribute('viewBox',`0 0 ${width||1} ${height||1}`);e.style.width=px(width);e.style.height=px(height);s.setAttribute('fill',p.Fill?color(p.Fill):'none');s.setAttribute('stroke',p.Stroke?color(p.Stroke):'none');s.setAttribute('stroke-width',String(p.StrokeThickness??1));if(node.type==='Rectangle'){s.setAttribute('width',width);s.setAttribute('height',height);s.setAttribute('rx',p.RadiusX??0);s.setAttribute('ry',p.RadiusY??0);}else if(node.type==='Ellipse'){s.setAttribute('cx',width/2);s.setAttribute('cy',height/2);s.setAttribute('rx',width/2);s.setAttribute('ry',height/2);}else{const a=tuple(p.StartPoint??'0,0',-1000000,1000000),b=tuple(p.EndPoint??'0,0',-1000000,1000000);if(a.length!==2||b.length!==2)throw new Error('Line points require two coordinates.');s.setAttribute('x1',a[0]);s.setAttribute('y1',a[1]);s.setAttribute('x2',b[0]);s.setAttribute('y2',b[1]);}break;}
+        case 'Rectangle':case 'Ellipse':case 'Line':{const width=p.Width??100,height=p.Height??60,s=entry.shape;e.setAttribute('viewBox',`0 0 ${width||1} ${height||1}`);e.style.width=px(width);e.style.height=px(height);s.setAttribute('fill',p.Fill?brushPaint(p.Fill):'none');s.setAttribute('stroke',p.Stroke?brushPaint(p.Stroke):'none');s.setAttribute('stroke-width',String(p.StrokeThickness??1));if(node.type==='Rectangle'){s.setAttribute('width',width);s.setAttribute('height',height);s.setAttribute('rx',p.RadiusX??0);s.setAttribute('ry',p.RadiusY??0);}else if(node.type==='Ellipse'){s.setAttribute('cx',width/2);s.setAttribute('cy',height/2);s.setAttribute('rx',width/2);s.setAttribute('ry',height/2);}else{const a=tuple(p.StartPoint??'0,0',-1000000,1000000),b=tuple(p.EndPoint??'0,0',-1000000,1000000);if(a.length!==2||b.length!==2)throw new Error('Line points require two coordinates.');s.setAttribute('x1',a[0]);s.setAttribute('y1',a[1]);s.setAttribute('x2',b[0]);s.setAttribute('y2',b[1]);}break;}
       }
       applyAvaloniaFeatures(entry);applyUiStyleIdentity(entry);return e;
     }
@@ -81,5 +84,6 @@ function accept(value){
     uiStyleElement.textContent=styleText;
     $('fallback').textContent=String(value.fallbackMarkdown||'').slice(0,131072);
     status((value.isFinal?'Interactive UI':'Streaming UI')+' · revision '+value.revision+' · state '+value.stateRevision);$('refresh').disabled=busy||!capabilities.serverTools;scheduleLayout();
-  }finally{applying=false;}
+    commitUiBrushes(previousBrushes);
+  }catch(failure){brushRegistry=previousBrushes;throw failure;}finally{applying=false;}
 }

@@ -39,6 +39,7 @@ function validSnapshot(value){
     seen.add(node.key);
     for(const [name,v]of Object.entries(node.properties)){
       if(name.length>80)throw new Error('Invalid property name.');
+      if(brushNames.has(name)){validateBrush(v);continue;}
       if(widgets.get(node.type)?.validateProperty?.(name,v))continue;
       if(v===null){if(!['Value','SelectedDate','SelectedTime'].includes(name))throw new Error('Invalid nullable property.');continue;}
       if(Array.isArray(v)){if(name!=='ItemsSource'||v.length>512||v.some(item=>typeof item!=='string'||item.length>1024))throw new Error('Invalid item source.');continue;}
@@ -61,7 +62,7 @@ function color(value){if(/^#[0-9a-f]{8}$/i.test(value))return '#'+value.slice(3)
 function tracks(value){const parts=String(value).split(',');if(parts.length>64)throw new Error('Too many grid tracks.');return parts.map(raw=>{const text=raw.trim();if(text==='Auto')return 'auto';if(text==='*')return '1fr';const star=text.endsWith('*');return number(Number(star?text.slice(0,-1):text),0,10000)+(star?'fr':'px');}).join(' ');}
 function reconcile(parent,children){const wanted=new Set(children);for(const child of [...parent.childNodes])if(child.nodeType!==Node.ELEMENT_NODE||!wanted.has(child))child.remove();children.forEach((child,index)=>{if(parent.children[index]!==child)parent.insertBefore(child,parent.children[index]||null);});}
 function retire(entry){boxResize.unobserve(entry.element);viewboxes.delete(entry.element);drafts.delete(entry.node.key);entry.dispose?.();entry.element.remove();}
-function retireSurface(){for(const entry of entries.values())retire(entry);entries.clear();drafts.clear();submitting.clear();root.replaceChildren();snapshot=null;review=null;$('review').hidden=true;}
+function retireSurface(){retireUiBrushes();for(const entry of entries.values())retire(entry);entries.clear();drafts.clear();submitting.clear();root.replaceChildren();snapshot=null;review=null;$('review').hidden=true;}
 function layoutViewbox(entry){
   if(disposed||!entry.element.isConnected)return;
   const child=entry.slot.firstElementChild;if(!child)return;

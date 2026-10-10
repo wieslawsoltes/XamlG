@@ -53,9 +53,9 @@ function validateUiStyleValue(type,name,value){
     case 'RenderTransform':drawingMatrix(value);return;
     case 'RenderTransformOrigin':drawingOrigin(value);return;
     case 'Clip':drawingPath(value);return;
-    case 'Background':if(!panel&&!templated&&!border)break;color(value);return;
-    case 'Foreground':if(!text&&!templated)break;color(value);return;
-    case 'BorderBrush':if(!border&&!templated)break;color(value);return;
+    case 'Background':if(!panel&&!templated&&!border)break;validateBrush(value);return;
+    case 'Foreground':if(!text&&!templated)break;validateBrush(value);return;
+    case 'BorderBrush':if(!border&&!templated)break;validateBrush(value);return;
     case 'BorderThickness':if(!border&&!templated)break;tuple(value,0,border?16:128);return;
     case 'Padding':case 'CornerRadius':if(!border&&!templated)break;tuple(value,0,128);return;
     case 'FontFamily':if(!text&&!templated)break;validateAvaloniaFeatures({type,properties:{FontFamily:value}});return;
@@ -69,7 +69,7 @@ function validateUiStyleValue(type,name,value){
     case 'MaxLines':if(!text)break;integer(value,0,4096);return;
     case 'HorizontalContentAlignment':if(!styleContent.has(type))break;choice(['Left','Center','Right','Stretch']);return;
     case 'VerticalContentAlignment':if(!styleContent.has(type))break;choice(['Top','Center','Bottom','Stretch']);return;
-    case 'Fill':case 'Stroke':if(!shape)break;color(value);return;
+    case 'Fill':case 'Stroke':if(!shape)break;validateBrush(value);return;
     case 'StrokeThickness':if(!shape)break;number(value,0,128);return;
     case 'StrokeDashArray':if(!shape)break;validateAvaloniaFeatures({type,properties:{StrokeDashArray:value}});return;
     case 'StrokeDashOffset':if(!shape)break;number(value,-1000000,1000000);return;
@@ -90,7 +90,7 @@ function uiStyleDeclarations(type,p){
   const result=new Map();
   for(const name of Object.keys(p))for(const css of styleCss[name]||[]){const value=e.style.getPropertyValue(css);if(value)result.set(css,value);}
   const set=(name,value)=>{if(value!==undefined)result.set(name,String(value));};
-  if(p.Fill!==undefined)set('fill',color(p.Fill));if(p.Stroke!==undefined)set('stroke',color(p.Stroke));
+  if(p.Fill!==undefined)set('fill',brushPaint(p.Fill));if(p.Stroke!==undefined)set('stroke',brushPaint(p.Stroke));
   if(p.StrokeThickness!==undefined){set('stroke-width',p.StrokeThickness);set('--ui-pen-width',p.StrokeThickness);}
   if(p.StrokeDashArray!==undefined){const values=drawingNumbers(p.StrokeDashArray,64,0,10000);set('stroke-dasharray',values.length?values.map(n=>'calc('+n+' * var(--ui-pen-width, 1))').join(' '):'none');}
   if(p.StrokeDashOffset!==undefined)set('stroke-dashoffset','calc('+p.StrokeDashOffset+' * var(--ui-pen-width, 1))');

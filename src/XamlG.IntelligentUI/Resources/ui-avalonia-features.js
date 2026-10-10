@@ -10,7 +10,7 @@ for(const [type,tag]of Object.entries(drawingTags))widgets.set(type,{
     if(entry.type==='Path'){
       const path=drawingPath(p.Data??'');s.setAttribute('d',path.data);s.setAttribute('fill-rule',path.rule);
     }else{s.setAttribute('points',drawingNumbers(p.Points??'',1024).join(' '));s.setAttribute('fill-rule',p.FillRule==='NonZero'?'nonzero':'evenodd');}
-    s.setAttribute('fill',p.Fill?color(p.Fill):'none');s.setAttribute('stroke',p.Stroke?color(p.Stroke):'none');s.setAttribute('stroke-width',String(p.StrokeThickness??1));
+    s.setAttribute('fill',p.Fill?brushPaint(p.Fill):'none');s.setAttribute('stroke',p.Stroke?brushPaint(p.Stroke):'none');s.setAttribute('stroke-width',String(p.StrokeThickness??1));
   }
 });
 widgets.set('Label',{
@@ -102,12 +102,12 @@ function applyAvaloniaFeatures(entry){
   if(p.FontSize!==undefined)e.style.fontSize=px(p.FontSize,.1,512);
   if(p.FontStyle!==undefined)e.style.fontStyle=({Normal:'normal',Italic:'italic',Oblique:'oblique'})[p.FontStyle]??'normal';
   if(p.FontWeight!==undefined)e.style.fontWeight=({Normal:'400',Medium:'500',SemiBold:'600',Bold:'700'})[p.FontWeight]??'400';
-  if(p.Foreground!==undefined)e.style.color=color(p.Foreground);
+  if(p.Foreground!==undefined)e.style.color=brushSolid(p.Foreground);
   if(p.Padding!==undefined)e.style.padding=thickness(p.Padding);
   if(p.CornerRadius!==undefined)e.style.borderRadius=radius(p.CornerRadius);
   if(p.BorderThickness!==undefined){e.style.borderStyle='solid';e.style.borderWidth=thickness(p.BorderThickness);}
-  if(p.BorderBrush!==undefined)e.style.borderColor=color(p.BorderBrush);
-  if(p.Background!==undefined)e.style.background=color(p.Background);
+  if(p.BorderBrush!==undefined)e.style.borderColor=brushSolid(p.BorderBrush);
+  if(p.Background!==undefined)e.style.background=brushCss(p.Background);
   if(p.LineHeight!==undefined)e.style.lineHeight=px(p.LineHeight,.1,10000);
   if(p.TextTrimming!==undefined&&p.TextTrimming!=='None'){e.style.overflow='hidden';e.style.textOverflow='ellipsis';}
   if(p.MaxLines>0){e.style.display='-webkit-box';e.style.webkitBoxOrient='vertical';e.style.webkitLineClamp=String(p.MaxLines);e.style.overflow='hidden';}
