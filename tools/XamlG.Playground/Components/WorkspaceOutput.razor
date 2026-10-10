@@ -1,0 +1,48 @@
+@using System.Text.Json
+@using XamlG.Playground.Workspaces
+
+<section class="ws-output" aria-label="Workspace output">
+    <div class="ws-document-toolbar"><strong>Workspace output</strong><span class="toolbar-spacer"></span><small>@(Session.CancellationRequested ? "Cancellation requested" : Session.Busy ? "Operation running" : Session.IsLocal ? "Local SDK" : "Browser · structural inspection")</small>
+        @if (Session.CanCancel || Session.CancellationRequested)
+        { <button @onclick="Session.CancelOperationAsync" disabled="@(!Session.CanCancel)">Cancel operation</button> }
+    </div>
+    @if (Session.Error != null) { <p class="ws-error" role="alert">@Session.Error</p> }
+    @if (Session.EvaluatedGraph is { } graph)
+    {
+        <div class="ws-evaluated">
+            <h3>Evaluated Roslyn solution</h3>
+            @foreach (var diagnostic in graph.GetProperty("workspaceDiagnostics").EnumerateArray()) { <p class="ws-warning">@diagnostic.GetString()</p> }
+            @foreach (var project in graph.GetProperty("projects").EnumerateArray())
+            {
+                <details><summary>@Text(project, "name") · @Text(project, "language") · @Text(project, "targetFramework")</summary>
+                    <dl><dt>Project identity</dt><dd><code>@Text(project, "id")</code></dd><dt>Project file</dt><dd>@Text(project, "path")</dd><dt>Language version</dt><dd>@Text(project, "languageVersion")</dd><dt>Assembly</dt><dd>@Text(project, "assemblyName")</dd><dt>Output</dt><dd>@Text(project, "outputPath")</dd></dl>
+                    <details><summary>Documents (@project.GetProperty("documents").GetArrayLength())</summary>
+                        @foreach (var document in project.GetProperty("documents").EnumerateArray())
+                        {
+                            var path = Text(document, "path");
+                            <button class="ws-log-link" disabled="@(document.GetProperty("external").GetBoolean() || path.Length == 0)" @onclick="() => SourceRequested.InvokeAsync(path)">@Text(document, "kind") · @path</button>
+                        }
+                    </details>
+                    @foreach (var name in new[] { "projectReferences", "metadataReferences", "analyzerReferences", "preprocessorSymbols" })
+                    {
+                        <details><summary>@name (@project.GetProperty(name).GetArrayLength())</summary>@foreach (var value in project.GetProperty(name).EnumerateArray()) { <div><code>@value.GetString()</code></div> }</details>
+                    }
+                </details>
+            }
+            <h3>Compiler diagnostics</h3>
+            @foreach (var diagnostic in graph.GetProperty("compilerDiagnostics").EnumerateArray())
+            {
+                var path = Text(diagnostic, "path");
+                <button class="ws-log-link" @onclick="() => SourceRequested.InvokeAsync(path)" disabled="@(!Session.Inventory.Any(file => file.Path == path))"><strong>@Text(diagnostic, "severity") @Text(diagnostic, "id")</strong> @Text(diagnostic, "message") <small>@path:@diagnostic.GetProperty("line")</small></button>
+            }
+        </div>
+        <details><summary>Raw evaluated snapshot</summary><pre>@Session.Output</pre></details>
+    }
+    else { <pre role="log" aria-live="polite">@Session.Output</pre> }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public SolutionWorkspaceSession Session { get; set; } = default!;
+    [Parameter] public EventCallback<string> SourceRequested { get; set; }
+    private static string Text(JsonElement element, string name) => element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? "" : "";
+}
