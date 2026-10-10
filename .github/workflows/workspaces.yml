@@ -53,6 +53,14 @@ jobs:
         env:
           PLAYGROUND_PAGES_PREVIEW: '1'
         run: python ../../scripts/test-browser-studio.py solution-workspace.spec.mjs
+      - name: Include browser failure context in job logs
+        if: failure()
+        shell: python
+        run: |
+          from pathlib import Path
+          for context in sorted(Path('tools/XamlG.Playground/test-results').glob('*/error-context.md')):
+              print(f'\n--- {context} ---\n', flush=True)
+              print(context.read_text(encoding='utf-8')[:60000], flush=True)
       - uses: actions/upload-artifact@v4
         if: always()
         with:

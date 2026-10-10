@@ -107,6 +107,7 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
             if (addToCurrent)
             {
                 if (project == null || Snapshot.EntryPath == null) throw new ArgumentException("Choose a project and an open solution.");
+                await CaptureAllAsync(); await SaveCoreAsync(_documents.Values.ToArray());
                 var plan = WorkspaceTemplates.CreateProject(project);
                 var membership = await SolutionFileService.AddProjectAsync(Snapshot, Snapshot.EntryPath, plan.EntryPath);
                 await ApplyBrowserAsync(plan.Changes.Append(membership).ToArray());
@@ -276,7 +277,7 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
         }
         else
         {
-            await ApplyBrowserAsync(changes.Select(change => new WorkspaceChange(change.Document.Path, Snapshot.Files.GetValueOrDefault(change.Document.Path), change.File)).ToArray());
+            await ApplyBrowserAsync(changes.Select(change => new WorkspaceChange(change.Document.Path, change.Document.SavedFile, change.File)).ToArray());
             foreach (var (document, file) in changes) { document.SavedFile = file; document.Error = null; }
         }
         Inspect(); EvaluatedGraph = null;
@@ -296,7 +297,8 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
     {
         await CaptureAsync(document);
         if (document.Dirty && !await _module!.InvokeAsync<bool>("confirmDiscard", "Discard unsaved changes to " + document.Path + "?")) return;
-        var file = document.SavedFile;
+        var file = IsLocal ? document.SavedFile : Snapshot.Files.GetValueOrDefault(document.Path)
+            ?? throw new FileNotFoundException("The file is no longer in the workspace.", document.Path);
         if (IsLocal)
         {
             var disk = await NativeAsync<NativeWorkspaceFile>("workspace_read", new { path = document.Path });
@@ -471,6 +473,7 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
         candidate.Apply(candidate.Current.Revision, changes);
         await PersistBrowserAsync(candidate.Current, SelectedProject);
         _workspace = candidate;
+        SynchronizeCleanDocuments();
     }
     private async Task ReplaceBrowserAsync(VirtualWorkspace candidate, string[] openDocuments)
     {
