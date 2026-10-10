@@ -11,6 +11,8 @@ export function inputHost({html,initial}){
   const notify=()=>send({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:marker()}});
   const flat=roots=>roots.flatMap(node=>[node,...flat(node.children)]);
   window.inputCalls=[];window.inputDelay=0;window.failInput=false;window.failAction=false;
+  window.holdInput=false;window.inputHeld=[];
+  window.releaseInputs=()=>{window.holdInput=false;for(const release of window.inputHeld.splice(0))release();};
   window.publishInput=next=>{value={...value,...next,revision:value.revision+1};notify();};
   window.readInput=()=>value;
   window.teardownInput=()=>send({jsonrpc:'2.0',id:'teardown',method:'ui/resource-teardown',params:{}});
@@ -22,6 +24,7 @@ export function inputHost({html,initial}){
     else if(m.method==='tools/call'){
       const {name,arguments:a}=m.params;window.inputCalls.push({name,...a});
       if(window.inputDelay&&name!=='xamlg_ui_read')await new Promise(resolve=>setTimeout(resolve,window.inputDelay));
+      if(window.holdInput&&name!=='xamlg_ui_read')await new Promise(resolve=>window.inputHeld.push(resolve));
       if(name!=='xamlg_ui_read'&&(a.expectedRevision!==value.revision||a.expectedStateRevision!==value.stateRevision)){
         reply({isError:true,content:[{type:'text',text:'revision_conflict'}]});return;
       }

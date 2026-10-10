@@ -69,11 +69,30 @@ test('repeat button serializes a slow host and stops on release and source repla
   const app=await mountInput(page,{roots:[button],state:{count:0},actions:[{id:'increment',kind:'state'}]});
   await page.evaluate(()=>window.inputDelay=50);await key(app,'/repeat').hover();await page.mouse.down();
   await expect.poll(()=>page.evaluate(()=>window.readInput().state.count)).toBeGreaterThanOrEqual(2);
-  await page.mouse.up();await expect.poll(()=>page.evaluate(()=>window.inputCalls.filter(c=>c.name==='xamlg_ui_state_action').length-window.readInput().state.count)).toBe(0);
-  const stopped=await page.evaluate(()=>window.readInput().state.count);await page.waitForTimeout(120);expect(await page.evaluate(()=>window.readInput().state.count)).toBe(stopped);
-  await key(app,'/repeat').hover();await page.mouse.down();await expect.poll(()=>page.evaluate(()=>window.readInput().state.count)).toBeGreaterThan(stopped);
+  // Freeze one repeat response before release. The ordinary release click is queued
+  // behind it, so counting only requests already received by the parent is not a drain.
+  await page.evaluate(()=>window.holdInput=true);
+  await expect.poll(()=>page.evaluate(()=>window.inputHeld.length)).toBe(1);
+  const held=await page.evaluate(()=>({count:window.readInput().state.count,calls:window.inputCalls.filter(c=>c.name==='xamlg_ui_state_action').length}));
+  expect(held.calls).toBe(held.count+1);
+  await page.mouse.up();await page.waitForTimeout(120);
+  expect(await page.evaluate(()=>window.inputCalls.filter(c=>c.name==='xamlg_ui_state_action').length)).toBe(held.calls);
+  await page.evaluate(()=>window.releaseInputs());
+  // One held repeat plus exactly one release click, with no overlapping host requests.
+  await expect.poll(()=>page.evaluate(()=>window.readInput().state.count)).toBe(held.count+2);
+  await expect(app.getByRole('status')).toContainText('state '+(held.count+2));
+  const stopped=held.count+2;await page.waitForTimeout(120);
+  expect(await page.evaluate(()=>window.readInput().state.count)).toBe(stopped);
+  expect(await page.evaluate(()=>window.inputCalls.filter(c=>c.name==='xamlg_ui_state_action').length)).toBe(stopped);
+  // Replace the source while a repeat is awaiting the host; its late response must
+  // neither restart the retired timer nor resurrect the old presentation.
+  await page.evaluate(()=>window.holdInput=true);await key(app,'/repeat').hover();await page.mouse.down();
+  await expect.poll(()=>page.evaluate(()=>window.inputHeld.length)).toBe(1);
   await page.evaluate(()=>window.publishInput({roots:[]}));await expect(app.getByRole('status')).toContainText('revision 2');await page.mouse.up();
-  const after=await page.evaluate(()=>window.inputCalls.length);await page.waitForTimeout(120);expect(await page.evaluate(()=>window.inputCalls.length)).toBe(after);
+  const after=await page.evaluate(()=>window.inputCalls.length);await page.evaluate(()=>window.releaseInputs());
+  await page.waitForTimeout(120);expect(await page.evaluate(()=>window.inputCalls.length)).toBe(after);
+  expect(await page.evaluate(()=>window.readInput().state.count)).toBe(stopped);
+  await expect(app.locator('#surface')).toBeEmpty();
   await expect(app.getByRole('alert')).toBeEmpty();
 });
 for(const properties of [{TabIndex:-1},{IsTabStop:'false'},{SelectionStart:16385},{Delay:20},{'KeyboardNavigation.TabNavigation':'unsupported'}]){
