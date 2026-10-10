@@ -1,6 +1,6 @@
 const base = new URL('.', import.meta.url);
 const modules = new Map();
-const moduleNames = new Set(['studio.js', 'csharp-language.js', 'source-buffer.js', 'studio-storage.js']);
+const moduleNames = new Set(['studio.js', 'csharp-language.js', 'source-buffer.js', 'studio-storage.js', 'solution-workspace.js']);
 const pause = attempt => new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
 
 class ModuleLoadError extends Error { }
