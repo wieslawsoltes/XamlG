@@ -5,6 +5,7 @@ namespace XamlG.Syntax;
 /// <summary>Error-recovering XML frontend. It never resolves entities, opens URIs, or loads types.</summary>
 internal sealed class XamlParser
 {
+    private const int SmallAttributeLimit = 8;
     private readonly string _text;
     private readonly XamlParseOptions _options;
     private readonly CancellationToken _cancellation;
@@ -77,7 +78,12 @@ internal sealed class XamlParser
             if (At("/>")) { _position += 2; selfClosing = true; break; }
             if (At(">")) { _position++; break; }
             if (At("<")) { Report("XG0004", "Expected '>' before the next element.", _position, 0); break; }
-            var attributeStart = _position; var attributeName = ReadName(); var attributeNameSpan = new TextSpan(attributeStart, _position - attributeStart);
+            var attributeStart = _position;
+            // Wide elements already need a duplicate-name hash set. Avoid another
+            // table of mostly unique attribute names and preserve the atom budget
+            // for common names reused by subsequent elements in this document.
+            var attributeName = ReadName(intern: attributes == null || attributes.Count < SmallAttributeLimit);
+            var attributeNameSpan = new TextSpan(attributeStart, _position - attributeStart);
             if (attributeName.Length == 0) { if (_position < _text.Length) { Report("XG0005", "Invalid attribute name.", _position, 1); _position++; } continue; }
             attributes ??= ImmutableArray.CreateBuilder<XamlAttributeSyntax>(4);
             if (DuplicateAttribute(attributes, ref names, attributeName)) Report("XG0006", $"Duplicate attribute '{attributeName}'.", attributeStart, attributeName.Length);
@@ -139,7 +145,7 @@ internal sealed class XamlParser
         // Most XAML elements have very few attributes. A bounded linear scan avoids
         // a hash table in that case; larger elements retain expected O(a) total work.
         if (names != null) return !names.Add(name);
-        if (attributes.Count < 8)
+        if (attributes.Count < SmallAttributeLimit)
         {
             foreach (var attribute in attributes) if (attribute.Name == name) return true;
             return false;
@@ -148,9 +154,14 @@ internal sealed class XamlParser
         foreach (var attribute in attributes) names.Add(attribute.Name);
         return !names.Add(name);
     }
-    private string ReadName()
+    private string ReadName(bool intern = true)
     {
         var start = _position;
+        if (!intern)
+        {
+            _position = XamlTextScanner.XmlNameEnd(_text, _position);
+            return _text.Substring(start, _position - start);
+        }
         _position = XamlTextScanner.XmlNameEnd(_text, _position, out var hash);
         return (_namePool ??= new(_text)).Get(start, _position - start, hash);
     }

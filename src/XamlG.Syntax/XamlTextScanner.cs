@@ -28,6 +28,14 @@ internal static class XamlTextScanner
         return relative < 0 ? text.Length : position + relative;
     }
 
+    public static int XmlNameEnd(string text, int position)
+    {
+        // Wide elements already maintain their own duplicate-name set. Do not
+        // hash their usually unique attributes a second time for atomization.
+        while (position < text.Length && !IsXmlNameDelimiter(text[position])) position++;
+        return position;
+    }
+
     public static int XmlNameEnd(string text, int position, out int hash)
     {
         // Compute the lookup hash during the existing name scan, not in a second pass.
@@ -35,11 +43,14 @@ internal static class XamlTextScanner
         while (position < text.Length)
         {
             var c = text[position];
-            if (XmlWhitespace.IsWhitespace(c) || c is '<' or '>' or '/' or '=' or '\'' or '"' or '?' or '!') break;
+            if (IsXmlNameDelimiter(c)) break;
             value = unchecked((value ^ c) * 16777619U);
             position++;
         }
         hash = unchecked((int)value);
         return position;
     }
+
+    private static bool IsXmlNameDelimiter(char value) => XmlWhitespace.IsWhitespace(value) ||
+        value is '<' or '>' or '/' or '=' or '\'' or '"' or '?' or '!';
 }
