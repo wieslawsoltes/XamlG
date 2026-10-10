@@ -2,6 +2,7 @@
 """Run browser acceptance with a real, temporary MCP/agent companion."""
 import argparse
 import os
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -15,9 +16,21 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def parse_shard(value):
+    """Validate a one-based, bounded Playwright shard without accepting extra CLI options."""
+    match = re.fullmatch(r'([1-9][0-9]{0,2})/([1-9][0-9]{0,2})', value)
+    if not match:
+        raise argparse.ArgumentTypeError('Use INDEX/TOTAL, with 1 <= INDEX <= TOTAL <= 64.')
+    index, total = map(int, match.groups())
+    if index > total or total > 64:
+        raise argparse.ArgumentTypeError('Use INDEX/TOTAL, with 1 <= INDEX <= TOTAL <= 64.')
+    return value
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('tests', nargs='*')
+    parser.add_argument('--shard', type=parse_shard, help='Run one isolated Playwright shard (INDEX/TOTAL).')
     args = parser.parse_args()
     host_dll = ROOT / 'tools/XamlG.Studio.Host/bin/Release/net10.0/XamlG.Studio.Host.dll'
     if not host_dll.exists():
@@ -63,7 +76,7 @@ def main():
             if not ready:
                 log.seek(0)
                 raise RuntimeError('Companion did not start: ' + log.read().replace(token, '[MCP test token]').replace(owner_token, '[owner test token]'))
-            subprocess.run([shutil.which('npx'), 'playwright', 'test', *args.tests], cwd=ROOT / 'tools/XamlG.Playground', env=environment, check=True)
+            subprocess.run([shutil.which('npx'), 'playwright', 'test', *args.tests, *([f'--shard={args.shard}'] if args.shard else [])], cwd=ROOT / 'tools/XamlG.Playground', env=environment, check=True)
         finally:
             host.terminate()
             try:

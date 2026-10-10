@@ -1,5 +1,5 @@
 import { test, expect } from './studio-fixture.mjs';
-import { openStudio, call, writeDocument } from './live-preview.mjs';
+import { openStudio, call, writeDocument, openPreviewDocument } from './live-preview.mjs';
 
 const tab = (page, path) => page.locator(`[data-tab-id="document:${encodeURIComponent(path)}"]`);
 const editor = (page, path) => page.locator(`.source-pane[data-document-path="${path}"] .code-editor`);
@@ -11,7 +11,7 @@ test('native document tabs retain immediate edits through close, reopen, floatin
   await writeDocument(invoke, 'Models/One.cs', 'public class One { public int Value => 1; }');
   await writeDocument(invoke, 'Models/Two.cs', 'public class Two { public int Value => 2; }');
   for (const path of ['Models/One.cs', 'Models/Two.cs']) {
-    await page.locator('.explorer').getByRole('button').filter({ has: page.locator('.file-path', { hasText: path }) }).click();
+    await openPreviewDocument(page, path);
     await expect(editor(page, path)).toBeVisible();
   }
   await tab(page, 'Models/One.cs').click();
@@ -22,7 +22,7 @@ test('native document tabs retain immediate edits through close, reopen, floatin
   }, changed);
   await expect(tab(page, 'Models/One.cs')).toHaveCount(0);
   expect((await invoke('xamlg_document_read', { path: 'Models/One.cs' })).text).toBe(changed);
-  await page.locator('.explorer').getByRole('button').filter({ has: page.locator('.file-path', { hasText: 'Models/One.cs' }) }).click();
+  await openPreviewDocument(page, 'Models/One.cs');
   await expect(editor(page, 'Models/One.cs')).toBeVisible();
   const layout = await invoke('xamlg_layout_get');
   expect(layout.layout).not.toContain(changed);
@@ -35,7 +35,7 @@ test('native document tabs retain immediate edits through close, reopen, floatin
   await invoke('xamlg_document_remove', { path: 'Models/One.cs', expectedRevision: (await invoke('xamlg_project_get')).revision });
   await expect(tab(page, 'Models/One.cs')).toHaveCount(0);
   await invoke('xamlg_project_undo', { expectedRevision: (await invoke('xamlg_project_get')).revision });
-  await page.locator('.explorer').getByRole('button').filter({ has: page.locator('.file-path', { hasText: 'Models/One.cs' }) }).click();
+  await openPreviewDocument(page, 'Models/One.cs');
   await expect(editor(page, 'Models/One.cs')).toBeVisible();
   expect((await invoke('xamlg_document_read', { path: 'Models/One.cs' })).text).toBe(changed);
 });
@@ -45,8 +45,12 @@ test('shell menus, generated documents and individual runtime tool panels work a
   await menu(page, 'Project'); await expect(page.getByLabel('Example', { exact: true })).toBeVisible();
   await page.keyboard.press('Escape'); await expect(page.getByLabel('Example', { exact: true })).not.toBeVisible();
   await page.keyboard.press('ArrowUp');
-  await expect(page.getByRole('button', { name: 'Manage C# files', exact: true })).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Manage preview C# files', exact: true })).toBeFocused();
   await page.keyboard.press('Escape'); await page.keyboard.press('ArrowDown');
+  for (const name of ['New solution…', 'New project…', 'Open solution / folder…']) {
+    await expect(page.getByRole('button', { name, exact: true })).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+  }
   const example = page.getByLabel('Example', { exact: true });
   await expect(example).toBeFocused();
   // The shell must leave native select navigation to the browser.
