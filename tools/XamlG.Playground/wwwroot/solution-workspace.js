@@ -3,18 +3,28 @@ const maximumFiles = 20000, maximumFileBytes = 3 * 1024 * 1024, maximumCharacter
 let databasePromise, unsavedChanges = false;
 
 function database() {
-  return databasePromise ??= new Promise((resolve, reject) => {
+  if (databasePromise) return databasePromise;
+  let abandoned = false;
+  const pending = new Promise((resolve, reject) => {
     if (!globalThis.indexedDB) { reject(new Error('IndexedDB is unavailable. Browser workspaces require persistent browser storage.')); return; }
     const request = indexedDB.open(databaseName, 1);
     request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains('state')) request.result.createObjectStore('state'); };
-    request.onerror = () => { databasePromise = null; reject(request.error ?? new Error('Workspace storage could not be opened.')); };
-    request.onblocked = () => { databasePromise = null; reject(new Error('Another tab is blocking the workspace storage upgrade.')); };
+    request.onerror = () => { abandoned = true; reject(request.error ?? new Error('Workspace storage could not be opened.')); };
+    request.onblocked = () => { abandoned = true; reject(new Error('Another tab is blocking the workspace storage upgrade.')); };
     request.onsuccess = () => {
       const db = request.result;
-      db.onversionchange = () => { db.close(); databasePromise = null; };
+      // A blocked open may complete after the caller has already retried. It must
+      // not retain an unreachable connection that blocks future schema upgrades.
+      if (abandoned) { db.close(); return; }
+      db.onversionchange = () => { db.close(); if (databasePromise === pending) databasePromise = null; };
       resolve(db);
     };
   });
+  databasePromise = pending;
+  // Also retire synchronous failures (unavailable storage, SecurityError). The
+  // same module can recover without reloading or bypassing revision checks.
+  pending.catch(() => { if (databasePromise === pending) databasePromise = null; });
+  return pending;
 }
 
 export async function loadWorkspace() {
@@ -30,10 +40,10 @@ export async function loadWorkspace() {
 
 export async function saveWorkspace(state, expectedRevision) {
   if (!state || state.format !== 1 || !Array.isArray(state.files) || state.files.length > maximumFiles ||
-      !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) throw new Error('Invalid workspace snapshot.');
+      !Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || expectedRevision === Number.MAX_SAFE_INTEGER) throw new Error('Invalid workspace snapshot.');
   let total = 0;
   for (const file of state.files) {
-    if (typeof file.path !== 'string' || typeof file.content !== 'string' || file.content.length > 4 * 1024 * 1024 ||
+    if (!file || typeof file.path !== 'string' || typeof file.content !== 'string' || file.content.length > 4 * 1024 * 1024 ||
         (total += file.content.length) > maximumCharacters) throw new Error('Workspace storage content limit exceeded.');
   }
   const db = await database();
@@ -45,7 +55,7 @@ export async function saveWorkspace(state, expectedRevision) {
     current.onerror = () => { failure = current.error; };
     current.onsuccess = () => {
       const actual = current.result?.revision ?? 0;
-      if (actual !== expectedRevision) {
+      if (!Number.isSafeInteger(actual) || actual < 0 || actual !== expectedRevision) {
         failure = new Error('Another tab changed the saved workspace. Export your current buffers before reloading; the newer saved workspace was not overwritten.');
         transaction.abort(); return;
       }
