@@ -24,8 +24,8 @@ internal static class UiAvaloniaSelectors
     }
     private static Selector Compound(Selector? current, UiSelectorCompound predicate, Func<string, Type> resolve, bool skipType = false)
     {
-        if (!skipType && predicate.Type is { } name)
-            current = predicate.IncludeDerived ? current.Is(resolve(name)) : current.OfType(resolve(name));
+        if (!skipType && predicate.Type is { } typeName)
+            current = predicate.IncludeDerived ? current.Is(resolve(typeName)) : current.OfType(resolve(typeName));
         if (predicate.Name != null) current = current.Name(predicate.Name);
         foreach (var name in predicate.Classes) current = current.Class(name);
         foreach (var name in predicate.PseudoClasses) current = current.Class(":" + name);
