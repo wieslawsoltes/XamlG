@@ -1,6 +1,6 @@
 import { test, expect as baseExpect } from './studio-fixture.mjs';
 const expect = baseExpect.configure({ timeout: 20000 });
-import { openStudio, call, writeDocument } from './live-preview.mjs';
+import { openStudio, call, writeDocument, openPreviewDocument } from './live-preview.mjs';
 
 test.use({ liveUpdates: true });
 const ns = 'xmlns="https://github.com/avaloniaui"';
@@ -92,7 +92,7 @@ test('automatic C# edits report errors and refresh in the selected isolated prev
   await openStudio(page, false); await updated(page);
   await runMenu(page); await page.getByTestId('run-isolated').click();
   await expect(page.locator('.statusbar')).toContainText('Isolated preview running');
-  await page.locator('.explorer').getByRole('button').filter({ has: page.locator('.file-path', { hasText: 'Code.cs' }) }).click();
+  await openPreviewDocument(page, 'Code.cs');
   await edit(page, 'Code.cs', 'public class Broken {');
   await expect(page.locator('.statusbar')).toContainText('Compilation has errors');
   const iframe = page.locator('iframe[title="XamlG isolated preview"]');
