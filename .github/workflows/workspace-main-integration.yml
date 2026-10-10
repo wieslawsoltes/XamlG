@@ -45,6 +45,7 @@ jobs:
           git('config', 'user.email', 'wieslawsoltes@users.noreply.github.com')
           result = subprocess.run(['git', 'merge', '--no-commit', '--no-ff', main], text=True)
           allowed = {
+              'eng/validation-workflows.json',
               'tools/XamlG.Playground/App.Dockyard.cs',
               'tools/XamlG.Playground/App.razor',
               'tools/XamlG.Playground/App.razor.cs',
@@ -62,6 +63,12 @@ jobs:
           def write(path, text):
               Path(path).write_bytes(text.encode('utf-8'))
               git('add', '--', path)
+          path = 'eng/validation-workflows.json'
+          manifest = json.loads(subprocess.check_output(['git', 'show', main + ':' + path]))
+          if 'workspaces.yml' in manifest['pullRequest'] or 'git-workspaces.yml' not in manifest['pullRequest']:
+              raise RuntimeError('Unexpected validation manifest; review the merge again.')
+          manifest['pullRequest'].append('workspaces.yml')
+          write(path, json.dumps(manifest, indent=2) + '\n')
           path = 'tools/XamlG.Playground/App.Dockyard.cs'
           text = read(path)
           text = replace(text, '        new("agent", "Coding agent", "Right"),',
@@ -113,8 +120,8 @@ jobs:
               if not Path(path).is_file():
                   entries.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': None})
                   continue
-              # Only create immutable blobs/trees. No ref update, push, PR change
-              # or merge is performed by this preparation job.
+              # Only immutable blobs/trees are created; branch publication and
+              # eventual PR merging remain explicit connector operations.
               content = Path(path).read_bytes()
               blob = api('/git/blobs', {'content': base64.b64encode(content).decode(), 'encoding': 'base64'})
               entries.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']})
