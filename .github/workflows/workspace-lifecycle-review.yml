@@ -6,29 +6,83 @@ on:
 permissions:
   contents: read
 jobs:
-  inspect:
-    if: github.repository == 'wieslawsoltes/XamlG'
+  prepare:
+    if: github.repository == 'wieslawsoltes/XamlG' && github.ref == 'refs/heads/feat/msbuild-solution-workspaces'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Display verified pending lifecycle changes without applying them
+      - name: Prepare immutable lifecycle tree after focused tests
         shell: python
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_HEAD: ${{ github.sha }}
         run: |
-          import base64, gzip, hashlib, json, subprocess, urllib.request
+          import base64, gzip, hashlib, json, os, subprocess, urllib.request
           from pathlib import Path
-          url = 'https://api.github.com/repos/wieslawsoltes/XamlG/git/blobs/24d047021a456caa41bd518ab182d71135650953'
-          request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + __import__('os').environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
-          with urllib.request.urlopen(request, timeout=60) as response:
-              blob = json.load(response)
+          def api(path, data=None):
+              request = urllib.request.Request('https://api.github.com/repos/wieslawsoltes/XamlG' + path,
+                  data=None if data is None else json.dumps(data).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json'})
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.load(response)
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          head = os.environ['SOURCE_HEAD']
+          if api('/git/ref/heads/feat/msbuild-solution-workspaces')['object']['sha'] != head:
+              raise RuntimeError('The branch changed; refusing a stale edit.')
+          blob = api('/git/blobs/24d047021a456caa41bd518ab182d71135650953')
           patch = gzip.decompress(base64.b64decode(blob['content']))
           assert len(patch) < 200000
           assert hashlib.sha256(patch).hexdigest() == 'ebc2399d65cb4ea1f1431454a45d12f4185eaf7ff1e34b55eb0556808ed4746f'
+          # The reviewed selector fix is already stronger than the old patch's
+          # null check. Exclude only that hunk, without reverting current behavior.
+          explorer = Path('tools/XamlG.Playground/Components/SolutionExplorer.razor').read_text()
+          assert 'row.Node.Kind == "project" && Session.Snapshot.StartupProject is { } startup' in explorer
           Path('workspace-close.patch').write_bytes(patch)
-          print(patch.decode('utf-8'), flush=True)
-          subprocess.run(['git', 'apply', '--check', 'workspace-close.patch'], check=True)
+          args = ['--exclude=tools/XamlG.Playground/Components/SolutionExplorer.razor', 'workspace-close.patch']
+          subprocess.run(['git', 'apply', '--check', *args], check=True)
+          subprocess.run(['git', 'apply', *args], check=True)
+          path = Path('tools/XamlG.Playground/asset-tests/workspace-dock-lifecycle.test.mjs')
+          text = path.read_text()
+          old = "add('workspace:identity:Keep.cs'); add('document:View.axaml'); add('agent');"
+          assert text.count(old) == 1
+          text = text.replace(old, old + " add('git:independent-document');")
+          text = text.replace("['agent', ...current].sort()", "['agent', 'git:independent-document', ...current].sort()")
+          path.write_text(text)
+          paths = [
+              '.github/workflows/workspaces.yml',
+              'tools/XamlG.Playground/wwwroot/studio.js',
+              'tools/XamlG.Playground/Workspaces/SolutionWorkspaceSession.cs',
+              'tools/XamlG.Playground/Components/WorkspaceDocumentView.razor',
+              'tools/XamlG.Playground/asset-tests/workspace-dock-lifecycle.test.mjs',
+              'tools/XamlG.Playground/tests/solution-workspace.spec.mjs',
+              'docs/solution-workspaces.md'
+          ]
+          git('add', '--', *paths)
+          if set(git('diff', '--cached', '--name-only').splitlines()) != set(paths):
+              raise RuntimeError('Unexpected patch paths.')
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          subprocess.run(['node', '--test', 'tools/XamlG.Playground/asset-tests/solution-workspace.test.mjs', 'tools/XamlG.Playground/asset-tests/workspace-dock-lifecycle.test.mjs'], check=True)
+          subprocess.run(['node', '--check', 'tools/XamlG.Playground/tests/solution-workspace.spec.mjs'], check=True)
+          helper = '.github/workflows/workspace-lifecycle-review.yml'
+          git('rm', '--', helper)
+          tree_local = git('write-tree')
+          entries = []
+          for path in paths:
+              data = Path(path).read_bytes()
+              sha = api('/git/blobs', {'content': base64.b64encode(data).decode(), 'encoding': 'base64'})['sha']
+              mode = git('ls-files', '-s', '--', path).split()[0]
+              entries.append({'path': path, 'mode': mode, 'type': 'blob', 'sha': sha})
+          entries.append({'path': helper, 'mode': '100644', 'type': 'blob', 'sha': None})
+          tree = api('/git/trees', {'base_tree': api('/git/commits/' + head)['tree']['sha'], 'tree': entries})['sha']
+          if tree != tree_local:
+              raise RuntimeError('Prepared tree differs from tested source.')
+          print(json.dumps({'source_parent': head, 'tree': tree, 'paths': paths}, indent=2), flush=True)
+          # Only immutable objects are published. The connector performs the
+          # separately authorized branch update; no ref or PR is changed here.
