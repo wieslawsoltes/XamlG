@@ -4,7 +4,7 @@ This guide describes the implementation in PR #19, extending the core contracts 
 
 ## Current vocabulary
 
-The reusable compiler has **42 native controls plus 18 source-only composites**. `xamlg_ui_catalog` returns both schemas, limits, namespaces, authoring guidance and complete pricing, counter, dashboard and form examples. The normal Studio/companion registration exposes **17 tools**, including `xamlg_ui_state_action`; form authoring adds no new permission-granting tool.
+The reusable compiler has **42 native controls plus 18 source-only composites**. `xamlg_ui_catalog` returns both schemas, limits, namespaces, authoring guidance and complete pricing, counter, dashboard and form examples. The normal Studio/companion registration exposes **23 tools**, including `xamlg_ui_state_action`; the six form-lifecycle tools retain ordinary authorization and grant no new authority.
 
 | Composite family | Elements |
 | --- | --- |
@@ -110,17 +110,35 @@ Fields render labels, required indicators, optional help and explicit error text
 
 Form validation is UI behavior, not authentication, authorization or consent. A model-authored checkbox is not permission to run an external tool. A valid message/tool/link/copy submission still goes through the host's existing review/permission path. Full-C# preview continues to allow only declared local state actions, never external effects.
 
+### Touched/dirty state, keyboard behavior and asynchronous validation
+
+`Form.ErrorMode` is `Always` (the compatible default), `OnTouch`, or `OnSubmit`. Touched state records blur; dirty state compares the value with the form input's initial value. They are independent. `UiFormInteraction` reports both, current errors, submission state and asynchronous validation status. `xamlg_ui_form_reset` restores active bound inputs and clears interaction/validation history transactionally. Source replacement recompiles the form; previous validation is not an execution grant.
+
+Native sessions and the native MCP guest use `UiAvaloniaFormBehavior`. Enter submits the current form, except during multiline editing, modified-key input, or an open ComboBox popup. Invalid submission reveals errors and focuses the first invalid input. A successful submission returns a fresh revision-bound action, which still uses the ordinary external review or declared local-state path. Recording submission advances the interaction revision separately from executing a local state action. The portable guest serializes value/blur/submission changes and cannot submit the old value when the latest input commit fails.
+
+Application code registers a trusted `UiAsyncFormValidator` with `store.RegisterFormValidator(name, validator)`; a form selects that registration using `Validator="name"`. No tool can install a validator or arbitrary delegate. The validator receives owner-scoped state/data/field context and a cancellation token, and returns null for success or an error string. Inputs remain editable while validation is pending. Value/data/source changes, reset, release and session replacement invalidate obsolete results. Touch history can advance without losing a still-valid result. Failed validation supports explicit retry.
+
+`xamlg_ui_form_read`, `xamlg_ui_form_touch`, `xamlg_ui_form_submit`, `xamlg_ui_form_reset`, `xamlg_ui_form_validate_start`, and `xamlg_ui_form_validate` expose this lifecycle. Nonblocking validation-start returns pending state; read/resource updates observe completion. The awaited tool observes transport cancellation. Validation defaults to a 10-second deadline; trusted API callers may select a positive timeout up to one minute. Application validators must honor cancellation and avoid blocking before returning their asynchronous operation; a delegate is not an isolated process.
+
+### Approved C# execution limits
+
+Approved C# runs in a dedicated worker behind a separate opaque-origin supervisor. The visible Avalonia guest renders resolved operations; it does not execute the expressions. The supervisor starts a classic worker, which dynamically imports the trusted runtime modules. This avoids Chromium's module-worker startup failure in an opaque origin without adding `allow-same-origin` or network permissions. Captured transport functions and runtime state are private to the worker bootstrap closure.
+
+Runtime/compiler assets are selected from the published inventory and transferred before evaluation. Embedded .NET 10 manifest JSON is parsed without executing the manifest text. The native Wasm hash is verified before narrowing the worker's copy of its defined linear-memory maximum to at most **512 MiB**; a stricter original maximum is retained. The editor's runtime is unchanged. The worker CSP denies network connections, and fetch can only return already-transferred assets. The supervisor accepts a bounded command allowlist, never IDE tools, provider credentials, clipboard, navigation or inference requests.
+
+A publish operation has a **20-second** wall-clock deadline and subsequent commands have a **3-second** deadline. Expiry terminates the worker rather than merely abandoning the awaiting promise. Reset/disposal retires the worker and its state. These bounds do not turn the browser into an OS process/container sandbox: the linear-memory ceiling is not a quota on JavaScript heap, all browser memory, or separate allocations by arbitrary interop code, and per-command deadlines are not process-wide CPU accounting. Full C# remains an explicit trusted-code feature. No in-process use of `UiCSharpWorkerSession` or `UiCSharpExpressionCompiler` supplies isolation by itself.
+
 ## Evidence and remaining scope
 
 | Area | Implementation and boundary |
 | --- | --- |
 | Local reactive behavior | Atomic state actions, row-scoped expressions, keyed reconciliation, state/data revalidation and rollback are implemented. Default expressions remain a bounded pure C# subset. |
 | Rich composition | The 18 composites above are implemented. Code blocks provide selectable text; they are not a full syntax-highlighting/editor component. |
-| Forms | Required/custom predicates, active-field validation, summaries and submit gating are implemented. Touched/dirty field policy, async validators, focus-first-invalid, Enter-to-submit and nested forms are not implemented as first-class form features. |
+| Forms | Required/custom predicates, touched/dirty state, error-display modes, trusted async validation, retry/reset, first-invalid focus and Enter submission are implemented. Nested forms remain deliberately rejected; sibling/repeated forms have independent scopes. |
 | Host lifecycle | Portable and native guests guard replacement/retirement and late responses; tests cover disposal and state actions. Commercial-host policy differences still require independent interoperability checks. |
 | Charts and tables | Bounded static/reactive charts and composed cells are implemented. Multiple series, pie/area charts, zoom/brush interactions, virtualization and first-class sortable/paged tables remain outside this catalog. |
 | Rich references | Retained owner-scoped tool data is implemented. Dedicated server-resolved image/entity/product/citation/map components and mixed inline Markdown/XAML response composition are not yet implemented. |
-| Executable code | Genuine C# is explicit, reviewed and isolated in the browser guest. An opaque-origin frame is not a hard CPU/memory quota or an OS process sandbox; stronger execution isolation remains separate work. |
+| Executable code | Genuine C# requires exact-source owner review and uses the dedicated worker/supervisor, command deadlines and bounded Wasm memory described above. OS/process isolation and whole-browser memory/CPU quotas are not claimed. |
 | Protocol and pixels | Public MCP Apps is supported with portable fallback. Private ChatGPT DIL/operation-wire compatibility and pixel-identical rendering across hosts are not claimed. |
 
 Component counts alone are not full parity. The remaining entries above must be addressed and verified before making a broader parity claim.

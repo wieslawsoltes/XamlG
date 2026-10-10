@@ -41,8 +41,9 @@ async function bootstrap(event) {
     if (!Array.isArray(resources.wasmNative) || resources.wasmNative.length !== 1) throw new Error('One native Wasm runtime is required.');
     const native = resources.wasmNative[0], nativePath = '_framework/' + native.name;
     const originalBytes = get(nativePath);
-    const digest = 'sha256-' + btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256',originalBytes))));
-    if (native.hash !== digest) throw new Error('Native runtime integrity check failed.');
+    // The trusted client fetched these original bytes with the manifest's SRI hash.
+    // Opaque workers do not expose crypto.subtle; no integrity check is skipped by
+    // moving that verification to the browser's Fetch implementation before transfer.
     const boundedMemory = constrainWasmMemory(originalBytes);
     const nativeModule = await WebAssembly.compile(boundedMemory.bytes);
     if (WebAssembly.Module.imports(nativeModule).some(item=>item.kind==='memory') ||
@@ -72,6 +73,12 @@ async function bootstrap(event) {
         const path = '_framework/' + name;
         return Promise.resolve(response(path));
       })
+      .withModuleConfig({ locateFile: file => {
+        const asset = assets.find(item => item.name === file || item.virtualPath === file ||
+          file === 'dotnet.native.wasm' && item.behavior === 'dotnetwasm');
+        if (!asset) throw new Error('Undeclared runtime file: ' + file);
+        return asset.resolvedUrl;
+      } })
       .create();
     if (typeof runtime.localHeapViewU8 !== 'function' || runtime.localHeapViewU8().byteLength > boundedMemory.maximumPages * 65536)
       throw new Error('Invalid bounded runtime memory.');

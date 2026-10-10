@@ -56,6 +56,32 @@ export function executionAssets(config, inventory, loader) {
   return [...selected];
 }
 
+// Fetch integrity is implemented by the browser even when an opaque worker has no
+// Web Crypto API. Verify original runtime bytes in the trusted asset loader before
+// transferring them; only then may the worker narrow its copy of the Wasm memory.
+export function executionIntegrity(config) {
+  const hashes = new Map();
+  for (const name of Object.keys(runtimeGroups)) {
+    const assets = config?.resources?.[name] ?? [];
+    if (!Array.isArray(assets)) throw new Error('Invalid runtime integrity inventory.');
+    for (const asset of assets) {
+      if (!asset || typeof asset.name !== 'string' || !/^[A-Za-z0-9_.-]+$/.test(asset.name) || asset.name.includes('..'))
+        throw new Error('Invalid runtime integrity descriptor.');
+      if (asset.hash == null || asset.hash === '') {
+        if (name === 'wasmNative') throw new Error('Native runtime integrity is required.');
+        continue;
+      }
+      if (typeof asset.hash !== 'string' || !/^sha256-[A-Za-z0-9+/]{43}=$/.test(asset.hash))
+        throw new Error('Runtime assets require a single SHA-256 integrity value.');
+      const path = '_framework/' + asset.name;
+      if (hashes.has(path) && hashes.get(path) !== asset.hash) throw new Error('Conflicting runtime integrity values.');
+      hashes.set(path, asset.hash);
+    }
+  }
+  if (config?.resources?.wasmNative?.length !== 1) throw new Error('Exactly one native runtime integrity value is required.');
+  return hashes;
+}
+
 // Narrow only the worker's copy of the published native module. The editor keeps its
 // original runtime. WebAssembly engines enforce this maximum on memory.grow, unlike
 // supplying wasmMemory to a module that defines (rather than imports) its memory.

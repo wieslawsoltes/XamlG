@@ -12,7 +12,7 @@ See [rich authoring and the parity matrix](intelligent-ui-parity.md) for local s
 
 The **Intelligent UI workspace** button opens owner-only controls. Enable **Allow local UI workspace storage**, then use **Save UI workspace**, **Restore saved UI** or **Forget saved UI**. Data is stored in IndexedDB for the current Studio origin and project identity. Save first preserves the normal project draft and its identity so a page reload finds the same archive. Storage is explicit; no archive is silently loaded or overwritten. Another tab's save/delete rejects stale versions. Invalid archives leave the live workspace intact, and restoration invalidates old action reviews. Forget removes the archive, not current in-memory cards.
 
-The same panel contains **Full C# execution**. An agent may submit a proposal, or the owner may enter intelligent XAML and JSON. **Review full C#** freezes the exact source/data/local actions and displays their hash. **Approve and run full C#** creates a fresh, disposable opaque-origin frame. **Reset execution frame**, closing the panel, or changing the workspace discards the frame. The frame does not start Studio, receive provider credentials, access the editor's storage, or acquire tool authority. Declared local state actions may run there; external effects are not permitted. Full C# is executable code: the frame is not a hard CPU/memory quota or an OS process sandbox. Only run trusted code.
+The same panel contains **Full C# execution**. An agent may submit a proposal, or the owner may enter intelligent XAML and JSON. **Review full C#** freezes the exact source/data/local actions and displays their hash. **Approve and run full C#** creates a fresh, disposable opaque-origin frame. **Reset execution frame**, closing the panel, or changing the workspace discards the frame. The frame does not start Studio, receive provider credentials, access the editor's storage, or acquire tool authority. Declared local state actions may run there; external effects are not permitted. Expressions execute in a dedicated worker behind another opaque supervisor, not in the rendering frame. The supervisor terminates over-deadline commands (20 seconds for publication, 3 seconds for interactions), and the worker runtime has an engine-enforced linear-memory maximum of at most 512 MiB. These are not an OS process sandbox, whole-browser memory quota, or process-wide CPU accounting. Only run trusted code. See [form workflows and execution limits](intelligent-ui-parity.md#toucheddirty-state-keyboard-behavior-and-asynchronous-validation).
 
 Direct provider agents and paired companion agents share the catalog. The provider's native tool result and continuation are preserved; HTML does not replace tool history. UI messages fill the normal Studio composer rather than starting inference. Tool actions require an additional user review and use ordinary schema/revision validation; they do not grant permissions to the coding agent. Declared `state` actions compute locally through the store, with no inference or external-effect authority.
 
@@ -55,13 +55,13 @@ The full C# backend is separate and opt-in. `UiCSharpExpressionCompiler` compile
 
 ```csharp
 {
-    var count = state.GetProperty("n").GetInt32();
+    var count = checked((int)state.GetProperty("n").GetDecimal());
     int Square(int value) => value * value;
     return Enumerable.Range(1, count).Select(Square).Sum().ToString();
 }
 ```
 
-The embedding host must approve a `UiCSharpExecutionRequest`, including exact source/generated source, reference identities and hash. Cached compilation still requires approval. Compilation count and result-size limits do not make arbitrary C# a sandbox. The Studio workflow places this backend only in the explicitly approved execution guest. Full-C# archives require the same selected language/compiler and renewed host approval; default pure stores reject them.
+The embedding host must approve a `UiCSharpExecutionRequest`, including exact source/generated source, reference identities and hash. Cached compilation still requires approval. Compilation count and result-size limits do not make arbitrary C# a sandbox. The Studio workflow places this backend only in the dedicated worker behind the explicitly approved execution guest. Full-C# archives require the same selected language/compiler and renewed host approval; default pure stores reject them.
 
 `x:Class`, arbitrary markup extensions, CLR namespaces, DTDs and executable XAML event handlers are not silently enabled by either expression backend. Trusted complete projects use the existing XamlG project compiler and its explicit preview execution workflow.
 
@@ -108,9 +108,11 @@ Pass this to `xamlg_ui_data_bind`. Copy the actual handle/version from discovery
 | `xamlg_ui_read`, `xamlg_ui_state`, `xamlg_ui_state_action`, `xamlg_ui_data` | Inspect/update state/data and apply declared local actions |
 | `xamlg_ui_action`, `xamlg_ui_release`, `xamlg_ui_export` | Prepare inert actions, retire sessions and export source |
 | `xamlg_ui_data_put`, `xamlg_ui_data_list`, `xamlg_ui_data_read`, `xamlg_ui_data_release`, `xamlg_ui_data_bind` | Owner-scoped retained results, bounded resolution and atomic binding |
+| `xamlg_ui_form_read`, `xamlg_ui_form_touch`, `xamlg_ui_form_submit`, `xamlg_ui_form_reset` | Inspect interaction history, record blur, validate submission and reset active form values |
+| `xamlg_ui_form_validate_start`, `xamlg_ui_form_validate` | Start or await a trusted registered asynchronous validator without granting effect permissions |
 | `xamlg_ui_csharp_propose`, `xamlg_ui_csharp_status` | Non-executing full-C# proposals and their owner-approved results |
 
-All 17 tools are discoverable through the full shared agent/MCP registration. Proposal creation is not execution, and a pending proposal must not be described as completed. Persistence and full-C# approval controls are owner UI actions, not permission-bypassing remote tools. A valid form never implies approval of an external action.
+All 23 tools are discoverable through the full shared agent/MCP registration. Proposal creation is not execution, and a pending proposal must not be described as completed. Persistence and full-C# approval controls are owner UI actions, not permission-bypassing remote tools. A valid form never implies approval of an external action.
 
 ## Embedding
 

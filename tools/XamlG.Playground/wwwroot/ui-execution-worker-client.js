@@ -1,4 +1,4 @@
-import { readExecutionConfig, executionAssets } from './ui-execution-policy.js';
+import { readExecutionConfig, executionAssets, executionIntegrity } from './ui-execution-policy.js';
 
 // Render-host client. Only a reviewed execution frame may create this capability.
 // The isolated iframe and its dedicated worker receive assets and UI declarations, never tools.
@@ -38,8 +38,8 @@ export async function create(assetBase) {
   channel.port1.start();addEventListener('message',onMessage);
   frame.src=new URL('ui-execution-worker.html',base).href;document.body.append(frame);
   try {
-    const read = async path => {
-      const response=await fetch(new URL(path,base),{credentials:'omit',signal:controller.signal,cache:'no-cache'});
+    const read = async (path, integrity = '') => {
+      const response=await fetch(new URL(path,base),{credentials:'omit',signal:controller.signal,cache:'no-cache',integrity});
       if(!response.ok)throw new Error('Cannot load isolated runtime asset '+path+': '+response.status);
       const declared=Number(response.headers.get('content-length')||0);if(declared>67108864)throw new Error('Execution asset is too large.');
       const bytes=await response.arrayBuffer();if(bytes.byteLength>67108864)throw new Error('Execution asset is too large.');return bytes;
@@ -55,12 +55,13 @@ export async function create(assetBase) {
     // publishing dotnet.boot.js. Read its JSON payload without executing loader code.
     const config=readExecutionConfig(new TextDecoder().decode(boot?await read(boot):loaderBytes));
     const selected=executionAssets(config,paths,loader);
+    const integrity=executionIntegrity(config);
     const files=new Array(selected.length);let index=0,total=0;
     await Promise.all(Array.from({length:6},async()=>{
-      while(index<selected.length){const current=index++,name=selected[current],bytes=name===loader?loaderBytes:await read(name);total+=bytes.byteLength;if(total>536870912)throw new Error('Execution assets exceed 512 MiB.');files[current]={name,bytes};}
+      while(index<selected.length){const current=index++,name=selected[current],bytes=name===loader?loaderBytes:await read(name,integrity.get(name) || '');total+=bytes.byteLength;if(total>536870912)throw new Error('Execution assets exceed 512 MiB.');files[current]={name,bytes};}
     }));
-    const source='const executionPolicySource=' + JSON.stringify(new TextDecoder().decode(await read('ui-execution-policy.js'))) + ';\n' +
-      new TextDecoder().decode(await read('ui-execution-worker.js'));
+    const source=buildWorkerSource(new TextDecoder().decode(await read('ui-execution-policy.js')),
+      new TextDecoder().decode(await read('ui-execution-worker.js')));
     await connected;
     channel.port1.postMessage({type:'bootstrap',base:base.href,source,config,loader,files},files.map(file=>file.bytes));
     const limits=await ready;
@@ -76,4 +77,16 @@ export async function create(assetBase) {
       },dispose
     };
   }catch(error){dispose(error.message);throw error;}
+}
+
+// Keep captured transport functions and runtime state private even though the entry
+// worker is a classic script. Model-authored global JavaScript cannot name them.
+export function buildWorkerSource(policy, implementation) {
+  if (typeof policy !== 'string' || typeof implementation !== 'string' ||
+      policy.length > 131072 || implementation.length > 131072)
+    throw new Error('Invalid trusted worker source.');
+  const source = "(() => {\n'use strict';\nconst executionPolicySource=" +
+    JSON.stringify(policy) + ';\n' + implementation + '\n})();\n';
+  if (source.length > 131072) throw new Error('Trusted worker source exceeds its bound.');
+  return source;
 }
