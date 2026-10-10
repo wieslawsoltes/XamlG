@@ -16,7 +16,7 @@
     else
     {
         <div class="ws-code-editor">
-            <CodeEditor @key="Document" @ref="Document.Editor" Text="Document.Text" TextChanged="text => Session.Edit(Document, text)"
+            <CodeEditor @key="Document" @ref="Document.Editor" Text="@Document.Text" TextChanged="text => Session.Edit(Document, text)"
                 Language="@Language" DocumentPath="@Session.DocumentKey(Document.Path)"
                 AuthoringRequested="request => Session.EditorCommandAsync(Document, request.Command)"
                 RunRequested="BuildAsync" />
