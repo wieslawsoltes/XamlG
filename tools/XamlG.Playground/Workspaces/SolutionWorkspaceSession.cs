@@ -57,6 +57,14 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
     public string Configuration { get; set; } = "Debug";
     public string Platform { get; set; } = "AnyCPU";
     public string? Framework { get; set; }
+    public string BuildTarget { get; set; } = "solution";
+    public string? SdkTargetPath => BuildTarget switch
+    {
+        "solution" => Snapshot.EntryPath,
+        "project" => Description.Projects.Any(project => project.Loaded && project.Path == SelectedProject) ? SelectedProject : null,
+        "startup" => Description.Projects.Any(project => project.Loaded && project.Path == Snapshot.StartupProject) ? Snapshot.StartupProject : null,
+        _ => null
+    };
     public string Output { get; private set; } = "Open a solution or create a project. Browser inspection does not execute MSBuild.";
     public string? Error { get; private set; }
     public JsonElement? EvaluatedGraph { get; private set; }
@@ -133,11 +141,14 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
     {
         await ExecuteAsync(async () =>
         {
-            if (IsLocal) await LoadNativeProjectFilesAsync();
-            _workspace.Open(Snapshot.Revision, path);
-            Inspect(); SelectedProject = Description.Projects.FirstOrDefault(project => project.Loaded)?.Path;
+            if (IsLocal) { await CaptureAllAsync(); await LoadNativeProjectFilesAsync(); }
+            var candidate = _workspace.Fork();
+            candidate.Open(candidate.Current.Revision, path);
+            var description = Describe(candidate.Current);
+            var selected = description.Projects.FirstOrDefault(project => project.Loaded)?.Path;
+            if (!IsLocal) await PersistBrowserAsync(candidate.Current, selected);
+            _workspace = candidate; Description = description; SelectedProject = selected;
             Framework = null; EvaluatedGraph = null;
-            if (!IsLocal) await PersistBrowserAsync(Snapshot.Files, path);
         });
     }
 
@@ -159,7 +170,7 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
     {
         await ExecuteAsync(async () =>
         {
-            RequireLocal();
+            RequireLocal(); await CaptureAllAsync();
             _inventory = await NativeAsync<WorkspaceInventoryFile[]>("workspace_list", new { });
             await LoadNativeProjectFilesAsync();
             Inspect(); EvaluatedGraph = null;
@@ -169,18 +180,26 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
     private async Task LoadNativeProjectFilesAsync()
     {
         var updates = new List<WorkspaceChange>();
+        var present = _inventory.Where(file => !file.IsDirectory).Select(file => file.Path).ToHashSet(StringComparer.Ordinal);
+        var openByPath = _documents.Values.ToDictionary(document => document.Path, StringComparer.Ordinal);
+        foreach (var (path, file) in Snapshot.Files.Where(pair => !present.Contains(pair.Key)))
+        {
+            updates.Add(new(path, file, null)); _nativeFiles.Remove(path);
+            if (openByPath.TryGetValue(path, out var removed))
+                removed.Error = "The file was removed from disk. This buffer is retained; saving cannot overwrite the external deletion.";
+        }
         foreach (var path in _inventory.Where(file => !file.IsDirectory && WorkspacePath.IsEntry(file.Path)).Select(file => file.Path))
         {
             var disk = await NativeAsync<NativeWorkspaceFile>("workspace_read", new { path });
-            if (_documents.Values.FirstOrDefault(document => document.Path == path) is { } open && open.Dirty)
+            if (openByPath.TryGetValue(path, out var open) && open.Dirty)
             {
                 if (open.DiskHash != disk.Hash) open.Error = "The file changed on disk while this buffer has unsaved edits. Save will require resolving the conflict.";
                 continue;
             }
             updates.Add(new(path, Snapshot.Files.GetValueOrDefault(path), disk.File));
             _nativeFiles[path] = disk;
-            if (_documents.Values.FirstOrDefault(document => document.Path == path) is { } clean)
-            { clean.Text = disk.File.Content; clean.SavedFile = disk.File; clean.DiskHash = disk.Hash; clean.Encoding = disk.Encoding; }
+            if (openByPath.TryGetValue(path, out var clean))
+            { clean.Text = disk.File.Content; clean.SavedFile = disk.File; clean.DiskHash = disk.Hash; clean.Encoding = disk.Encoding; clean.Error = null; }
         }
         if (updates.Count != 0) _workspace.Apply(Snapshot.Revision, updates);
     }
@@ -200,7 +219,13 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
                 _workspace.Apply(Snapshot.Revision, [new(path, Snapshot.Files.GetValueOrDefault(path), disk.File)]);
                 opened = AddDocument(path, disk.File, disk.Hash, disk.Encoding);
             }
-            else opened = AddDocument(path, Snapshot.Files.GetValueOrDefault(path) ?? throw new FileNotFoundException("The file is unavailable.", path));
+            else
+            {
+                var file = Snapshot.Files.GetValueOrDefault(path) ?? throw new FileNotFoundException("The file is unavailable.", path);
+                await PersistBrowserAsync(Snapshot, WorkspacePath.IsProject(path) ? path : SelectedProject,
+                    _documents.Values.Select(document => document.Path).Append(path));
+                opened = AddDocument(path, file);
+            }
             if (WorkspacePath.IsProject(path)) SelectedProject = path;
         });
         return opened;
@@ -269,6 +294,7 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
 
     public Task ReloadDocumentAsync(WorkspaceEditorDocument document) => ExecuteAsync(async () =>
     {
+        await CaptureAsync(document);
         if (document.Dirty && !await _module!.InvokeAsync<bool>("confirmDiscard", "Discard unsaved changes to " + document.Path + "?")) return;
         var file = document.SavedFile;
         if (IsLocal)
@@ -298,6 +324,7 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
 
     public Task MoveFileAsync(string path, string destination) => ExecuteAsync(async () =>
     {
+        await CaptureAllAsync();
         destination = WorkspacePath.Normalize(destination);
         if (_documents.Values.Any(document => document.Path == path && document.Dirty)) throw new InvalidOperationException("Save or discard the document before moving it.");
         if (WorkspacePath.IsEntry(path)) throw new InvalidOperationException("Rename solution/project paths in their source files and update their references explicitly; a raw file move cannot safely rewrite arbitrary imports.");
@@ -320,6 +347,7 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
 
     public Task DeleteFileAsync(string path) => ExecuteAsync(async () =>
     {
+        await CaptureAllAsync();
         if (_documents.Values.Any(document => document.Path == path && document.Dirty)) throw new InvalidOperationException("Save or discard the document before deleting it.");
         if (!await _module!.InvokeAsync<bool>("confirmDiscard", "Delete " + path + "? This does not update project or solution references.")) return;
         if (IsLocal)
@@ -335,8 +363,10 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
 
     public Task SetStartupAsync(string path) => ExecuteAsync(async () =>
     {
-        _workspace.SetStartupProject(Snapshot.Revision, path);
-        if (!IsLocal) await PersistBrowserAsync(Snapshot.Files, Snapshot.EntryPath);
+        var candidate = _workspace.Fork();
+        candidate.SetStartupProject(candidate.Current.Revision, path);
+        if (!IsLocal) await PersistBrowserAsync(candidate.Current, SelectedProject);
+        _workspace = candidate;
     });
 
     public Task EditProjectAsync(string path, string operation, string name, string? value = null) => ExecuteAsync(async () =>
@@ -352,6 +382,8 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
             "property" => ProjectFileEditor.SetProperty(Snapshot, path, name, value ?? ""),
             "package" => ProjectFileEditor.AddPackageReference(Snapshot, path, name, value),
             "reference" => ProjectFileEditor.AddProjectReference(Snapshot, path, name),
+            "remove-package" => ProjectFileEditor.RemovePackageReference(Snapshot, path, name),
+            "remove-reference" => ProjectFileEditor.RemoveProjectReference(Snapshot, path, name),
             "solution-add" => await SolutionFileService.AddProjectAsync(Snapshot, path, name, value),
             "solution-remove" => await SolutionFileService.RemoveProjectAsync(Snapshot, path, name),
             "solution-folder" => await SolutionFileService.AddFolderAsync(Snapshot, path, name),
@@ -368,10 +400,10 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
         SynchronizeCleanDocuments(); Inspect(); EvaluatedGraph = null;
     });
 
-    public Task RunSdkAsync(string operation) => ExecuteAsync(async () =>
+    public Task RunSdkAsync(string operation, bool selectedTarget = false) => ExecuteAsync(async () =>
     {
         RequireLocal(); RequireTrust(); await CaptureAllAsync(); await SaveCoreAsync(_documents.Values.ToArray());
-        var path = Snapshot.EntryPath ?? throw new InvalidOperationException("Open a solution or project first.");
+        var path = (selectedTarget ? SdkTargetPath : Snapshot.EntryPath) ?? throw new InvalidOperationException("Choose an available solution, selected project or startup project build target.");
         if (operation == "evaluate")
         {
             EvaluatedGraph = await NativeAsync<JsonElement>("workspace_evaluate", new { path, trust = true, configuration = Configuration, platform = Platform, framework = Framework, includeCompilerDiagnostics = true });
@@ -435,11 +467,10 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
 
     private async Task ApplyBrowserAsync(IReadOnlyList<WorkspaceChange> changes)
     {
-        var previous = Snapshot;
-        var candidate = new VirtualWorkspace(previous.Files, previous.EntryPath);
+        var candidate = _workspace.Fork();
         candidate.Apply(candidate.Current.Revision, changes);
-        await PersistBrowserAsync(candidate.Current.Files, candidate.Current.EntryPath);
-        _workspace.Apply(previous.Revision, changes);
+        await PersistBrowserAsync(candidate.Current, SelectedProject);
+        _workspace = candidate;
     }
     private async Task ReplaceBrowserAsync(VirtualWorkspace candidate, string[] openDocuments)
     {
@@ -450,10 +481,11 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
         _workspace = candidate; _identity = identity; _documents.Clear(); _nativeFiles.Clear(); _inventory = [];
         IsLocal = false; Trusted = false; EvaluatedGraph = null; SelectedProject = null; Inspect();
     }
-    private async Task PersistBrowserAsync(ImmutableDictionary<string, WorkspaceFile> files, string? entry)
+    private async Task PersistBrowserAsync(WorkspaceSnapshot snapshot, string? selectedProject, IEnumerable<string>? documents = null)
     {
-        var saved = new SavedSolutionWorkspace(1, _storageRevision, _identity, entry, Snapshot.StartupProject,
-            files.Select(pair => new ImportedWorkspaceFile(pair.Key, pair.Value.Content, pair.Value.IsBinary)).ToArray(), _documents.Values.Select(document => document.Path).Take(64).ToArray(), SelectedProject);
+        var saved = new SavedSolutionWorkspace(1, _storageRevision, _identity, snapshot.EntryPath, snapshot.StartupProject,
+            snapshot.Files.Select(pair => new ImportedWorkspaceFile(pair.Key, pair.Value.Content, pair.Value.IsBinary)).ToArray(),
+            (documents ?? _documents.Values.Select(document => document.Path)).Where(snapshot.Files.ContainsKey).Distinct(StringComparer.Ordinal).Take(64).ToArray(), selectedProject);
         _storageRevision = await _module!.InvokeAsync<long>("saveWorkspace", saved, _storageRevision);
     }
     private void SynchronizeCleanDocuments()
@@ -465,11 +497,12 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
                 if (_nativeFiles.TryGetValue(document.Path, out var disk)) { document.DiskHash = disk.Hash; document.Encoding = disk.Encoding; }
             }
     }
-    private void Inspect()
+    private void Inspect() => Description = Describe(Snapshot);
+    private static SolutionDescription Describe(WorkspaceSnapshot snapshot)
     {
-        try { Description = SolutionInspector.Inspect(Snapshot); }
+        try { return SolutionInspector.Inspect(snapshot); }
         catch (Exception error) when (error is ArgumentException or System.Xml.XmlException or JsonException or IOException)
-        { Description = new(Snapshot.EntryPath, "invalid", [], [], [], [error.Message, SolutionInspector.StructuralNotice]); }
+        { return new(snapshot.EntryPath, "invalid", [], [], [], [error.Message, SolutionInspector.StructuralNotice]); }
     }
     private void RemoveDocuments(string path)
     {

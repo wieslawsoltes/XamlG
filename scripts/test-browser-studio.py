@@ -38,6 +38,10 @@ def main():
     for name in ('OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY'):
         environment.pop(name, None)
     with tempfile.TemporaryFile(mode='w+') as log, tempfile.TemporaryDirectory(prefix='xamlg-browser-agent-state-') as state_directory:
+        # Workspace acceptance must never inherit access to a developer's source tree.
+        workspace_directory = Path(state_directory) / 'workspace'
+        workspace_directory.mkdir()
+        environment['XAMLG_STUDIO_WORKSPACE_ROOT'] = str(workspace_directory)
         # Exercise the companion's published-site defaults, including in the
         # candidate preview. Custom deployments still require an explicit origin.
         origin_args = [] if origin == 'https://wieslawsoltes.github.io' else [f'--origins={origin}']

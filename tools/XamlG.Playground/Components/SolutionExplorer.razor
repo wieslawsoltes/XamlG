@@ -24,7 +24,7 @@
     </details>
     @if (_error != null || Session.Error != null) { <p class="ws-error" role="alert">@(_error ?? Session.Error)</p> }
     <label class="ws-field">Solution / project
-        <select aria-label="Workspace solution or project" value="@Session.Snapshot.EntryPath" @onchange="EntryChangedAsync" disabled="@Disabled">
+        <select aria-label="Workspace solution or project" @bind:get="Session.Snapshot.EntryPath" @bind:set="EntryChangedAsync" disabled="@Disabled">
             <option value="">Choose an entry file</option>
             @foreach (var path in Session.EntryPaths) { <option value="@path">@path</option> }
         </select>
@@ -83,11 +83,13 @@
         <label class="ws-field">Package ID <input @bind="_package" placeholder="Example.Library" /></label>
         <label class="ws-field">Package version <input @bind="_packageVersion" placeholder="1.0.0" /></label>
         <button @onclick="AddPackageAsync" disabled="@(Disabled || Session.SelectedProject == null || _package.Length == 0)">Add / update package reference</button>
-        <p class="ws-hint">Leave the version empty only when the repository manages package versions centrally.</p>
+        <button @onclick="RemovePackageAsync" disabled="@(Disabled || Session.SelectedProject == null || _package.Length == 0)">Remove package reference</button>
+        <p class="ws-hint">Leave the version empty only when the repository manages package versions centrally. Removal affects authored unconditional references, not imported or conditional items.</p>
         <label class="ws-field">Project reference
             <select @bind="_reference"><option value="">Choose a project</option>@foreach (var project in Session.Inventory.Where(file => WorkspacePath.IsProject(file.Path))) { <option value="@project.Path">@project.Path</option> }</select>
         </label>
         <button @onclick="AddReferenceAsync" disabled="@(Disabled || Session.SelectedProject == null || _reference.Length == 0)">Add project reference</button>
+        <button @onclick="RemoveReferenceAsync" disabled="@(Disabled || Session.SelectedProject == null || _reference.Length == 0)">Remove project reference</button>
     </details>
     @if (Session.Snapshot.EntryPath is { } entry && Path.GetExtension(entry).ToLowerInvariant() is ".sln" or ".slnx")
     {
@@ -107,10 +109,11 @@
         @if (Session.IsLocal)
         {
             <label class="ws-trust"><input type="checkbox" @bind="Session.Trusted" disabled="@Session.Busy" /> I trust this workspace and authorize SDK, project, package and template code to execute on this computer.</label>
+            <label class="ws-field">Build target <select @bind="Session.BuildTarget"><option value="solution">Solution / open entry</option><option value="project">Selected project</option><option value="startup">Startup project</option></select></label>
             <label class="ws-field">Build configuration <input @bind="Session.Configuration" /></label>
             <label class="ws-field">Build platform <input @bind="Session.Platform" /></label>
             <label class="ws-field">Target framework <input @bind="Session.Framework" placeholder="All project targets" /></label>
-            <div class="ws-toolbar">@foreach (var operation in new[] { "restore", "build", "rebuild", "clean", "test", "evaluate" }) { <button @onclick="() => BuildAsync(operation)" disabled="@(Disabled || !Session.Trusted || Session.Snapshot.EntryPath == null)">@operation</button> }</div>
+            <div class="ws-toolbar">@foreach (var operation in new[] { "restore", "build", "rebuild", "clean", "test", "evaluate" }) { <button @onclick="() => BuildAsync(operation)" disabled="@(Disabled || !Session.Trusted || Session.SdkTargetPath == null)">@operation</button> }</div>
         }
         else { <p>Standalone browser workspaces edit and inspect source. Pair the local companion to use the installed SDK for restore, builds, tests and real MSBuild/Roslyn evaluation.</p> }
         <button @onclick="OutputRequested">Show workspace output</button>
@@ -171,9 +174,9 @@
         var document = await Session.OpenDocumentAsync(node.Path);
         if (document != null) await OpenRequested.InvokeAsync(document);
     }
-    private async Task EntryChangedAsync(ChangeEventArgs args)
+    private async Task EntryChangedAsync(string? path)
     {
-        if (args.Value?.ToString() is { Length: > 0 } path) { await Session.OpenEntryAsync(path); _selected = null; Rebuild(); }
+        if (!string.IsNullOrWhiteSpace(path)) { await Session.OpenEntryAsync(path); _selected = null; Rebuild(); }
     }
     private async Task ImportAsync(string kind)
     {
@@ -205,10 +208,12 @@
     private Task SetPropertyAsync() => Session.EditProjectAsync(Session.SelectedProject!, "property", _propertyName, _propertyValue);
     private Task AddPackageAsync() => Session.EditProjectAsync(Session.SelectedProject!, "package", _package, string.IsNullOrWhiteSpace(_packageVersion) ? null : _packageVersion);
     private Task AddReferenceAsync() => Session.EditProjectAsync(Session.SelectedProject!, "reference", _reference);
+    private Task RemovePackageAsync() => Session.EditProjectAsync(Session.SelectedProject!, "remove-package", _package);
+    private Task RemoveReferenceAsync() => Session.EditProjectAsync(Session.SelectedProject!, "remove-reference", _reference);
     private Task AddSolutionFolderAsync() => Session.EditProjectAsync(Session.Snapshot.EntryPath!, "solution-folder", _solutionFolder);
     private Task AddMembershipAsync() => Session.EditProjectAsync(Session.Snapshot.EntryPath!, "solution-add", _solutionProject, string.IsNullOrWhiteSpace(_solutionFolder) ? null : _solutionFolder);
     private Task RemoveMembershipAsync() => Session.EditProjectAsync(Session.Snapshot.EntryPath!, "solution-remove", _solutionProject);
     private Task AddConfigurationAsync() => Session.EditProjectAsync(Session.Snapshot.EntryPath!, "configuration", _newConfiguration, _newPlatform);
-    private async Task BuildAsync(string operation) { await OutputRequested.InvokeAsync(); await Session.RunSdkAsync(operation); }
+    private async Task BuildAsync(string operation) { await OutputRequested.InvokeAsync(); await Session.RunSdkAsync(operation, selectedTarget: true); }
     public async ValueTask DisposeAsync() { if (_module != null) { try { await _module.DisposeAsync(); } catch (JSDisconnectedException) { } } }
 }

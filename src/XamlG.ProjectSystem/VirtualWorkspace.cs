@@ -104,6 +104,14 @@ public sealed class VirtualWorkspace
         _current = new(0, entryPath, null, snapshot);
     }
 
+    private VirtualWorkspace(WorkspaceSnapshot snapshot) => _current = snapshot;
+
+    /// <summary>Shares the immutable snapshot but isolates subsequent edits and revision checks.</summary>
+    public VirtualWorkspace Fork()
+    {
+        lock (_gate) return new VirtualWorkspace(_current);
+    }
+
     public WorkspaceSnapshot Apply(long expectedRevision, IEnumerable<WorkspaceChange> changes)
     {
         ArgumentNullException.ThrowIfNull(changes);

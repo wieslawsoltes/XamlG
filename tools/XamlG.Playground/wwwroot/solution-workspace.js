@@ -60,7 +60,8 @@ export async function saveWorkspace(state, expectedRevision) {
         transaction.abort(); return;
       }
       revision = actual + 1;
-      store.put({ ...state, revision }, 'current');
+      try { store.put({ ...state, revision }, 'current'); }
+      catch (error) { failure = error; transaction.abort(); }
     };
     transaction.oncomplete = () => resolve(revision);
     transaction.onabort = transaction.onerror = () => reject(failure ?? transaction.error ?? new Error('The browser could not save the workspace. Check available storage space.'));

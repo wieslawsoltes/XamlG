@@ -1,0 +1,64 @@
+name: Solution workspaces
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - 'src/XamlG.ProjectSystem/**'
+      - 'src/XamlG.Workspaces/**'
+      - 'tools/XamlG.Playground/**'
+      - 'tools/XamlG.Studio.Host/**'
+      - 'tests/XamlG.Workspaces.Tests/**'
+      - 'scripts/test-browser-studio.py'
+      - 'Directory.*.props'
+      - 'global.json'
+      - '.github/workflows/workspaces.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: solution-workspaces-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Native workspace regression tests
+        run: dotnet test tests/XamlG.Workspaces.Tests/XamlG.Workspaces.Tests.csproj -c Release -p:NuGetAudit=false -warnaserror --logger trx --results-directory artifacts/workspaces/native
+      - name: Build the actual SDK companion
+        run: dotnet build tools/XamlG.Studio.Host/XamlG.Studio.Host.csproj -c Release -p:NuGetAudit=false -warnaserror
+      - name: Prepare browser toolchain and pinned assets
+        run: |
+          dotnet workload install wasm-tools --skip-manifest-update
+          cd tools/XamlG.Playground
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run prepare-assets
+          npx playwright install --with-deps chromium
+      - name: Publish production browser application
+        run: |
+          dotnet publish tools/XamlG.Playground/XamlG.Playground.csproj -c Release -p:NuGetAudit=false -o artifacts/playground
+          python scripts/prepare-pages.py --commit "${{ github.sha }}"
+      - name: Browser solutions, persistence, trust, SDK builds and Roslyn evaluation
+        working-directory: tools/XamlG.Playground
+        env:
+          PLAYGROUND_PAGES_PREVIEW: '1'
+        run: python ../../scripts/test-browser-studio.py solution-workspace.spec.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: solution-workspace-validation
+          path: |
+            artifacts/workspaces
+            tools/XamlG.Playground/test-results
+            tools/XamlG.Playground/playwright-report
+          if-no-files-found: error
