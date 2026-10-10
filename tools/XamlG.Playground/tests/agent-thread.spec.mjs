@@ -267,7 +267,7 @@ test('Stop cancels the provider stream and retains its incomplete public reply f
     await reviewAgentRun(page, pane, 'Stream a response until cancelled.');
     await expect(pane.getByRole('log')).toContainText('Streamed draft before Stop.');
     await agentSection(pane, 'Conversation');
-    await pane.getByRole('button', { name: 'Stop & revoke', exact: true }).click();
+    await pane.getByRole('button', { name: 'Stop and keep progress', exact: true }).click();
     await expect(pane.locator('.agent-task-status')).toContainText('paused');
     await expect(pane.locator('.agent-assistant_incomplete')).toContainText('Streamed draft before Stop.');
     await expect(pane.locator('.agent-assistant')).toHaveCount(0);

@@ -299,7 +299,7 @@
                 @if (IsRunning(selected))
                 {
                     @if (!string.IsNullOrWhiteSpace(_draft)) { <button class="agent-steer-button" @onclick="() => SendDraftAsync(true)" disabled="@(!CanSend)" title="Apply this guidance at the next safe tool boundary">Steer now</button> }
-                    <button class="agent-icon-button agent-stop-button" aria-label="Stop &amp; revoke" title="Stop and keep progress" @onclick='() => CommandAsync("stop", new { })'><AgentIcon Name="Stop" /></button>
+                    <button class="agent-icon-button agent-stop-button" aria-label="Stop and keep progress" title="Stop and keep progress" @onclick='() => CommandAsync("stop", new { })'><AgentIcon Name="Stop" /></button>
                 }
                 <button class="primary agent-send-button" aria-label="@(IsRunning(selected) ? "Queue message" : "Send message")" title="@(IsRunning(selected) ? "Queue for the next turn" : "Send message")" @onclick="() => SendDraftAsync()" disabled="@(!CanSend)"><AgentIcon Name="@(IsRunning(selected) ? "Queue" : "Send")" /></button>
             </div>

@@ -56,6 +56,20 @@ public sealed class AgentWorkflowTests
     }
 
     [Fact]
+    public async Task Steering_during_review_prevents_the_outdated_operation_from_running_after_approval()
+    {
+        var provider = new ScriptedAgentProvider(); var effects = new List<int>();
+        provider.Add(ScriptedAgentProvider.Call(Edit("one", 1)));
+        provider.Add(ScriptedAgentProvider.Done("Following the corrected request"));
+        using var harness = new AgentHarness(Host(effects)); var task = harness.CreateTask("Review steering", provider, "fixture", Token);
+        await harness.RunAsync(task.Id, "Edit the source", Options with { Policy = new() { Profile = PermissionProfile.Ask } },
+            (_, _) => { harness.QueueMessage(task.Id, "Inspect only", AgentMessageDelivery.Steer); return Task.FromResult(AgentApproval.AllowOnce); }, cancellationToken: Token);
+        Assert.Empty(effects); Assert.Equal(AgentTaskStatus.Completed, task.Status);
+        Assert.Contains(provider.Requests[1].Messages, message => message.Kind == AgentMessageKind.ToolResult && message.Text.Contains("during review", StringComparison.Ordinal));
+        Assert.Equal("Inspect only", provider.Requests[1].Messages[^1].Text);
+    }
+
+    [Fact]
     public async Task Stop_during_an_effect_preserves_uncertainty_and_resume_does_not_replay_it()
     {
         var provider = new ScriptedAgentProvider(); var effects = new List<int>();

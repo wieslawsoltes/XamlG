@@ -245,6 +245,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                         if (answer == AgentApproval.Deny) throw new AutomationException("permission_denied", "Operation denied by the user.");
                         if (answer == AgentApproval.AllowToolForRun) lease.GrantTool(tool.Name);
                     }
+                    if (HasSteering(task)) { RetirePendingTools(task, "User steering superseded this operation during review. Reconsider the next action using the new guidance."); break; }
                     calls++; task.ExecutingToolId = call.Id;
                     if (!tool.Name.StartsWith("xamlg_agent_", StringComparison.Ordinal)) turnWork++;
                     if (tool.Effect != AutomationEffect.Read) await SaveSessionAsync(lease.Token);
