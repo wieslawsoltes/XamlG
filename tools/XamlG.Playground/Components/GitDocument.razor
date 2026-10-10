@@ -1,0 +1,60 @@
+@using XamlG.Playground.Git
+@implements IAsyncDisposable
+@inject IJSRuntime JavaScript
+<div @ref="_host" style="height:100%;min-height:0"></div>
+
+@code {
+    [Parameter, EditorRequired] public string SessionId { get; set; } = "";
+    [Parameter, EditorRequired] public string DocumentId { get; set; } = "";
+    [Parameter] public EventCallback<GitDocumentRequest> OpenRequested { get; set; }
+    [Parameter] public EventCallback<GitSourceRequest> ImportRequested { get; set; }
+    [Parameter] public Func<string, Task<string>>? ReadStudioRequested { get; set; }
+    private ElementReference _host;
+    private IJSObjectReference? _module, _view;
+    private DotNetObjectReference<GitDocument>? _reference;
+    private bool _disposed;
+    private Task? _initializing;
+
+    protected override Task OnAfterRenderAsync(bool firstRender) =>
+        firstRender && !_disposed ? _initializing = InitializeAsync() : Task.CompletedTask;
+
+    private async Task InitializeAsync()
+    {
+        _reference = DotNetObjectReference.Create(this);
+        var shared = await JavaScript.InvokeAsync<IJSObjectReference>("xamlgBoot.importModule", "git/workbench.mjs");
+        if (_disposed) return;
+        _module = await shared.InvokeAsync<IJSObjectReference>("createWorkbenchInterop");
+        if (_disposed) return;
+        _view = await _module.InvokeAsync<IJSObjectReference>("mountDocument", _host, SessionId, DocumentId, _reference);
+    }
+
+    [JSInvokable]
+    public Task OpenGitDocument(GitDocumentRequest request) => _disposed ? Task.CompletedTask : OpenRequested.InvokeAsync(request);
+    [JSInvokable]
+    public Task ImportGitSource(GitSourceRequest request) => _disposed ? Task.CompletedTask : ImportRequested.InvokeAsync(request);
+    [JSInvokable]
+    public Task<string> ReadStudioSource(string path) => !_disposed && ReadStudioRequested is not null
+        ? ReadStudioRequested(path) : Task.FromException<string>(new InvalidOperationException("The Studio document host is unavailable."));
+
+    private async Task ReleaseViewAsync()
+    {
+        var view = _view; _view = null;
+        if (view is null) return;
+        try { await view.InvokeVoidAsync("dispose"); } catch (JSDisconnectedException) { }
+        await view.DisposeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        try { if (_initializing is not null) await _initializing; }
+        catch (JSException) { }
+        finally
+        {
+            try { await ReleaseViewAsync(); if (_module is not null) await _module.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+            finally { _reference?.Dispose(); }
+        }
+    }
+}
