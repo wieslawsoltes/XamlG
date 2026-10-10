@@ -39,12 +39,20 @@ test('partial updates do not reset the established theme or unrelated host token
 test('unknown tokens stylesheet injection and invalid context values do not widen resource authority',async({page})=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   const app=await mount(page,{theme:'light',locale:'en-US',styles:{variables:{'--font-sans':'Arial'}}});
+  const trustedStyles=await app.locator('style').allTextContents();
   await page.evaluate(()=>window.patchHostContext({
     theme:'arbitrary',locale:'not_a_language',timeZone:'not/a/zone',containerDimensions:{height:-1},safeAreaInsets:{top:-20},
     styles:{variables:{'--untrusted-token':'red','--font-sans':'url(https://untrusted.example/font.woff2)','--color-text-primary':'red;display:none'},css:{fonts:'@font-face{font-family:Remote;src:url(https://untrusted.example/font.woff2)}'}}
   }));
-  await expect(app.locator('html')).toHaveCSS('color-scheme','light');await expect(app.locator('html')).toHaveAttribute('lang','en-US');
+  // A round-trip barrier makes absence assertions meaningful: the preceding notification
+  // has been processed before comparing stylesheet identity, contents and network policy.
+  await page.evaluate(()=>window.patchHostContext({locale:'pl-PL'}));
+  await expect(app.locator('html')).toHaveAttribute('lang','pl-PL');
+  await expect(app.locator('html')).toHaveCSS('color-scheme','light');
   expect(await app.locator('html').evaluate(e=>e.style.getPropertyValue('--font-sans'))).toBe('Arial');
   expect(await app.locator('html').evaluate(e=>e.style.getPropertyValue('--untrusted-token'))).toBe('');
-  await expect(app.locator('style')).toHaveCount(1);await expect(app.locator('body')).toHaveCSS('padding-top','12px');expect(errors).toEqual([]);
+  expect(await app.locator('style').allTextContents()).toEqual(trustedStyles);
+  await expect(app.locator('link[rel="stylesheet"]')).toHaveCount(0);
+  await expect(app.locator('meta[http-equiv="Content-Security-Policy"]')).toHaveAttribute('content',/connect-src 'none'/);
+  await expect(app.locator('body')).toHaveCSS('padding-top','12px');expect(errors).toEqual([]);
 });
