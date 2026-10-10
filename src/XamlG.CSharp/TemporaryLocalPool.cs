@@ -18,6 +18,9 @@ internal sealed class TemporaryLocalPool(EmissionContext context)
     }
     private readonly Dictionary<BoundObject, Hazard> _objects = new(Identity<BoundObject>.Instance);
     private readonly Dictionary<BoundAssignment, Hazard> _assignments = new(Identity<BoundAssignment>.Instance);
+    // Completed composite results belong to this emission only. Reference identity
+    // is essential: structural hashing would recursively expand the graph again.
+    private Dictionary<BoundExpression, Hazard>? _expressions;
     private Hazard? _document;
     private int _depth;
 
@@ -125,23 +128,44 @@ internal sealed class TemporaryLocalPool(EmissionContext context)
         _ => null
     };
 
-    private Hazard Analyze(BoundExpression value)
+    private Hazard Analyze(BoundExpression value) => AnalyzeExpression(value, 0);
+
+    private Hazard AnalyzeExpression(BoundExpression value, int remaining)
     {
         context.Cancellation.ThrowIfCancellationRequested();
         if (value is BoundObjectExpression obj) return Analyze(obj.Object);
         if (value is BoundMarkupExpression markup) return Analyze(markup.Extension);
+        // The overwhelmingly common leaves need neither edge enumeration nor a
+        // dictionary lookup, including when a prior composite populated the cache.
+        if (value is BoundConstantExpression) return Hazard.None;
+        if (value is BoundRawExpression) return Hazard.Raw;
+        if (value is BoundReferenceExpression) return Hazard.Capture | Hazard.Reference;
+        // Unary casts and binary arrays can traverse a bounded segment without
+        // retaining every intermediate node. Cache every fourth level, and every
+        // other shape immediately. Each outgoing edge expands at most 7 skipped
+        // nodes before 8 cache boundaries. Repeated DAG work therefore stays
+        // bounded even at high-fanout parents. No completed result is evicted.
+        var memoize = remaining == 0 || value is not (BoundCastExpression or BoundArrayExpression { Values.Length: <= 2 });
+        if (memoize && _expressions != null && _expressions.TryGetValue(value, out var cached)) return cached;
+        var next = memoize ? 3 : remaining - 1;
         var result = value switch
         {
-            BoundRawExpression => Hazard.Raw,
-            BoundReferenceExpression => Hazard.Capture | Hazard.Reference,
             BoundLambdaExpression { IsStatic: false } or
                 BoundDeferredExpression { UsesFunctionPointer: false } => Hazard.Capture,
             BoundChoiceExpression choice => Analyze(choice.Extension),
             _ => Hazard.None
         };
-        foreach (var child in BoundTraversal.Children(value, includeDeferred: true)) result |= Analyze(child);
-        // A deferred factory resolves its own names when it executes. Its body
-        // still protects captured locals, but cannot defer the outer assignment.
-        return value is BoundDeferredExpression ? result & ~Hazard.Reference : result;
+        var children = BoundTraversal.Children(value, includeDeferred: true).GetEnumerator();
+        try
+        {
+            if (!children.MoveNext()) return result;
+            do { result |= AnalyzeExpression(children.Current, next); } while (children.MoveNext());
+        }
+        finally { children.Dispose(); }
+        // Mask the wrapper, never the cached child: the same child can also occur
+        // outside a deferred factory and require an outer name fixup there.
+        if (value is BoundDeferredExpression) result &= ~Hazard.Reference;
+        if (memoize) (_expressions ??= new(Identity<BoundExpression>.Instance)).Add(value, result);
+        return result;
     }
 }

@@ -36,13 +36,14 @@ internal static class CSharpNames
     {
         var bytes = hash.ComputeHash(encoded, 0, count);
         const string digits = "0123456789abcdef";
-        var characters = new char[24];
+        // Only the final 96-bit identifier string escapes.
+        Span<char> characters = stackalloc char[24];
         for (var index = 0; index < 12; index++)
         {
             characters[index * 2] = digits[bytes[index] >> 4];
             characters[index * 2 + 1] = digits[bytes[index] & 15];
         }
-        return new string(characters);
+        return characters.ToString();
     }
     public static string Method(IMethodSymbol method) => Identifier(method.Name) + (method.IsGenericMethod ? "<" + string.Join(", ", method.TypeArguments.Select(t => t.CSharpName())) + ">" : string.Empty);
     public static string MemberTarget(ISymbol member, ITypeSymbol targetType, string target) =>
