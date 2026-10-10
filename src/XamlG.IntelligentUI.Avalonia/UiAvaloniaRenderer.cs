@@ -14,7 +14,7 @@ public sealed class UiAvaloniaRenderer : IDisposable
     private readonly UiAvaloniaCatalog _catalog;
     private readonly UiCatalog _schema;
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
-    private readonly StackPanel _root = new();
+    private readonly RootPanel _root = new();
     private UiSnapshot? _snapshot;
     private bool _applying, _disposed;
     public Control View => _root;
@@ -31,7 +31,11 @@ public sealed class UiAvaloniaRenderer : IDisposable
         if (_snapshot is { } previous && previous.SessionId == snapshot.SessionId &&
             (snapshot.Revision < previous.Revision || snapshot.Revision == previous.Revision && snapshot.StateRevision < previous.StateRevision))
             throw new UiException("revision_conflict", "The native snapshot is older than the displayed state.");
-        ApplyCore(snapshot, recover: true);
+        // Factories, detached setters and retirement callbacks are application code too.
+        // Keep the guard active through preparation and rollback, not just publication.
+        _applying = true;
+        try { ApplyCore(snapshot, recover: true); }
+        finally { _applying = false; }
     }
     private void ApplyCore(UiSnapshot snapshot, bool recover)
     {
@@ -66,14 +70,14 @@ public sealed class UiAvaloniaRenderer : IDisposable
         }
         catch { foreach (var entry in prepared.Values) Retire(entry); throw; }
         var previous = _snapshot;
-        _applying = true;
         try
         {
-            foreach (var entry in _entries.Values.ToArray())
-            {
+            // Release every affected ownership edge before invoking retirement callbacks.
+            // A retiring custom parent must not still own a child retained by the next tree.
+            foreach (var entry in _entries.Values.Reverse())
                 if (!nodes.ContainsKey(entry.Node.Key) || replacements.Contains(entry.Node.Key) || parents[entry.Node.Key] != entry.Parent || replacements.Contains(entry.Parent)) Detach(entry.Control);
-                if (replacements.Contains(entry.Node.Key)) { Retire(entry); _entries.Remove(entry.Node.Key); }
-            }
+            foreach (var key in replacements)
+                if (_entries.Remove(key, out var retired)) Retire(retired);
             foreach (var node in nodes.Values)
             {
                 if (prepared.Remove(node.Key, out var created)) { _entries.Add(node.Key, created); Subscribe(created); }
@@ -89,7 +93,6 @@ public sealed class UiAvaloniaRenderer : IDisposable
         catch (Exception error) when (error is not OutOfMemoryException)
         {
             foreach (var entry in prepared.Values) Retire(entry);
-            _applying = false;
             if (recover && previous != null)
             {
                 try { Reset(); ApplyCore(previous, recover: false); }
@@ -98,7 +101,6 @@ public sealed class UiAvaloniaRenderer : IDisposable
             else Reset();
             throw;
         }
-        finally { _applying = false; }
     }
     private void Update(Entry entry, UiElement node, bool initial)
     {
@@ -144,24 +146,32 @@ public sealed class UiAvaloniaRenderer : IDisposable
         switch (parent)
         {
             case Panel panel:
-                for (var i = panel.Children.Count - 1; i >= 0; i--) if (!children.Contains(panel.Children[i])) panel.Children.RemoveAt(i);
+            {
+                // Membership checks are linear in sibling count overall rather than n*m.
+                // Native collection moves still carry the collection's own ordering cost.
+                var retained = new HashSet<Control>(children, ReferenceEqualityComparer.Instance);
+                for (var i = panel.Children.Count - 1; i >= 0; i--) if (!retained.Contains(panel.Children[i])) panel.Children.RemoveAt(i);
                 for (var i = 0; i < children.Count; i++)
                 {
                     if (i < panel.Children.Count && ReferenceEquals(panel.Children[i], children[i])) continue;
                     panel.Children.Remove(children[i]); panel.Children.Insert(i, children[i]);
                 }
                 break;
+            }
             // Viewbox is a Control with its own logical child, not a Decorator.
             case Viewbox viewbox: if (!ReferenceEquals(viewbox.Child, children.FirstOrDefault())) viewbox.Child = children.FirstOrDefault(); break;
             case Decorator decorator: if (!ReferenceEquals(decorator.Child, children.FirstOrDefault())) decorator.Child = children.FirstOrDefault(); break;
             case ItemsControl items when !itemsSource:
-                for (var i = items.Items.Count - 1; i >= 0; i--) if (items.Items[i] is not Control control || !children.Contains(control)) items.Items.RemoveAt(i);
+            {
+                var retained = new HashSet<Control>(children, ReferenceEqualityComparer.Instance);
+                for (var i = items.Items.Count - 1; i >= 0; i--) if (items.Items[i] is not Control control || !retained.Contains(control)) items.Items.RemoveAt(i);
                 for (var i = 0; i < children.Count; i++)
                 {
                     if (i < items.Items.Count && ReferenceEquals(items.Items[i], children[i])) continue;
                     items.Items.Remove(children[i]); items.Items.Insert(i, children[i]);
                 }
                 break;
+            }
             case ItemsControl: break;
             case ContentControl content when !scalarContent: if (!ReferenceEquals(content.Content, children.FirstOrDefault())) content.Content = children.FirstOrDefault(); break;
             case ContentControl: break;
@@ -178,13 +188,32 @@ public sealed class UiAvaloniaRenderer : IDisposable
     }
     private void Reset()
     {
+        foreach (var entry in _entries.Values.Reverse()) Detach(entry.Control);
         foreach (var entry in _entries.Values) Retire(entry);
         _root.Children.Clear(); _entries.Clear(); _snapshot = null;
     }
     public void Dispose()
     {
-        Dispatcher.UIThread.VerifyAccess(); if (_disposed) return; _disposed = true;
-        Reset(); StateChanged = null; ActionRequested = null;
+        Dispatcher.UIThread.VerifyAccess(); if (_disposed) return;
+        if (_applying) throw new InvalidOperationException("Cannot dispose during a native UI update.");
+        _disposed = true; Reset(); StateChanged = null; ActionRequested = null;
+    }
+    /// <summary>A single root is an actual viewport, not an implicit vertical StackPanel.
+    /// Multiple response roots retain the existing vertical-flow behavior.</summary>
+    private sealed class RootPanel : StackPanel
+    {
+        protected override Size MeasureOverride(Size availableSize)
+        {
+            if (Children.Count != 1) return base.MeasureOverride(availableSize);
+            Children[0].Measure(availableSize);
+            return Children[0].DesiredSize;
+        }
+        protected override Size ArrangeOverride(Size finalSize)
+        {
+            if (Children.Count != 1) return base.ArrangeOverride(finalSize);
+            Children[0].Arrange(new Rect(finalSize));
+            return finalSize;
+        }
     }
     private sealed class Entry(UiElement node, Control control, string parent, UiControlRegistration registration)
     {
