@@ -10,6 +10,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 82fb45fb1edb199f98c54be3c4134cf6bc7c782f
+          persist-credentials: false
+      - name: Check prepared tests and remaining preview navigation
+        shell: python
+        run: |
+          import subprocess
+          from pathlib import Path
+          for path in sorted(Path('tools/XamlG.Playground/tests').glob('*.mjs')):
+              subprocess.run(['node', '--check', str(path)], check=True)
+              for number, line in enumerate(path.read_text().splitlines(), 1):
+                  if any(value in line for value in ["locator('.file", 'locator(".file', "locator('.explorer", 'Restore draft', 'Export project', 'Manage C# files', 'Manage XAML resources']):
+                      print(f'SELECTOR {path}:{number}: {line[:500]}')
+          subprocess.run(['python', '-m', 'unittest', 'discover', '-s', 'scripts/tests', '-p', 'test_browser_studio.py'], check=True)
       - uses: actions/download-artifact@v4
         with:
           pattern: playground-report-*
