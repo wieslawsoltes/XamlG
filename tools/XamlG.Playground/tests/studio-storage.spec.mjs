@@ -1,5 +1,5 @@
 import { test, expect } from './studio-fixture.mjs';
-import { openStudio, call, writeDocument } from './live-preview.mjs';
+import { openStudio, call, writeDocument, openPreviewDocument } from './live-preview.mjs';
 
 test('agent and inspector inputs changed during an in-flight save retain the latest value', async ({ page }) => {
   await openStudio(page, false);
@@ -69,7 +69,7 @@ test('source documents, document tabs and undo history survive browser restart',
   await openStudio(page);
   const invoke = (name, args) => call(page, name, args);
   await writeDocument(invoke, 'Saved.cs', 'namespace Playground; public class Saved { public const int Value = 1; }');
-  await page.locator('.file').filter({ hasText: 'Saved.cs' }).click();
+  await openPreviewDocument(page, 'Saved.cs');
   await expect(page.locator('.dock-source[data-document-path="Saved.cs"]')).toBeVisible();
   await writeDocument(invoke, 'Saved.cs', 'namespace Playground; public class Saved { public const int Value = 2; }');
   await expect.poll(() => page.evaluate(async () => (await (await xamlgBoot.importModule('studio.js')).loadStudioState('project'))?.codeFiles?.['Saved.cs'])).toContain('Value = 2');
