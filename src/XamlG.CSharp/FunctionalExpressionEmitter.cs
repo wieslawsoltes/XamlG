@@ -47,7 +47,11 @@ internal sealed class FunctionalExpressionEmitter(EmissionContext context, Value
 
     // Delegate bodies can contain temporary locals but cannot own a construction lifetime.
     // Construction graphs and resource factories need a separate runtime-context boundary.
-    private static bool IsInline(BoundExpression expression) => expression is not
-        (BoundObjectExpression or BoundDeferredExpression or BoundMarkupExpression or BoundResourceExpression or BoundChoiceExpression) &&
-        BoundTraversal.Children(expression, true).All(IsInline);
+    private static bool IsInline(BoundExpression expression)
+    {
+        if (expression is BoundObjectExpression or BoundDeferredExpression or BoundMarkupExpression or BoundResourceExpression or BoundChoiceExpression)
+            return false;
+        foreach (var child in BoundTraversal.Children(expression, true)) if (!IsInline(child)) return false;
+        return true;
+    }
 }

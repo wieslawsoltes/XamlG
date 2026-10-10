@@ -38,12 +38,15 @@ internal static class BoundTraversal
         foreach (var argument in root.Arguments) yield return argument;
         foreach (var assignment in root.Assignments) foreach (var expression in Expressions(assignment)) yield return expression;
     }
-    public static IEnumerable<BoundExpression> Expressions(BoundAssignment assignment) => assignment switch
+    public static BoundExpressionSequence Expressions(BoundAssignment assignment) => assignment switch
     {
-        BoundSetAssignment s => new[] { s.Value }, BoundAddAssignment a => a.Arguments.Concat(a.PostCall?.Arguments ?? []),
-        BoundEventAssignment { Value: { } value } => new[] { value },
-        BoundDynamicSetAssignment d => new[] { d.Value }, BoundAdaptedSetAssignment a => new[] { a.Value },
-        BoundCallAssignment c => (c.TargetDescriptor == null ? c.Arguments : c.Arguments.Insert(0, c.TargetDescriptor)).Concat(c.PostCall?.Arguments ?? []), _ => Array.Empty<BoundExpression>()
+        BoundSetAssignment s => new(s.Value, [], [], null, null),
+        BoundAddAssignment a => new(null, a.Arguments, a.PostCall?.Arguments ?? [], null, null),
+        BoundEventAssignment { Value: { } value } => new(value, [], [], null, null),
+        BoundDynamicSetAssignment d => new(d.Value, [], [], null, null),
+        BoundAdaptedSetAssignment a => new(a.Value, [], [], null, null),
+        BoundCallAssignment c => new(c.TargetDescriptor, c.Arguments, c.PostCall?.Arguments ?? [], null, null),
+        _ => default
     };
     private static void Push(Stack<BoundExpression> pending, ImmutableArray<BoundExpression> values)
     {
@@ -125,24 +128,41 @@ internal static class BoundTraversal
             case BoundDeferredExpression deferred when includeDeferred: pending.Push(deferred.Content); break;
         }
     }
-    public static IEnumerable<BoundExpression> Children(BoundExpression expression, bool includeDeferred) => expression switch
+    public static BoundExpressionSequence Children(BoundExpression expression, bool includeDeferred) => expression switch
     {
-        BoundChoiceExpression c => Expressions(c.Extension).Concat(c.Branches.SelectMany(b => new[] { b.Option, b.Value })).Concat(c.Default == null ? Array.Empty<BoundExpression>() : new[] { c.Default }),
-        BoundCastExpression c => new[] { c.Value }, BoundArrayExpression a => a.Values,
-        BoundNewExpression n => n.Arguments.Concat(n.Initializers.Select(initializer => initializer.Value)),
-        BoundBuilderExpression b => new[] { b.Creation }.Concat(b.Calls.SelectMany(call => call.Arguments)),
-        BoundScopedInitializationExpression s => new[] { s.Creation }.Concat(s.Calls.SelectMany(call => call.Arguments)),
-        BoundCollectionExpression c => c.Values,
-        BoundCachedExpression c => new[] { c.Value },
-        BoundValueConverterExpression c => new[] { c.Value },
-        BoundCallExpression c => c.Receiver == null ? c.Arguments : c.Arguments.Insert(0, c.Receiver),
-        BoundLambdaExpression l => new[] { l.Body },
-        BoundPropertyAccessExpression p => p.IndexArguments.Insert(0, p.Receiver),
-        BoundFieldAccessExpression f => new[] { f.Receiver },
-        BoundAssignmentExpression a => new[] { a.Target, a.Value },
-        BoundMethodGroupExpression m when m.Receiver != null => new[] { m.Receiver },
-        BoundDeferredExpression d when includeDeferred => new[] { d.Content },
-        BoundObjectExpression o => Expressions(o.Object), BoundMarkupExpression m => Expressions(m.Extension),
-        _ => Array.Empty<BoundExpression>()
+        BoundChoiceExpression c => new(null, [], [], null, ChoiceChildren(c)),
+        BoundCastExpression c => new(c.Value, [], [], null, null),
+        BoundArrayExpression a => new(null, a.Values, [], null, null),
+        BoundNewExpression n => new(null, n.Arguments, [], null, n.Initializers.IsEmpty ? null : InitializerValues(n.Initializers)),
+        BoundBuilderExpression b => new(b.Creation, [], [], null, b.Calls.IsEmpty ? null : CallArguments(b.Calls)),
+        BoundScopedInitializationExpression s => new(s.Creation, [], [], null, s.Calls.IsEmpty ? null : CallArguments(s.Calls)),
+        BoundCollectionExpression c => new(null, c.Values, [], null, null),
+        BoundCachedExpression c => new(c.Value, [], [], null, null),
+        BoundValueConverterExpression c => new(c.Value, [], [], null, null),
+        BoundCallExpression c => new(c.Receiver, c.Arguments, [], null, null),
+        BoundLambdaExpression l => new(l.Body, [], [], null, null),
+        BoundPropertyAccessExpression p => new(p.Receiver, p.IndexArguments, [], null, null),
+        BoundFieldAccessExpression f => new(f.Receiver, [], [], null, null),
+        BoundAssignmentExpression a => new(a.Target, [], [], a.Value, null),
+        BoundMethodGroupExpression m when m.Receiver != null => new(m.Receiver, [], [], null, null),
+        BoundDeferredExpression d when includeDeferred => new(d.Content, [], [], null, null),
+        BoundObjectExpression o => new(null, [], [], null, Expressions(o.Object)),
+        BoundMarkupExpression m => new(null, [], [], null, Expressions(m.Extension)),
+        _ => default
     };
+
+    private static IEnumerable<BoundExpression> InitializerValues(ImmutableArray<BoundPropertyInitialization> initializers)
+    {
+        foreach (var initializer in initializers) yield return initializer.Value;
+    }
+    private static IEnumerable<BoundExpression> CallArguments(ImmutableArray<BoundBuilderCall> calls)
+    {
+        foreach (var call in calls) foreach (var argument in call.Arguments) yield return argument;
+    }
+    private static IEnumerable<BoundExpression> ChoiceChildren(BoundChoiceExpression choice)
+    {
+        foreach (var expression in Expressions(choice.Extension)) yield return expression;
+        foreach (var branch in choice.Branches) { yield return branch.Option; yield return branch.Value; }
+        if (choice.Default is { } fallback) yield return fallback;
+    }
 }
