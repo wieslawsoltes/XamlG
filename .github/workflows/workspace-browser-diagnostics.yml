@@ -3,40 +3,141 @@ on:
   push:
     branches: [diagnostics/workspace-browser-58901]
 permissions:
-  contents: read
-  actions: read
+  contents: write
 jobs:
-  diagnose:
+  prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          name: playground-validation
-          run-id: 38070784803
-          github-token: ${{ github.token }}
-          path: evidence
-      - name: Read bounding box results and nearby layout snapshots
+          ref: 58901d52f999755bb0dc330914272652e7504326
+          persist-credentials: false
+      - name: Prepare isolated source commits
         shell: python
         run: |
-          import json, zipfile
+          import subprocess
           from pathlib import Path
-          for path in Path('evidence').rglob('trace.zip'):
-              if 'agent-layout' not in str(path): continue
-              with zipfile.ZipFile(path) as archive:
-                  for name in archive.namelist():
-                      if not name.endswith('.trace'): continue
-                      calls = {}
-                      for line in archive.read(name).splitlines():
-                          try: event = json.loads(line)
-                          except ValueError: continue
-                          if event.get('type') == 'before': calls[event.get('callId')] = event
-                          if event.get('type') == 'after':
-                              before = calls.get(event.get('callId'), {})
-                              method = str(before.get('method', ''))
-                              if method in ('boundingBox', 'setViewportSize'):
-                                  print(name, method, before.get('params', {}), event.get('result', {}))
-                          if event.get('type') == 'frame-snapshot':
-                              snapshot = event.get('snapshot', {})
-                              if snapshot.get('snapshotName', '').endswith('after@call@178'):
-                                  print('Snapshot:', str(snapshot)[:2000])
+          def edit(path, before, after, count=1):
+              path = Path(path)
+              text = path.read_text()
+              assert text.count(before) == count, (path, before, text.count(before), count)
+              path.write_text(text.replace(before, after))
+          def commit(message):
+              subprocess.run(['git', 'diff', '--check'], check=True)
+              subprocess.run(['git', 'add', 'tools/XamlG.Playground', 'scripts'], check=True)
+              subprocess.run(['git', '-c', 'user.name=Wiesław Šoltés', '-c', 'user.email=wieslawsoltes@users.noreply.github.com', 'commit', '-m', message], check=True)
+          tests = Path('tools/XamlG.Playground/tests')
+          for filename, restores, exports in [('compiler-workbench.spec.mjs', 2, 1), ('csharp-project.spec.mjs', 1, 0), ('editor-lifetime.spec.mjs', 0, 1), ('resources.spec.mjs', 1, 1)]:
+              path = tests / filename
+              if restores: edit(path, "name: 'Restore draft'", "name: 'Restore preview draft'", restores)
+              if exports: edit(path, "name: 'Export project'", "name: 'Export preview project'", exports)
+          helper = tests / 'live-preview.mjs'
+          helper.write_text(helper.read_text() + '''
+
+          // Preview sources are intentionally separate from an MSBuild solution.
+          // Open the visible disclosure through the UI rather than forcing clicks
+          // into a collapsed subtree or replacing the workspace explorer contract.
+          export async function openPreviewDocument(page, path) {
+            const preview = page.locator('.explorer .ws-preview-project');
+            if (await preview.getAttribute('open') === null)
+              await preview.locator(':scope > summary').click();
+            await preview.getByRole('button').filter({
+              has: page.locator('.file-path').filter({ hasText: new RegExp('^' + path.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + '$') })
+            }).click();
+            await expect(page.locator('.source-pane').filter({ has: page.locator('.code-editor') })
+              .filter({ visible: true })).toHaveAttribute('data-document-path', path);
+          }
+          ''')
+          path = tests / 'dock-documents.spec.mjs'
+          edit(path, 'openStudio, call, writeDocument', 'openStudio, call, writeDocument, openPreviewDocument')
+          edit(path, "await page.locator('.explorer').getByRole('button').filter({ has: page.locator('.file-path', { hasText: path }) }).click();", 'await openPreviewDocument(page, path);')
+          edit(path, "await page.locator('.explorer').getByRole('button').filter({ has: page.locator('.file-path', { hasText: 'Models/One.cs' }) }).click();", "await openPreviewDocument(page, 'Models/One.cs');", 2)
+          edit(path, "name: 'Manage C# files'", "name: 'Manage preview C# files'")
+          edit(path, "  const example = page.getByLabel('Example', { exact: true });\n  await expect(example).toBeFocused();", "  for (const name of ['New solution…', 'New project…', 'Open solution / folder…']) {\n    await expect(page.getByRole('button', { name, exact: true })).toBeFocused();\n    await page.keyboard.press('ArrowDown');\n  }\n  const example = page.getByLabel('Example', { exact: true });\n  await expect(example).toBeFocused();")
+          path = tests / 'live-updates.spec.mjs'
+          text = path.read_text()
+          line = next(line for line in text.splitlines() if "from './live-preview.mjs'" in line)
+          edit(path, line, line.replace(' } from', ', openPreviewDocument } from'))
+          edit(path, "await page.locator('.explorer').getByRole('button').filter({ has: page.locator('.file-path', { hasText: 'Code.cs' }) }).click();", "await openPreviewDocument(page, 'Code.cs');")
+          for path in tests.glob('*.mjs'): subprocess.run(['node', '--check', str(path)], check=True)
+          commit('Update preview acceptance to explicit workspace-era commands and explorer navigation')
+          path = Path('scripts/test-browser-studio.py')
+          edit(path, 'import os\n', 'import os\nimport re\n')
+          edit(path, '\ndef main():', '''
+          def parse_shard(value):
+              """Validate a one-based, bounded Playwright shard without accepting extra CLI options."""
+              match = re.fullmatch(r'([1-9][0-9]{0,2})/([1-9][0-9]{0,2})', value)
+              if not match:
+                  raise argparse.ArgumentTypeError('Use INDEX/TOTAL, with 1 <= INDEX <= TOTAL <= 64.')
+              index, total = map(int, match.groups())
+              if index > total or total > 64:
+                  raise argparse.ArgumentTypeError('Use INDEX/TOTAL, with 1 <= INDEX <= TOTAL <= 64.')
+              return value
+
+
+          def main():''')
+          edit(path, "    parser.add_argument('tests', nargs='*')", "    parser.add_argument('tests', nargs='*')\n    parser.add_argument('--shard', type=parse_shard, help='Run one isolated Playwright shard (INDEX/TOTAL).')")
+          edit(path, "['playwright'", "['playwright'", 0) if False else None
+          edit(path, "[shutil.which('npx'), 'playwright', 'test', *args.tests]", "[shutil.which('npx'), 'playwright', 'test', *args.tests, *([f'--shard={args.shard}'] if args.shard else [])]")
+          config = Path('tools/XamlG.Playground/playwright.config.mjs')
+          text = config.read_text()
+          print('REPORTER BEFORE:', next(line for line in text.splitlines() if 'reporter:' in line))
+          edit(config, "['html', { open: 'never' }]", "['html', { open: 'never' }], ['json', { outputFile: 'test-results/results.json' }]")
+          unit = Path('scripts/tests/test_browser_studio.py')
+          unit.parent.mkdir(exist_ok=True)
+          unit.write_text('''import argparse
+          import importlib.util
+          from pathlib import Path
+          import unittest
+
+          spec = importlib.util.spec_from_file_location('browser_studio', Path(__file__).resolve().parents[1] / 'test-browser-studio.py')
+          launcher = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(launcher)
+
+          class ShardParsingTests(unittest.TestCase):
+              def test_valid_shards(self):
+                  for value in ['1/1', '1/8', '8/8', '64/64']:
+                      with self.subTest(value=value): self.assertEqual(value, launcher.parse_shard(value))
+
+              def test_invalid_and_unbounded_shards(self):
+                  for value in ['', '0/8', '9/8', '1/0', '1/65', '01/8', '1', '1/8 --grep=x', '../8', '１/８', '1/' + '9' * 1000]:
+                      with self.subTest(value=value), self.assertRaises(argparse.ArgumentTypeError): launcher.parse_shard(value)
+
+          if __name__ == '__main__': unittest.main()
+          ''')
+          subprocess.run(['python', '-m', 'unittest', 'discover', '-s', 'scripts/tests', '-p', 'test_browser_studio.py'], check=True)
+          subprocess.run(['node', '--check', str(config)], check=True)
+          commit('Add validated isolated browser sharding and machine-readable acceptance reports')
+          # Retain actionable geometry when a dock clips controls. This does not
+          # change the viewport assertion or make it conditional.
+          path = tests / 'agent-layout.spec.mjs'
+          before = "  await pane.getByRole('log').evaluate(element => { element.scrollTop = 0; });"
+          after = before + '''
+            await test.info().attach('agent-compact-layout', {
+              contentType: 'application/json',
+              body: JSON.stringify(await pane.evaluate(element => {
+                const selectors = ['.agent-shell', '.agent-content', '.agent-section-conversation', '.agent-conversation-body', '.agent-thread', '.agent-composer', '.agent-composer-toolbar', '.agent-send-button'];
+                const box = node => {
+                  const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
+                  return { tag: node.tagName, className: node.className, x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+                    clientWidth: node.clientWidth, clientHeight: node.clientHeight, scrollWidth: node.scrollWidth, scrollHeight: node.scrollHeight,
+                    overflow: style.overflow, minWidth: style.minWidth, minHeight: style.minHeight, flex: style.flex, grid: style.gridTemplateRows };
+                };
+                const ancestors = []; for (let node = element; node; node = node.parentElement) ancestors.push(box(node));
+                return { viewport: { width: innerWidth, height: innerHeight }, ancestors,
+                  elements: Object.fromEntries(selectors.map(selector => [selector, element.querySelector(selector) ? box(element.querySelector(selector)) : null])) };
+              }), null, 2)
+            });'''
+          edit(path, before, after)
+          subprocess.run(['node', '--check', str(path)], check=True)
+          commit('Capture narrow-dock geometry alongside the strict composer visibility regression')
+          subprocess.run(['git', 'log', '-3', '--format=%H %s'], check=True)
+          subprocess.run(['git', 'diff', '--stat', '58901d52f999755bb0dc330914272652e7504326'], check=True)
+      - name: Publish prepared commits without moving the working PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh auth setup-git
+          git push origin HEAD:refs/heads/prepared/workspace-browser-contracts-58901
+          git rev-parse HEAD HEAD^{tree}
