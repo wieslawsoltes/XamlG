@@ -113,7 +113,7 @@ public sealed class UiAuthoringTests
     [InlineData("<StackPanel.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceInclude Source=\"https://example.com/a\"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></StackPanel.Resources>")]
     [InlineData("<StackPanel.Styles><Style Selector=\"Button\"><Setter Property=\"IsEnabled\" Value=\"False\"/></Style></StackPanel.Styles>")]
     [InlineData("<StackPanel.Styles><Style Selector=\"Slider\"><Setter Property=\"Value\" Value=\"2\"/></Style></StackPanel.Styles>")]
-    [InlineData("<StackPanel.Styles><Style Selector=\"Button /template/ Border\"><Setter Property=\"Opacity\" Value=\"0\"/></Style></StackPanel.Styles>")]
+    [InlineData("<StackPanel.Styles><Style Selector=\"Button /unsupported/ Border\"><Setter Property=\"Opacity\" Value=\"0\"/></Style></StackPanel.Styles>")]
     [InlineData("<TextBlock Classes=\":pressed\"/>")]
     [InlineData("<ItemsControl ItemsSource=\"[]\"><ItemsControl.ItemTemplate><DataTemplate><Window/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>")]
     public void Invalid_authoring_never_publishes(string source) => Assert.Throws<UiException>(() => Publish(source));
