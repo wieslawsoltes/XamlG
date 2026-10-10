@@ -32,9 +32,23 @@ public static class ProjectFileEditor
 
     public static WorkspaceChange AddPackageReference(WorkspaceSnapshot snapshot, string path, string id, string? version)
     {
-        if (string.IsNullOrWhiteSpace(id) || id.Length > 200 || id.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('.' or '-' or '_')))
-            throw new ArgumentException("Invalid package identifier.");
+        ValidatePackageId(id);
         return AddItem(snapshot, path, "PackageReference", id, version);
+    }
+
+    /// <summary>Removes authored, unconditional references; conditional items and imports remain untouched.</summary>
+    public static WorkspaceChange RemoveProjectReference(WorkspaceSnapshot snapshot, string path, string reference)
+    {
+        path = WorkspacePath.Normalize(path); reference = WorkspacePath.Normalize(reference);
+        if (!WorkspacePath.IsProject(reference)) throw new ArgumentException("Choose a referenced project file.");
+        return RemoveItem(snapshot, path, "ProjectReference", WorkspacePath.RelativeTo(path, reference));
+    }
+
+    /// <summary>Removes authored, unconditional references without removing centrally managed package versions.</summary>
+    public static WorkspaceChange RemovePackageReference(WorkspaceSnapshot snapshot, string path, string id)
+    {
+        ValidatePackageId(id);
+        return RemoveItem(snapshot, path, "PackageReference", id);
     }
 
     public static WorkspaceChange AddProject(WorkspaceSnapshot snapshot, string solutionPath, string projectPath, string? folder = null)
@@ -87,9 +101,21 @@ public static class ProjectFileEditor
         {
             var root = document.Root!;
             var groups = root.Elements().Where(node => node.Name.LocalName == "ItemGroup" && node.Attribute("Condition") == null).ToArray();
-            var existing = groups.SelectMany(group => group.Elements()).FirstOrDefault(item => item.Name.LocalName == kind &&
-                string.Equals((string?)item.Attribute("Include"), include, kind == "PackageReference" ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) && item.Attribute("Condition") == null);
-            if (existing != null) { if (version != null) existing.SetAttributeValue("Version", version); return; }
+            var existing = groups.SelectMany(group => group.Elements()).LastOrDefault(item => item.Name == root.Name.Namespace + kind &&
+                MatchesInclude(path, kind, (string?)item.Attribute("Include"), include) && item.Attribute("Condition") == null);
+            if (existing != null)
+            {
+                if (version != null)
+                {
+                    // MSBuild metadata may be authored as an attribute or child element. Keep the
+                    // existing shape, rather than adding an attribute shadowed by an old child.
+                    var metadata = existing.Elements(root.Name.Namespace + "Version")
+                        .LastOrDefault(node => node.Attribute("Condition") == null);
+                    if (metadata == null) existing.SetAttributeValue("Version", version);
+                    else { metadata.Value = version; existing.Attribute("Version")?.Remove(); }
+                }
+                return;
+            }
             var group = groups.LastOrDefault();
             if (group == null) { group = new XElement(root.Name.Namespace + "ItemGroup"); root.Add(group); }
             var item = new XElement(root.Name.Namespace + kind, new XAttribute("Include", include));
@@ -97,14 +123,45 @@ public static class ProjectFileEditor
             group.Add(item);
         });
 
+    private static WorkspaceChange RemoveItem(WorkspaceSnapshot snapshot, string path, string kind, string include) =>
+        Edit(snapshot, path, "Project", document =>
+        {
+            var root = document.Root!;
+            foreach (var item in root.Elements(root.Name.Namespace + "ItemGroup")
+                .Where(group => group.Attribute("Condition") == null)
+                .SelectMany(group => group.Elements(root.Name.Namespace + kind))
+                .Where(item => item.Attribute("Condition") == null && MatchesInclude(path, kind, (string?)item.Attribute("Include"), include)).ToArray())
+                item.Remove();
+        });
+
+    private static bool MatchesInclude(string path, string kind, string? authored, string include)
+    {
+        if (authored == null) return false;
+        if (kind == "PackageReference") return string.Equals(authored, include, StringComparison.OrdinalIgnoreCase);
+        // Do not interpret property/item expressions, globs, lists or escaped MSBuild paths.
+        if (authored.IndexOfAny(['$', '@', '%', '*', '?', ';']) >= 0) return false;
+        try { return WorkspacePath.Resolve(path, authored) == WorkspacePath.Resolve(path, include); }
+        catch (ArgumentException) { return false; }
+    }
+
+    private static void ValidatePackageId(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id) || id.Length > 200 || !char.IsAsciiLetterOrDigit(id[0]) ||
+            id.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('.' or '-' or '_')))
+            throw new ArgumentException("Invalid package identifier.");
+    }
+
     private static WorkspaceChange Edit(WorkspaceSnapshot snapshot, string path, string rootName, Action<XDocument> edit)
     {
         path = WorkspacePath.Normalize(path);
         var original = snapshot.Files.GetValueOrDefault(path) ?? throw new FileNotFoundException("Workspace file not found.", path);
         var document = SolutionInspector.ReadXml(SolutionInspector.ReadText(snapshot, path), rootName);
         edit(document);
-        var output = new StringBuilder();
-        using (var writer = XmlWriter.Create(output, new XmlWriterSettings { OmitXmlDeclaration = document.Declaration == null, Indent = false, NewLineHandling = NewLineHandling.None })) document.Save(writer);
+        // XmlWriter over a StringBuilder reports UTF-16 regardless of the file's actual
+        // encoding. Retain the authored declaration explicitly; disk and ZIP adapters
+        // then encode consistently instead of producing an invalid UTF-8/UTF-16 pair.
+        var output = new StringBuilder(document.Declaration?.ToString());
+        using (var writer = XmlWriter.Create(output, new XmlWriterSettings { OmitXmlDeclaration = true, Indent = false, NewLineHandling = NewLineHandling.None })) document.Save(writer);
         return new(path, original, new(output.ToString()));
     }
 
