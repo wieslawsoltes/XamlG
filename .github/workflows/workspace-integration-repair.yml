@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Validate and prepare exact reviewed patch without updating a branch
+      - name: Validate exact reviewed patch and prepare immutable blobs only
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_HEAD: ${{ github.sha }}
@@ -55,24 +55,22 @@ jobs:
           changed = subprocess.check_output(['git', 'diff', '--cached', '--name-only', '-z']).decode().strip('\0').split('\0')
           assert sorted(changed) == sorted(paths)
           subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
-          subprocess.run(['git', 'diff', '--cached', '--stat'], check=True)
           subprocess.run(['node', '--test', 'asset-tests/solution-workspace.test.mjs', 'asset-tests/workspace-dock-lifecycle.test.mjs'], cwd='tools/XamlG.Playground', check=True)
           subprocess.run(['node', '--check', 'tools/XamlG.Playground/tests/solution-workspace.spec.mjs'], check=True)
-          tree = [{'path': path, 'mode': '100644', 'type': 'blob', 'content': pathlib.Path(path).read_text()} for path in paths]
-          tree.append({'path': '.github/workflows/workspace-integration-repair.yml', 'mode': '100644', 'type': 'blob', 'sha': None})
-          base_tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
-          created_tree = api('/git/trees', {'base_tree': base_tree, 'tree': tree})['sha']
-          commit = api('/git/commits', {'message': 'Protect workspace document closes and persist tab retirement transactionally', 'tree': created_tree, 'parents': [expected]})
-          result = {'parent': expected, 'commit': commit['sha'], 'tree': created_tree}
-          pathlib.Path('prepared-commit.json').write_text(json.dumps(result, indent=2))
+          blobs = []
+          for path in paths:
+              content = pathlib.Path(path).read_bytes()
+              expected_blob = hashlib.sha1(b'blob ' + str(len(content)).encode() + b'\0' + content).hexdigest()
+              result = api('/git/blobs', {'content': base64.b64encode(content).decode(), 'encoding': 'base64'})
+              assert result['sha'] == expected_blob
+              blobs.append({'path': path, 'mode': '100644', 'type': 'blob', 'sha': result['sha']})
+          result = {'parent': expected, 'base_tree': subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip(), 'blobs': blobs}
+          pathlib.Path('prepared-blobs.json').write_text(json.dumps(result, indent=2))
           print(json.dumps(result, indent=2), flush=True)
-          pathlib.Path('reviewed.patch').write_bytes(patch)
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: prepared-workspace-close
-          path: |
-            prepared-commit.json
-            reviewed.patch
+          path: prepared-blobs.json
           retention-days: 7
           if-no-files-found: warn
