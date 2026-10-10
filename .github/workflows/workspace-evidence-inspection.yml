@@ -1,0 +1,44 @@
+name: Inspect workspace browser evidence
+on:
+  push:
+    branches: ['diag/workspace-23-evidence-20261010']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: wieslawsoltes/XamlG
+          run-id: 38076950172
+          pattern: playground-report-*
+          path: reports
+      - name: Print bounded failure evidence from JSON only
+        shell: python
+        run: |
+          import json, re
+          from pathlib import Path
+          def walk(suites):
+              for suite in suites:
+                  for spec in suite.get('specs', []):
+                      for test in spec.get('tests', []):
+                          if test.get('status') not in ('expected', 'skipped'):
+                              print('FAILED:', spec.get('file'), spec.get('title'), flush=True)
+                              for result in test.get('results', []):
+                                  print('RESULT:', result.get('status'), result.get('duration'), flush=True)
+                                  for error in result.get('errors', []):
+                                      message = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', error.get('message', ''))
+                                      print(message[:10000], flush=True)
+                  walk(suite.get('suites', []))
+          for path in sorted(Path('reports').glob('*/results.json')):
+              if path.stat().st_size > 16000000:
+                  raise RuntimeError('Report exceeds the evidence budget')
+              data = json.loads(path.read_text())
+              print('REPORT:', path, json.dumps(data.get('stats')), flush=True)
+              print('SOURCE:', (path.parent / 'source-commit.txt').read_text().strip(), flush=True)
+              for error in data.get('errors', []): print('GLOBAL:', str(error)[:5000], flush=True)
+              walk(data.get('suites', []))
