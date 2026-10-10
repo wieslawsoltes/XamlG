@@ -1,0 +1,41 @@
+@using XamlG.Playground.Workspaces
+
+<section class="ws-document" data-workspace-document="@Document.Path" aria-label="@Document.Path" inert="@Document.Closing">
+    <div class="ws-document-toolbar">
+        <strong title="@Document.Path">@Document.Path @(Document.Dirty ? "●" : "")</strong>
+        <span class="toolbar-spacer"></span>
+        <small>@(Session.IsLocal ? "Local · " + Document.Encoding : "Browser workspace")</small>
+        <button @onclick="() => Session.SaveAsync(Document)" disabled="@(Session.Busy || !Document.Dirty)">Save</button>
+        <button @onclick="() => Session.ReloadDocumentAsync(Document)" disabled="@Session.Busy">Reload</button>
+    </div>
+    @if (Document.Error != null) { <p class="ws-error" role="alert">@Document.Error</p> }
+    @if (Document.IsBinary)
+    {
+        <div class="ws-empty"><h3>Binary asset</h3><p>This asset is retained byte-for-byte in the workspace and in ZIP exports. It is not decoded as source text.</p><code>@Document.Path</code></div>
+    }
+    else
+    {
+        <div class="ws-code-editor">
+            <CodeEditor @key="Document" @ref="Document.Editor" Text="@Document.Text" TextChanged="text => Session.Edit(Document, text)"
+                Language="@Language" DocumentPath="@Session.DocumentKey(Document.Path)"
+                AuthoringRequested="request => Session.EditorCommandAsync(Document, request.Command)"
+                RunRequested="BuildAsync" />
+        </div>
+    }
+    <div class="ws-document-status">@(Document.Dirty ? "Unsaved changes" : "Saved") · @(Session.IsLocal ? "Disk writes check the file hash" : "Saved snapshots detect changes from other tabs")</div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public SolutionWorkspaceSession Session { get; set; } = default!;
+    [Parameter, EditorRequired] public WorkspaceEditorDocument Document { get; set; } = default!;
+    [Parameter] public EventCallback OutputRequested { get; set; }
+    private string Language => Path.GetExtension(Document.Path).ToLowerInvariant() switch
+    {
+        ".cs" => "csharp", ".vb" => "vb", ".fs" or ".fsx" => "fsharp",
+        ".json" or ".slnf" => "json", ".md" => "markdown", ".yml" or ".yaml" => "yaml",
+        ".js" or ".mjs" => "javascript", ".ts" => "typescript", ".css" => "css",
+        ".xml" or ".axaml" or ".xaml" or ".csproj" or ".vbproj" or ".fsproj" or ".props" or ".targets" or ".slnx" => "xml",
+        _ => "plaintext"
+    };
+    private async Task BuildAsync() { await OutputRequested.InvokeAsync(); await Session.RunSdkAsync("build"); }
+}

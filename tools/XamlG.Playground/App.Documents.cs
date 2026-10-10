@@ -96,6 +96,7 @@ public partial class App
         if (!_documentBuffers.TryGetValue(id, out var buffer)) throw new InvalidOperationException("This source document is unavailable.");
         await EnsureDocumentPaneAsync(buffer, focus);
         _activeDocumentPath = path;
+        _activeWorkspaceDocumentId = null;
         if (!generated) _editorTab = path == "Code.cs" ? "code" : "xaml";
         StateHasChanged();
         await RevealDocumentBuffersAsync();
@@ -127,6 +128,8 @@ public partial class App
         if (_disposed || _busy) return false;
         try
         {
+            if (_solutionSession.Documents.ContainsKey(id))
+                return !_solutionSession.Busy && await PrepareSolutionDocumentCloseAsync(id);
             if (id.StartsWith("document:", StringComparison.Ordinal)) await CaptureEditorsAsync();
             if (id == "agent" && _agentWorkbench != null) await _agentWorkbench.ClosePanelAsync();
             return !_disposed;

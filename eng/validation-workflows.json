@@ -8,7 +8,8 @@
     "release.yml",
     "controlcatalog.yml",
     "intelligent-ui.yml",
-    "git-workspaces.yml"
+    "git-workspaces.yml",
+    "workspaces.yml"
   ],
   "diagnostic": [
     "compiler-profile.yml"

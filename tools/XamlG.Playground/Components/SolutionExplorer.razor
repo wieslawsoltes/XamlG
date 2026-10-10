@@ -1,0 +1,228 @@
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.JSInterop
+@using XamlG.ProjectSystem
+@using XamlG.Playground.Workspaces
+@implements IAsyncDisposable
+@inject IJSRuntime JavaScript
+
+<section class="ws-explorer" aria-label="Solution Explorer" data-entry-path="@Session.Snapshot.EntryPath">
+    <div class="ws-heading"><strong>SOLUTION EXPLORER</strong><small>@(Session.IsLocal ? "LOCAL" : "BROWSER")</small></div>
+    <div class="ws-toolbar">
+        <button @onclick='() => NewRequested.InvokeAsync("solution")' disabled="@Disabled" title="Create a solution and optional project">New solution</button>
+        <button @onclick='() => NewRequested.InvokeAsync("project")' disabled="@Disabled">New project</button>
+        <button @onclick='() => NewRequested.InvokeAsync("add")' disabled="@(Disabled || Session.Snapshot.EntryPath == null || WorkspacePath.IsProject(Session.Snapshot.EntryPath))">Add project</button>
+    </div>
+    <details class="ws-open-options"><summary>Open workspace</summary>
+        <p>Import source files without executing them, or connect to the local .NET SDK companion.</p>
+        <div class="ws-toolbar">
+            <button @onclick='() => ImportAsync("folder")' disabled="@Disabled">Open folder</button>
+            <button @onclick='() => ImportAsync("zip")' disabled="@Disabled">Open ZIP</button>
+            <button @onclick='() => ImportAsync("files")' disabled="@Disabled">Open files</button>
+        </div>
+        <div class="ws-toolbar"><button @onclick="ConnectLocalAsync" disabled="@Disabled">Open local workspace</button><button @onclick="AccessRequested">Pair companion</button></div>
+        <p class="ws-hint">For local access, start the companion with <code>XAMLG_STUDIO_WORKSPACE_ROOT</code> set to an existing directory, then pair in Agent access.</p>
+    </details>
+    @if (_error != null || Session.Error != null) { <p class="ws-error" role="alert">@(_error ?? Session.Error)</p> }
+    <label class="ws-field">Solution / project
+        @* Keep selection in markup as well as the live value property. Docked Razor
+           templates must not recover an obsolete selected index after options move. *@
+        <select @key="_entryOptionsKey" aria-label="Workspace solution or project" @bind:get="Session.Snapshot.EntryPath" @bind:set="EntryChangedAsync" disabled="@Disabled">
+            <option value="" selected="@(Session.Snapshot.EntryPath == null)">Choose an entry file</option>
+            @foreach (var path in Session.EntryPaths) { <option @key="path" value="@path" selected="@(path == Session.Snapshot.EntryPath)">@path</option> }
+        </select>
+    </label>
+    <div class="ws-toolbar">
+        <button @onclick="Session.SaveAllAsync" disabled="@(Disabled || !Session.HasUnsavedChanges)">Save all</button>
+        <button @onclick="Session.ExportAsync" disabled="@(Disabled || Session.Inventory.Count == 0)">Export ZIP</button>
+        @if (Session.IsLocal) { <button @onclick="Session.RefreshLocalAsync" disabled="@Disabled">Refresh disk</button> }
+        <button @onclick="ToggleFolderView">@(_folderView ? "Solution view" : "Folder view")</button>
+    </div>
+    <input class="ws-filter" type="search" placeholder="Search solution" aria-label="Search solution" value="@_filter" @oninput="FilterChanged" />
+    <div class="ws-tree" role="tree" aria-label="Solution files" aria-busy="@Session.Busy.ToString().ToLowerInvariant()">
+        <Virtualize Items="_rows" Context="row" ItemSize="28" OverscanCount="8">
+            <div @key="row.Node.Id" class="ws-tree-row @(_selected?.Id == row.Node.Id ? "selected" : "") @(row.Node.Missing ? "missing" : "")"
+                 role="treeitem" aria-level="@(row.Depth + 1)" aria-selected="@(_selected?.Id == row.Node.Id ? "true" : "false")"
+                 aria-expanded="@(row.Node.Children.Count == 0 ? null : _expanded.Contains(row.Node.Id) ? "true" : "false")"
+                 tabindex="@(_selected?.Id == row.Node.Id || _selected == null && row.Depth == 0 ? 0 : -1)"
+                 style="padding-left:@(8 + row.Depth * 14)px" title="@(row.Node.Path ?? row.Node.Label)"
+                 @onclick="() => Select(row.Node)" @ondblclick="() => OpenAsync(row.Node)" @onkeydown="args => KeyAsync(row.Node, args)">
+                <button class="ws-expander" tabindex="-1" aria-label="@(_expanded.Contains(row.Node.Id) ? "Collapse " + row.Node.Label : "Expand " + row.Node.Label)" disabled="@(row.Node.Children.Count == 0)" @onclick="() => Toggle(row.Node)" @onclick:stopPropagation="true">@(row.Node.Children.Count == 0 ? "·" : _expanded.Contains(row.Node.Id) ? "▾" : "▸")</button>
+                <span class="ws-file-symbol">@Icon(row.Node)</span><span class="ws-tree-label">@row.Node.Label</span>
+                @if (row.Node.Kind == "project" && Session.Snapshot.StartupProject is { } startup && startup == row.Node.Path) { <span title="Startup project">★</span> }
+            </div>
+        </Virtualize>
+    </div>
+    @if (_selected is { } selected)
+    {
+        <div class="ws-selection-actions">
+            <small title="@selected.Path">@(selected.Path ?? selected.Label)</small>
+            <div class="ws-toolbar"><button @onclick="() => OpenAsync(selected)" disabled="@(selected.Path == null || selected.Missing || Disabled)">Open</button>
+                @if (selected.Kind == "project" && !selected.Missing) { <button @onclick="() => Session.SetStartupAsync(selected.Path!)" disabled="@Disabled">Set startup</button> }
+                @if (selected.Kind == "file")
+                {
+                    <button @onclick="() => BeginMove(selected.Path!)" disabled="@Disabled">Rename / move</button>
+                    <button @onclick="() => Session.DeleteFileAsync(selected.Path!)" disabled="@Disabled">Delete</button>
+                }
+            </div>
+        </div>
+    }
+    <details class="ws-management"><summary>Files and project properties</summary>
+        <label class="ws-field">New file path <input @bind="_newPath" placeholder="src/App/NewClass.cs" /></label>
+        <button @onclick="AddFileAsync" disabled="@(Disabled || string.IsNullOrWhiteSpace(_newPath))">Add file</button>
+        @if (_moveSource != null)
+        {
+            <label class="ws-field">Move @_moveSource to <input @bind="_moveDestination" /></label>
+            <p class="ws-hint">Literal project includes and XAML resource references are not rewritten by a raw file move.</p>
+            <button @onclick="MoveAsync" disabled="@Disabled">Apply move</button><button @onclick="() => _moveSource = null">Cancel</button>
+        }
+        <label class="ws-field">Selected project
+            <select @bind="Session.SelectedProject"><option value="" selected="@(Session.SelectedProject == null)">Choose a project</option>@foreach (var project in Session.Description.Projects.Where(project => project.Loaded)) { <option @key="project.Path" value="@project.Path" selected="@(project.Path == Session.SelectedProject)">@project.Name</option> }</select>
+        </label>
+        <label class="ws-field">Property <input @bind="_propertyName" placeholder="TargetFramework" /></label>
+        <label class="ws-field">Value <input @bind="_propertyValue" placeholder="net10.0" /></label>
+        <button @onclick="SetPropertyAsync" disabled="@(Disabled || Session.SelectedProject == null || _propertyName.Length == 0)">Set authored property</button>
+        <p class="ws-hint">Edits unconditional project XML. Imports and conditions can override the effective value; Evaluate checks the actual SDK graph.</p>
+        <label class="ws-field">Package ID <input @bind="_package" placeholder="Example.Library" /></label>
+        <label class="ws-field">Package version <input @bind="_packageVersion" placeholder="1.0.0" /></label>
+        <button @onclick="AddPackageAsync" disabled="@(Disabled || Session.SelectedProject == null || _package.Length == 0)">Add / update package reference</button>
+        <button @onclick="RemovePackageAsync" disabled="@(Disabled || Session.SelectedProject == null || _package.Length == 0)">Remove package reference</button>
+        <p class="ws-hint">Leave the version empty only when the repository manages package versions centrally. Removal affects authored unconditional references, not imported or conditional items.</p>
+        <label class="ws-field">Project reference
+            <select @bind="_reference"><option value="" selected="@(_reference.Length == 0)">Choose a project</option>@foreach (var project in Session.Inventory.Where(file => WorkspacePath.IsProject(file.Path))) { <option @key="project.Path" value="@project.Path" selected="@(project.Path == _reference)">@project.Path</option> }</select>
+        </label>
+        <button @onclick="AddReferenceAsync" disabled="@(Disabled || Session.SelectedProject == null || _reference.Length == 0)">Add project reference</button>
+        <button @onclick="RemoveReferenceAsync" disabled="@(Disabled || Session.SelectedProject == null || _reference.Length == 0)">Remove project reference</button>
+    </details>
+    @if (Session.Snapshot.EntryPath is { } entry && Path.GetExtension(entry).ToLowerInvariant() is ".sln" or ".slnx")
+    {
+        <details class="ws-management"><summary>Solution membership and configurations</summary>
+            <label class="ws-field">Solution folder <input @bind="_solutionFolder" placeholder="src" /></label>
+            <button @onclick="AddSolutionFolderAsync" disabled="@(Disabled || _solutionFolder.Length == 0)">Add solution folder</button>
+            <label class="ws-field">Existing project <select @bind="_solutionProject"><option value="" selected="@(_solutionProject.Length == 0)">Choose a project</option>@foreach (var project in Session.Inventory.Where(file => WorkspacePath.IsProject(file.Path))) { <option @key="project.Path" value="@project.Path" selected="@(project.Path == _solutionProject)">@project.Path</option> }</select></label>
+            <button @onclick="AddMembershipAsync" disabled="@(Disabled || _solutionProject.Length == 0)">Add to solution</button>
+            <button @onclick="RemoveMembershipAsync" disabled="@(Disabled || _solutionProject.Length == 0)">Remove from solution</button>
+            <p class="ws-hint">Removing solution membership does not delete project files.</p>
+            <label class="ws-field">Configuration <input @bind="_newConfiguration" placeholder="Release" /></label>
+            <label class="ws-field">Platform <input @bind="_newPlatform" placeholder="Any CPU" /></label>
+            <button @onclick="AddConfigurationAsync" disabled="@(Disabled || _newConfiguration.Length == 0 || _newPlatform.Length == 0)">Add solution configuration</button>
+        </details>
+    }
+    <details class="ws-build" open="@Session.IsLocal"><summary>Build and evaluate</summary>
+        @if (Session.IsLocal)
+        {
+            <label class="ws-trust"><input type="checkbox" @bind="Session.Trusted" disabled="@Session.Busy" /> I trust this workspace and authorize SDK, project, package and template code to execute on this computer.</label>
+            <label class="ws-field">Build target <select @bind="Session.BuildTarget"><option value="solution">Solution / open entry</option><option value="project">Selected project</option><option value="startup">Startup project</option></select></label>
+            <label class="ws-field">Build configuration <input @bind="Session.Configuration" /></label>
+            <label class="ws-field">Build platform <input @bind="Session.Platform" /></label>
+            <label class="ws-field">Target framework <input @bind="Session.Framework" placeholder="All project targets" /></label>
+            <div class="ws-toolbar">@foreach (var operation in new[] { "restore", "build", "rebuild", "clean", "test", "evaluate" }) { <button @onclick="() => BuildAsync(operation)" disabled="@(Disabled || !Session.Trusted || Session.SdkTargetPath == null)">@operation</button> }
+                @if (Session.CanCancel || Session.CancellationRequested)
+                { <button @onclick="Session.CancelOperationAsync" disabled="@(!Session.CanCancel)">Cancel operation</button> }
+            </div>
+        }
+        else { <p>Standalone browser workspaces edit and inspect source. Pair the local companion to use the installed SDK for restore, builds, tests and real MSBuild/Roslyn evaluation.</p> }
+        <button @onclick="OutputRequested">Show workspace output</button>
+    </details>
+    <details class="ws-notices"><summary>Workspace diagnostics (@Session.Description.Diagnostics.Length)</summary>@foreach (var diagnostic in Session.Description.Diagnostics) { <p>@diagnostic</p> }</details>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public SolutionWorkspaceSession Session { get; set; } = default!;
+    [Parameter] public EventCallback<WorkspaceEditorDocument> OpenRequested { get; set; }
+    [Parameter] public EventCallback<string> NewRequested { get; set; }
+    [Parameter] public EventCallback OutputRequested { get; set; }
+    [Parameter] public EventCallback AccessRequested { get; set; }
+    private IJSObjectReference? _module;
+    private WorkspaceSnapshot? _lastSnapshot;
+    private bool _lastLocal, _folderView;
+    private int _lastCount = -1;
+    private SolutionExplorerNode? _root, _selected;
+    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal) { "solution-root" };
+    private List<SolutionExplorerRow> _rows = [];
+    private string _entryOptionsKey = "";
+    private string _filter = "", _newPath = "", _moveDestination = "", _propertyName = "TargetFramework", _propertyValue = "net10.0";
+    private string _package = "", _packageVersion = "", _reference = "", _solutionFolder = "", _solutionProject = "", _newConfiguration = "", _newPlatform = "Any CPU";
+    private string? _moveSource, _error;
+    private bool Disabled => !Session.Ready || Session.Busy;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) _module = await JavaScript.InvokeAsync<IJSObjectReference>("xamlgBoot.importModule", "solution-workspace.js");
+    }
+    protected override void OnParametersSet()
+    {
+        var count = Session.Inventory.Count;
+        if (!ReferenceEquals(_lastSnapshot, Session.Snapshot) || _lastLocal != Session.IsLocal || _lastCount != count || _root == null)
+        {
+            _lastSnapshot = Session.Snapshot; _lastLocal = Session.IsLocal; _lastCount = count; Rebuild();
+        }
+    }
+    private void Rebuild()
+    {
+        // Recreate the select only when its option identities change. Reusing a selected
+        // option for an inserted project can make the DOM disagree with the saved entry.
+        _entryOptionsKey = string.Join("\0", Session.EntryPaths);
+        _root = SolutionExplorerTree.Build(Session, _folderView);
+        foreach (var node in _root.Children.Where(node => node.Kind is "project" or "solution-folder")) _expanded.Add(node.Id);
+        _rows = SolutionExplorerTree.Flatten(_root, _expanded, _filter);
+    }
+    private void FilterChanged(ChangeEventArgs args) { _filter = args.Value?.ToString() ?? ""; if (_root != null) _rows = SolutionExplorerTree.Flatten(_root, _expanded, _filter); }
+    private void ToggleFolderView() { _folderView = !_folderView; _selected = null; Rebuild(); }
+    private void Toggle(SolutionExplorerNode node) { if (!_expanded.Add(node.Id)) _expanded.Remove(node.Id); if (_root != null) _rows = SolutionExplorerTree.Flatten(_root, _expanded, _filter); }
+    private void Select(SolutionExplorerNode node) { _selected = node; if (node.ProjectPath != null) Session.SelectedProject = node.ProjectPath; }
+    private async Task KeyAsync(SolutionExplorerNode node, KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter") await OpenAsync(node);
+        else if (args.Key is " " or "ArrowRight" or "ArrowLeft") Toggle(node);
+    }
+    private static string Icon(SolutionExplorerNode node) => node.Kind switch { "solution" => "◈", "project" => "▣", "folder" or "solution-folder" => "▱", "dependencies" => "◇", "package" or "sdk" => "⬡", "project-reference" => "↗", _ => Path.GetExtension(node.Path).Equals(".cs", StringComparison.OrdinalIgnoreCase) ? "#" : "·" };
+    private async Task OpenAsync(SolutionExplorerNode node)
+    {
+        if (Disabled || node.Missing) return;
+        Select(node);
+        if (node.Path == null) { Toggle(node); return; }
+        var document = await Session.OpenDocumentAsync(node.Path);
+        if (document != null) await OpenRequested.InvokeAsync(document);
+    }
+    private async Task EntryChangedAsync(string? path)
+    {
+        if (!string.IsNullOrWhiteSpace(path)) { await Session.OpenEntryAsync(path); _selected = null; Rebuild(); }
+    }
+    private async Task ImportAsync(string kind)
+    {
+        _error = null;
+        try
+        {
+            if (_module == null) return;
+            var imported = await _module.InvokeAsync<ImportedWorkspaceFile[]?>("chooseImport", kind);
+            if (imported == null) return;
+            await Session.CaptureAllAsync();
+            if (!await Session.ConfirmReplaceAsync()) return;
+            await Session.ImportAsync(imported); _selected = null; Rebuild();
+        }
+        catch (Exception error) { _error = error.Message; }
+    }
+    private async Task ConnectLocalAsync()
+    {
+        await Session.CaptureAllAsync();
+        if (!await Session.ConfirmReplaceAsync()) return;
+        await Session.ConnectLocalAsync(); _selected = null; Rebuild();
+    }
+    private async Task AddFileAsync()
+    {
+        await Session.AddFileAsync(_newPath);
+        if (Session.Error == null && await Session.OpenDocumentAsync(_newPath) is { } document) { await OpenRequested.InvokeAsync(document); _newPath = ""; }
+    }
+    private void BeginMove(string path) { _moveSource = path; _moveDestination = path; }
+    private async Task MoveAsync() { if (_moveSource == null) return; await Session.MoveFileAsync(_moveSource, _moveDestination); if (Session.Error == null) _moveSource = null; }
+    private Task SetPropertyAsync() => Session.EditProjectAsync(Session.SelectedProject!, "property", _propertyName, _propertyValue);
+    private Task AddPackageAsync() => Session.EditProjectAsync(Session.SelectedProject!, "package", _package, string.IsNullOrWhiteSpace(_packageVersion) ? null : _packageVersion);
+    private Task AddReferenceAsync() => Session.EditProjectAsync(Session.SelectedProject!, "reference", _reference);
+    private Task RemovePackageAsync() => Session.EditProjectAsync(Session.SelectedProject!, "remove-package", _package);
+    private Task RemoveReferenceAsync() => Session.EditProjectAsync(Session.SelectedProject!, "remove-reference", _reference);
+    private Task AddSolutionFolderAsync() => Session.EditProjectAsync(Session.Snapshot.EntryPath!, "solution-folder", _solutionFolder);
+    private Task AddMembershipAsync() => Session.EditProjectAsync(Session.Snapshot.EntryPath!, "solution-add", _solutionProject, string.IsNullOrWhiteSpace(_solutionFolder) ? null : _solutionFolder);
+    private Task RemoveMembershipAsync() => Session.EditProjectAsync(Session.Snapshot.EntryPath!, "solution-remove", _solutionProject);
+    private Task AddConfigurationAsync() => Session.EditProjectAsync(Session.Snapshot.EntryPath!, "configuration", _newConfiguration, _newPlatform);
+    private async Task BuildAsync(string operation) { await OutputRequested.InvokeAsync(); await Session.RunSdkAsync(operation, selectedTarget: true); }
+    public async ValueTask DisposeAsync() { if (_module != null) { try { await _module.DisposeAsync(); } catch (JSDisconnectedException) { } } }
+}

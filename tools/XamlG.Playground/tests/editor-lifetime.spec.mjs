@@ -35,7 +35,7 @@ test('retiring resource editors preserves pending text and leaves sibling editor
   await expect(page.locator('.statusbar')).toContainText('Compilation succeeded');
   const pending = page.waitForEvent('download');
   await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
-  await page.getByRole('button', { name: 'Export project', exact: true }).click();
+  await page.getByRole('button', { name: 'Export preview project', exact: true }).click();
   const exported = JSON.parse(await readFile(await (await pending).path(), 'utf8'));
   expect(exported.resources['Resources/Palette.axaml']).toContain('#129944');
   expect(exported.resources['Styles/Buttons.axaml']).toContain('Button.primary');

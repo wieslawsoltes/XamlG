@@ -11,7 +11,7 @@ export default defineConfig({
   // candidate builds remain strict and never retry.
   retries: process.env.CI && process.env.PLAYGROUND_URL ? 1 : 0,
   use: { baseURL: process.env.PLAYGROUND_URL || (pagesPreview ? 'https://wieslawsoltes.github.io/XamlG/' : localURL), viewport: { width: 1440, height: 1000 }, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
-  reporter: [['list'], ['html', { open: 'never' }]],
+  reporter: [['list'], ['html', { open: 'never' }], ['json', { outputFile: 'test-results/results.json' }]],
   webServer: process.env.PLAYGROUND_URL ? undefined : {
     command: `python3 ../../scripts/serve-playground.py --port ${assetPort} --directory ../../artifacts/playground/wwwroot --base-path ${pagesPreview ? '/XamlG/' : '/'}`,
     url: localURL, reuseExistingServer: !pagesPreview && !process.env.CI, timeout: 10000
