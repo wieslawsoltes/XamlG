@@ -22,6 +22,8 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
     public AgentRunOptions ValidateOptions(AgentRunOptions options, bool requireAcknowledgement = true)
     {
         ArgumentNullException.ThrowIfNull(options); options.Limits.Validate(); options.Compaction.Validate();
+        if (!Enum.IsDefined(options.Mode)) throw new ArgumentException("Unknown collaboration mode.");
+        if (options.Policy.Profile == PermissionProfile.Plan) options = options with { Mode = AgentCollaborationMode.Plan };
         return options with { Policy = Constraints.Apply(options, ToolCatalog, requireAcknowledgement) };
     }
     public IReadOnlyList<AutomationTool> ToolCatalog => host.Tools.Concat(LocalToolDescriptions).ToArray();
@@ -32,6 +34,7 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
         catalog.Add<PlanArguments, object>("xamlg_agent_plan", "Replace the task's revision-checked plan, with at most 12 steps and one in progress.", AutomationScope.Agent, AutomationEffect.Read, (_, _) => throw new InvalidOperationException());
         catalog.Add<AgentQuestion, object>("xamlg_agent_question", "Ask for task information. Answers never authorize tool operations.", AutomationScope.Agent, AutomationEffect.Read, (_, _) => throw new InvalidOperationException());
         catalog.Add<ToolDiscoveryArguments, object>("xamlg_agent_tools", DiscoveryDescription, AutomationScope.Agent, AutomationEffect.Read, (_, _) => throw new InvalidOperationException());
+        catalog.Add<GoalUpdateArguments, object>("xamlg_agent_goal", GoalToolDescription, AutomationScope.Agent, AutomationEffect.Read, (_, _) => throw new InvalidOperationException());
         return catalog.Tools;
     }
     private long _sequence;
@@ -65,16 +68,21 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
     public Task RunAsync(string id, string? message, AgentRunOptions options,
         Func<AutomationReview, CancellationToken, Task<AgentApproval>>? review = null,
         Func<AgentQuestion, CancellationToken, Task<string>>? askUser = null,
-        CancellationToken cancellationToken = default) => RunCoreAsync(id, message, null, options, review, askUser, cancellationToken);
+        CancellationToken cancellationToken = default) => RunCoreAsync(id, message, null, null, options, review, askUser, cancellationToken);
 
     /// <summary>Accepts exactly the reviewed queue revision into a new run. A failed
     /// preflight leaves the queue and native history intact; accepted messages are not replayed.</summary>
     public Task RunQueuedAsync(string id, string messageId, long expectedRevision, AgentRunOptions options,
         Func<AutomationReview, CancellationToken, Task<AgentApproval>>? review = null,
         Func<AgentQuestion, CancellationToken, Task<string>>? askUser = null,
-        CancellationToken cancellationToken = default) => RunCoreAsync(id, null, new(messageId, expectedRevision), options, review, askUser, cancellationToken);
+        CancellationToken cancellationToken = default) => RunCoreAsync(id, null, new(messageId, expectedRevision), null, options, review, askUser, cancellationToken);
 
-    private async Task RunCoreAsync(string id, string? message, QueuedRun? queuedRun, AgentRunOptions options,
+    public Task ImplementPlanAsync(string id, long expectedRevision, AgentRunOptions options,
+        Func<AutomationReview, CancellationToken, Task<AgentApproval>>? review = null,
+        Func<AgentQuestion, CancellationToken, Task<string>>? askUser = null,
+        CancellationToken cancellationToken = default) => RunCoreAsync(id, null, null, expectedRevision, options, review, askUser, cancellationToken);
+
+    private async Task RunCoreAsync(string id, string? message, QueuedRun? queuedRun, long? planRevision, AgentRunOptions options,
         Func<AutomationReview, CancellationToken, Task<AgentApproval>>? review,
         Func<AgentQuestion, CancellationToken, Task<string>>? askUser, CancellationToken cancellationToken)
     {
@@ -97,6 +105,14 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
             lease.Token.ThrowIfCancellationRequested();
             lock (task.Sync)
             {
+                if (planRevision != null)
+                {
+                    var proposal = task.ProposedPlan;
+                    if (proposal == null || proposal.Revision != planRevision || proposal.Accepted)
+                        throw new AutomationException("revision_conflict", "The proposed plan changed or was already accepted.");
+                    if (options.Mode == AgentCollaborationMode.Plan) throw new InvalidOperationException("Switch to implementation mode to implement the plan.");
+                    message = "Implement the following approved plan. Verify each requirement against the resulting project.\n\n" + proposal.Markdown;
+                }
                 if (queuedRun != null)
                     message = task.FollowUps[QueuedIndex(task, queuedRun.Id, queuedRun.Revision)].Text;
                 if (message != null)
@@ -129,11 +145,18 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 }
                 task.BeforeRun ??= checkpoint;
                 if (checkpoint != null) task.BeforeLatestRun = checkpoint;
+                task.Mode = options.Mode;
+                if (planRevision != null) task.ProposedPlan = task.ProposedPlan! with { Accepted = true };
                 started = true; task.Status = AgentTaskStatus.Running; task.StatusReason = null;
             }
+            // A resumed batch may have been prepared in Code mode. Close it before
+            // asking the provider to reconsider the work under read-only authority.
+            if (task.Mode == AgentCollaborationMode.Plan && task.PendingReply is { } suspended &&
+                suspended.ToolCalls.Skip(task.NextTool).Any(call => catalog[call.Name].Effects.Any(effect => effect.Effect != AutomationEffect.Read)))
+                RetirePendingTools(task, "Plan mode superseded this operation before it ran. Reconsider the request using inspection tools only.");
             if (message != null) Publish(task, "user", message);
             await SaveSessionAsync(lease.Token);
-            var budget = new RunBudget(); var calls = 0;
+            var budget = new RunBudget(); var calls = 0; var turnWork = 0;
             int? pendingContextBytes = null;
             while (true)
             {
@@ -141,8 +164,9 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 if (task.TotalTokens >= options.Limits.TotalTaskTokens) { Pause(task, "Task token budget reached."); return; }
                 if (task.PendingReply == null)
                 {
+                    if (ApplySteering(task)) await SaveSessionAsync(lease.Token);
                     tools = SelectTools(task, allTools, options.FullToolCatalog);
-                    var request = new AgentRequest(task.Model, RunInstructions(options), task.Messages.ToArray(), tools, options.Limits.OutputTokensPerRequest);
+                    var request = new AgentRequest(task.Model, RunInstructions(options, task), task.Messages.ToArray(), tools, options.Limits.OutputTokensPerRequest);
                     task.NativeContextBytes = task.Provider.GetContextBytes(request);
                     if (NeedsCompaction(task, options) && options.AutomaticCompaction && task.Messages.Count > 1)
                     {
@@ -173,7 +197,17 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                     if (reply.ToolCalls.Count == 0)
                     {
                         task.ActiveRequest = null;
-                        task.Status = AgentTaskStatus.Completed; Publish(task, "completed", "Task response completed."); return;
+                        if (task.Mode == AgentCollaborationMode.Plan && !string.IsNullOrWhiteSpace(reply.Text))
+                        {
+                            task.ProposedPlan = new((task.ProposedPlan?.Revision ?? 0) + 1, reply.Text);
+                            Publish(task, "plan_proposed", reply.Text);
+                        }
+                        if (await ContinueTurnAsync(task, options, lease, turnWork)) { turnWork = 0; continue; }
+                        // Serialize the final idle transition with submission. A message arriving
+                        // during checkpoint persistence either belongs to this run or starts the next.
+                        if (AcceptQueuedMessage(task, steeringOnly: !options.ContinueQueuedMessages, completeIfEmpty: true))
+                        { turnWork = 0; await SaveSessionAsync(lease.Token); continue; }
+                        Publish(task, "completed", "Task response completed."); return;
                     }
                     task.PendingReply = reply; task.NextTool = 0;
                     await SaveSessionAsync(lease.Token);
@@ -187,7 +221,10 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 while (task.NextTool < pending.ToolCalls.Count)
                 {
                     lease.Token.ThrowIfCancellationRequested();
+                    if (HasSteering(task)) { RetirePendingTools(task, "User steering superseded this operation before it ran. Reconsider the next action using the new guidance."); break; }
                     var call = pending.ToolCalls[task.NextTool]; var tool = catalog[call.Name];
+                    if (task.Mode == AgentCollaborationMode.Plan && tool.Effects.Any(effect => effect.Effect != AutomationEffect.Read))
+                        throw new AutomationException("permission_denied", "Plan mode allows inspection only. Implement the reviewed plan before changing the project.");
                     var decision = lease.Decide(tool);
                     if (decision == PermissionDecision.Deny) throw new AutomationException("permission_denied", "The run policy denies " + tool.Name);
                     if (decision == PermissionDecision.Ask)
@@ -208,7 +245,9 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                         if (answer == AgentApproval.Deny) throw new AutomationException("permission_denied", "Operation denied by the user.");
                         if (answer == AgentApproval.AllowToolForRun) lease.GrantTool(tool.Name);
                     }
+                    if (HasSteering(task)) { RetirePendingTools(task, "User steering superseded this operation during review. Reconsider the next action using the new guidance."); break; }
                     calls++; task.ExecutingToolId = call.Id;
+                    if (!tool.Name.StartsWith("xamlg_agent_", StringComparison.Ordinal)) turnWork++;
                     if (tool.Effect != AutomationEffect.Read) await SaveSessionAsync(lease.Token);
                     Publish(task, "tool_started", tool.Name, call.Id, tool.Name);
                     JsonElement result;
@@ -239,9 +278,11 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
         }
         catch (OperationCanceledException) when (started)
         {
-            task.Status = task.WorkspaceLifetime.IsCancellationRequested && task.WorkspaceIdentity != null ? AgentTaskStatus.Paused : AgentTaskStatus.Cancelled;
-            task.StatusReason = task.Status == AgentTaskStatus.Paused ? "Workspace disconnected. Reconnect the same project and review before resuming." : "Stopped, revoked or lease expired.";
-            Publish(task, task.Status == AgentTaskStatus.Paused ? "paused" : "cancelled", task.StatusReason);
+            RetirePendingTools(task, "The run was interrupted before this operation ran. Inspect current state before issuing a fresh operation.");
+            task.Status = AgentTaskStatus.Paused;
+            task.StatusReason = task.WorkspaceLifetime.IsCancellationRequested ? "Workspace disconnected. Reconnect the same project to resume." : "Stopped. Resume to continue from the last completed operation.";
+            SuspendGoal(task, task.StatusReason);
+            Publish(task, "paused", task.StatusReason);
         }
         catch (Exception error) when (started)
         { task.Status = AgentTaskStatus.Failed; task.StatusReason = error.Message; Publish(task, "failed", error.Message); throw; }
@@ -269,16 +310,18 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
         }
     }
 
-    private string RunInstructions(AgentRunOptions options) => options.Instructions +
+    private string RunInstructions(AgentRunOptions options, AgentTask task) => options.Instructions +
         (options.FullToolCatalog ? "" : "\nUse xamlg_agent_tools to search and enable additional IDE tools when needed. Enabled schemas arrive on the next request; discover tools before guessing names or arguments.") +
         "\nThe embedding host enforces this run's permission policy: " + JsonSerializer.Serialize(new { options.Policy, constraints = Constraints }, AutomationJson.Options) +
         "\nA denied operation ends the batch. Do not try a different operation to bypass a denied effect." +
-        (options.Policy.Profile == PermissionProfile.Plan ? "\nThis is a planning run. Inspect and propose a plan; implementation requires a separately confirmed editing run." : "");
+        (options.Mode == AgentCollaborationMode.Plan ? "\nPlan mode: investigate the project with read-only tools, ask focused questions when necessary, and produce a complete, decision-ready implementation plan in your final response. Include concrete files, behavior, verification and unresolved decisions. Do not edit or execute project code. Only the user can switch to implementation." : "") +
+        GoalInstructions(task);
 
     private AutomationCatalog LocalTools(AgentTask task, Func<AgentQuestion, CancellationToken, Task<string>>? askUser, CancellationToken token)
     {
         var catalog = new AutomationCatalog();
         AddDiscoveryTool(catalog, task);
+        AddGoalTool(catalog, task);
         catalog.Add<PlanArguments, object>("xamlg_agent_plan", "Replace this task's revision-checked plan. At most 12 steps and one in progress.", AutomationScope.Agent, AutomationEffect.Read,
             (args, _) =>
             {

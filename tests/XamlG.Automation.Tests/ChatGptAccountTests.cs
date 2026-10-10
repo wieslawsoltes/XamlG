@@ -257,7 +257,7 @@ public sealed class ChatGptAccountTests
         await approval.Task.WaitAsync(fixture.Token);
         if (signOut) await manager.SignOutAsync(account.Id, fixture.Token);
         await run;
-        Assert.Equal(signOut ? AgentTaskStatus.Cancelled : AgentTaskStatus.Completed, task.Status);
+        Assert.Equal(signOut ? AgentTaskStatus.Paused : AgentTaskStatus.Completed, task.Status);
         Assert.Equal(signOut ? 0 : 1, effects); Assert.Equal(signOut ? 1 : 2, fixture.InferenceRequests.Count);
         Assert.All(fixture.InferenceRequests, request =>
         {

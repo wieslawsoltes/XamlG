@@ -10,7 +10,7 @@ public sealed partial class AgentHarness
         "xamlg_project_get", "xamlg_document_read", "xamlg_source_edit", "xamlg_document_write",
         "xamlg_compiler_compile", "xamlg_runtime_run", "xamlg_build_read", "xamlg_wait",
         "xamlg_ui_catalog", "xamlg_ui_present",
-        "xamlg_computer_observe", "xamlg_computer_actions", "xamlg_agent_plan", "xamlg_agent_question", "xamlg_agent_tools"
+        "xamlg_computer_observe", "xamlg_computer_actions", "xamlg_agent_plan", "xamlg_agent_question", "xamlg_agent_tools", "xamlg_agent_goal"
     };
 
     public IReadOnlyList<AutomationTool> RequestTools(AgentTask task, bool fullCatalog = false) =>
@@ -18,8 +18,8 @@ public sealed partial class AgentHarness
 
     private static IReadOnlyList<AutomationTool> SelectTools(AgentTask task, IReadOnlyList<AutomationTool> catalog, bool full)
     {
-        if (full || catalog.Count <= 24) return catalog;
-        lock (task.Sync) return catalog.Where(tool => StarterTools.Contains(tool.Name) || task.EnabledTools.Contains(tool.Name)).ToArray();
+        lock (task.Sync) return catalog.Where(tool => (task.Mode != AgentCollaborationMode.Plan || tool.Effects.All(effect => effect.Effect == AutomationEffect.Read)) &&
+            (full || catalog.Count <= 24 || StarterTools.Contains(tool.Name) || task.EnabledTools.Contains(tool.Name))).ToArray();
     }
 
     private void AddDiscoveryTool(AutomationCatalog catalog, AgentTask task) =>

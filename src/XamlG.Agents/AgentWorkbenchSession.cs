@@ -91,11 +91,12 @@ public class AgentWorkbenchSession : IDisposable
                 _cachedPermissionExpiry = _harness.ActivePermissions?.ExpiresAt;
                 _cachedState = AutomationJson.Element(new
                 {
-                    sessionId = _sessionId, revision = stateRevision,
+                    sessionId = _sessionId, revision = stateRevision, runningTaskId = _runningId,
                     providers = ProviderIds.Order(StringComparer.Ordinal), toolCount = _harness.ToolCatalog.Count, constraints = _harness.Constraints, activePermissions = _harness.ActivePermissions,
                     chatGpt = accounts, chatGptError = accountError, tasks = _harness.Tasks.Select(task => new
                     {
-                        task.Id, task.Name, task.ProviderId, task.Model, task.Status, task.StatusReason, task.Draft, task.IsPreviousWorkspace,
+                        task.Id, task.Name, task.ProviderId, task.Model, task.Status, task.StatusReason, task.Draft, task.DraftRevision, task.IsPreviousWorkspace,
+                        task.Mode, task.ProposedPlan, task.ActiveGoal,
                         account = DescribeAccount(task.Provider),
                         task.TotalTokens, task.ReportedTokens, task.EstimatedTokens, task.CheckpointCount, task.Plan, task.PlanRevision, task.Queue,
                         task.LastUsage, task.NativeContextBytes, task.RetryAfterUtc, task.OutputLimitToExceed,
@@ -144,17 +145,35 @@ public class AgentWorkbenchSession : IDisposable
             case "rename":
                 var rename = Read<TextArgs>(arguments); _harness.RenameTask(rename.Id, rename.Text); break;
             case "draft":
-                var draft = Read<TextArgs>(arguments);
+                var draft = Read<DraftArgs>(arguments);
                 if (draft.Text.Length > 262144) throw new ArgumentException("Draft is too large.");
-                _harness.GetTask(draft.Id).Draft = draft.Text; break;
+                var draftTask = _harness.GetTask(draft.Id);
+                lock (draftTask.Sync)
+                    if (draft.Revision == null || draft.Revision > draftTask.DraftRevision)
+                    { draftTask.Draft = draft.Text; draftTask.DraftRevision = draft.Revision ?? checked(draftTask.DraftRevision + 1); }
+                break;
             case "delete":
                 var deleted = _harness.GetTask(Read<IdArgs>(arguments).Id); _harness.DeleteTask(deleted.Id);
                 if (_harness.Tasks.Count == 0) _harness.CreateTask("New task", deleted.Provider, deleted.Model, ownerSession, _workspaceIdentity?.Invoke());
                 break;
             case "queue":
-                var queue = Read<TextArgs>(arguments); _harness.QueueMessage(queue.Id, queue.Text);
+                var queue = Read<SubmitArgs>(arguments); _harness.QueueMessage(queue.Id, queue.Text, queue.Delivery, queue.ClientMessageId);
                 var queuedTask = _harness.GetTask(queue.Id); if (queuedTask.Draft == queue.Text) queuedTask.Draft = "";
                 return AutomationJson.Element(queuedTask.Queue);
+            case "send":
+                return await SubmitAsync(Read<SubmitArgs>(arguments), cancellationToken, ownerSession);
+            case "mode":
+                var mode = Read<ModeArgs>(arguments); _harness.SetMode(mode.Id, mode.Mode); break;
+            case "goal_set":
+                var goal = Read<GoalArgs>(arguments); _harness.SetGoal(goal.Id, goal.Objective ?? "", goal.TokenBudget); break;
+            case "goal_pause":
+                var pausedGoal = Read<IdArgs>(arguments); _harness.PauseGoal(pausedGoal.Id);
+                lock (_gate) if (_runningId == pausedGoal.Id) Stop();
+                break;
+            case "goal_resume":
+                var resumedGoal = Read<GoalArgs>(arguments); _harness.ResumeGoal(resumedGoal.Id, resumedGoal.TokenBudget); break;
+            case "goal_clear":
+                _harness.ClearGoal(Read<IdArgs>(arguments).Id); break;
             case "queue_edit":
                 var edit = Read<QueueEditArgs>(arguments); _harness.EditQueuedMessage(edit.Id, edit.MessageId, edit.Text, edit.ExpectedRevision);
                 return AutomationJson.Element(_harness.GetTask(edit.Id).Queue);
@@ -189,16 +208,16 @@ public class AgentWorkbenchSession : IDisposable
                         throw new InvalidOperationException("Send a queued message only to a new or completed task, with the reviewed queue revision.");
                     _harness.GetQueuedMessage(run.Id, run.QueuedMessageId, run.ExpectedQueueRevision.Value);
                 }
-                else if ((run.Message == null) != (task.Status == AgentTaskStatus.Paused)) throw new InvalidOperationException("Resume a paused task without adding a new message.");
+                else if (run.PlanRevision == null && (run.Message == null) != (task.Status == AgentTaskStatus.Paused)) throw new InvalidOperationException("Resume a paused task without adding a new message.");
+                if (run.PlanRevision != null && (run.Message != null || run.QueuedMessageId != null || task.ProposedPlan is not { Accepted: false } proposal || proposal.Revision != run.PlanRevision))
+                    throw new InvalidOperationException("Select the current proposed plan to implement.");
                 if (run.Message != null && (string.IsNullOrWhiteSpace(run.Message) || run.Message.Length > 262144)) throw new ArgumentException("A bounded message is required.");
                 lock (_gate)
                 {
                     if (_run is { IsCompleted: false }) throw new InvalidOperationException("An agent is already running.");
                     ownerSession.ThrowIfCancellationRequested();
                     var accountLife = task.Provider is IAgentProviderSession runAccount ? runAccount.GetSessionLifetime() : default;
-                    _runCancellation?.Dispose(); _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, ownerSession, accountLife);
-                    _runningId = run.Id;
-                    _run = RunAsync(run, _runCancellation.Token);
+                    StartRun(run, ownerSession, accountLife);
                 }
                 break;
             case "pending_export":
@@ -258,6 +277,55 @@ public class AgentWorkbenchSession : IDisposable
         ?? throw new ArgumentException("Select a document from this source comparison.");
     private static string? Excerpt(string? text) => text is { Length: > 20000 } ? text[..20000] + "\n[display excerpt; export the patch for complete source]" : text;
 
+    private void StartRun(RunArgs args, CancellationToken ownerSession, CancellationToken accountLife)
+    {
+        _runCancellation?.Dispose(); _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token, ownerSession, accountLife);
+        _runningId = args.Id;
+        _run = RunAsync(args, _runCancellation.Token);
+    }
+
+    private async Task<JsonElement> SubmitAsync(SubmitArgs args, CancellationToken cancellationToken, CancellationToken ownerSession)
+    {
+        if (string.IsNullOrWhiteSpace(args.ClientMessageId)) throw new ArgumentException("Sending requires a stable client message ID so retries cannot duplicate a turn.");
+        var task = _harness.GetTask(args.Id);
+        if (task.IsPreviousWorkspace || task.Status is AgentTaskStatus.Cancelled or AgentTaskStatus.Failed)
+            throw new InvalidOperationException("Choose an available thread before sending.");
+        var options = _harness.ValidateOptions((args.Options ?? new() { Mode = task.Mode }) with { FullAccessAcknowledged = args.FullAccessAcknowledged }, requireAcknowledgement: false);
+        Task? finishing = null;
+        lock (_gate)
+        {
+            // A running thread keeps its current authority. Options are used only when this
+            // explicit submission starts a new run, never to broaden an active lease.
+            if (_run is not { IsCompleted: false }) options = _harness.ValidateOptions(options);
+            _harness.QueueMessage(args.Id, args.Text, args.Delivery, args.ClientMessageId);
+            lock (task.Sync)
+            {
+                if (args.DraftRevision is { } sentRevision && sentRevision > task.DraftRevision)
+                { task.DraftRevision = sentRevision; task.Draft = ""; }
+                else if (args.DraftRevision == null && task.Draft == args.Text) { task.Draft = ""; task.DraftRevision++; }
+            }
+            if (_runningId == args.Id && task.Status == AgentTaskStatus.Completed) finishing = _run;
+        }
+        // Acknowledgment means durable acceptance, not just that a provider request was scheduled.
+        await _harness.SaveSessionAsync(cancellationToken);
+        if (finishing != null) await finishing.WaitAsync(cancellationToken);
+        lock (_gate)
+        {
+            var queue = task.Queue;
+            if (_run is not { IsCompleted: false } && task.Status is AgentTaskStatus.Ready or AgentTaskStatus.Completed &&
+                queue.Messages.FirstOrDefault(message => message.Id == args.ClientMessageId) is { } submitted)
+            {
+                options = _harness.ValidateOptions(options);
+                ownerSession.ThrowIfCancellationRequested();
+                var accountLife = task.Provider is IAgentProviderSession account ? account.GetSessionLifetime() : default;
+                var next = options.ContinueQueuedMessages ? queue.Messages[0] : submitted;
+                StartRun(new(args.Id, null, options, Confirmed: true, FullAccessAcknowledged: args.FullAccessAcknowledged,
+                    QueuedMessageId: next.Id, ExpectedQueueRevision: queue.Revision), ownerSession, accountLife);
+            }
+        }
+        return AutomationJson.Element(new { accepted = true, messageId = args.ClientMessageId, queue = task.Queue });
+    }
+
     private async Task RunAsync(RunArgs args, CancellationToken cancellationToken)
     {
         // Begin after the caller has recorded ownership, and never tie a run to one HTTP poll.
@@ -268,7 +336,9 @@ public class AgentWorkbenchSession : IDisposable
                 (await AskAsync("approval", AutomationJson.Element(review), token)).Deserialize<AgentApproval>(AutomationJson.Options);
             async Task<string> Question(AgentQuestion question, CancellationToken token) =>
                 (await AskAsync("question", AutomationJson.Element(question), token)).GetString()!;
-            if (args.QueuedMessageId != null)
+            if (args.PlanRevision is { } revision)
+                await _harness.ImplementPlanAsync(args.Id, revision, args.Options, Review, Question, cancellationToken);
+            else if (args.QueuedMessageId != null)
                 await _harness.RunQueuedAsync(args.Id, args.QueuedMessageId, args.ExpectedQueueRevision!.Value, args.Options, Review, Question, cancellationToken);
             else await _harness.RunAsync(args.Id, args.Message, args.Options, Review, Question, cancellationToken);
         }
@@ -326,7 +396,7 @@ public class AgentWorkbenchSession : IDisposable
     protected virtual IAgentProvider Provider(string id, string? accountId = null) =>
         _providers.TryGetValue(id, out var provider) ? provider : throw new ArgumentException("Provider is not configured for this connection.");
     protected static T Read<T>(JsonElement arguments) => arguments.Deserialize<T>(AutomationJson.Options) ?? throw new ArgumentException("Arguments are required.");
-    public void Stop() { lock (_gate) { if (_disposed) return; _runCancellation?.Cancel(); _harness.Stop(); } }
+    public void Stop() { lock (_gate) { if (_disposed) return; _harness.Stop(); _runCancellation?.Cancel(); } }
     public void Dispose()
     {
         lock (_gate)
@@ -350,10 +420,15 @@ public class AgentWorkbenchSession : IDisposable
     }
     public sealed record IdArgs(string Id);
     public sealed record TextArgs(string Id, string Text);
+    public sealed record DraftArgs(string Id, string Text, long? Revision = null);
     public sealed record ProviderArgs(string Provider, string? AccountId = null);
     public sealed record CreateArgs(string Name, string Provider, string Model, string? AccountId = null);
     public sealed record RunArgs(string Id, string? Message, AgentRunOptions Options, bool Confirmed = false,
-        bool FullAccessAcknowledged = false, string? QueuedMessageId = null, long? ExpectedQueueRevision = null);
+        bool FullAccessAcknowledged = false, string? QueuedMessageId = null, long? ExpectedQueueRevision = null, long? PlanRevision = null);
+    public sealed record SubmitArgs(string Id, string Text, AgentMessageDelivery Delivery = AgentMessageDelivery.Queue,
+        string? ClientMessageId = null, AgentRunOptions? Options = null, bool FullAccessAcknowledged = false, long? DraftRevision = null);
+    public sealed record ModeArgs(string Id, AgentCollaborationMode Mode);
+    public sealed record GoalArgs(string Id, string? Objective = null, long? TokenBudget = null);
     public sealed record QueueArgs(string Id, long ExpectedRevision);
     public sealed record QueueMessageArgs(string Id, string MessageId, long ExpectedRevision);
     public sealed record QueueEditArgs(string Id, string MessageId, string Text, long ExpectedRevision);

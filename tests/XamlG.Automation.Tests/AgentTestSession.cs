@@ -3,13 +3,15 @@ using XamlG.Automation;
 
 namespace XamlG.Automation.Tests;
 
-internal sealed class ScriptedAgentProvider : IAgentProvider, IAgentProviderSession
+internal sealed class ScriptedAgentProvider : IAgentProvider, IAgentProviderSession, IAgentProviderState
 {
     private readonly Queue<Func<AgentRequest, Func<string, ValueTask>, CancellationToken, Task<AgentReply>>> _steps = new();
     public string Id => "scripted";
     public List<AgentRequest> Requests { get; } = [];
     public Func<AgentRequest, int> ContextSize { get; set; } = _ => 100;
     public CancellationToken SessionLifetime { get; set; }
+    public System.Text.Json.JsonElement SaveNative(object native) => System.Text.Json.JsonSerializer.SerializeToElement(native);
+    public object RestoreNative(System.Text.Json.JsonElement native) => native.Clone();
     public int GetContextBytes(AgentRequest request) => ContextSize(request);
     public CancellationToken GetSessionLifetime() => SessionLifetime;
     public Task<IReadOnlyList<string>> ListModelsAsync(CancellationToken cancellationToken = default) =>
