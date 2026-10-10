@@ -17,7 +17,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Prepare immutable lifecycle tree after focused tests
+      - name: Prepare immutable lifecycle blobs after focused tests
         shell: python
         env:
           GH_TOKEN: ${{ github.token }}
@@ -40,8 +40,6 @@ jobs:
           patch = gzip.decompress(base64.b64decode(blob['content']))
           assert len(patch) < 200000
           assert hashlib.sha256(patch).hexdigest() == 'ebc2399d65cb4ea1f1431454a45d12f4185eaf7ff1e34b55eb0556808ed4746f'
-          # The reviewed selector fix is already stronger than the old patch's
-          # null check. Exclude only that hunk, without reverting current behavior.
           explorer = Path('tools/XamlG.Playground/Components/SolutionExplorer.razor').read_text()
           assert 'row.Node.Kind == "project" && Session.Snapshot.StartupProject is { } startup' in explorer
           Path('workspace-close.patch').write_bytes(patch)
@@ -72,17 +70,14 @@ jobs:
           subprocess.run(['node', '--check', 'tools/XamlG.Playground/tests/solution-workspace.spec.mjs'], check=True)
           helper = '.github/workflows/workspace-lifecycle-review.yml'
           git('rm', '--', helper)
-          tree_local = git('write-tree')
           entries = []
           for path in paths:
               data = Path(path).read_bytes()
               sha = api('/git/blobs', {'content': base64.b64encode(data).decode(), 'encoding': 'base64'})['sha']
+              assert sha == git('hash-object', '--', path)
               mode = git('ls-files', '-s', '--', path).split()[0]
               entries.append({'path': path, 'mode': mode, 'type': 'blob', 'sha': sha})
           entries.append({'path': helper, 'mode': '100644', 'type': 'blob', 'sha': None})
-          tree = api('/git/trees', {'base_tree': api('/git/commits/' + head)['tree']['sha'], 'tree': entries})['sha']
-          if tree != tree_local:
-              raise RuntimeError('Prepared tree differs from tested source.')
-          print(json.dumps({'source_parent': head, 'tree': tree, 'paths': paths}, indent=2), flush=True)
-          # Only immutable objects are published. The connector performs the
-          # separately authorized branch update; no ref or PR is changed here.
+          print(json.dumps({'source_parent': head, 'base_tree': git('rev-parse', 'HEAD^{tree}'), 'expected_tree': git('write-tree'), 'entries': entries}, indent=2), flush=True)
+          # The connector publishes trees, commits and refs after reviewing these
+          # immutable blobs. The runner does not modify workflows or any branch.
