@@ -16,12 +16,13 @@ jobs:
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
-          gh api "repos/$GH_REPO/actions/jobs/114267627830/logs" > "$RUNNER_TEMP/browser-job.log"
+          gh api --allow-escape-sequences "repos/$GH_REPO/actions/jobs/114267627830/logs" > "$RUNNER_TEMP/browser-job.log"
           gh api "repos/$GH_REPO/actions/jobs/114267627830" --jq '{conclusion,started_at,completed_at,check_run_url,steps}'
           python - <<'PY'
           import os, re
           from pathlib import Path
           text = Path(os.environ['RUNNER_TEMP'], 'browser-job.log').read_text(errors='replace')
+          text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
           lines = text.splitlines()
           first = []
           for index, line in enumerate(lines):
