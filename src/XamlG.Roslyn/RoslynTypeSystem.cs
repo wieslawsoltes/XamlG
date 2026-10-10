@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlG.Syntax;
+using XamlG.Internal;
 namespace XamlG.Roslyn;
 
 /// <summary>Thread-safe caches owned by one immutable Roslyn compilation. No process-wide symbol retention.</summary>
@@ -18,10 +19,12 @@ public sealed class RoslynTypeSystem
     private readonly ConcurrentDictionary<ITypeSymbol, bool> _usableDuringInitialization = new(SymbolEqualityComparer.Default);
     private readonly ConcurrentDictionary<string, ImmutableArray<(string Prefix, IAssemblySymbol Assembly)>> _namespaceTargets = new(StringComparer.Ordinal);
     private readonly ImmutableArray<IAssemblySymbol> _assemblies;
+    private readonly SymbolAccessibilityCache _accessibility;
     private readonly ILookup<string, IAssemblySymbol> _assembliesByName;
     public RoslynTypeSystem(CSharpCompilation compilation, XamlTypeSystemConfiguration? configuration = null)
     {
         Compilation = compilation ?? throw new ArgumentNullException(nameof(compilation)); Configuration = configuration ?? new();
+        _accessibility = new(compilation);
         _assemblies = ImmutableArray.Create(compilation.Assembly).AddRange(compilation.SourceModule.ReferencedAssemblySymbols);
         _assembliesByName = _assemblies.ToLookup(assembly => assembly.Identity.Name, StringComparer.Ordinal);
         var mappings = Configuration.NamespaceMappings.ToBuilder();
@@ -41,7 +44,7 @@ public sealed class RoslynTypeSystem
     public INamedTypeSymbol? Find(string metadataName) => _metadataTypes.TryGetValue(metadataName, out var type)
         ? type : _metadataTypes.GetOrAdd(metadataName, Compilation.GetTypeByMetadataName);
     public INamedTypeSymbol Special(SpecialType type) => Compilation.GetSpecialType(type);
-    public bool IsAccessible(ISymbol symbol, INamedTypeSymbol? within = null) => Compilation.IsSymbolAccessibleWithin(symbol, (ISymbol?)within ?? Compilation.Assembly);
+    public bool IsAccessible(ISymbol symbol, INamedTypeSymbol? within = null) => _accessibility.IsAccessible(symbol, within);
     /// <summary>Resolves provider alternatives independently of the assignment target, preferring
     /// parameterless providers and then typed results within each parameter shape.</summary>
     public IMethodSymbol? MarkupExtensionMethod(ITypeSymbol type) => _markupMethods.TryGetValue(type, out var method)
@@ -86,9 +89,14 @@ public sealed class RoslynTypeSystem
         var mappings = new List<XmlNamespaceMapping>();
         if (xmlNamespace.StartsWith("clr-namespace:", StringComparison.Ordinal))
         {
-            var pieces = xmlNamespace.Substring(14).Split(';');
-            var assembly = pieces.Skip(1).FirstOrDefault(p => p.StartsWith("assembly=", StringComparison.Ordinal))?.Substring(9) ?? Configuration.DefaultAssemblyName ?? Compilation.AssemblyName;
-            mappings.Add(new(xmlNamespace, pieces[0], assembly));
+            var pieces = new SpanSplitEnumerator(xmlNamespace.AsSpan(14), ';');
+            pieces.MoveNext();
+            var ns = pieces.Current.ToString();
+            string? assembly = null;
+            while (pieces.MoveNext())
+                if (pieces.Current.StartsWith("assembly=".AsSpan(), StringComparison.Ordinal))
+                { assembly = pieces.Current.Slice(9).ToString(); break; }
+            mappings.Add(new(xmlNamespace, ns, assembly ?? Configuration.DefaultAssemblyName ?? Compilation.AssemblyName));
         }
         else if (xmlNamespace.StartsWith("using:", StringComparison.Ordinal)) mappings.Add(new(xmlNamespace, xmlNamespace.Substring(6)));
         else mappings.AddRange(NamespaceMappings.Where(m => m.XmlNamespace == xmlNamespace));

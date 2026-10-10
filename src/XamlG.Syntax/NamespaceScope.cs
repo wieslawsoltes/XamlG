@@ -21,9 +21,9 @@ public sealed class NamespaceScope
             ? this : new NamespaceScope(bindings, ignored, preserve, declared);
         foreach (var a in element.Attributes)
         {
-            var name = result.Expand(a.Name, true);
-            if (name.Namespace == XamlNames.Xml && name.LocalName == "space") preserve = a.Value == "preserve" || a.Value != "default" && preserve;
-            if (name.Namespace == XamlNames.Compatibility && name.LocalName == "Ignorable")
+            if (result.AttributeNamespace(a.Name, "space") == XamlNames.Xml)
+                preserve = a.Value == "preserve" || a.Value != "default" && preserve;
+            if (result.AttributeNamespace(a.Name, "Ignorable") == XamlNames.Compatibility)
                 foreach (var prefix in new SpanSplitEnumerator(a.Value.AsSpan(), " \t\r\n".AsSpan(), removeEmpty: true))
                     if (bindings.TryGetValue(prefix.ToString(), out var ns)) ignored = ignored.Add(ns);
         }
@@ -40,9 +40,19 @@ public sealed class NamespaceScope
     {
         foreach (var attribute in element.Attributes)
         {
-            var expanded = Expand(attribute.Name, true);
-            if (expanded.Namespace != null && XamlNames.IsLanguage(expanded.Namespace) && expanded.LocalName == name) return attribute;
+            var ns = AttributeNamespace(attribute.Name, name);
+            if (ns != null && XamlNames.IsLanguage(ns)) return attribute;
         }
         return null;
+    }
+
+    private string? AttributeNamespace(string qualifiedName, string localName)
+    {
+        // Reject unrelated local names before allocating a prefix, and never
+        // allocate the local-name substring just to compare a fixed directive.
+        var colon = qualifiedName.IndexOf(':');
+        if (colon < 0 || localName == null || qualifiedName.Length - colon - 1 != localName.Length ||
+            string.CompareOrdinal(qualifiedName, colon + 1, localName, 0, localName.Length) != 0) return null;
+        return Bindings.TryGetValue(qualifiedName.Substring(0, colon), out var ns) ? ns : null;
     }
 }
