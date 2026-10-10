@@ -5,6 +5,7 @@
     <ProjectReference Include="../XamlG.Tooling/XamlG.Tooling.csproj" />
     <ProjectReference Include="../XamlG.Frameworks/XamlG.Frameworks.csproj" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
+    <PackageReference Include="Microsoft.CodeAnalysis.VisualBasic.Workspaces" />
     <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" />
     <PackageReference Include="Microsoft.Build.Locator" />
   </ItemGroup>
