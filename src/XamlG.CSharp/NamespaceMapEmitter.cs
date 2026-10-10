@@ -12,28 +12,34 @@ internal sealed class NamespaceMapEmitter
     private readonly Dictionary<string, (string Name, NamespaceScope Scope)> _maps = new(StringComparer.Ordinal);
     private readonly Dictionary<NamespaceScope, string> _scopeMaps = new();
 
-    public NamespaceMapEmitter(EmissionContext context) => _context = context;
+    private readonly bool _hasNamespaceServices;
+
+    public NamespaceMapEmitter(EmissionContext context)
+    {
+        _context = context;
+        _hasNamespaceServices = context.Document.Runtime.Services.Any(service => service.Mapping.Kind == XamlServiceKind.XmlNamespaces);
+    }
 
     public string GetMap(NamespaceScope scope)
     {
-        if (!_context.Document.Runtime.Services.Any(s => s.Mapping.Kind == XamlServiceKind.XmlNamespaces)) return "null";
+        if (!_hasNamespaceServices) return "null";
         if (_scopeMaps.TryGetValue(scope, out var cached)) return cached;
-        var key = ScopeKey(scope);
+        var key = _context.NamespacePlan.GetScope(scope).Key;
         if (_maps.TryGetValue(key, out var existing)) return _scopeMaps[scope] = existing.Name;
         var name = "__namespaces_" + _context.Id + "_" + _maps.Count;
         _maps.Add(key, (name, scope));
         return _scopeMaps[scope] = name;
     }
 
-    internal static string ScopeKey(NamespaceScope scope) => string.Join("\n", scope.Bindings
-        .Where(p => scope.DeclaredPrefixes.Contains(p.Key)).OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value));
+    internal static string ScopeKey(NamespaceScope scope) => NamespaceEmissionPlan.ScopeLayout.Create(scope).Key;
 
     public void Emit()
     {
         var writer = _context.Writer;
-        foreach (var entry in _maps.Values)
+        foreach (var pair in _maps)
         {
-            if (_context.SharedServices is { } shared && shared.NamespaceFactories.TryGetValue(ScopeKey(entry.Scope), out var factory))
+            var entry = pair.Value;
+            if (_context.SharedServices is { } shared && shared.NamespaceFactories.TryGetValue(pair.Key, out var factory))
                 writer.Line("private static readonly " + MapType + " " + entry.Name + " = " + shared.TypeName + "." + factory + "();");
             else
             {
@@ -48,20 +54,18 @@ internal sealed class NamespaceMapEmitter
         writer.Open(accessibility + " static " + MapType + " " + name + "()");
         writer.Line("var __services = new global::System.Collections.Generic.Dictionary<global::System.Type, object>();");
         var index = 0;
-        foreach (var contract in _context.Document.Runtime.Services.Where(s => s.Mapping.Kind == XamlServiceKind.XmlNamespaces))
+        var plan = _context.NamespacePlan;
+        var aliases = plan.GetScope(scope).Bindings;
+        foreach (var contractPlan in plan.Contracts)
         {
-            if (contract.NamespaceItemType == null || contract.NamespaceNameProperty == null || contract.AssemblyNameProperty == null) continue;
-            var item = contract.NamespaceItemType.CSharpName();
+            var contract = contractPlan.Contract;
+            var item = contractPlan.ItemType;
             var dictionary = "__map" + index++;
             var listType = "global::System.Collections.Generic.IReadOnlyList<" + item + ">";
             writer.Line("var " + dictionary + " = new global::System.Collections.Generic.Dictionary<string, " + listType + ">(global::System.StringComparer.Ordinal);");
-            foreach (var alias in scope.Bindings.Where(p => scope.DeclaredPrefixes.Contains(p.Key)).OrderBy(p => p.Key, StringComparer.Ordinal))
+            foreach (var alias in aliases)
             {
-                var mappings = _context.Document.Runtime.NamespaceMappings.Where(m => m.XmlNamespace == alias.Value).ToArray();
-                var items = mappings.Select(m => "new " + item + " { " +
-                    CSharpNames.Identifier(contract.NamespaceNameProperty.Name) + " = " + CSharpNames.Literal(m.ClrNamespace) + ", " +
-                    CSharpNames.Identifier(contract.AssemblyNameProperty.Name) + " = " + (m.AssemblyName == null ? "null" : CSharpNames.Literal(m.AssemblyName)) + " }");
-                var values = "new " + item + "[] { " + string.Join(", ", items) + " }";
+                var values = contractPlan.GetArrayExpression(alias.Value);
                 if (_context.Document.Profile.Runtime.ProtectNamespaceDictionaries)
                     values = "global::System.Array.AsReadOnly(" + values + ")";
                 writer.Line(dictionary + ".Add(" + CSharpNames.Literal(alias.Key) + ", " + values + ");");
