@@ -20,39 +20,6 @@ concurrency:
   group: solution-workspaces-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  previous-failure-context:
-    if: github.event_name == 'pull_request' && github.head_ref == 'feat/msbuild-solution-workspaces'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      actions: read
-      contents: read
-    steps:
-      - name: Bounded browser state from previous validation
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPOSITORY: ${{ github.repository }}
-        shell: python
-        run: |
-          import os, re, urllib.request, urllib.parse
-          class SafeRedirect(urllib.request.HTTPRedirectHandler):
-              def redirect_request(self, req, fp, code, msg, headers, newurl):
-                  redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
-                  if redirected and urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
-                      redirected.remove_header('Authorization')
-                  return redirected
-          url = 'https://api.github.com/repos/' + os.environ['GH_REPOSITORY'] + '/actions/jobs/114251214368/logs'
-          request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
-          with urllib.request.build_opener(SafeRedirect()).open(request, timeout=60) as response:
-              raw = response.read(16 * 1024 * 1024)
-          lines = [line for line in re.sub(r'\x1b\[[0-9;]*m', '', raw.decode('utf-8-sig')).splitlines() if '[WebServer]' not in line]
-          selected = set()
-          for index, line in enumerate(lines):
-              if 'region "Solution Explorer"' in line or 'combobox "Workspace solution or project"' in line:
-                  selected.update(range(max(0, index - 3), min(len(lines), index + 90)))
-          if not selected:
-              raise RuntimeError('Explorer snapshot boundary was not found.')
-          print('\n'.join(lines[index] for index in sorted(selected))[:22000])
   workspace:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -97,21 +64,17 @@ jobs:
         working-directory: tools/XamlG.Playground
         env:
           PLAYGROUND_PAGES_PREVIEW: '1'
-        run: python ../../scripts/test-browser-studio.py solution-workspace.spec.mjs
-      - name: Include browser failure context in job logs
-        if: failure()
-        shell: python
-        run: |
-          from pathlib import Path
-          for context in sorted(Path('tools/XamlG.Playground/test-results').glob('*/error-context.md')):
-              print(f'\n--- {context} ---\n', flush=True)
-              print(context.read_text(encoding='utf-8')[:60000], flush=True)
+          PLAYWRIGHT_HTML_OPEN: never
+        run: python ../../scripts/test-browser-studio.py solution-workspace.spec.mjs -- --reporter=list,html,./tests/workspace-reporter.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: solution-workspace-summary
           path: |
+            artifacts/workspace-source/commit.txt
+            artifacts/workspace-source/parents.txt
             artifacts/workspaces/native
+            tools/XamlG.Playground/test-results/workspace-browser-summary.json
             tools/XamlG.Playground/test-results/**/error-context.md
             tools/XamlG.Playground/test-results/**/test-failed-*.png
           if-no-files-found: error
@@ -124,3 +87,44 @@ jobs:
             tools/XamlG.Playground/test-results
             tools/XamlG.Playground/playwright-report
           if-no-files-found: error
+  validation-summary:
+    if: always() && !cancelled()
+    needs: workspace
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: solution-workspace-summary
+          path: validation
+      - name: Exact source, native counters and browser assertions
+        shell: python
+        run: |
+          import json
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          root = Path('validation')
+          for name in ('commit.txt', 'parents.txt'):
+              for path in root.rglob(name):
+                  print(name + ': ' + path.read_text().strip(), flush=True)
+          for path in root.rglob('*.trx'):
+              tree = ET.parse(path)
+              counters = tree.find('.//{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}Counters')
+              print('Native: ' + json.dumps(counters.attrib if counters is not None else {}), flush=True)
+              for result in tree.findall('.//{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}UnitTestResult'):
+                  if result.get('outcome') != 'Passed':
+                      print(result.get('testName'), result.get('outcome'), flush=True)
+          reports = list(root.rglob('workspace-browser-summary.json'))
+          if len(reports) != 1:
+              raise SystemExit('Browser acceptance did not produce exactly one summary. Inspect the workspace job; validation is not complete.')
+          report = json.loads(reports[0].read_text())
+          print('Browser: ' + json.dumps({'status': report['status'], 'counts': report['counts']}), flush=True)
+          for test in report['tests']:
+              print(test['outcome'] + ': ' + test['title'], flush=True)
+              for attempt in test['attempts']:
+                  for error in attempt['errors']:
+                      print(error, flush=True)
+          for error in report['errors']:
+              print(error, flush=True)
+          if report['status'] != 'passed' or report['counts']['unexpected'] or report['errors']:
+              raise SystemExit(1)

@@ -22,8 +22,13 @@ async function create(page, pane, format = 'slnx', add = false) {
   if (!add) await wizard.getByRole('combobox', { name: 'Solution format', exact: true }).selectOption(format);
   await wizard.getByTestId('create-workspace').click();
   await expect(wizard).toHaveCount(0);
+  // Model, persisted entry and the live docked select must agree, even when the
+  // new project's path sorts before the currently open solution.
+  await expect.poll(async () => (await savedWorkspace(page)).entryPath).toBe(`WorkspaceDemo.${format}`);
+  await expect(pane).toHaveAttribute('data-entry-path', `WorkspaceDemo.${format}`);
   await expect(pane.getByLabel('Workspace solution or project')).toHaveValue(`WorkspaceDemo.${format}`);
   await expect(pane.getByRole('button', { name: 'Add project', exact: true })).toBeEnabled();
+  await expect(pane.locator('[title="Startup project"]')).toHaveCount(0);
 }
 
 for (const format of ['sln', 'slnx']) {
@@ -44,11 +49,13 @@ for (const format of ['sln', 'slnx']) {
     await expect.poll(() => sourceText(page, `WorkspaceDemo.${format}`)).toContain('Library.csproj');
     await expect(pane.locator('.ws-tree-row[title="Library/Library.csproj"]')).toBeVisible();
     await pane.locator('summary', { hasText: 'Files and project properties' }).click();
-    await pane.getByRole('combobox', { name: 'Selected project', exact: true }).selectOption('WorkspaceDemo/WorkspaceDemo.csproj');
+    const selectedProject = pane.getByRole('combobox', { name: 'Selected project', exact: true });
+    await selectedProject.selectOption('WorkspaceDemo/WorkspaceDemo.csproj');
     await pane.getByRole('combobox', { name: 'Project reference', exact: true }).selectOption('Library/Library.csproj');
     await pane.getByRole('button', { name: 'Add project reference', exact: true }).click();
     const projectText = async () => (await savedWorkspace(page)).files.find(file => file.path === 'WorkspaceDemo/WorkspaceDemo.csproj').content;
     await expect.poll(projectText).toContain('ProjectReference');
+    await expect(selectedProject).toHaveValue('WorkspaceDemo/WorkspaceDemo.csproj');
     await pane.getByRole('button', { name: 'Remove project reference', exact: true }).click();
     await expect.poll(projectText).not.toContain('ProjectReference');
     await pane.getByLabel('Package ID', { exact: true }).fill('Example.Library');
@@ -76,6 +83,7 @@ test('rejected IndexedDB writes do not publish entry or startup selections and c
   await app.click();
   await pane.getByRole('button', { name: 'Set startup', exact: true }).click();
   await expect.poll(async () => (await savedWorkspace(page)).startupProject).toBe('WorkspaceDemo/WorkspaceDemo.csproj');
+  await expect(pane.locator('[title="Startup project"]')).toHaveCount(1);
   await page.evaluate(() => {
     window.workspaceOriginalPut = IDBObjectStore.prototype.put;
     IDBObjectStore.prototype.put = function (...args) {
@@ -90,6 +98,7 @@ test('rejected IndexedDB writes do not publish entry or startup selections and c
     await expect(app.locator('[title="Startup project"]')).toHaveCount(1);
     await pane.getByLabel('Workspace solution or project').selectOption('Library/Library.csproj');
     await expect(pane.getByLabel('Workspace solution or project')).toHaveValue('WorkspaceDemo.slnx');
+    await expect(pane).toHaveAttribute('data-entry-path', 'WorkspaceDemo.slnx');
     expect((await savedWorkspace(page)).startupProject).toBe('WorkspaceDemo/WorkspaceDemo.csproj');
     expect((await savedWorkspace(page)).entryPath).toBe('WorkspaceDemo.slnx');
   } finally {
@@ -97,6 +106,8 @@ test('rejected IndexedDB writes do not publish entry or startup selections and c
   }
   await pane.getByLabel('Workspace solution or project').selectOption('Library/Library.csproj');
   await expect.poll(async () => (await savedWorkspace(page)).entryPath).toBe('Library/Library.csproj');
+  await expect(pane).toHaveAttribute('data-entry-path', 'Library/Library.csproj');
+  await expect(pane.locator('[title="Startup project"]')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
