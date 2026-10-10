@@ -14,7 +14,10 @@ internal static class XamlResourceGraph
         var local = documents.Select((d, i) => (Document: d, Index: i)).Where(p => p.Document.Options.ResourceUri != null)
             .GroupBy(p => p.Document.Options.ResourceUri!, StringComparer.Ordinal).Where(g => g.Count() == 1)
             .ToDictionary(g => g.Key, g => g.Single().Index, StringComparer.Ordinal);
-        var edges = documents.Select(d => References(d).Where(r => local.ContainsKey(r.Resource.Uri)).ToArray()).ToArray();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (local.Count == 0) return documents;
+        var edges = documents.Select(d => References(d, cancellationToken).Where(r => local.ContainsKey(r.Resource.Uri)).ToArray()).ToArray();
+        if (edges.All(list => list.Length == 0)) return documents;
         var dependencies = edges.Select(list => list.Select(r => local[r.Resource.Uri]).Distinct().ToHashSet()).ToArray();
         var reverse = Enumerable.Range(0, documents.Length).Select(_ => new List<int>()).ToArray();
         for (var i = 0; i < dependencies.Length; i++) foreach (var target in dependencies[i]) reverse[target].Add(i);
@@ -61,7 +64,7 @@ internal static class XamlResourceGraph
         for (var i = 0; i < documents.Length; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            foreach (var edge in References(documents[i]))
+            foreach (var edge in References(documents[i], cancellationToken))
                 if (local.TryGetValue(edge.Resource.Uri, out var target)) reverse[target].Add((i, edge));
         }
         var queue = new Queue<int>(Enumerable.Range(0, outputs.Length).Where(i => !outputs[i].Success));
@@ -82,17 +85,8 @@ internal static class XamlResourceGraph
             }
         }
     }
-    internal static IEnumerable<BoundResourceExpression> References(BoundDocument document)
-    {
-        if (document.Root == null) yield break;
-        var stack = new Stack<BoundExpression>(BoundTraversal.Expressions(document.Root));
-        while (stack.Count != 0)
-        {
-            var expression = stack.Pop();
-            if (expression is BoundResourceExpression resource) yield return resource;
-            foreach (var child in BoundTraversal.Children(expression, true)) stack.Push(child);
-        }
-    }
+    internal static ImmutableArray<BoundResourceExpression> References(BoundDocument document, CancellationToken cancellationToken = default) =>
+        ResourceReferenceCache.Get(document, cancellationToken);
     private static BoundDocument Error(BoundDocument document, string code, string message, TextSpan span) =>
         document with { Diagnostics = document.Diagnostics.Add(new XamlDiagnostic(code, message, span)) };
 }

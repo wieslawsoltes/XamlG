@@ -9,7 +9,10 @@ public sealed class XamlRuntimeSession : IDisposable
     private static readonly ConditionalWeakTable<object, XamlRuntimeSession> Sessions = new();
     private readonly Dictionary<string, XamlRuntimeNode> _nodes = new(StringComparer.Ordinal);
     private readonly Dictionary<object, string> _instances = new(XamlObjectIdentityComparer.Instance);
-    private readonly Dictionary<(string Node, string Member), XamlRuntimeProperty> _properties = new();
+    private Dictionary<(string Node, string Member), XamlRuntimePropertyBinding>? _properties;
+    // Delegate-only callers keep the smaller reference-valued dictionary and do
+    // not pay the inline table binding's size or allocate a second dictionary.
+    private Dictionary<(string Node, string Member), XamlRuntimeProperty>? _delegateProperties;
     private readonly List<object> _cleanup = new();
     private readonly HashSet<XamlRuntimeSession> _constructedSessions = new();
     private readonly int _threadId = Thread.CurrentThread.ManagedThreadId;
@@ -66,12 +69,15 @@ public sealed class XamlRuntimeSession : IDisposable
     }
     public void RegisterProperty<T>(string key, string member, Func<T> getter, Action<T> setter)
     {
-        CheckThread(); _properties[(key, member)] = new XamlDelegateProperty<T>(getter, setter);
+        CheckThread();
+        (_delegateProperties ??= new())[(key, member)] = new XamlDelegateProperty<T>(getter, setter);
+        _properties?.Remove((key, member));
     }
-    internal void RegisterProperty(string key, string member, XamlRuntimeProperty property)
+    internal void RegisterProperty(string key, string member, XamlRuntimePropertyBinding property)
     {
         CheckThread();
-        _properties[(key, member)] = property;
+        (_properties ??= new())[(key, member)] = property;
+        _delegateProperties?.Remove((key, member));
     }
     public void TrackCleanup(Action action)
     {
@@ -88,12 +94,15 @@ public sealed class XamlRuntimeSession : IDisposable
         CheckThread();
         if (expectedRevision != Revision) return new(false, Revision, "The live view has a different revision.");
         if (_applying) return new(false, Revision, "A reentrant update is not permitted.");
-        var pending = new List<(XamlRuntimeProperty Property, object? Before, object? After)>();
+        var pending = new List<(XamlRuntimePropertyBinding Property, object? Before, object? After)>();
         var keys = new HashSet<(string, string)>();
         foreach (var update in updates)
         {
             if (!keys.Add((update.NodeKey, update.MemberName))) return new(false, Revision, "The batch assigns a property more than once.");
-            if (!_properties.TryGetValue((update.NodeKey, update.MemberName), out var property)) return new(false, Revision, $"'{update.NodeKey}.{update.MemberName}' requires a structural rebuild.");
+            XamlRuntimePropertyBinding property;
+            if (_properties != null && _properties.TryGetValue((update.NodeKey, update.MemberName), out var binding)) property = binding;
+            else if (_delegateProperties != null && _delegateProperties.TryGetValue((update.NodeKey, update.MemberName), out var delegated)) property = new(delegated);
+            else return new(false, Revision, $"'{update.NodeKey}.{update.MemberName}' requires a structural rebuild.");
             if (!property.Accepts(update.Value)) return new(false, Revision, $"The replacement value is not assignable to '{property.Type}'.");
             try { pending.Add((property, property.Get(), update.Value)); }
             catch (Exception error) { return new(false, Revision, "A property getter failed: " + error.Message); }
@@ -127,7 +136,7 @@ public sealed class XamlRuntimeSession : IDisposable
                 else ((IDisposable)_cleanup[i]).Dispose();
             }
             catch (Exception error) { errors.Add(error); }
-        _cleanup.Clear(); _constructedSessions.Clear(); _properties.Clear(); _instances.Clear(); _nodes.Clear();
+        _cleanup.Clear(); _constructedSessions.Clear(); _properties?.Clear(); _delegateProperties?.Clear(); _instances.Clear(); _nodes.Clear();
         if (errors.Count != 0) throw new AggregateException("Generated event cleanup failed.", errors);
     }
     /// <summary>Retires a failed construction while retaining both failures if cleanup also throws.</summary>
