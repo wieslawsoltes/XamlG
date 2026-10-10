@@ -474,6 +474,7 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
         await PersistBrowserAsync(candidate.Current, SelectedProject);
         _workspace = candidate;
         SynchronizeCleanDocuments();
+        Inspect();
     }
     private async Task ReplaceBrowserAsync(VirtualWorkspace candidate, string[] openDocuments)
     {

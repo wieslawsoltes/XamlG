@@ -19,7 +19,7 @@ async function create(page, pane, format = 'slnx', add = false) {
   const wizard = page.getByRole('dialog', { name: add ? 'Add a new project' : 'Create a solution', exact: true });
   await wizard.locator('.ws-template').filter({ hasText: add ? 'Class Library' : 'Console App' }).click();
   await wizard.getByLabel('New workspace name').fill(add ? 'Library' : 'WorkspaceDemo');
-  if (!add) await wizard.getByLabel('Solution format', { exact: true }).selectOption(format);
+  if (!add) await wizard.getByRole('combobox', { name: 'Solution format', exact: true }).selectOption(format);
   await wizard.getByTestId('create-workspace').click();
   await expect(wizard).toHaveCount(0);
   await expect(pane.getByLabel('Workspace solution or project')).toHaveValue(`WorkspaceDemo.${format}`);
@@ -41,9 +41,11 @@ for (const format of ['sln', 'slnx']) {
     await document.getByRole('button', { name: 'Save', exact: true }).click();
     await expect.poll(async () => (await savedWorkspace(page)).files.find(file => file.path === program)?.content).toBe(text);
     await create(page, pane, format, true);
+    await expect.poll(() => sourceText(page, `WorkspaceDemo.${format}`)).toContain('Library.csproj');
+    await expect(pane.locator('.ws-tree-row[title="Library/Library.csproj"]')).toBeVisible();
     await pane.locator('summary', { hasText: 'Files and project properties' }).click();
-    await pane.getByLabel('Selected project', { exact: true }).selectOption('WorkspaceDemo/WorkspaceDemo.csproj');
-    await pane.getByLabel('Project reference', { exact: true }).selectOption('Library/Library.csproj');
+    await pane.getByRole('combobox', { name: 'Selected project', exact: true }).selectOption('WorkspaceDemo/WorkspaceDemo.csproj');
+    await pane.getByRole('combobox', { name: 'Project reference', exact: true }).selectOption('Library/Library.csproj');
     await pane.getByRole('button', { name: 'Add project reference', exact: true }).click();
     const projectText = async () => (await savedWorkspace(page)).files.find(file => file.path === 'WorkspaceDemo/WorkspaceDemo.csproj').content;
     await expect.poll(projectText).toContain('ProjectReference');
@@ -141,7 +143,7 @@ test('paired owner creates an actual SDK solution and builds and evaluates the s
   await expect(trust).not.toBeChecked();
   await expect(pane.getByRole('button', { name: 'build', exact: true })).toBeDisabled();
   await trust.check();
-  await pane.getByLabel('Build target', { exact: true }).selectOption('project');
+  await pane.getByRole('combobox', { name: 'Build target', exact: true }).selectOption('project');
   const output = page.getByRole('region', { name: 'Workspace output', exact: true });
   for (const operation of ['restore', 'build']) {
     await pane.getByRole('button', { name: operation, exact: true }).click();
