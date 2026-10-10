@@ -48,7 +48,7 @@ def main():
                            for path in sorted((ROOT / PROBE).glob('*')) if path.is_file()},
         'method': 'Same probe compiled against each revision in isolated output directories. '
                   'Alternating AB/BA fresh-process pairs, three warmup calls and five batches per case. '
-                  'Tiered compilation disabled for both variants. Input creation, snapshots, build and startup excluded. '
+                  'Tiered compilation disabled for both variants. Input creation, snapshots, binding setup, build and startup excluded. '
                   'Allocations use GC.GetAllocatedBytesForCurrentThread. Localized microbenchmarks, not end-to-end XamlX comparisons.',
         'runs': []
     }
@@ -56,10 +56,12 @@ def main():
         checkout = Path(temporary) / 'before'
         subprocess.run(['git', 'worktree', 'add', '--detach', str(checkout), baseline], cwd=ROOT, check=True)
         try:
-            # Use precisely the candidate harness for both variants, even when it
-            # did not yet exist at the baseline. No compiler/runtime files are copied.
-            shutil.copytree(ROOT / PROBE, checkout / PROBE, dirs_exist_ok=True,
-                            ignore=shutil.ignore_patterns('bin', 'obj'))
+            # Replace only the probe in this temporary baseline worktree. Removing
+            # its old directory also prevents deleted/renamed harness files from
+            # silently compiling into the baseline on later comparisons.
+            if (checkout / PROBE).exists():
+                shutil.rmtree(checkout / PROBE)
+            shutil.copytree(ROOT / PROBE, checkout / PROBE, ignore=shutil.ignore_patterns('bin', 'obj'))
             assemblies = {}
             for variant, root in [('before', checkout), ('after', ROOT)]:
                 with (output / (variant + '-build.log')).open('w') as log:
@@ -98,7 +100,7 @@ def main():
         lines.append(f'| {row["name"]} | {row["before"]["Nanoseconds"] / 1000:.3f} | '
                      f'{row["after"]["Nanoseconds"] / 1000:.3f} | {row["time_ratio"]:.3f} | '
                      f'{row["before"]["AllocatedBytes"]:.0f} | {row["after"]["AllocatedBytes"]:.0f} |')
-    lines += ['', f'Typed syntax/diagnostic/metadata snapshot equivalence: {report["semantic_equivalence"]}.', '', report['method']]
+    lines += ['', f'Typed syntax/diagnostic/metadata/source snapshot equivalence: {report["semantic_equivalence"]}.', '', report['method']]
     text = '\n'.join(lines) + '\n'
     (output / 'results.json').write_text(json.dumps(report, indent=2) + '\n')
     (output / 'summary.md').write_text(text)

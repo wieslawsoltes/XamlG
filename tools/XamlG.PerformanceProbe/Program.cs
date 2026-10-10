@@ -8,6 +8,7 @@ using XamlG.Syntax;
 
 if (args.Length != 1) throw new ArgumentException("Usage: XamlG.PerformanceProbe <output.json>");
 var measurements = new List<Measurement>();
+var generatedSources = NamedFieldProbe.Run(Measure);
 var semanticInputs = new List<string>
 {
     "<Root/>", "<Root></Root>", "<Root A='1' A='2'/>", "<Root A='broken<Child/></Root>",
@@ -83,6 +84,7 @@ using (var writer = new BinaryWriter(snapshot, Encoding.UTF8, leaveOpen: true))
     writer.Write(JsonSerializer.Serialize(MarkupExtensionParser.ParseAtSource(attribute.Value, attribute.ValueSpan, encodedSource, static _ => { })));
     var metadata = XamlSourceInfoTable.FromEncoded("view.xaml", 1, records);
     for (var i = 0; i < 1000; i++) writer.Write(JsonSerializer.Serialize(metadata[i]));
+    foreach (var source in generatedSources) writer.Write(source);
 }
 var result = new
 {
