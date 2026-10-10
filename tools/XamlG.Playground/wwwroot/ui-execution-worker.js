@@ -32,6 +32,9 @@ async function bootstrap(event) {
     function moduleUrl(path) {
       const url = URL.createObjectURL(new Blob([get(path)], { type: 'text/javascript' })); urls.push(url); return url;
     }
+    const policyUrl = URL.createObjectURL(new Blob([executionPolicySource], { type: 'text/javascript' }));
+    urls.push(policyUrl);
+    const { constrainWasmMemory } = await import(policyUrl);
     const original = message.config;
     if (!original || !original.resources) throw new Error('The trusted runtime manifest is missing.');
     const resources = original.resources, assets = [];

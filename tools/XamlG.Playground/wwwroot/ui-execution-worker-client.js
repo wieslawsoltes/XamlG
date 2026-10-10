@@ -59,7 +59,7 @@ export async function create(assetBase) {
     await Promise.all(Array.from({length:6},async()=>{
       while(index<selected.length){const current=index++,name=selected[current],bytes=name===loader?loaderBytes:await read(name);total+=bytes.byteLength;if(total>536870912)throw new Error('Execution assets exceed 512 MiB.');files[current]={name,bytes};}
     }));
-    const source=new TextDecoder().decode(await read('ui-execution-policy.js')) + '\n' +
+    const source='const executionPolicySource=' + JSON.stringify(new TextDecoder().decode(await read('ui-execution-policy.js'))) + ';\n' +
       new TextDecoder().decode(await read('ui-execution-worker.js'));
     await connected;
     channel.port1.postMessage({type:'bootstrap',base:base.href,source,config,loader,files},files.map(file=>file.bytes));

@@ -30,8 +30,9 @@ addEventListener('message',event=>{
     if(value?.type!=='bootstrap'||worker||typeof value.source!=='string'||value.source.length>131072||!Array.isArray(value.files)||value.files.length>2048){stop('Invalid worker bootstrap.');return;}
     let bytes=0;for(const file of value.files){if(typeof file.name!=='string'||!(file.bytes instanceof ArrayBuffer)||(bytes+=file.bytes.byteLength)>536870912){stop('Execution asset limit exceeded.');return;}}
     workerUrl=URL.createObjectURL(new Blob([value.source],{type:'text/javascript'}));
-    // Module-worker loading is asynchronous. Keep its source alive until startup completes.
-    worker=new Worker(workerUrl,{type:'module',name:'xamlg-approved-csharp'});
+    // Opaque origins cannot fetch a module-worker entry script in Chromium. A classic
+    // worker can dynamically import trusted blob modules while retaining the same CSP.
+    worker=new Worker(workerUrl,{name:'xamlg-approved-csharp'});
     boot=setTimeout(()=>stop('The isolated .NET runtime did not initialize.'),120000);
     worker.onerror=event=>{event.preventDefault();stop(event.message||'Execution worker failed.');};
     worker.onmessageerror=()=>stop('Invalid execution worker message.');
