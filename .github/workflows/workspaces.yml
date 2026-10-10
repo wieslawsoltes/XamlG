@@ -28,7 +28,7 @@ jobs:
       actions: read
       contents: read
     steps:
-      - name: Bounded browser assertions from previous validation
+      - name: Bounded browser state from previous validation
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
@@ -46,11 +46,13 @@ jobs:
           with urllib.request.build_opener(SafeRedirect()).open(request, timeout=60) as response:
               raw = response.read(16 * 1024 * 1024)
           lines = [line for line in re.sub(r'\x1b\[[0-9;]*m', '', raw.decode('utf-8-sig')).splitlines() if '[WebServer]' not in line]
-          start = next((i for i, line in enumerate(lines) if 'Running 5 tests' in line), None)
-          if start is None:
-              raise RuntimeError('Browser test boundary was not found in previous job logs.')
-          end = next((i for i in range(start, len(lines)) if 'Traceback (most recent call last)' in lines[i]), min(start + 350, len(lines)))
-          print('\n'.join(lines[start:end])[:26000])
+          selected = set()
+          for index, line in enumerate(lines):
+              if 'region "Solution Explorer"' in line or 'combobox "Workspace solution or project"' in line:
+                  selected.update(range(max(0, index - 3), min(len(lines), index + 90)))
+          if not selected:
+              raise RuntimeError('Explorer snapshot boundary was not found.')
+          print('\n'.join(lines[index] for index in sorted(selected))[:22000])
   workspace:
     runs-on: ubuntu-latest
     timeout-minutes: 25
