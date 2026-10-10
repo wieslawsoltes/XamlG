@@ -37,6 +37,8 @@ public sealed record UiElement(string Key, string Type, ImmutableDictionary<stri
     // Captured by the compiler; neither serialized nor accepted in action requests.
     internal JsonElement? ActionItem { get; init; }
     public ImmutableArray<UiStyleRule> Styles { get; init; } = [];
+    public UiControlTemplate? ControlTemplate { get; init; }
+    public UiControlTheme? ControlTheme { get; init; }
     public UiFormAnnotation? Form { get; init; }
     public UiFormInteraction? FormState { get; init; }
 }

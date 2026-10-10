@@ -59,7 +59,7 @@ internal sealed partial class UiCompositeLowerer(UiCatalog catalog, UiLimits lim
     private UiElement LowerNode(UiElement node)
     {
         if (!node.Type.StartsWith("ui:", StringComparison.Ordinal))
-            return Make(node.Key, node.Type, node.Properties, node.Children.Select(LowerNode), node.StateKey, node.ActionId) with { Styles = node.Styles };
+            return Make(node.Key, node.Type, node.Properties, node.Children.Select(LowerNode), node.StateKey, node.ActionId) with { Styles = node.Styles, ControlTemplate = node.ControlTemplate, ControlTheme = node.ControlTheme };
         switch (node.Type)
         {
             case "ui:Heading":

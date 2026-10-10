@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Collections.Immutable;
 using Avalonia.Styling;
+using Avalonia.Controls.Presenters;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -56,6 +57,13 @@ public sealed class UiAvaloniaRenderer : IDisposable
             UiStyles.Validate(node.Styles, _schema);
             if (node.Properties.Keys.Any(key => !native.Setters.ContainsKey(key))) throw new UiException("unknown_property", "No trusted property setter.");
             foreach (var child in node.Children.Reverse()) pending.Push((child, node.Key, item.Depth + 1));
+        }
+        var templateNodes = 0;
+        foreach (var node in nodes.Values)
+        {
+            templateNodes += UiControlTemplates.Validate(node.ControlTemplate, node.Type, _schema);
+            templateNodes += UiControlTemplates.Validate(node.ControlTheme, node.Type, _schema);
+            if (nodes.Count + templateNodes > 4096) throw new UiException("node_limit", "Native template allocation budget exceeded.");
         }
         UiStyleTree.Validate(snapshot.Roots);
         var newSession = _snapshot != null && _snapshot.SessionId != snapshot.SessionId;
@@ -122,6 +130,14 @@ public sealed class UiAvaloniaRenderer : IDisposable
             foreach (var style in styles) entry.Control.Styles.Add(style);
             entry.Styles = styles;
         }
+        if (initial || !UiControlTemplates.Equivalent(entry.Node.ControlTemplate, node.ControlTemplate) || !UiControlTemplates.Equivalent(entry.Node.ControlTheme, node.ControlTheme))
+        {
+            var next = UiAvaloniaControlAuthoring.Create(entry.Control, node, _catalog);
+            try { next.Apply(entry.Control); }
+            catch { next.Dispose(); throw; }
+            var previousAuthoring = entry.Authoring; entry.Authoring = next;
+            previousAuthoring?.Dispose();
+        }
         entry.Node = node;
         bool Changed(string key)
         {
@@ -164,9 +180,15 @@ public sealed class UiAvaloniaRenderer : IDisposable
         if (entry.Control is Button button && entry.Click != null) button.Click -= entry.Click;
         foreach (var style in entry.Styles) entry.Control.Styles.Remove(style);
         entry.Styles = [];
+        if (entry.Authoring != null)
+        {
+            if (entry.Control is TemplatedControl templated) templated.ClearValue(TemplatedControl.TemplateProperty);
+            entry.Control.ClearValue(StyledElement.ThemeProperty);
+            entry.Authoring.Dispose(); entry.Authoring = null;
+        }
         entry.Registration.Retire?.Invoke(entry.Control);
     }
-    private static void Children(Control parent, IReadOnlyList<Control> children, bool itemsSource, bool scalarContent)
+    internal static void Children(Control parent, IReadOnlyList<Control> children, bool itemsSource, bool scalarContent)
     {
         switch (parent)
         {
@@ -198,6 +220,8 @@ public sealed class UiAvaloniaRenderer : IDisposable
                 break;
             }
             case ItemsControl: break;
+            case ContentPresenter presenter when !scalarContent: if (!ReferenceEquals(presenter.Content, children.FirstOrDefault())) presenter.Content = children.FirstOrDefault(); break;
+            case ContentPresenter: break;
             case ContentControl content when !scalarContent: if (!ReferenceEquals(content.Content, children.FirstOrDefault())) content.Content = children.FirstOrDefault(); break;
             case ContentControl: break;
             default: if (children.Count != 0) throw new UiException("invalid_content", "This native factory has no child container."); break;
@@ -208,6 +232,7 @@ public sealed class UiAvaloniaRenderer : IDisposable
         if (control.Parent is Panel panel) panel.Children.Remove(control);
         else if (control.Parent is Viewbox viewbox && ReferenceEquals(viewbox.Child, control)) viewbox.Child = null;
         else if (control.Parent is Decorator decorator && ReferenceEquals(decorator.Child, control)) decorator.Child = null;
+        else if (control.Parent is ContentPresenter presenter && ReferenceEquals(presenter.Content, control)) presenter.Content = null;
         else if (control.Parent is ContentControl content && ReferenceEquals(content.Content, control)) content.Content = null;
         else if (control.Parent is ItemsControl items && items.ItemsSource == null) items.Items.Remove(control);
     }
@@ -242,6 +267,7 @@ public sealed class UiAvaloniaRenderer : IDisposable
     }
     private sealed class Entry(UiElement node, Control control, string parent, UiControlRegistration registration)
     {
+        internal UiAvaloniaControlAuthoring? Authoring;
         internal ImmutableArray<Style> Styles = [];
         internal UiElement Node = node;
         internal Control Control { get; } = control;

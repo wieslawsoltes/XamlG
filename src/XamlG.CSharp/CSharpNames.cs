@@ -12,7 +12,17 @@ internal static class CSharpNames
     public const string Provider = "global::System.IServiceProvider";
     public const string InvariantCulture = "global::System.Globalization.CultureInfo.InvariantCulture";
     public static string Identifier(string value) => "@" + value;
-    public static string Literal(string value) => SymbolDisplay.FormatLiteral(value, true);
+    public static string Literal(string value)
+    {
+        if (value == null) throw new ArgumentNullException(nameof(value));
+        // Names, paths and encoded metadata normally contain only printable ASCII.
+        // Their exact C# spelling is just a quoted copy. All escaping and Unicode
+        // decisions remain with Roslyn, including unpaired UTF-16 surrogates.
+        foreach (var character in value)
+            if (character < ' ' || character > '~' || character is '"' or '\\')
+                return SymbolDisplay.FormatLiteral(value, true);
+        return value.Length == 0 ? "\"\"" : string.Concat("\"", value, "\"");
+    }
     public static string StableId(string value)
     {
         using var hash = SHA256.Create(); return StableId(hash, value);

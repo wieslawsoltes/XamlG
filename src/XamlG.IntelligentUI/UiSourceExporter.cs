@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text.Json;
 using System.Xml.Linq;
 using XamlG.Automation;
@@ -39,6 +40,35 @@ public static class UiSourceExporter
                 element.Add(new XAttribute(property.Key, value));
             }
             foreach (var value in values) element.Add(value);
+            XElement Template(UiControlTemplate template)
+            {
+                XElement Part(UiControlTemplateNode part)
+                {
+                    var result = Convert(new UiElement("part", part.Type, part.Properties, []) { Styles = part.Styles });
+                    foreach (var binding in part.Bindings)
+                        result.SetAttributeValue(binding.Key, "{TemplateBinding " + binding.Value.Property + (binding.Value.Mode == "OneWay" ? "" : ", Mode=" + binding.Value.Mode) + "}");
+                    foreach (var child in part.Children) result.Add(Part(child));
+                    return result;
+                }
+                return new XElement(ns + "ControlTemplate", new XAttribute("TargetType", template.TargetType), Part(template.Root));
+            }
+            if (node.ControlTemplate != null) element.Add(new XElement(ns + (node.Type + ".Template"), Template(node.ControlTemplate)));
+            if (node.ControlTheme is { } theme)
+            {
+                var definition = new XElement(ns + "ControlTheme", new XAttribute("TargetType", theme.TargetType));
+                // Reuse the same typed brush/null setter export as ordinary scoped styles.
+                var holder = Convert(new UiElement("theme", node.Type, ImmutableDictionary<string, JsonElement>.Empty, [])
+                    { Styles = [new UiStyleRule(node.Type, theme.Properties)] });
+                foreach (var setter in holder.Element(ns + (node.Type + ".Styles"))!.Elements().Single().Elements()) definition.Add(new XElement(setter));
+                if (theme.Template != null) definition.Add(new XElement(ns + "Setter", new XAttribute("Property", "Template"), new XElement(ns + "Setter.Value", Template(theme.Template))));
+                foreach (var style in theme.Styles)
+                {
+                    var source = Convert(new UiElement("style", node.Type, ImmutableDictionary<string, JsonElement>.Empty, []) { Styles = [style] });
+                    var rule = new XElement(source.Element(ns + (node.Type + ".Styles"))!.Elements().Single());
+                    rule.SetAttributeValue("Selector", "^" + style.Selector[theme.TargetType.Length..]); definition.Add(rule);
+                }
+                element.Add(new XElement(ns + (node.Type + ".Theme"), definition));
+            }
             if (!node.Styles.IsDefaultOrEmpty)
             {
                 var styles = new XElement(ns + (node.Type + ".Styles"));
