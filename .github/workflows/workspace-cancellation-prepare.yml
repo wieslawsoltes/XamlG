@@ -1,0 +1,55 @@
+name: Prepare scoped workspace cancellation
+on:
+  pull_request:
+    paths:
+      - 'scripts/prepare-workspace-cancellation.py'
+      - '.github/workflows/workspace-cancellation-prepare.yml'
+permissions:
+  contents: read
+jobs:
+  prepare:
+    if: github.event.pull_request.number == 23 && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feat/msbuild-solution-workspaces'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Prepare only the reviewed source and verify every resulting file
+        id: source
+        run: |
+          if [ ! -f scripts/prepare-workspace-cancellation.py ]; then
+            echo 'active=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python scripts/prepare-workspace-cancellation.py --apply
+          git diff --check
+          echo 'active=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-dotnet@v4
+        if: steps.source.outputs.active == 'true'
+        with:
+          dotnet-version: '10.0.401'
+      - uses: actions/setup-node@v4
+        if: steps.source.outputs.active == 'true'
+        with:
+          node-version: '22'
+      - name: Git, workspace and cancellation JavaScript regressions
+        if: steps.source.outputs.active == 'true'
+        run: node --test tests/git/*.test.mjs tools/XamlG.Playground/asset-tests/solution-workspace.test.mjs tools/XamlG.Playground/asset-tests/workspace-dock-lifecycle.test.mjs tools/XamlG.Playground/asset-tests/workspace-cancellation.test.mjs
+      - name: Native workspace cancellation and service regressions
+        if: steps.source.outputs.active == 'true'
+        run: dotnet test tests/XamlG.Workspaces.Tests/XamlG.Workspaces.Tests.csproj -c Release -p:NuGetAudit=false -warnaserror --logger trx --results-directory artifacts/workspace-cancellation/native
+      - name: Publish verified immutable candidate without moving any branch
+        if: steps.source.outputs.active == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/prepare-workspace-cancellation.py --publish
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.source.outputs.active == 'true'
+        with:
+          name: workspace-cancellation-candidate
+          path: artifacts/workspace-cancellation
+          if-no-files-found: error
