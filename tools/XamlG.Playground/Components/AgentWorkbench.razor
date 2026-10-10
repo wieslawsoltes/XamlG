@@ -2,7 +2,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JavaScript
 
-<section class="agent-workbench" aria-label="Coding agent workbench">
+<section class="agent-workbench @(_expanded ? "is-expanded" : "")" aria-label="Coding agent workbench">
     <div class="agent-shell">
     <header class="agent-heading">
         <span class="agent-avatar"><AgentIcon Name="Agent" /></span>
@@ -10,6 +10,7 @@
         <span class="tab-spacer"></span>
         @if (AnyRunning) { <button class="agent-stop" @onclick='() => CommandAsync("stop", new { })'>Stop</button> }
         <button class="agent-icon-button" @onclick="RefreshAsync" disabled="@_refreshing" aria-label="Refresh coding agent" title="Refresh coding agent"><AgentIcon Name="Refresh" /></button>
+        <button class="agent-icon-button" @onclick="() => _expanded = !_expanded" aria-label="@(_expanded ? "Return to dock" : "Expand agent workspace")" title="@(_expanded ? "Return to dock" : "Expand agent workspace")"><AgentIcon Name="@(_expanded ? "Collapse" : "Expand")" /></button>
     </header>
     <nav class="agent-navigation" aria-label="Agent sections">
         @foreach (var section in Sections)
@@ -185,6 +186,7 @@
             @if (_state.Pending.Any(pending => pending.TaskId == selected.Id) && !PaneVisible("Conversation"))
             { <button class="agent-pending-notice" @onclick='() => SelectSectionAsync("Conversation")'>Your response is needed · open conversation</button> }
             <section class="agent-section agent-section-conversation" hidden="@(!PaneVisible("Conversation"))" aria-label="Agent conversation">
+            <div class="agent-conversation-body">
             @if (ThreadHasEarlier || Thread.Page != null)
             {
                 <div class="agent-thread-toolbar"><button @onclick="() => PageThreadAsync(true)" disabled="@(Thread.Busy || !ThreadHasEarlier)">Earlier messages</button><button @onclick="() => PageThreadAsync(false)" disabled="@(Thread.Busy || !ThreadHasLater)">Newer messages</button><button @onclick="FollowThreadAsync">Follow latest</button></div>
@@ -281,6 +283,7 @@
             @if (selected.Status == "paused")
             { <div class="agent-resume-banner" role="status"><span>@selected.StatusReason</span><button @onclick="ResumeAsync" disabled="@(selected.IsPreviousWorkspace || AnyRunning || selected.RetryAfterUtc > DateTimeOffset.UtcNow)">Resume</button></div> }
             @if (IsRunning(selected)) { <div class="agent-working" role="status"><span class="agent-working-dot"></span>@(selected.Status == "awaitingAnswer" ? "Waiting for your answer" : selected.Status == "awaitingApproval" ? "Waiting for approval" : selected.Mode == "plan" ? "Planning" : "Working")<span>Follow-ups are queued for the next turn.</span></div> }
+            </div>
             <div class="agent-composer" data-mode="@selected.Mode">
             <label><textarea aria-label="Message" title="Enter to send · Shift+Enter for a new line" @ref="_composerElement" data-task-id="@selected.Id" data-can-submit="@(CanSend ? "true" : "false")" data-can-stop="@(IsRunning(selected) ? "true" : "false")" value="@_draft" @oninput="DraftChangedAsync" rows="2" maxlength="100000" placeholder="@ComposerPlaceholder" /></label>
             <div class="agent-composer-toolbar">
@@ -302,7 +305,7 @@
             </div>
             @if (!ProviderReady) { <button class="agent-composer-notice" @onclick='() => SelectSectionAsync("Connection")'>Connect a provider to start <AgentIcon Name="Arrow" /></button> }
             </div>
-            <div class="agent-composer-footer"><button @onclick='() => SelectSectionAsync("Permissions")'><AgentIcon Name="Permissions" />@(_profile == "autoEdit" ? "Auto edit" : _profile == "fullAccess" ? "Full access" : _profile == "readOnly" ? "Read only" : "Ask before changes")</button><span>Enter to send · ⇧ Enter for a new line</span></div>
+            <div class="agent-composer-footer"><button @onclick='() => SelectSectionAsync("Permissions")'><AgentIcon Name="Permissions" />@(_profile switch { "autoEdit" => "Auto edit", "fullAccess" => "Full access", "readOnly" => "Read only", "custom" => "Custom permissions", "plan" => "Plan permissions", _ => "Ask before changes" })</button><span>Enter to send · ⇧ Enter for a new line</span></div>
             </section>
             <section class="agent-section agent-section-permissions" hidden="@(!PaneVisible("Permissions"))" aria-label="Agent permissions">
             <div class="agent-section-heading"><div><h3>Permissions &amp; limits</h3><p>Control what this task can do and spend.</p></div><AgentIcon Name="Permissions" /></div>

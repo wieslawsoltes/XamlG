@@ -8,7 +8,7 @@ public partial class AgentWorkbench
 {
     private static readonly Dictionary<string, ComposerSubmission> Submissions = new(StringComparer.Ordinal);
     private static readonly Dictionary<string, long> DraftVersions = new(StringComparer.Ordinal);
-    private bool _sending, _showGoalEditor, _goalBusy;
+    private bool _sending, _showGoalEditor, _goalBusy, _expanded;
     private string _goalObjective = "", _goalBudget = "";
     private bool CanSend => Selected is { IsPreviousWorkspace: false } task && task.Status is not ("cancelled" or "failed") &&
         (!AnyRunning || IsRunning(task)) && ProviderReady && !_modelsBusy && !_sending && !_reviewBusy && !string.IsNullOrWhiteSpace(_draft) && _runReview == null;
@@ -120,7 +120,7 @@ public partial class AgentWorkbench
     }
 
     private void OpenGoalEditor()
-    { _goalObjective = _draft; _goalBudget = ""; _showGoalEditor = true; }
+    { _goalObjective = _draft.Trim() == "/goal" ? "" : _draft; _goalBudget = ""; _showGoalEditor = true; }
     private async Task StartGoalAsync()
     {
         if (_sending || _goalBusy || Selected == null || string.IsNullOrWhiteSpace(_goalObjective)) return;

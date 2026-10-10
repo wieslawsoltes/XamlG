@@ -10,7 +10,7 @@ test('direct sending queues and steers live work, then Stop resumes the same thr
     if (sequence === 1) {
       sendAgentEvent(response, agentDelta('Inspecting the project…'));
       finishFirst = () => { sendAgentEvent(response, agentReply('First response', sequence + 1)); response.end(); };
-    } else if (sequence === 4) {
+    } else if (sequence === 4 || sequence === 6) {
       sendAgentEvent(response, agentDelta('Unfinished work before stopping.'));
     } else { sendAgentEvent(response, agentReply(`Finished turn ${sequence}`, sequence + 1)); response.end(); }
   }, async ({ pane, api, requests }) => {
@@ -41,6 +41,20 @@ test('direct sending queues and steers live work, then Stop resumes the same thr
     expect(requests).toHaveLength(5);
     expect(JSON.stringify(requests[4].input)).not.toContain('Unfinished work before stopping.');
     expect((await api('state')).tasks).toHaveLength(1);
+    await composer.fill('One more interrupted turn'); await composer.press('Enter');
+    await expect.poll(() => requests.length).toBe(6);
+    await expect(pane.locator('.agent-working')).toBeVisible();
+    await composer.press('Escape');
+    await expect(pane.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
+    await agentSection(pane, 'Permissions');
+    await pane.getByLabel('Review every run before sending').check();
+    await agentSection(pane, 'Conversation');
+    await composer.fill('Finish with this reviewed follow-up');
+    await pane.getByRole('button', { name: 'Send message', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Review agent run' }).getByRole('button', { name: 'Confirm run', exact: true }).click();
+    await completedTask(api, id);
+    expect(requests).toHaveLength(8);
+    expect(JSON.stringify(requests[7].input)).toContain('Finish with this reviewed follow-up');
     await expect(pane.locator('.agent-composer')).toBeInViewport();
     await page.screenshot({ path: test.info().outputPath('agent-workflow.png'), fullPage: true });
   });

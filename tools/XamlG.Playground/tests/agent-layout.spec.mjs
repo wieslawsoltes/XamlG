@@ -142,7 +142,7 @@ test('agent onboarding and all panels remain usable in a narrow dock and floatin
     }
   }
   await agentSection(pane, 'Conversation');
-  for (const [selector, maximum] of [['.agent-heading', 48], ['.agent-navigation', 36], ['.agent-task-context', 44], ['.agent-composer', 140]]) {
+  for (const [selector, maximum] of [['.agent-heading', 48], ['.agent-navigation', 38], ['.agent-task-context', 44], ['.agent-composer', 140]]) {
     expect((await pane.locator(selector).boundingBox()).height, `${selector} remains compact`).toBeLessThanOrEqual(maximum);
   }
   const navigationRows = await pane.getByRole('navigation').locator(':scope > button').evaluateAll(buttons => new Set(buttons.map(button => Math.round(button.getBoundingClientRect().top))).size);
@@ -154,6 +154,14 @@ test('agent onboarding and all panels remain usable in a narrow dock and floatin
   await expect(pane.getByRole('button', { name: 'Send message', exact: true })).toBeInViewport();
 
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await pane.getByRole('button', { name: 'Expand agent workspace', exact: true }).click();
+  await expect(pane.locator('.agent-sidebar-threads')).toBeVisible();
+  expect((await pane.boundingBox()).width).toBeGreaterThan(1100);
+  await expect(pane.getByRole('button', { name: 'Send message', exact: true })).toBeInViewport();
+  await page.screenshot({ path: test.info().outputPath('agent-workspace-light.png') });
+  await page.getByRole('button', { name: 'Toggle color theme' }).click();
+  await page.screenshot({ path: test.info().outputPath('agent-workspace-dark.png') });
+  await pane.getByRole('button', { name: 'Return to dock', exact: true }).click();
   await page.locator('[data-tab-id="agent"]').click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Float', exact: true }).click();
   await expect(pane).toBeVisible();

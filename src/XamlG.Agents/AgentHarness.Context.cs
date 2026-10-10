@@ -28,7 +28,8 @@ public sealed partial class AgentHarness
             if (clientMessageId != null)
             {
                 task.Submissions.Add(clientMessageId, fingerprint);
-                if (task.Submissions.Count > 256) task.Submissions.Remove(task.Submissions.Keys.First());
+                if (task.Submissions.Count > 256)
+                    task.Submissions.Remove(task.Submissions.Keys.First(key => !task.FollowUps.Any(queued => queued.Id == key)));
             }
         }
         Publish(task, "queue_changed", delivery == AgentMessageDelivery.Steer ? "Steering will apply at the next safe boundary." : "A follow-up was queued for the next turn.");

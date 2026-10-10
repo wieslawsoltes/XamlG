@@ -79,6 +79,9 @@ restore already-sent text. Manual dispatch and a review before every run remain
 available in **Permissions → Sending**; Full Access still requires acknowledgement.
 
 The conversation adds a mode picker, proposed-plan handoff, goal status, inline
-queue, resume state and a responsive thread sidebar. This is an ongoing overhaul;
+queue, resume state and a responsive thread sidebar. **Expand agent workspace**
+opens the wider conversation layout; **Return to dock** restores the IDE pane.
+The composer stays visible while status and queue details scroll above it.
+This is an ongoing overhaul;
 native workflow tests and a successful UI build do not establish complete visual
 or provider parity. Current browser and CI evidence belongs in the PR.

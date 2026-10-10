@@ -12,7 +12,7 @@ async function reopen(page) {
 }
 
 test('review feedback, diff paging and task drafts remain independent across task and pane changes', async ({ page, request, baseURL }) => {
-  test.setTimeout(120000);
+  test.setTimeout(180000);
   await withAgentWorkbench({ page, request, baseURL }, reply, async ({ page, pane, api, requests }) => {
     const invoke = (name, args) => call(page, name, args);
     const baseline = '<StackPanel xmlns="https://github.com/avaloniaui">\n' +

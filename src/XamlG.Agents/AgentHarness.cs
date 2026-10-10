@@ -149,6 +149,11 @@ public sealed partial class AgentHarness(IAutomationHost host, IAgentWorkspace? 
                 if (planRevision != null) task.ProposedPlan = task.ProposedPlan! with { Accepted = true };
                 started = true; task.Status = AgentTaskStatus.Running; task.StatusReason = null;
             }
+            // A resumed batch may have been prepared in Code mode. Close it before
+            // asking the provider to reconsider the work under read-only authority.
+            if (task.Mode == AgentCollaborationMode.Plan && task.PendingReply is { } suspended &&
+                suspended.ToolCalls.Skip(task.NextTool).Any(call => catalog[call.Name].Effects.Any(effect => effect.Effect != AutomationEffect.Read)))
+                RetirePendingTools(task, "Plan mode superseded this operation before it ran. Reconsider the request using inspection tools only.");
             if (message != null) Publish(task, "user", message);
             await SaveSessionAsync(lease.Token);
             var budget = new RunBudget(); var calls = 0; var turnWork = 0;

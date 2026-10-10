@@ -254,7 +254,13 @@ public partial class AgentWorkbench
             _error = null;
             if (review.Compact) await RequestAsync<JsonElement>("compact", new { id = review.Id, options = review.Options, confirmed = true });
             else if (review.Message != null)
+            {
                 await SubmitTextAsync(review.Id, review.Message, review.Options, fullAccessAcknowledged: _fullAccessAcknowledged);
+                await RefreshAfterCommandAsync();
+                if (_state.Tasks.FirstOrDefault(task => task.Id == review.Id)?.Status == "paused" && !AnyRunning)
+                    await RequestAsync<JsonElement>("run", new { id = review.Id, message = (string?)null, options = review.Options,
+                        confirmed = true, fullAccessAcknowledged = _fullAccessAcknowledged });
+            }
             else await RequestAsync<JsonElement>("run", new { id = review.Id, message = review.Message, options = review.Options,
                 confirmed = true, fullAccessAcknowledged = _fullAccessAcknowledged, queuedMessageId = review.QueuedId, expectedQueueRevision = review.QueueRevision, planRevision = review.PlanRevision });
             _runReview = null; _fullAccessAcknowledged = false;

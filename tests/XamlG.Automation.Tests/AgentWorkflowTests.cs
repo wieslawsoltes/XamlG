@@ -101,6 +101,24 @@ public sealed class AgentWorkflowTests
     }
 
     [Fact]
+    public async Task Resuming_in_plan_mode_retires_an_unstarted_edit_batch_without_replaying_it()
+    {
+        var provider = new ScriptedAgentProvider(); var effects = new List<int>();
+        provider.Add(ScriptedAgentProvider.Call(Edit("one", 1), Edit("two", 2)));
+        provider.Add(ScriptedAgentProvider.Done("Inspect the source, then review the proposed edit."));
+        using var harness = new AgentHarness(Host(effects)); var task = harness.CreateTask("Change mode", provider, "fixture", Token);
+        await harness.RunAsync(task.Id, "Prepare both edits", Options with { Limits = new() { ToolsPerRun = 1 } }, cancellationToken: Token);
+        Assert.Equal(AgentTaskStatus.Paused, task.Status); Assert.Empty(effects);
+        harness.SetMode(task.Id, AgentCollaborationMode.Plan);
+        await harness.RunAsync(task.Id, null, Options with { Mode = AgentCollaborationMode.Plan }, cancellationToken: Token);
+        Assert.Empty(effects); Assert.Equal(AgentTaskStatus.Completed, task.Status); Assert.NotNull(task.ProposedPlan);
+        var results = provider.Requests[1].Messages.Where(message => message.Kind == AgentMessageKind.ToolResult).ToArray();
+        Assert.Equal(["one", "two"], results.Select(result => result.ToolCallId));
+        Assert.All(results, result => Assert.Contains("Plan mode superseded", result.Text));
+        Assert.DoesNotContain(provider.Requests[1].Tools, tool => tool.Name == "edit");
+    }
+
+    [Fact]
     public async Task Proposed_plan_is_revision_checked_and_accepted_only_after_successful_preflight()
     {
         var provider = new ScriptedAgentProvider(); provider.Add(ScriptedAgentProvider.Done("1. Inspect View.axaml\n2. Implement keyboard navigation\n3. Verify focus order"));
@@ -216,6 +234,23 @@ public sealed class AgentWorkflowTests
         Assert.Single(provider.Requests);
         await Assert.ThrowsAsync<AutomationException>(() => restored.ExecuteAsync("send",
             AutomationJson.Element(new { id = task.Id, text = "Different content", clientMessageId = "submission-1", options = Options }), Token));
+    }
+
+    [Fact]
+    public void Receipt_eviction_keeps_the_identity_of_messages_still_in_the_queue()
+    {
+        using var harness = new AgentHarness(new AutomationCatalog());
+        var task = harness.CreateTask("Long queue", new ScriptedAgentProvider(), "fixture", Token);
+        harness.QueueMessage(task.Id, "Retain this follow-up", clientMessageId: "pending");
+        for (var i = 0; i < 260; i++)
+        {
+            var id = "removed-" + i;
+            harness.QueueMessage(task.Id, "Removed follow-up", clientMessageId: id);
+            harness.RemoveQueuedMessage(task.Id, id, task.Queue.Revision);
+        }
+        harness.QueueMessage(task.Id, "Retain this follow-up", clientMessageId: "pending");
+        Assert.Equal("pending", Assert.Single(task.Queue.Messages).Id);
+        Assert.Equal(256, harness.CaptureSession().Tasks.Single().Submissions.Count);
     }
 
     [Fact]
