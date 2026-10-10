@@ -5,7 +5,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JavaScript
 
-<section class="ws-explorer" aria-label="Solution Explorer">
+<section class="ws-explorer" aria-label="Solution Explorer" data-entry-path="@Session.Snapshot.EntryPath">
     <div class="ws-heading"><strong>SOLUTION EXPLORER</strong><small>@(Session.IsLocal ? "LOCAL" : "BROWSER")</small></div>
     <div class="ws-toolbar">
         <button @onclick='() => NewRequested.InvokeAsync("solution")' disabled="@Disabled" title="Create a solution and optional project">New solution</button>
@@ -24,9 +24,11 @@
     </details>
     @if (_error != null || Session.Error != null) { <p class="ws-error" role="alert">@(_error ?? Session.Error)</p> }
     <label class="ws-field">Solution / project
+        @* Keep selection in markup as well as the live value property. Docked Razor
+           templates must not recover an obsolete selected index after options move. *@
         <select @key="_entryOptionsKey" aria-label="Workspace solution or project" @bind:get="Session.Snapshot.EntryPath" @bind:set="EntryChangedAsync" disabled="@Disabled">
-            <option value="">Choose an entry file</option>
-            @foreach (var path in Session.EntryPaths) { <option @key="path" value="@path">@path</option> }
+            <option value="" selected="@(Session.Snapshot.EntryPath == null)">Choose an entry file</option>
+            @foreach (var path in Session.EntryPaths) { <option @key="path" value="@path" selected="@(path == Session.Snapshot.EntryPath)">@path</option> }
         </select>
     </label>
     <div class="ws-toolbar">
@@ -46,7 +48,7 @@
                  @onclick="() => Select(row.Node)" @ondblclick="() => OpenAsync(row.Node)" @onkeydown="args => KeyAsync(row.Node, args)">
                 <button class="ws-expander" tabindex="-1" aria-label="@(_expanded.Contains(row.Node.Id) ? "Collapse " + row.Node.Label : "Expand " + row.Node.Label)" disabled="@(row.Node.Children.Count == 0)" @onclick="() => Toggle(row.Node)" @onclick:stopPropagation="true">@(row.Node.Children.Count == 0 ? "·" : _expanded.Contains(row.Node.Id) ? "▾" : "▸")</button>
                 <span class="ws-file-symbol">@Icon(row.Node)</span><span class="ws-tree-label">@row.Node.Label</span>
-                @if (Session.Snapshot.StartupProject == row.Node.Path) { <span title="Startup project">★</span> }
+                @if (row.Node.Kind == "project" && Session.Snapshot.StartupProject is { } startup && startup == row.Node.Path) { <span title="Startup project">★</span> }
             </div>
         </Virtualize>
     </div>
@@ -74,7 +76,7 @@
             <button @onclick="MoveAsync" disabled="@Disabled">Apply move</button><button @onclick="() => _moveSource = null">Cancel</button>
         }
         <label class="ws-field">Selected project
-            <select @bind="Session.SelectedProject"><option value="">Choose a project</option>@foreach (var project in Session.Description.Projects.Where(project => project.Loaded)) { <option @key="project.Path" value="@project.Path">@project.Name</option> }</select>
+            <select @bind="Session.SelectedProject"><option value="" selected="@(Session.SelectedProject == null)">Choose a project</option>@foreach (var project in Session.Description.Projects.Where(project => project.Loaded)) { <option @key="project.Path" value="@project.Path" selected="@(project.Path == Session.SelectedProject)">@project.Name</option> }</select>
         </label>
         <label class="ws-field">Property <input @bind="_propertyName" placeholder="TargetFramework" /></label>
         <label class="ws-field">Value <input @bind="_propertyValue" placeholder="net10.0" /></label>
@@ -86,7 +88,7 @@
         <button @onclick="RemovePackageAsync" disabled="@(Disabled || Session.SelectedProject == null || _package.Length == 0)">Remove package reference</button>
         <p class="ws-hint">Leave the version empty only when the repository manages package versions centrally. Removal affects authored unconditional references, not imported or conditional items.</p>
         <label class="ws-field">Project reference
-            <select @bind="_reference"><option value="">Choose a project</option>@foreach (var project in Session.Inventory.Where(file => WorkspacePath.IsProject(file.Path))) { <option @key="project.Path" value="@project.Path">@project.Path</option> }</select>
+            <select @bind="_reference"><option value="" selected="@(_reference.Length == 0)">Choose a project</option>@foreach (var project in Session.Inventory.Where(file => WorkspacePath.IsProject(file.Path))) { <option @key="project.Path" value="@project.Path" selected="@(project.Path == _reference)">@project.Path</option> }</select>
         </label>
         <button @onclick="AddReferenceAsync" disabled="@(Disabled || Session.SelectedProject == null || _reference.Length == 0)">Add project reference</button>
         <button @onclick="RemoveReferenceAsync" disabled="@(Disabled || Session.SelectedProject == null || _reference.Length == 0)">Remove project reference</button>
@@ -96,7 +98,7 @@
         <details class="ws-management"><summary>Solution membership and configurations</summary>
             <label class="ws-field">Solution folder <input @bind="_solutionFolder" placeholder="src" /></label>
             <button @onclick="AddSolutionFolderAsync" disabled="@(Disabled || _solutionFolder.Length == 0)">Add solution folder</button>
-            <label class="ws-field">Existing project <select @bind="_solutionProject"><option value="">Choose a project</option>@foreach (var project in Session.Inventory.Where(file => WorkspacePath.IsProject(file.Path))) { <option @key="project.Path" value="@project.Path">@project.Path</option> }</select></label>
+            <label class="ws-field">Existing project <select @bind="_solutionProject"><option value="" selected="@(_solutionProject.Length == 0)">Choose a project</option>@foreach (var project in Session.Inventory.Where(file => WorkspacePath.IsProject(file.Path))) { <option @key="project.Path" value="@project.Path" selected="@(project.Path == _solutionProject)">@project.Path</option> }</select></label>
             <button @onclick="AddMembershipAsync" disabled="@(Disabled || _solutionProject.Length == 0)">Add to solution</button>
             <button @onclick="RemoveMembershipAsync" disabled="@(Disabled || _solutionProject.Length == 0)">Remove from solution</button>
             <p class="ws-hint">Removing solution membership does not delete project files.</p>
