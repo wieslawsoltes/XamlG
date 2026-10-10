@@ -16,7 +16,7 @@ public sealed class UiDiscoveryAndProposalParityTests
         var catalog = new AutomationCatalog(); var store = new UiSessionStore();
         using var ui = new UiAutomation(catalog, store);
         var result = await catalog.CallAsync("xamlg_ui_catalog", J(new { }), new("test", PrincipalId: "owner"));
-        Assert.Equal(42, result.GetProperty("components").GetArrayLength());
+        Assert.Equal(UiCatalog.Default.Components.Keys.Order(), result.GetProperty("components").EnumerateArray().Select(component => component.GetProperty("name").GetString()!).Order());
         Assert.Equal(18, result.GetProperty("composites").GetArrayLength());
         Assert.Contains(result.GetProperty("composites").EnumerateArray(), component =>
             component.GetProperty("name").GetString() == "ui:SubmitButton" && component.GetProperty("supportsAction").GetBoolean());

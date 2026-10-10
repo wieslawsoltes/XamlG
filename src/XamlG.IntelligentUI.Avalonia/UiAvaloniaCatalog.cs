@@ -139,7 +139,7 @@ public sealed class UiAvaloniaCatalog
         }, Input(TimePicker.SelectedTimeProperty, value => value?.ToString("c", CultureInfo.InvariantCulture)));
         Add<Rectangle>("Rectangle", p => { Shape(p); p["RadiusX"] = Set(Rectangle.RadiusXProperty, Number); p["RadiusY"] = Set(Rectangle.RadiusYProperty, Number); });
         Add<Ellipse>("Ellipse", Shape); Add<Line>("Line", p => { Shape(p); p["StartPoint"] = Set(Line.StartPointProperty, PointValue); p["EndPoint"] = Set(Line.EndPointProperty, PointValue); });
-        return new(entries);
+        return new(UiAvaloniaFeatureCatalog.Extend(entries));
     }
     private static Func<Control, AvaloniaPropertyChangedEventArgs, JsonElement?> Input<T, TResult>(AvaloniaProperty<T> property, Func<T, TResult> convert) =>
         (control, args) => args.Property == property ? JsonSerializer.SerializeToElement(convert((T)control.GetValue(property)!)) : null;

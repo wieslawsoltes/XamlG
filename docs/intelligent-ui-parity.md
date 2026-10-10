@@ -1,10 +1,10 @@
 # Intelligent UI parity and rich authoring
 
-This guide describes the implementation in PR #19, extending the core contracts in [Intelligent Avalonia UI](intelligent-ui.md). It is a behavioral implementation using Avalonia XAML/C#, not a claim of compatibility with a private ChatGPT protocol. [OpenUI's architectural observation](https://www.openui.com/blog/how-chatgpt-intelligent-ui-works) is a third-party reference; [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview) is the public interoperability target.
+This guide describes rich authoring introduced in PR #19, extending the core contracts in [Intelligent Avalonia UI](intelligent-ui.md). The native catalog and rendering extensions in PR #22 are documented in the [Avalonia fidelity and contract audit](intelligent-ui-avalonia-fidelity.md). This is a behavioral implementation using Avalonia XAML/C#, not a claim of compatibility with a private ChatGPT protocol. [OpenUI's architectural observation](https://www.openui.com/blog/how-chatgpt-intelligent-ui-works) is a third-party reference; [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview) is the public interoperability target.
 
 ## Current vocabulary
 
-The reusable compiler has **42 native controls plus 18 source-only composites**. `xamlg_ui_catalog` returns both schemas, limits, namespaces, authoring guidance and complete pricing, counter, dashboard and form examples. The normal Studio/companion registration exposes **23 tools**, including `xamlg_ui_state_action`; the six form-lifecycle tools retain ordinary authorization and grant no new authority.
+The reusable compiler has **47 native controls plus 18 source-only composites**. `xamlg_ui_catalog` returns both schemas, limits, namespaces, authoring guidance and complete pricing, counter, dashboard, form and vector-drawing examples. The normal Studio/companion registration exposes **23 tools**, including `xamlg_ui_state_action`; the six form-lifecycle tools retain ordinary authorization and grant no new authority.
 
 | Composite family | Elements |
 | --- | --- |
@@ -141,7 +141,7 @@ A publish operation has a **20-second** wall-clock deadline and subsequent comma
 | Executable code | Genuine C# requires exact-source owner review and uses the dedicated worker/supervisor, command deadlines and bounded Wasm memory described above. OS/process isolation and whole-browser memory/CPU quotas are not claimed. |
 | Protocol and pixels | Public MCP Apps is supported with portable fallback. Private ChatGPT DIL/operation-wire compatibility and pixel-identical rendering across hosts are not claimed. |
 
-Component counts alone are not full parity. The remaining entries above must be addressed and verified before making a broader parity claim.
+Component counts alone are not full parity. The remaining entries above and the [Avalonia fidelity matrix](intelligent-ui-avalonia-fidelity.md#remaining-work-for-broader-parity) must be addressed and verified before making a broader parity claim.
 
 The .NET suite includes contextual-action, form, input-limit, discovery, native control, archive and MCP tests. The portable suite executes the embedded resource. `intelligent-ui-parity.spec.mjs` imports `intelligent-ui-forms.cases.mjs`; these run the actual published Avalonia/Wasm guest against the companion to exercise native local actions, forms, keyed row reordering, chart updates, surface replacement and approved C# execution.
 
@@ -155,4 +155,4 @@ npx playwright test --config=playwright.ui.config.mjs
 python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/intelligent-ui-lifecycle.spec.mjs tests/intelligent-ui-parity.spec.mjs
 ```
 
-Source tests, completed CI runs, a merged PR, published NuGet packages and a deployed Pages site are distinct evidence. PR #19 records checks by exact commit; a passing parent does not certify a later head.
+Source tests, completed CI runs, a merged PR, published NuGet packages and a deployed Pages site are distinct evidence. PR #19 and PR #22 record checks by exact commit; a passing parent does not certify a later head.

@@ -53,12 +53,13 @@ internal sealed partial class UiCompositeLowerer(UiCatalog catalog, UiLimits lim
             foreach (var child in node.Children) Check(child, depth + 1);
         }
         foreach (var root in result) Check(root, 0);
+        UiStyleTree.Validate(result);
         return result;
     }
     private UiElement LowerNode(UiElement node)
     {
         if (!node.Type.StartsWith("ui:", StringComparison.Ordinal))
-            return Make(node.Key, node.Type, node.Properties, node.Children.Select(LowerNode), node.StateKey, node.ActionId);
+            return Make(node.Key, node.Type, node.Properties, node.Children.Select(LowerNode), node.StateKey, node.ActionId) with { Styles = node.Styles };
         switch (node.Type)
         {
             case "ui:Heading":

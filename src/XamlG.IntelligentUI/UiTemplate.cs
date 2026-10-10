@@ -35,6 +35,7 @@ public sealed class UiTemplate
             }
             return result.ToImmutable();
         }
+        if (node.Context != null) item = node.Context.Resolve(state, data, item);
         if (node.When != null && !UiExpression.Bool(UiJson.Value(node.When.Evaluate(state, data, item)))) return [];
         if (++count > _limits.Nodes) throw new UiException("node_limit", "Expanded UI exceeds the node limit.");
         var nodeKey = scope + "/" + node.Key;
@@ -48,7 +49,10 @@ public sealed class UiTemplate
         var children = ImmutableArray.CreateBuilder<UiElement>();
         foreach (var child in node.Children) children.AddRange(RenderNode(child, state, data, item, scope, keys, ref count));
         var element = new UiElement(nodeKey, node.Component.Name, properties, children.ToImmutable(), node.StateKey, node.ActionId)
-        { ActionItem = node.ActionId == null ? null : item };
+        { ActionItem = node.ActionId == null ? null : item,
+            Styles = node.Styles.Select(style => new UiStyleRule(style.Selector, style.Properties.ToImmutableDictionary(
+                p => p.Key, p => style.Target.Properties[p.Key].Validate(p.Value.Resolve(state, data, item)), StringComparer.Ordinal))).ToImmutableArray() };
+        UiStyles.Validate(element.Styles, _catalog, _limits.TextCharacters);
         UiTreeValidation.ValidateElement(element, node.Component, _limits.TextCharacters);
         return [element];
     }

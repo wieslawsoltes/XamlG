@@ -35,15 +35,17 @@ function validSnapshot(value){
   if(marker&&(value.id!==marker.id||value.sessionId!==marker.sessionId))throw new Error('This UI session was released or replaced.');
   const seen=new Set();let count=0;
   function check(node,depth){
-    if(++count>4096||depth>48||!types.has(node.type)&&!widgets.has(node.type)||typeof node.key!=='string'||node.key.length>8192||seen.has(node.key)||!Array.isArray(node.children)||!node.properties||typeof node.properties!=='object')throw new Error('Invalid component tree.');
+    if(!node||++count>4096||depth>48||!types.has(node.type)&&!widgets.has(node.type)||typeof node.key!=='string'||node.key.length>8192||seen.has(node.key)||!Array.isArray(node.children)||!node.properties||typeof node.properties!=='object')throw new Error('Invalid component tree.');
     seen.add(node.key);
     for(const [name,v]of Object.entries(node.properties)){
       if(name.length>80)throw new Error('Invalid property name.');
+      if(brushNames.has(name)){validateBrush(v);continue;}
       if(widgets.get(node.type)?.validateProperty?.(name,v))continue;
       if(v===null){if(!['Value','SelectedDate','SelectedTime'].includes(name))throw new Error('Invalid nullable property.');continue;}
       if(Array.isArray(v)){if(name!=='ItemsSource'||v.length>512||v.some(item=>typeof item!=='string'||item.length>1024))throw new Error('Invalid item source.');continue;}
       if(!['string','number','boolean'].includes(typeof v)||typeof v==='string'&&v.length>16384||typeof v==='number'&&!Number.isFinite(v))throw new Error('Invalid component property.');
     }
+    validateAvaloniaFeatures(node);
     if(node.form&&(typeof node.form.id!=='string'||node.form.id.length>8192||!['form','input','submit','summary','error'].includes(node.form.role)))throw new Error('Invalid form annotation.');
     if(node.formState&&(!Array.isArray(node.formState.fields)||node.formState.fields.length>4096||typeof node.formState.id!=='string'))throw new Error('Invalid form state.');
     for(const child of node.children)check(child,depth+1);
@@ -54,13 +56,13 @@ function number(value,min,max){if(typeof value!=='number'||!Number.isFinite(valu
 function integer(value,min,max){number(value,min,max);if(!Number.isInteger(value))throw new Error('Integer UI value required.');return value;}
 const px=(value,min=0,max=10000)=>number(value??0,min,max)+'px';
 function tuple(value,min=0,max=128){const parts=typeof value==='number'?[value]:String(value).split(/[ ,]+/).filter(Boolean).map(Number);if(![1,2,4].includes(parts.length))throw new Error('Invalid coordinate tuple.');parts.forEach(item=>number(item,min,max));return parts;}
-function thickness(value,max=128){const p=tuple(value,0,max);return(p.length===4?[p[1],p[2],p[3],p[0]]:p.length===2?[p[1],p[0]]:p).map(item=>item+'px').join(' ');}
+function thickness(value,max=128,min=0){const p=tuple(value,min,max);return(p.length===4?[p[1],p[2],p[3],p[0]]:p.length===2?[p[1],p[0]]:p).map(item=>item+'px').join(' ');}
 function radius(value){const p=tuple(value);return(p.length===4?[p[0],p[1],p[2],p[3]]:p.length===2?[p[0],p[1],p[0],p[1]]:p).map(item=>item+'px').join(' ');}
 function color(value){if(/^#[0-9a-f]{8}$/i.test(value))return '#'+value.slice(3)+value.slice(1,3);if(/^#[0-9a-f]{4}$/i.test(value))return '#'+value.slice(2)+value[1];if(/^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(value)||/^(Transparent|Black|White|Gray|Red|Green|Blue|Orange|Yellow|Purple|Pink|Silver|Navy|Teal|Lime|Maroon|Olive|Aqua|Fuchsia)$/.test(value))return value;throw new Error('Invalid catalog color.');}
 function tracks(value){const parts=String(value).split(',');if(parts.length>64)throw new Error('Too many grid tracks.');return parts.map(raw=>{const text=raw.trim();if(text==='Auto')return 'auto';if(text==='*')return '1fr';const star=text.endsWith('*');return number(Number(star?text.slice(0,-1):text),0,10000)+(star?'fr':'px');}).join(' ');}
 function reconcile(parent,children){const wanted=new Set(children);for(const child of [...parent.childNodes])if(child.nodeType!==Node.ELEMENT_NODE||!wanted.has(child))child.remove();children.forEach((child,index)=>{if(parent.children[index]!==child)parent.insertBefore(child,parent.children[index]||null);});}
 function retire(entry){boxResize.unobserve(entry.element);viewboxes.delete(entry.element);drafts.delete(entry.node.key);entry.dispose?.();entry.element.remove();}
-function retireSurface(){for(const entry of entries.values())retire(entry);entries.clear();drafts.clear();submitting.clear();root.replaceChildren();snapshot=null;review=null;$('review').hidden=true;}
+function retireSurface(){retireUiBrushes();for(const entry of entries.values())retire(entry);entries.clear();drafts.clear();submitting.clear();root.replaceChildren();snapshot=null;review=null;$('review').hidden=true;}
 function layoutViewbox(entry){
   if(disposed||!entry.element.isConnected)return;
   const child=entry.slot.firstElementChild;if(!child)return;
@@ -73,10 +75,10 @@ function layoutViewbox(entry){
   const height=p.Height??Math.min(p.MaxHeight??Infinity,h*sy),next=height+'px';if(e.style.height!==next)e.style.height=next;
   entry.slot.style.transform=`scale(${sx},${sy})`;entry.slot.style.left=Math.max(0,(aw-w*sx)/2)+'px';entry.slot.style.top=Math.max(0,(height-h*sy)/2)+'px';
 }
-function scheduleLayout(){if(layoutFrame||disposed)return;layoutFrame=requestAnimationFrame(()=>{layoutFrame=0;for(const entry of entries.values())if(entry.type==='Viewbox')layoutViewbox(entry);});}
+function scheduleLayout(){if(layoutFrame||disposed)return;layoutFrame=requestAnimationFrame(()=>{layoutFrame=0;for(const entry of entries.values())if(entry.layout)entry.layout();else if(entry.type==='Viewbox')layoutViewbox(entry);});}
 function common(element,p){
   for(const [name,css]of [['Width','width'],['Height','height'],['MinWidth','minWidth'],['MinHeight','minHeight'],['MaxWidth','maxWidth'],['MaxHeight','maxHeight']])if(p[name]!==undefined)element.style[css]=px(p[name]);
-  if(p.Margin!==undefined)element.style.margin=thickness(p.Margin);if(p.Opacity!==undefined)element.style.opacity=String(number(p.Opacity,0,1));if(p.ClipToBounds)element.style.overflow='hidden';
+  if(p.Margin!==undefined)element.style.margin=thickness(p.Margin,10000,-10000);if(p.Opacity!==undefined)element.style.opacity=String(number(p.Opacity,0,1));if(p.ClipToBounds)element.style.overflow='hidden';
   element.title=p['ToolTip.Tip']||'';
   if(p['AutomationProperties.Name'])element.setAttribute('aria-label',p['AutomationProperties.Name']);else element.removeAttribute('aria-label');
   if(p.Focusable!==undefined)element.tabIndex=p.Focusable?0:-1;
