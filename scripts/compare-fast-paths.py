@@ -100,6 +100,18 @@ def main():
         lines.append(f'| {row["name"]} | {row["before"]["Nanoseconds"] / 1000:.3f} | '
                      f'{row["after"]["Nanoseconds"] / 1000:.3f} | {row["time_ratio"]:.3f} | '
                      f'{row["before"]["AllocatedBytes"]:.0f} | {row["after"]["AllocatedBytes"]:.0f} |')
+    if 'markup_assignments' in report['runs'][0]:
+        lines += ['', '| Markup count | Source bytes before → after | IL bytes before → after | Local slots before → after |',
+                  '| --- | ---: | ---: | ---: |']
+        before = next(run for run in report['runs'] if run['variant'] == 'before')['markup_assignments']
+        after = next(run for run in report['runs'] if run['variant'] == 'after')['markup_assignments']
+        for left, right in zip(before, after, strict=True):
+            if left['Count'] != right['Count'] or left['SemanticSignature'] != right['SemanticSignature']:
+                raise RuntimeError('Markup execution metadata differs between compiler revisions.')
+            lines.append(f"| {left['Count']} | {left['SourceBytes']:,} → {right['SourceBytes']:,} | "
+                         f"{left['IlBytes']:,} → {right['IlBytes']:,} | {left['LocalSlots']} → {right['LocalSlots']} |")
+        lines += ['', 'Synthetic C# compilation includes parsing/binding/emission without analyzers; the full-catalog comparison retains normal analyzers. '
+                  'Runtime construction includes graph creation and session disposal after warmup. IL metrics include unchanged handwritten model methods.']
     lines += ['', f'Typed syntax/diagnostic/metadata/source snapshot equivalence: {report["semantic_equivalence"]}.', '', report['method']]
     text = '\n'.join(lines) + '\n'
     (output / 'results.json').write_text(json.dumps(report, indent=2) + '\n')
