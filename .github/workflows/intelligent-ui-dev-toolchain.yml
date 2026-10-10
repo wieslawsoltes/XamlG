@@ -30,9 +30,22 @@ jobs:
           dotnet restore XamlG.slnx -p:NuGetAudit=false
           find "$NUGET_PACKAGES" -name '*.nupkg' -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/xamlg-validation/package-sha256.txt"
           tar -czf "$RUNNER_TEMP/xamlg-validation-toolchain.tar.gz" -C "$RUNNER_TEMP" xamlg-validation
+          split -b 400M -d "$RUNNER_TEMP/xamlg-validation-toolchain.tar.gz" "$RUNNER_TEMP/native-part-"
       - uses: actions/upload-artifact@v4
         with:
-          name: intelligent-ui-offline-native-toolchain
-          path: ${{ runner.temp }}/xamlg-validation-toolchain.tar.gz
+          name: intelligent-ui-native-toolchain-00
+          path: ${{ runner.temp }}/native-part-00
+          compression-level: 0
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: intelligent-ui-native-toolchain-01
+          path: ${{ runner.temp }}/native-part-01
+          compression-level: 0
+          retention-days: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: intelligent-ui-native-toolchain-02
+          path: ${{ runner.temp }}/native-part-02
           compression-level: 0
           retention-days: 1
