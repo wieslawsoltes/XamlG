@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
 using XamlG.Roslyn;
@@ -56,23 +57,23 @@ internal sealed class DeferredConstructionEmitter(EmissionContext context, Sourc
             factory = ("__XamlGBuildObject_" + context.Id + "_" + _factories.Count, returnType, values);
             _factories.Add(key, factory);
         }
-        var call = "return " + factory.Name + "(" + incoming;
-        foreach (var node in values.Nodes) call += ", " + CSharpNames.Literal(node.Key) + ", " + source.Index(node);
+        var call = new StringBuilder("return ").Append(factory.Name).Append('(').Append(incoming);
+        foreach (var node in values.Nodes) call.Append(", ").Append(CSharpNames.Literal(node.Key)).Append(", ").Append(source.Index(node));
         var mappings = new List<(int Start, int Length, BoundConstantExpression Value)>();
         foreach (var (value, _) in values.Values)
         {
             var literal = CSharpNames.Constant(value.Value);
-            call += ", ";
+            call.Append(", ");
             var lineDirective = context.Document.Options.EmitLineDirectives && context.Document.Syntax.Path.Length != 0;
             if (lineDirective)
-                call += "\n#line " + (context.Document.Syntax.Lines.GetPosition(Math.Min(value.Span.Start,
-                    context.Document.Syntax.Text.Length)).Line + 1) + " " + CSharpNames.Literal(context.Document.Syntax.Path) + "\n";
+                call.Append("\n#line ").Append(context.Document.Syntax.Lines.GetPosition(Math.Min(value.Span.Start,
+                    context.Document.Syntax.Text.Length)).Line + 1).Append(' ').Append(CSharpNames.Literal(context.Document.Syntax.Path)).Append('\n');
             mappings.Add((call.Length, literal.Length, value));
-            call += literal;
-            if (lineDirective) call += "\n#line default\n";
+            call.Append(literal);
+            if (lineDirective) call.Append("\n#line default\n");
         }
-        call += ");";
-        context.Writer.Line(call);
+        call.Append(");");
+        context.Writer.Line(call.ToString());
         var start = context.Writer.Position - call.Length - 1;
         foreach (var mapping in mappings)
             context.Mappings.Add(new(new(start + mapping.Start, mapping.Length), mapping.Value.Span, context.Document.Syntax.Path));
@@ -81,7 +82,7 @@ internal sealed class DeferredConstructionEmitter(EmissionContext context, Sourc
 
     private bool Node(BoundObject value) => !value.IsRoot && value.Name == null && value.Type.IsReferenceType &&
         value.FactoryMethod == null && value.Constructor != null && value.Constructor.Parameters.Length == value.Arguments.Length &&
-        value.Constructor.Parameters.All(parameter => parameter.RefKind == RefKind.None) &&
+        value.Constructor.Parameters.All(parameter => parameter.RefKind != RefKind.None) &&
         ReferenceEquals(value.Scope, context.Document.Root!.Scope);
 
     private static bool Constant(BoundConstantExpression value, ITypeSymbol type) => value.Value == null

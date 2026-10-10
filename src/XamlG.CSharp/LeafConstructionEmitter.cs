@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
 using XamlG.Roslyn;
@@ -83,25 +84,26 @@ internal sealed class LeafConstructionEmitter(EmissionContext context, ValueEmit
 
     private string EmitCall(BoundObject value, string factory, string frame, string[] arguments, bool returnCall)
     {
-        var call = factory + "(" + frame + ", " + CSharpNames.Literal(value.Key) +
-            ", " + source.Index(value) + (arguments.Length == 0 ? string.Empty : ", " + string.Join(", ", arguments));
+        var call = new StringBuilder(factory).Append('(').Append(frame).Append(", ").Append(CSharpNames.Literal(value.Key))
+            .Append(", ").Append(source.Index(value));
+        if (arguments.Length != 0) call.Append(", ").Append(string.Join(", ", arguments));
         var mappings = new List<(int Offset, int Length, BoundAssignment Assignment)>();
         foreach (var assignment in value.Assignments.Cast<BoundSetAssignment>())
         {
             var literal = CSharpNames.Constant(((BoundConstantExpression)assignment.Value).Value);
-            call += ", ";
+            call.Append(", ");
             var lineDirective = context.Document.Options.EmitLineDirectives && context.Document.Syntax.Path.Length != 0;
             if (lineDirective)
-                call += "\n#line " + (context.Document.Syntax.Lines.GetPosition(Math.Min(assignment.Span.Start,
-                    context.Document.Syntax.Text.Length)).Line + 1) + " " + CSharpNames.Literal(context.Document.Syntax.Path) + "\n";
+                call.Append("\n#line ").Append(context.Document.Syntax.Lines.GetPosition(Math.Min(assignment.Span.Start,
+                    context.Document.Syntax.Text.Length)).Line + 1).Append(' ').Append(CSharpNames.Literal(context.Document.Syntax.Path)).Append('\n');
             mappings.Add((call.Length, literal.Length, assignment));
-            call += literal;
-            if (lineDirective) call += "\n#line default\n";
+            call.Append(literal);
+            if (lineDirective) call.Append("\n#line default\n");
         }
-        call += ")";
+        call.Append(')');
         var result = string.Empty;
         if (returnCall) context.Writer.Line("return " + call + ";");
-        else result = context.Locals.Declare(value.Type.CSharpName(), call, "object", inferred: true);
+        else result = context.Locals.Declare(value.Type.CSharpName(), call.ToString(), "object", inferred: true);
         var start = context.Writer.Position - call.Length - 2; // The declaration ends with ;\n.
         foreach (var mapping in mappings)
             context.Mappings.Add(new(new(start + mapping.Offset, mapping.Length), mapping.Assignment.Span, context.Document.Syntax.Path));
