@@ -45,7 +45,7 @@ public partial class AgentWorkbench
     private int _connectionVersion;
     private TaskView? Selected => _state.Tasks.FirstOrDefault(task => task.Id == _selectedId);
     private static bool IsRunning(TaskView task) => task.Status is "preparing" or "running" or "awaitingApproval" or "awaitingAnswer";
-    private bool AnyRunning => _state.Tasks.Any(IsRunning);
+    private bool AnyRunning => _state.RunningTaskId != null || _state.Tasks.Any(IsRunning);
     private QueueEditor QueueEdit => _queueEditors.TryGetValue(_selectedId, out var value) ? value : _queueEditors[_selectedId] = new();
     private int QueueIndex => Array.FindIndex(Selected?.Queue.Messages ?? [], message => message.Id == QueueEdit.Id);
     private ChangeView? SelectedChanges => _latestRun ? Selected?.LatestRunChanges : Selected?.Changes;
@@ -332,7 +332,7 @@ public partial class AgentWorkbench
         }
         _reference?.Dispose(); _lifetime.Dispose();
     }
-    public sealed class WorkbenchState { public string? SessionId { get; set; } public long Revision { get; set; } public bool Unchanged { get; set; } public int ToolCount { get; set; } public ConstraintView Constraints { get; set; } = new(); public ActivePermissionView? ActivePermissions { get; set; } public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; public AccountStateView? ChatGpt { get; set; } public string? ChatGptError { get; set; } }
+    public sealed class WorkbenchState { public string? SessionId { get; set; } public string? RunningTaskId { get; set; } public long Revision { get; set; } public bool Unchanged { get; set; } public int ToolCount { get; set; } public ConstraintView Constraints { get; set; } = new(); public ActivePermissionView? ActivePermissions { get; set; } public string[] Providers { get; set; } = []; public TaskView[] Tasks { get; set; } = []; public PendingView[] Pending { get; set; } = []; public OperationView[]? Operations { get; set; } = []; public AccountStateView? ChatGpt { get; set; } public string? ChatGptError { get; set; } }
     public sealed class OperationView
     {
         public string TaskId { get; set; } = "";

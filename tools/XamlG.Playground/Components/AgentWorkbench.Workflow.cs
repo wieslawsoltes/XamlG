@@ -54,6 +54,11 @@ public partial class AgentWorkbench
                 text = command;
             }
             if (_selectedId != id) return;
+            if ((_profile == "fullAccess" || Preferences.ReviewBeforeSend) && Selected is { } current && !IsRunning(current))
+            {
+                if (_draft == originalDraft) _draft = text;
+                ReviewRun(text); return;
+            }
             var options = JsonSerializer.SerializeToElement(Options());
             await SubmitTextAsync(id, text, options, steer ? "steer" : "queue");
             ClearSubmittedDraft(id, originalDraft);
@@ -104,7 +109,7 @@ public partial class AgentWorkbench
     {
         if (Selected == null || AnyRunning) return;
         if (_profile == "fullAccess" || Preferences.ReviewBeforeSend) { ReviewRun(null); return; }
-        await CommandAsync("run", new { id = _selectedId, options = Options(), confirmed = true });
+        await CommandAsync("run", new { id = _selectedId, message = (string?)null, options = Options(), confirmed = true });
     }
 
     private void ImplementPlan()
@@ -149,7 +154,7 @@ public partial class AgentWorkbench
     {
         if (Selected?.Status == "paused") { await ResumeAsync(); return; }
         if (Selected == null || AnyRunning) return;
-        if (_profile == "fullAccess") { ReviewRun("Continue working toward the active goal."); return; }
+        if (_profile == "fullAccess" || Preferences.ReviewBeforeSend) { ReviewRun("Continue working toward the active goal."); return; }
         await SubmitTextAsync(_selectedId, "Continue working toward the active goal.", JsonSerializer.SerializeToElement(Options()));
         await RefreshAfterCommandAsync();
     }

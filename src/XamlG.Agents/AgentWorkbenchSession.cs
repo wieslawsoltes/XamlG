@@ -91,7 +91,7 @@ public class AgentWorkbenchSession : IDisposable
                 _cachedPermissionExpiry = _harness.ActivePermissions?.ExpiresAt;
                 _cachedState = AutomationJson.Element(new
                 {
-                    sessionId = _sessionId, revision = stateRevision,
+                    sessionId = _sessionId, revision = stateRevision, runningTaskId = _runningId,
                     providers = ProviderIds.Order(StringComparer.Ordinal), toolCount = _harness.ToolCatalog.Count, constraints = _harness.Constraints, activePermissions = _harness.ActivePermissions,
                     chatGpt = accounts, chatGptError = accountError, tasks = _harness.Tasks.Select(task => new
                     {
