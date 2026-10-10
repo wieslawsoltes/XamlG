@@ -45,9 +45,9 @@ internal static class EmissionAnalysisProbe
         var arrayType = compilation.CreateArrayTypeSymbol(objectType);
         var signature = new StringBuilder();
 
-        // The baseline has the same internal analysis entry points but not the
-        // test friend access used by unit tests. Compile bridges once outside measurements so both
-        // revisions execute direct delegates rather than reflection per operation.
+        // This probe intentionally has no friend access. Compile bridges once
+        // outside measurements so both revisions execute direct delegates rather
+        // than reflection per operation.
         var (createContext, containsReference) = AnalysisBridges();
         foreach (var reference in new[] { false, true })
         {

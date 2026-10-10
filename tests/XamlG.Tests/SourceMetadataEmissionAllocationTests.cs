@@ -59,6 +59,33 @@ public sealed class SourceMetadataEmissionAllocationTests
         Assert.Equal(expected.Writer.ToString(), actual.Writer.ToString());
     }
 
+    [Fact]
+    public void PromotionPreservesMixedAssignmentKindsAndInterleavedDuplicateFingerprints()
+    {
+        var f = new EmissionAnalysisFixture();
+        var names = new[] { "Z", "Z", "A", "Z", "B", "A", "", "" };
+        var assignments = new List<BoundAssignment>();
+        var method = f.Root.Constructor!;
+        for (var i = 0; i < names.Length; i++)
+        {
+            var member = f.Member with { Name = names[i] };
+            var value = new BoundConstantExpression(null, f.Root.Type, default);
+            var span = new TextSpan(i, 1);
+            assignments.Add((i % 3) switch
+            {
+                0 => new BoundSetAssignment(member, value, span),
+                1 => new BoundAdaptedSetAssignment(member, value, [], method, span),
+                _ => new BoundDynamicSetAssignment(member, value, [], span)
+            });
+        }
+        var owner = f.Root with { Assignments = [.. assignments] };
+        using var expected = new EmissionContext(f.Document, default);
+        using var actual = new EmissionContext(f.Document, default);
+        Assert.Equal(PreviousIndex(expected, owner), new SourceInfoEmitter(actual).Index(owner));
+        expected.EmitMetadataHelpers(); actual.EmitMetadataHelpers();
+        Assert.Equal(expected.Writer.ToString(), actual.Writer.ToString());
+    }
+
     private static int PreviousIndex(EmissionContext context, BoundObject value)
     {
         var syntax = context.Document.Syntax;

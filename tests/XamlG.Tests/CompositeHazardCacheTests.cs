@@ -79,6 +79,44 @@ public sealed class CompositeHazardCacheTests
     }
 
     [Fact]
+    public void SharedHazardsMatchAnIndependentCompositionalOracle()
+    {
+        var f = new EmissionAnalysisFixture();
+        var analyze = typeof(TemporaryLocalPool).GetMethod("Analyze",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic,
+            null, [typeof(BoundExpression)], null)!;
+        // Build expected flags alongside the DAG, independently of the production
+        // child enumerator and cache. Check warm and cold contexts in reverse order.
+        const int capture = 1, raw = 2, reference = 4;
+        var nodes = new List<(BoundExpression Value, int Flags)>
+        {
+            (new BoundConstantExpression(null, f.Root.Type, default), 0),
+            (new BoundRawExpression("default!", f.Root.Type, default), raw),
+            (new BoundReferenceExpression("name", f.Root.Type, default), capture | reference)
+        };
+        var random = new Random(81763);
+        for (var i = 0; i < 160; i++)
+        {
+            var left = nodes[random.Next(nodes.Count)];
+            var right = nodes[random.Next(nodes.Count)];
+            if (i % 3 == 0)
+                nodes.Add((new BoundArrayExpression([left.Value, right.Value, left.Value], f.ArrayType, default), left.Flags | right.Flags));
+            else if (i % 3 == 1)
+                nodes.Add((new BoundCastExpression(left.Value, f.Root.Type, default), left.Flags));
+            else
+                nodes.Add((new BoundDeferredExpression(left.Value, f.Root.Type, default), (left.Flags | capture) & ~reference));
+        }
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var warm = new EmissionContext(f.Document, watchdog.Token);
+        for (var i = nodes.Count - 1; i >= 0; i--)
+        {
+            using var cold = new EmissionContext(f.Document, watchdog.Token);
+            Assert.Equal(nodes[i].Flags, Convert.ToInt32(analyze.Invoke(warm.Locals, [nodes[i].Value])));
+            Assert.Equal(nodes[i].Flags, Convert.ToInt32(analyze.Invoke(cold.Locals, [nodes[i].Value])));
+        }
+    }
+
+    [Fact]
     public void CachedCompositeLookupsStillObserveCancellation()
     {
         var f = new EmissionAnalysisFixture();
