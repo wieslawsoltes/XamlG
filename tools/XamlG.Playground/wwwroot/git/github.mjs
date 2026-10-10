@@ -2,25 +2,27 @@ import { GitError, LIMITS, requireValue } from './core.mjs';
 
 /** Fixed-origin, credential-scoped REST/GraphQL transport. Tokens are memory-only. */
 export class GitHubClient {
-    #token = ''; #fetch; #broker = null;
+    #token = ''; #fetch; #broker = null; #authEpoch = 0;
     constructor(fetcher = globalThis.fetch) { this.#fetch = fetcher; this.user = null; this.rateLimit = null; }
     async signIn(token) {
         requireValue(typeof token === 'string' && token.trim().length >= 8 && !/[\r\n\0]/.test(token), 'invalid_token', 'Enter a GitHub personal access token.');
-        const previous = this.#token, broker = this.#broker, user = this.user; this.#token = token.trim(); this.#broker = null;
-        try { this.user = await this.request('GET', '/user'); this.#broker = null; return this.user; }
-        catch (error) { this.#token = previous; this.#broker = broker; this.user = user; throw error; }
+        const epoch = ++this.#authEpoch, candidate = new GitHubClient(this.#fetch);
+        candidate.#token = token.trim();
+        const user = await candidate.request('GET', '/user');
+        requireValue(epoch === this.#authEpoch, 'stale_auth', 'This sign-in was canceled or superseded.');
+        this.#token = candidate.#token; this.#broker = null; this.user = user; return user;
     }
-    useBroker(broker) { this.#token = ''; this.#broker = broker; }
-    signOut() { this.#token = ''; this.#broker = null; this.user = null; this.rateLimit = null; }
+    useBroker(broker) { this.#authEpoch++; this.#token = ''; this.#broker = broker; this.user = null; }
+    signOut() { this.#authEpoch++; this.#token = ''; this.#broker = null; this.user = null; this.rateLimit = null; }
     get authenticated() { return !!this.#token || !!this.#broker; }
     async request(method, path, body, options = {}) { return (await this.response(method, path, body, options)).data; }
     async response(method, path, body, { signal, accept = 'application/vnd.github+json' } = {}) {
         method = method.toUpperCase();
-        requireValue(['GET', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(method), 'invalid_method', 'Unsupported API method.');
+        requireValue(['GET', 'HEAD', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(method), 'invalid_method', 'Unsupported API method.');
         requireValue(typeof path === 'string' && path.startsWith('/') && !path.startsWith('//') && !/[\\\r\n\0#]/.test(path), 'invalid_api_path', 'Use a GitHub API path, not an external URL.');
         const url = new URL(path, 'https://api.github.com');
         requireValue(url.origin === 'https://api.github.com' && !url.username && !url.password, 'invalid_api_path', 'Credentials are only sent to api.github.com.');
-        if (this.#broker) return this.#broker.call('github/api', { method, path: url.pathname + url.search, body, accept }, signal);
+        if (this.#broker) { const result = await this.#broker.call('github/api', { method, path: url.pathname + url.search, body, accept }, signal); this.rateLimit = result.rateLimit ?? null; return result; }
         const headers = { Accept: accept, 'X-GitHub-Api-Version': '2022-11-28' };
         if (this.#token) headers.Authorization = `Bearer ${this.#token}`;
         if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -31,7 +33,7 @@ export class GitHubClient {
         let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
         this.rateLimit = { remaining: response.headers.get('x-ratelimit-remaining'), reset: response.headers.get('x-ratelimit-reset'), retryAfter: response.headers.get('retry-after') };
         if (!response.ok) throw new GitError(`github_${response.status}`, data?.message ?? `GitHub returned HTTP ${response.status}.`, { status: response.status, ...this.rateLimit });
-        return { data, status: response.status, link: response.headers.get('link') };
+        return { data, status: response.status, link: response.headers.get('link'), rateLimit: this.rateLimit };
     }
     async *pages(path, { limit = 100, signal } = {}) {
         requireValue(Number.isInteger(limit) && limit >= 1 && limit <= 1000, 'invalid_limit', 'Pagination must be bounded.');
