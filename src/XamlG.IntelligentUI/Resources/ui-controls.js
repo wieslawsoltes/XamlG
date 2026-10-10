@@ -17,6 +17,11 @@ function create(node){
   if(input){input.addEventListener('change',()=>changeState(entry).catch(error));input.addEventListener('blur',()=>touchForm(entry));}
   if(node.type==='TextBox')input.addEventListener('input',()=>{if(!applying)drafts.set(entry.node.key,input.value);});
   if(input)input.addEventListener('keydown',event=>{
+    if(event.key==='Tab'&&entry.type==='TextBox'&&entry.node.properties.AcceptsTab===true&&!input.readOnly&&!event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.metaKey){
+      const remaining=input.value.length-(input.selectionEnd-input.selectionStart);
+      if(remaining<input.maxLength){input.setRangeText('\t',input.selectionStart,input.selectionEnd,'end');drafts.set(entry.node.key,input.value);}
+      event.preventDefault();return;
+    }
     if(event.key!=='Enter'||event.isComposing||event.shiftKey||event.ctrlKey||event.altKey||event.metaKey||entry.node.properties.AcceptsReturn)return;
     if(entry.node.form?.role==='input'&&!['ComboBox','ListBox'].includes(entry.type)){
       event.preventDefault();const generation=epoch;changeState(entry).then(()=>current(generation)?submitForm(entry.node.form.id):undefined).catch(error);
@@ -42,7 +47,7 @@ function accept(value){
       }
       const children=node.children.map(child=>render(child,disabled,hidden));
       const widget=widgets.get(node.type);
-      if(widget){widget.update(entry,children,{disabled,hidden});return e;}
+      if(widget){widget.update(entry,children,{disabled,hidden});applyAvaloniaFeatures(entry);return e;}
       if(p.Content!==undefined&&!children.length&&containers.has(node.type)&&node.type!=='ItemsControl')entry.slot.textContent=p.Content;
       else if(containers.has(node.type))reconcile(entry.slot,children);
       switch(node.type){
@@ -54,7 +59,7 @@ function accept(value){
         case 'DockPanel':e.style.display='flex';e.style.flexWrap='wrap';children.forEach((child,i)=>{const side=node.children[i].properties['DockPanel.Dock'];if(side==='Top'||side==='Bottom')child.style.flexBasis='100%';if(i===children.length-1&&p.LastChildFill!==false)child.style.flex='1';});break;
         case 'UniformGrid':{const cols=p.Columns||Math.max(1,Math.ceil(Math.sqrt(children.length+(p.FirstColumn||0))));e.style.display='grid';e.style.gridTemplateColumns='repeat('+integer(cols,1,64)+',minmax(0,1fr))';if(p.Rows)e.style.gridTemplateRows='repeat('+integer(p.Rows,1,64)+',minmax(0,1fr))';if(children[0]&&p.FirstColumn)children[0].style.gridColumnStart=String(p.FirstColumn+1);break;}
         case 'Border':e.style.padding=thickness(p.Padding??0);e.style.borderRadius=radius(p.CornerRadius??0);e.style.borderStyle='solid';e.style.borderWidth=thickness(p.BorderThickness??0,16);if(p.BorderBrush)e.style.borderColor=color(p.BorderBrush);break;
-        case 'TextBlock':case 'SelectableTextBlock':e.classList.add('text');e.textContent=p.Text||'';if(p.FontSize)e.style.fontSize=px(p.FontSize,8,96);e.style.fontWeight=({Normal:'400',Medium:'500',SemiBold:'600',Bold:'700'})[p.FontWeight]||'400';if(p.Foreground)e.style.color=color(p.Foreground);e.style.whiteSpace=p.TextWrapping==='Wrap'?'pre-wrap':'pre';e.style.textAlign=({Left:'left',Center:'center',Right:'right',Justify:'justify'})[p.TextAlignment]||'left';break;
+        case 'TextBlock':case 'SelectableTextBlock':e.classList.add('text');e.textContent=p.Text||'';if(p.FontSize)e.style.fontSize=px(p.FontSize,.1,512);e.style.fontWeight=({Normal:'400',Medium:'500',SemiBold:'600',Bold:'700'})[p.FontWeight]||'400';if(p.Foreground)e.style.color=color(p.Foreground);e.style.whiteSpace=p.TextWrapping==='Wrap'?'pre-wrap':'pre';e.style.textAlign=({Left:'left',Center:'center',Right:'right',Justify:'justify'})[p.TextAlignment]||'left';break;
         case 'Button':case 'RepeatButton':if(!children.length)e.textContent=p.Content||'Action';e.disabled=disabled||busy||!node.actionId;break;
         case 'TextBox':{const text=drafts.has(node.key)?drafts.get(node.key):p.Text||'';if(entry.input.value!==text)entry.input.value=text;entry.input.placeholder=p.PlaceholderText||'';entry.input.maxLength=integer(p.MaxLength??16384,1,16384);entry.input.rows=p.AcceptsReturn?3:1;entry.input.readOnly=p.IsReadOnly===true;break;}
         case 'Slider':case 'NumericUpDown':entry.input.min=String(number(p.Minimum??(node.type==='NumericUpDown'?-1000000:0),-1000000,1000000));entry.input.max=String(number(p.Maximum??(node.type==='NumericUpDown'?1000000:100),-1000000,1000000));entry.input.step=node.type==='NumericUpDown'?String(p.Increment??1):p.IsSnapToTickEnabled?String(p.TickFrequency??1):'any';entry.input.value=p.Value==null?'':String(p.Value);if(p.Orientation==='Vertical')entry.input.style.writingMode='vertical-lr';break;
@@ -70,7 +75,7 @@ function accept(value){
         case 'TimePicker':entry.input.value=p.SelectedTime?.slice(0,8)||'';entry.input.step=String((p.MinuteIncrement??1)*60);break;
         case 'Rectangle':case 'Ellipse':case 'Line':{const width=p.Width??100,height=p.Height??60,s=entry.shape;e.setAttribute('viewBox',`0 0 ${width||1} ${height||1}`);e.style.width=px(width);e.style.height=px(height);s.setAttribute('fill',p.Fill?color(p.Fill):'none');s.setAttribute('stroke',p.Stroke?color(p.Stroke):'none');s.setAttribute('stroke-width',String(p.StrokeThickness??1));if(node.type==='Rectangle'){s.setAttribute('width',width);s.setAttribute('height',height);s.setAttribute('rx',p.RadiusX??0);s.setAttribute('ry',p.RadiusY??0);}else if(node.type==='Ellipse'){s.setAttribute('cx',width/2);s.setAttribute('cy',height/2);s.setAttribute('rx',width/2);s.setAttribute('ry',height/2);}else{const a=tuple(p.StartPoint??'0,0',-1000000,1000000),b=tuple(p.EndPoint??'0,0',-1000000,1000000);if(a.length!==2||b.length!==2)throw new Error('Line points require two coordinates.');s.setAttribute('x1',a[0]);s.setAttribute('y1',a[1]);s.setAttribute('x2',b[0]);s.setAttribute('y2',b[1]);}break;}
       }
-      if(p.Background)e.style.background=color(p.Background);return e;
+      applyAvaloniaFeatures(entry);return e;
     }
     reconcile(root,value.roots.map(node=>render(node)));for(const [key,entry]of entries)if(!used.has(key)){retire(entry);entries.delete(key);}
     $('fallback').textContent=String(value.fallbackMarkdown||'').slice(0,131072);
