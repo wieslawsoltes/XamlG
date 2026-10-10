@@ -1,0 +1,35 @@
+name: Intelligent UI development toolchain
+on:
+  push:
+    branches: [feat/intelligent-ui-selectors-interactions]
+    paths: [.github/workflows/intelligent-ui-dev-toolchain.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DOTNET_INSTALL_DIR: ${{ runner.temp }}/xamlg-validation/dotnet
+      NUGET_PACKAGES: ${{ runner.temp }}/xamlg-validation/packages
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Restore public pinned packages for offline native validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet --info > "$RUNNER_TEMP/xamlg-validation/dotnet-info.txt"
+          dotnet restore XamlG.slnx -p:NuGetAudit=false
+          find "$NUGET_PACKAGES" -name '*.nupkg' -print0 | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/xamlg-validation/package-sha256.txt"
+          tar -czf "$RUNNER_TEMP/xamlg-validation-toolchain.tar.gz" -C "$RUNNER_TEMP" xamlg-validation
+      - uses: actions/upload-artifact@v4
+        with:
+          name: intelligent-ui-offline-native-toolchain
+          path: ${{ runner.temp }}/xamlg-validation-toolchain.tar.gz
+          compression-level: 0
+          retention-days: 1
