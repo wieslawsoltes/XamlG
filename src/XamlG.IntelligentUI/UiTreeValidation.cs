@@ -6,6 +6,7 @@ public static class UiTreeValidation
     public static void ValidateElement(UiElement node, UiComponent component, int textLimit = 16384)
     {
         if (node.Children.IsDefault || node.Properties == null || node.Children.Length > component.MaximumChildren ||
+            node.Children.Any(child => child is null) ||
             component.ChildTypes is { } allowed && node.Children.Any(child => !allowed.Contains(child.Type, StringComparer.Ordinal))) throw new UiException("invalid_content", "Invalid child container.");
         if (node.ActionId != null && !component.SupportsAction || node.StateKey != null && component.InputProperty == null) throw new UiException("invalid_tree", "Undeclared input or action capability.");
         var properties = node.Properties;
@@ -15,6 +16,10 @@ public static class UiTreeValidation
             definition.ValidateValue(property.Value);
             if (property.Value.ValueKind == System.Text.Json.JsonValueKind.String && property.Value.GetString()!.Length > textLimit) throw new UiException("text_limit", "Computed property text exceeds the limit.");
         }
+        UiDrawingValues.Validate(node);
+        foreach (var axis in new[] { "Width", "Height" })
+            if (properties.TryGetValue("Min" + axis, out var minimum) && properties.TryGetValue("Max" + axis, out var maximum) && minimum.GetDecimal() > maximum.GetDecimal())
+                throw new UiException("invalid_property", "Minimum size must not exceed maximum size.");
         if (node.Children.Length != 0 && (properties.ContainsKey("ItemsSource") || properties.ContainsKey("Content"))) throw new UiException("invalid_content", "Child elements conflict with Content or ItemsSource.");
         // Enforce this in the resolved tree, not only in ChangeState: declared local
         // patches, streaming publications, tool data and transport snapshots share it.
