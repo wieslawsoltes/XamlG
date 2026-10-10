@@ -20,6 +20,44 @@ concurrency:
   group: solution-workspaces-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  previous-failure-context:
+    if: github.event_name == 'pull_request' && github.head_ref == 'feat/msbuild-solution-workspaces'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: solution-workspace-summary
+          run-id: '38065140779'
+          github-token: ${{ github.token }}
+          path: prior-validation
+      - name: Bounded diagnostics from previous validation
+        shell: python
+        run: |
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          root = Path('prior-validation')
+          for report in sorted(root.rglob('*.trx')):
+              tree = ET.parse(report)
+              counters = tree.find('.//{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}Counters')
+              print(report.name, counters.attrib if counters is not None else 'No counters')
+          budget = 24000
+          for context in sorted(root.rglob('error-context.md')):
+              print('\n---', context.parent.name, '---')
+              lines = context.read_text(encoding='utf-8').splitlines()
+              selected = set(range(min(12, len(lines))))
+              for index, line in enumerate(lines):
+                  if any(word in line.lower() for word in ('alert', 'msb10', 'error:', 'exception', 'invalid', 'failed', 'exit code')):
+                      selected.update(range(max(0, index - 2), min(len(lines), index + 8)))
+              text = '\n'.join(f'{index + 1}: {lines[index]}' for index in sorted(selected))
+              text = text[:min(6000, budget)]
+              print(text)
+              budget -= len(text)
+              if budget <= 0:
+                  break
   workspace:
     runs-on: ubuntu-latest
     timeout-minutes: 25
