@@ -111,8 +111,16 @@ function applyAvaloniaFeatures(entry){
   if(p.LineHeight!==undefined)e.style.lineHeight=px(p.LineHeight,.1,10000);
   if(p.TextTrimming!==undefined&&p.TextTrimming!=='None'){e.style.overflow='hidden';e.style.textOverflow='ellipsis';}
   if(p.MaxLines>0){e.style.display='-webkit-box';e.style.webkitBoxOrient='vertical';e.style.webkitLineClamp=String(p.MaxLines);e.style.overflow='hidden';}
+  const target=entry.slot??e;
+  // The renderer resets outer nodes; owned content slots survive keyed updates.
+  // Restore only fields set by this adapter, preserving unrelated widget styles.
+  if(target!==e&&entry.contentAlignmentStyle){
+    for(const [key,value]of Object.entries(entry.contentAlignmentStyle))target.style[key]=value;
+    entry.contentAlignmentStyle=null;
+  }
   if(p.HorizontalContentAlignment!==undefined||p.VerticalContentAlignment!==undefined){
-    const target=entry.slot??e;target.style.display='flex';
+    if(target!==e)entry.contentAlignmentStyle={display:target.style.display,justifyContent:target.style.justifyContent,alignItems:target.style.alignItems};
+    target.style.display='flex';
     target.style.justifyContent=({Left:'flex-start',Center:'center',Right:'flex-end',Stretch:'flex-start'})[p.HorizontalContentAlignment]??'flex-start';
     target.style.alignItems=({Top:'flex-start',Center:'center',Bottom:'flex-end',Stretch:'stretch'})[p.VerticalContentAlignment]??'stretch';
   }
