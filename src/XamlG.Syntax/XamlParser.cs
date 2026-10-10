@@ -9,6 +9,7 @@ internal sealed class XamlParser
     private readonly XamlParseOptions _options;
     private readonly CancellationToken _cancellation;
     private readonly List<XamlDiagnostic> _diagnostics = new();
+    private XmlNamePool? _namePool;
     private int _position;
     public XamlParser(string text, XamlParseOptions options, CancellationToken cancellation)
     { _text = text; _options = options; _cancellation = cancellation; }
@@ -60,7 +61,7 @@ internal sealed class XamlParser
             return new XamlTriviaSyntax("ForbiddenDeclaration", new(start, _position - start));
         }
         if (_text[_position] == '<') return ParseElement(depth);
-        while (_position < _text.Length && _text[_position] != '<') _position++;
+        _position = XamlTextScanner.TextEnd(_text, _position);
         return new XamlTextSyntax(XmlEntityDecoder.Decode(_text.AsSpan(start, _position - start), start, AddDiagnostic, false), false, new(start, _position - start));
     }
     private XamlElementSyntax ParseElement(int depth)
@@ -68,8 +69,8 @@ internal sealed class XamlParser
         var start = _position++; var nameStart = _position; var name = ReadName();
         var nameSpan = new TextSpan(nameStart, _position - nameStart);
         if (name.Length == 0) Report("XG0004", "Expected an element name.", nameStart, 0);
-        var attributes = ImmutableArray.CreateBuilder<XamlAttributeSyntax>();
-        var names = new HashSet<string>(StringComparer.Ordinal); var selfClosing = false;
+        ImmutableArray<XamlAttributeSyntax>.Builder? attributes = null;
+        HashSet<string>? names = null; var selfClosing = false;
         while (_position < _text.Length)
         {
             _cancellation.ThrowIfCancellationRequested(); SkipWhitespace();
@@ -78,7 +79,8 @@ internal sealed class XamlParser
             if (At("<")) { Report("XG0004", "Expected '>' before the next element.", _position, 0); break; }
             var attributeStart = _position; var attributeName = ReadName(); var attributeNameSpan = new TextSpan(attributeStart, _position - attributeStart);
             if (attributeName.Length == 0) { if (_position < _text.Length) { Report("XG0005", "Invalid attribute name.", _position, 1); _position++; } continue; }
-            if (!names.Add(attributeName)) Report("XG0006", $"Duplicate attribute '{attributeName}'.", attributeStart, attributeName.Length);
+            attributes ??= ImmutableArray.CreateBuilder<XamlAttributeSyntax>(4);
+            if (DuplicateAttribute(attributes, ref names, attributeName)) Report("XG0006", $"Duplicate attribute '{attributeName}'.", attributeStart, attributeName.Length);
             SkipWhitespace();
             if (!At("=")) { Report("XG0005", "Expected '=' after the attribute name.", _position, 0); attributes.Add(new(attributeName, string.Empty, attributeNameSpan, new(_position, 0), new(attributeStart, _position - attributeStart), '"')); continue; }
             _position++; SkipWhitespace();
@@ -91,7 +93,7 @@ internal sealed class XamlParser
             }
             else
             {
-                while (_position < _text.Length && _text[_position] != quote && _text[_position] != '<') _position++;
+                _position = XamlTextScanner.AttributeValueEnd(_text, _position, quote);
                 if (_position == _text.Length || _text[_position] != quote) Report("XG0005", "Unterminated attribute value.", valueStart, _position - valueStart);
             }
             var valueSpan = new TextSpan(valueStart, _position - valueStart);
@@ -100,7 +102,7 @@ internal sealed class XamlParser
             attributes.Add(new(attributeName, value, attributeNameSpan, valueSpan, new(attributeStart, _position - attributeStart), quote == '\0' ? '"' : quote));
         }
         var opening = new TextSpan(start, _position - start); var closing = new TextSpan(_position, 0); var closingName = closing;
-        var children = ImmutableArray.CreateBuilder<XamlSyntaxNode>();
+        ImmutableArray<XamlSyntaxNode>.Builder? children = null;
         if (!selfClosing)
         {
             if (depth >= _options.MaximumDepth)
@@ -122,25 +124,37 @@ internal sealed class XamlParser
                         if (At(">")) _position++; else Report("XG0004", "Expected '>' after the closing tag.", _position, 0);
                         closing = new(closeStart, _position - closeStart); closed = true; break;
                     }
-                    var before = _position; children.Add(ParseNode(depth + 1)); if (_position == before) _position++;
+                    var before = _position;
+                    (children ??= ImmutableArray.CreateBuilder<XamlSyntaxNode>(4)).Add(ParseNode(depth + 1));
+                    if (_position == before) _position++;
                 }
                 if (!closed && _position >= _text.Length) Report("XG0007", $"Element '{name}' is missing a closing tag.", nameStart, name.Length);
             }
         }
-        return new(name, nameSpan, opening, closing, attributes.ToImmutable(), children.ToImmutable(), selfClosing, new(start, _position - start)) { EndNameSpan = closingName };
+        return new(name, nameSpan, opening, closing, attributes?.ToImmutable() ?? ImmutableArray<XamlAttributeSyntax>.Empty,
+            children?.ToImmutable() ?? ImmutableArray<XamlSyntaxNode>.Empty, selfClosing, new(start, _position - start)) { EndNameSpan = closingName };
+    }
+    private static bool DuplicateAttribute(ImmutableArray<XamlAttributeSyntax>.Builder attributes, ref HashSet<string>? names, string name)
+    {
+        // Most XAML elements have very few attributes. A bounded linear scan avoids
+        // a hash table in that case; larger elements retain expected O(a) total work.
+        if (names != null) return !names.Add(name);
+        if (attributes.Count < 8)
+        {
+            foreach (var attribute in attributes) if (attribute.Name == name) return true;
+            return false;
+        }
+        names = new(StringComparer.Ordinal);
+        foreach (var attribute in attributes) names.Add(attribute.Name);
+        return !names.Add(name);
     }
     private string ReadName()
     {
         var start = _position;
-        while (_position < _text.Length)
-        {
-            var c = _text[_position];
-            if (XmlWhitespace.IsWhitespace(c) || c is '<' or '>' or '/' or '=' or '\'' or '"' or '?' or '!') break;
-            _position++;
-        }
-        return _text.Substring(start, _position - start);
+        _position = XamlTextScanner.XmlNameEnd(_text, _position, out var hash);
+        return (_namePool ??= new(_text)).Get(start, _position - start, hash);
     }
-    private void SkipWhitespace() { while (_position < _text.Length && XmlWhitespace.IsWhitespace(_text[_position])) _position++; }
+    private void SkipWhitespace() => _position = XamlTextScanner.SkipXmlWhitespace(_text, _position);
     private bool At(string value) => _position <= _text.Length - value.Length && string.CompareOrdinal(_text, _position, value, 0, value.Length) == 0;
     private bool SkipThrough(string terminal) { var end = _text.IndexOf(terminal, _position, StringComparison.Ordinal); _position = end < 0 ? _text.Length : end + terminal.Length; return end >= 0; }
     private void Report(string code, string message, int start, int length) => AddDiagnostic(new(code, message, new(start, length)));
