@@ -43,11 +43,16 @@ test('brush replacement deduplicates paint servers and clears them on retirement
   path.properties.Stroke=null;await page.evaluate(nodes=>window.publishStyles(nodes),[path]);await expect(app.getByRole('status')).toContainText('revision 3');
   await expect(app.locator('#ui-brush-bank')).toHaveCount(0);await expect(byKey(app,'/path').locator('path')).toHaveCSS('stroke','none');
 });
-for(const bad of [{kind:'image',uri:'https://example.com'},{...linear,opacity:2},{...linear,stops:[{color:'Red',offset:2}]},{...radial,radiusX:'NaN'},{...linear,stops:Array(65).fill({color:'Red',offset:0})}]){
-  test('invalid brush preserves the committed view and paint bank: '+JSON.stringify(bad).slice(0,100),async({page})=>{
+for(const [index,bad] of [{kind:'image',uri:'https://example.com'},{...linear,opacity:2},{...linear,stops:[{color:'Red',offset:2}]},{...radial,radiusX:'NaN'},{...radial,radiusX:'1e-320'},{...linear,stops:Array(65).fill({color:'Red',offset:0})}].entries()){
+  test('invalid brush '+index+' preserves the committed view and paint bank: '+JSON.stringify(bad).slice(0,100),async({page})=>{
     const path=node('/path','Path',{Data:'M0,0 L80,40',Stroke:linear});const app=await mount(page,[path]);
     const before=await app.locator('#ui-brush-bank').innerHTML();path.properties.Stroke=bad;
     await page.evaluate(nodes=>window.publishStyles(nodes),[path]);await expect(app.getByRole('alert')).not.toBeEmpty();await expect(app.getByRole('status')).toContainText('revision 1');
     expect(await app.locator('#ui-brush-bank').innerHTML()).toBe(before);
   });
 }
+
+test('absolute gradient radii accept trailing decimal points consistently with native validation',async({page})=>{
+  const app=await mount(page,[node('/ellipse','Ellipse',{Fill:{...radial,radiusX:'50.',radiusY:'25.'}})]);
+  await expect(app.getByRole('alert')).toBeEmpty();await expect(app.locator('radialGradient')).toHaveAttribute('r','50');
+});

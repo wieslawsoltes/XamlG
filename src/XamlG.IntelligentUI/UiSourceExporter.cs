@@ -47,7 +47,7 @@ public static class UiSourceExporter
                     var style = new XElement(ns + "Style", new XAttribute("Selector", rule.Selector));
                     foreach (var setter in rule.Properties.OrderBy(p => p.Key, StringComparer.Ordinal))
                     {
-                        if (UiBrushValues.IsProperty(setter.Key) && setter.Value.ValueKind == JsonValueKind.Object)
+                        if (UiBrushValues.IsProperty(setter.Key) && setter.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Null)
                         {
                             style.Add(new XElement(ns + "Setter", new XAttribute("Property", setter.Key), new XElement(ns + "Setter.Value", UiBrushValues.ToXaml(setter.Value)))); continue;
                         }

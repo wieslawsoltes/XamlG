@@ -81,8 +81,8 @@ public static class UiBrushValues
         if (source.Length is 0 or > 80) throw Invalid("Invalid gradient radius.");
         var text = source.AsSpan().Trim(); var relative = text.EndsWith("%", StringComparison.Ordinal);
         if (relative) text = text[..^1];
-        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) || !double.IsFinite(value) || value <= 0 || value > 1000000)
-            throw Invalid("Gradient radius must be positive and finite.");
+        if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) || !double.IsFinite(value) || value < 0.000001 || value > 1000000)
+            throw Invalid("Gradient radius magnitude must be between 0.000001 and 1000000.");
         return (relative ? value / 100 : value, relative);
     }
     public static XElement ToXaml(JsonElement value)

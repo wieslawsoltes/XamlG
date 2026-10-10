@@ -8,8 +8,8 @@ function brushObject(value,allowed){
 function brushRadius(value){
   if(typeof value!=='string'||!value.length||value.length>80)throw new Error('Invalid gradient radius.');
   const text=value.trim(),relative=text.endsWith('%'),raw=relative?text.slice(0,-1):text;
-  if(!/^[+]?\d*\.?\d+(?:[eE][+-]?\d+)?$/.test(raw))throw new Error('Invalid gradient radius.');
-  const n=number(Number(raw),Number.MIN_VALUE,1000000);return {value:relative?n/100:n,relative};
+  if(!/^[+]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw))throw new Error('Invalid gradient radius.');
+  const n=number(Number(raw),.000001,1000000);return {value:relative?n/100:n,relative};
 }
 function brushPoint(value){
   drawingOrigin(value);const p=value.trim().split(/[ ,]+/),relative=p[0].endsWith('%');

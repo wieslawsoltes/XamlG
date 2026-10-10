@@ -34,7 +34,7 @@ internal sealed class UiBindingExpression : IUiExpression
         var options = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var part in Split(source[prefix.Length..^1]))
         {
-            var equals = part.IndexOf('=');
+            var equals = OptionEquals(part);
             var name = equals < 0 ? "Path" : part[..equals].Trim();
             var value = equals < 0 ? part : part[(equals + 1)..].Trim();
             if (name is not ("Path" or "Mode" or "FallbackValue" or "TargetNullValue" or "StringFormat") || !options.TryAdd(name, Unquote(value)))
@@ -120,6 +120,19 @@ internal sealed class UiBindingExpression : IUiExpression
         var last = source[start..].Trim();
         if (last.Length != 0) yield return last;
         else if (start != 0) throw Invalid("Trailing binding separator.");
+    }
+    private static int OptionEquals(string text)
+    {
+        char quote = '\0'; var brackets = 0;
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (quote != '\0') { if (c == quote) quote = '\0'; continue; }
+            if (c is '\'' or '"') { quote = c; continue; }
+            if (c == '[') brackets++; else if (c == ']') brackets--;
+            else if (c == '=' && brackets == 0) return i;
+        }
+        return -1;
     }
     private static string Unquote(string text)
     {
