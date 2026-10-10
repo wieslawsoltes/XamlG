@@ -4,54 +4,43 @@ on:
     branches: [diagnostics/workspace-browser-58901]
 permissions:
   contents: read
-  actions: read
 jobs:
-  diagnose:
+  responsive-dock:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          name: playground-validation
-          run-id: 38070784803
-          github-token: ${{ github.token }}
-          path: evidence
-      - name: Inspect layout constraints recorded by the failing scenario
+          ref: 8348cf3e396acf0f85fd9fa6cba94e71e02efd60
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned Chromium test runner
+        working-directory: tools/XamlG.Playground
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Exercise exact production docking CSS
+        working-directory: tools/XamlG.Playground
+        env:
+          PLAYGROUND_URL: 'http://127.0.0.1:9/'
+        run: npx playwright test dock-responsive.spec.mjs --retries=0
+      - name: Summarize bounded test results
+        if: always()
         shell: python
         run: |
-          import json, re, zipfile
+          import json
           from pathlib import Path
-          for path in Path('evidence').rglob('trace.zip'):
-              if 'agent-layout' not in str(path): continue
-              with zipfile.ZipFile(path) as archive:
-                  printed = set()
-                  def walk(value):
-                      if isinstance(value, dict):
-                          classes = value.get('class', '')
-                          if isinstance(classes, str) and ('ad-layout' in classes or 'ad-panel' in classes or 'ad-anchorable-pane' in classes):
-                              line = json.dumps({key: item for key, item in value.items() if key in ('class', 'style', 'aria-label')})
-                              if line not in printed and len(printed) < 65: print('LAYOUT:', line); printed.add(line)
-                          for child in value.values(): walk(child)
-                      elif isinstance(value, list):
-                          for child in value: walk(child)
-                  for name in archive.namelist():
-                      if name.endswith('.trace'):
-                          for line in archive.read(name).splitlines():
-                              try: event = json.loads(line)
-                              except ValueError: continue
-                              if event.get('type') == 'frame-snapshot': walk(event.get('snapshot', {}).get('html', []))
-                      if name.endswith('.network'):
-                          for line in archive.read(name).splitlines():
-                              try: event = json.loads(line)
-                              except ValueError: continue
-                              resource = event.get('snapshot', {})
-                              url = resource.get('request', {}).get('url', '')
-                              if 'dockyard' not in url.lower() or not url.split('?')[0].endswith('.js'): continue
-                              content = resource.get('response', {}).get('content', {})
-                              sha = content.get('_sha1')
-                              if not sha or 'resources/' + sha not in archive.namelist(): continue
-                              text = archive.read('resources/' + sha).decode(errors='replace')
-                              print('DOCKING SCRIPT:', url)
-                              for keyword in ['gridTemplateColumns', 'DockMinWidth', 'DockWidth', 'ResizeObserver']:
-                                  locations = [match.start() for match in re.finditer(re.escape(keyword), text)]
-                                  for at in locations[:2]: print(keyword, text[max(0, at - 300):at + 1100])
+          path = Path('tools/XamlG.Playground/test-results/results.json')
+          if path.exists():
+              report = json.loads(path.read_text())
+              print('RESPONSIVE DOCK:', json.dumps(report['stats']))
+              for suite in report.get('suites', []):
+                  for spec in suite.get('specs', []):
+                      print(spec['title'], [test['status'] for test in spec['tests']])
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: responsive-dock-validation
+          path: tools/XamlG.Playground/test-results
