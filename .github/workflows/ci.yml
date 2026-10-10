@@ -132,7 +132,7 @@ jobs:
         if: steps.changes.outputs.run == 'true'
         run: |
           python3 scripts/test-compiler-performance-gates.py
-          python3 scripts/verify-compiler-performance.py --baseline "$BASELINE_REF" --candidate "$(git rev-parse HEAD)" --require-identical-sources
+          python3 scripts/verify-compiler-performance.py --baseline "$BASELINE_REF" --candidate "$(git rev-parse HEAD)" --require-identical-sources --workload-manifest tools/XamlG.PerformanceProbe/workloads.json
       - name: Publish measurements and generated-source identities
         if: ${{ !cancelled() && steps.changes.outputs.run == 'true' }}
         run: |

@@ -10,6 +10,7 @@ if (args.Length != 1) throw new ArgumentException("Usage: XamlG.PerformanceProbe
 var measurements = new List<Measurement>();
 var pipelineSignature = PipelineProbe.Run(Measure);
 var emissionSignature = EmissionScalingProbe.Run(Measure);
+var analysisSignature = EmissionAnalysisProbe.Run(Measure);
 var generatedSources = NamedFieldProbe.Run(Measure);
 var markupAssignments = MarkupAssignmentProbe.Run(Measure);
 var semanticInputs = new List<string>
@@ -89,6 +90,7 @@ using (var writer = new BinaryWriter(snapshot, Encoding.UTF8, leaveOpen: true))
     for (var i = 0; i < 1000; i++) writer.Write(JsonSerializer.Serialize(metadata[i]));
     writer.Write(pipelineSignature);
     writer.Write(emissionSignature);
+    writer.Write(analysisSignature);
     foreach (var source in generatedSources) writer.Write(source);
     foreach (var markup in markupAssignments) writer.Write(markup.SemanticSignature);
 }
