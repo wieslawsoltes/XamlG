@@ -66,5 +66,39 @@ class Gates(unittest.TestCase):
         with self.assertRaises(ValueError): gate.verify(probe, catalog, BASE, HEAD, False)
 
 
+    def test_exact_manifest_accepts_complete_coverage(self):
+        self.assertTrue(gate.verify(*reports(), BASE, HEAD, True, ['work']).startswith('PASS:'))
+
+    def test_workload_missing_from_every_process_is_not_silently_accepted(self):
+        # All six runs agree, but the same omitted benchmark still invalidates them.
+        with self.assertRaisesRegex(ValueError, 'committed manifest'):
+            gate.verify(*reports(), BASE, HEAD, True, ['work', 'omitted-from-all-runs'])
+
+    def test_extra_workload_requires_an_explicit_manifest_update(self):
+        probe, catalog = reports()
+        for run in probe['runs']:
+            extra = copy.deepcopy(run['measurements'][0]); extra['Name'] = 'extra'
+            run['measurements'].append(extra)
+        with self.assertRaisesRegex(ValueError, 'committed manifest'):
+            gate.verify(probe, catalog, BASE, HEAD, True, ['work'])
+
+    def test_invalid_or_duplicate_workload_manifest(self):
+        for manifest in ([], ['work', 'work'], ['work', ''], ['work', 123], [' work '], 'work', {'work': True}):
+            with self.subTest(manifest=manifest), self.assertRaises(ValueError):
+                gate.verify(*reports(), BASE, HEAD, True, manifest)
+
+    def test_operation_count_must_match_in_all_processes_and_revisions(self):
+        for indexes in ([0], [0, 1, 2], [3, 4, 5]):
+            probe, catalog = reports()
+            for index in indexes:
+                probe['runs'][index]['measurements'][0]['Operations'] = 2
+            with self.assertRaisesRegex(ValueError, 'Operation count differs'):
+                gate.verify(probe, catalog, BASE, HEAD)
+
+    def test_boolean_operation_count_is_not_an_integer_sample(self):
+        probe, catalog = reports(); probe['runs'][0]['measurements'][0]['Operations'] = True
+        with self.assertRaisesRegex(ValueError, 'Invalid operation count'):
+            gate.verify(probe, catalog, BASE, HEAD)
+
 if __name__ == '__main__':
     unittest.main()

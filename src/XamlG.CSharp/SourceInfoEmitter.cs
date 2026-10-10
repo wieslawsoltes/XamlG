@@ -32,7 +32,10 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
         var syntax = context.Document.Syntax;
         var span = Clamp(value.Syntax.Span, syntax.Text.Length);
         var fingerprint = context.StableId(value.Type.CSharpName(), syntax.Text, span);
-        var declarations = new Dictionary<string, string>(StringComparer.Ordinal);
+        // Zero/one distinct property is common for leaf objects. Keep the first
+        // entry inline and promote only when a second distinct member appears.
+        string? singleName = null, singleDigest = null;
+        Dictionary<string, string>? declarations = null;
         foreach (var assignment in value.Assignments)
         {
             var member = assignment switch
@@ -45,14 +48,21 @@ internal sealed class SourceInfoEmitter(EmissionContext context)
             if (member == null) continue;
             var source = Clamp(assignment.Span, syntax.Text.Length);
             var digest = context.StableId(syntax.Text, source);
-            declarations[member] = declarations.TryGetValue(member, out var previous) ? context.StableId(previous + digest) : digest;
+            if (declarations != null)
+                declarations[member] = declarations.TryGetValue(member, out var previous) ? context.StableId(previous + digest) : digest;
+            else if (singleName == null) { singleName = member; singleDigest = digest; }
+            else if (singleName == member) singleDigest = context.StableId(singleDigest + digest);
+            else declarations = new(StringComparer.Ordinal) { [singleName] = singleDigest!, [member] = digest };
         }
         var record = new System.Text.StringBuilder();
-        void Number(int number) => record.Append(number.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(':');
-        void Text(string? text) { Number(text?.Length ?? -1); record.Append(text); }
+        void Number(int number) => MetadataRecordEncoding.AppendNumber(record, number);
+        void Text(string? text) => MetadataRecordEncoding.AppendText(record, text);
         Number(span.Start); Number(span.Length);
-        Text(value.Name == null ? null : value.Key); Text(fingerprint); Number(declarations.Count);
-        foreach (var pair in declarations.OrderBy(p => p.Key, StringComparer.Ordinal)) { Text(pair.Key); Text(pair.Value); }
+        Text(value.Name == null ? null : value.Key); Text(fingerprint);
+        Number(declarations?.Count ?? (singleName == null ? 0 : 1));
+        if (declarations != null)
+            foreach (var pair in declarations.OrderBy(p => p.Key, StringComparer.Ordinal)) { Text(pair.Key); Text(pair.Value); }
+        else if (singleName != null) { Text(singleName); Text(singleDigest); }
         return context.SourceInfoIndex(record.ToString());
     }
     private static TextSpan Clamp(TextSpan span, int length)
