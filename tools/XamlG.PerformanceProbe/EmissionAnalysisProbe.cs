@@ -31,7 +31,8 @@ internal static class EmissionAnalysisProbe
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
             .Append(typeof(XamlRuntimeContext).Assembly.Location).Distinct(StringComparer.Ordinal)
             .Select(path => MetadataReference.CreateFromFile(path));
-        var compilation = CSharpCompilation.Create("EmissionAnalysisProbe", [CSharpSyntaxTree.ParseText(model)], references,
+        var parseOptions = new CSharpParseOptions(LanguageVersion.Preview);
+        var compilation = CSharpCompilation.Create("EmissionAnalysisProbe", [CSharpSyntaxTree.ParseText(model, parseOptions)], references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         const string open = "<Node xmlns='clr-namespace:EmissionProbeModel'>";
         var compiler = new XamlCompiler();
@@ -77,8 +78,7 @@ internal static class EmissionAnalysisProbe
             Require(bound.Success, "Unable to bind metadata fixture");
             var output = new CSharpEmitter().Emit(bound);
             Require(output.Success, "Unable to emit metadata fixture");
-            var generated = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(output.Source,
-                new CSharpParseOptions(LanguageVersion.Preview)));
+            var generated = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(output.Source, parseOptions));
             using (var assembly = new MemoryStream())
             {
                 var result = generated.Emit(assembly);
