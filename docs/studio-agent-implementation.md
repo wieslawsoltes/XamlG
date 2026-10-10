@@ -86,10 +86,13 @@ Open **Coding agent → Connection** to choose a transport:
 - **Paired companion** retains server-run agents and ChatGPT account mode. Its
   agent run policy and the browser sharing policy both apply.
 
-Conversation, Connection, Tasks, Plan, Changes, Queue, Permissions, Tools and
+Conversation, Connection, Threads, Plan, Changes, Queue, Permissions, Tools and
 Activity organize the workbench. Permissions show the current host ceiling and
 active lease/grants separately from preferences for the next run. Source approvals
 include revision-bound Before/After excerpts with a full-review download.
+**Expand agent workspace** opens a wide conversation and thread sidebar;
+**Return to dock** restores the normal IDE pane. The composer stays visible while
+the conversation, queue and status details scroll above it.
 
 Each source or generated file opens in a Dockyard document tab. Closing a source
 tab captures its pending edits and keeps the project file. Inspector and Agent

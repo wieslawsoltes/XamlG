@@ -24,12 +24,14 @@ have independent browser-owned authority.
 | Provider-native continuations and streaming | Implemented | Exercise all three official SDKs in browser direct mode, preserving opaque native state and exposing only public text. |
 | Named tasks, drafts, rename/delete and context handoff | Implemented | Complete task-management UI, deletion confirmation, task/billing-mode identity, separate saved provider credentials and independent durable drafts. |
 | Task plans and questions | Implemented | Keep model-reported plan status distinct from validation; cancel/late-answer and workspace retirement in direct mode. |
+| Plan collaboration mode | Implemented | Inspect with read-only tools, save a proposed plan, and explicitly implement its reviewed revision; retire suspended edits when switching to planning. |
+| Persistent thread goals | Implemented | Explicit objective and optional budget, pause/resume/clear, evidence-based completion, repeated-blocker handling, and bounded continuation that does not restart after reload. |
 | Permission profiles, exact/scope rules and Never ask | Implemented | Structured scope/tool rule controls, validation against the real catalog, combined-effect denials and destructive Auto edit review. |
 | Immutable embedding restrictions and full-access acknowledgement | Implemented | Host ceiling, allowed modes, denied scopes/tools, lease ceiling and run-approval policy enforced by the reusable engine. |
 | Active grants, selected revocation and lease status | Implemented | Inspect remembered exact-tool grants, revoke individual grants, show active expiry separately from selected preferences, revoke and stop. |
 | Tool catalog inside Coding agent | Implemented | Search/filter actual schemas and effect metadata independently of MCP access. |
 | Activity and exports | Implemented | Dedicated bounded activity view and complete transcript/review exports, with credentials/native signatures excluded. |
-| Modern workbench navigation | Implemented | Conversation, tasks, connection, plan, changes, queue, permissions, tools and activity with compact responsive navigation. |
+| Modern workbench navigation | Implemented | Conversation, threads, connection, plan, changes, queue, permissions, tools and activity with compact navigation and an expanded workspace/sidebar. |
 | Threads and rendering | Implemented | Preserve Markdown/copy, tool expansion, waiting/streaming/partial states, Enter/IME, reading position and bounded paging in both modes. |
 | Limits, recovery and compaction | Implemented | Keep presets, cumulative accounting, failed usage, no-replay resume, retry deadlines and atomic checkpoints in direct browser execution. |
 | Queued follow-ups | Implemented | Automatic next-turn dispatch, safe-boundary steering, optimistic queue revisions, editable/reorderable queue, optional manual dispatch and task/workspace isolation. |
@@ -82,6 +84,10 @@ The conversation adds a mode picker, proposed-plan handoff, goal status, inline
 queue, resume state and a responsive thread sidebar. **Expand agent workspace**
 opens the wider conversation layout; **Return to dock** restores the IDE pane.
 The composer stays visible while status and queue details scroll above it.
-This is an ongoing overhaul;
-native workflow tests and a successful UI build do not establish complete visual
-or provider parity. Current browser and CI evidence belongs in the PR.
+Local validation passes 202 automation tests and 21 asset tests. All 20 agent
+browser scenarios were verified, including eight targeted reruns after the
+recovery and layout fixes. Browser fixtures exercise the official provider SDKs
+with deterministic inference; they do not make billable requests. Release
+WebAssembly publication and companion compilation pass without warnings.
+Current CI results belong in the PR. This workbench follows Codex-style thread
+interactions without claiming complete feature or visual identity with Codex.
