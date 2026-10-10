@@ -88,11 +88,13 @@ internal sealed partial class UiXamlAuthoring
             var prefix = "tpl-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(owner)))[..16] + ".";
             foreach (var node in child.DescendantsAndSelf())
             {
-                var key = (string?)node.Attribute(Ui + "Key") ?? (string?)node.Attribute(X + "Name");
+                var key = (string?)node.Attribute(Ui + "Key") ?? (string?)node.Attribute(X + "Name") ?? (string?)node.Attribute("Name");
                 if (key != null) node.SetAttributeValue(Ui + "Key", prefix + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..16]);
             }
             child.SetAttributeValue(Ui + "Key", prefix + "item");
-            Visit(child, declaration, path + ".template", depth + 1);
+            Visit(child, new Scope(declaration, "item"), path + ".template", depth + 1);
+            var bindingScope = child.Annotation<UiBindingScope>()!;
+            child.RemoveAnnotations<UiBindingScope>(); child.AddAnnotation(bindingScope with { RepeatRoot = scope.BindingRoot });
             child.SetAttributeValue(Ui + "Each", Resolve(items.Value, scope)); child.SetAttributeValue(Ui + "ItemKey", identity);
             child.AddAnnotation(new ExpandedTemplate());
             items.Remove(); element.Attribute(Ui + "ItemKey")?.Remove(); reference?.Remove();

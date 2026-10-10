@@ -5,9 +5,9 @@ namespace XamlG.IntelligentUI;
 
 public sealed partial class UiCompiler
 {
-    private IUiExpression RepeatExpression(string source)
+    private IUiExpression RepeatExpression(string source, string bindingRoot = "data")
     {
-        if (source.StartsWith('{')) return Expression(source);
+        if (source.StartsWith('{')) return ScopedExpression(source, bindingRoot);
         try
         {
             using var document = System.Text.Json.JsonDocument.Parse(source);
@@ -33,7 +33,7 @@ public sealed partial class UiCompiler
             {
                 var name = (string?)setter.Attribute("Property") ?? throw new UiException("invalid_style", "Setter requires Property.");
                 UiStyles.ValidateProperty(target, name);
-                if (!properties.TryAdd(name, Value((string?)setter.Attribute("Value") ?? "", target.Properties[name])))
+                if (!properties.TryAdd(name, Value((string?)setter.Attribute("Value") ?? "", target.Properties[name], element.Annotation<UiBindingScope>()?.Root ?? "data")))
                     throw new UiException("invalid_style", "Duplicate setter property.");
             }
             result.Add(new(selector, target, properties.ToImmutable()));

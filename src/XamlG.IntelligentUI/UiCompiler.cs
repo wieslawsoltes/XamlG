@@ -17,6 +17,7 @@ internal sealed record UiPlanNode(string Key, UiComponent Component, ImmutableDi
     ImmutableArray<UiPlanNode> Children, string? StateKey, string? ActionId, IUiExpression? When, IUiExpression? Each, IUiExpression? ItemKey)
 {
     internal ImmutableArray<UiPlanStyle> Styles { get; init; } = [];
+    internal UiValue? Context { get; init; }
 }
 
 /// <summary>Compiles a declared Avalonia XAML vocabulary to immutable operations. The default
@@ -36,7 +37,7 @@ public sealed partial class UiCompiler(UiCatalog? catalog = null, UiLimits? limi
         {
             var document = Read(xaml, isFinal, diagnostics);
             if (document?.Root == null) return new(null, diagnostics.ToImmutable(), false);
-            new UiXamlAuthoring(Catalog, Limits).Normalize(document.Root);
+            new UiXamlAuthoring(Catalog, Limits, ValidateAuthoringTemplate).Normalize(document.Root);
             var keys = new HashSet<string>(StringComparer.Ordinal); var count = 0;
             var root = Parse(document.Root, "root", 0, keys, ref count);
             return new(new UiTemplate(root, Limits, Catalog), diagnostics.ToImmutable(), diagnostics.Count == 0);
@@ -99,6 +100,8 @@ public sealed partial class UiCompiler(UiCatalog? catalog = null, UiLimits? limi
         UiJson.Identifier(key, "UI key");
         if (!keys.Add(key)) throw new UiException("duplicate_key", "Duplicate UI key: " + key);
         string? stateKey = null, actionId = null;
+        UiValue? context = null;
+        var bindingScope = element.Annotation<UiBindingScope>() ?? new("data", "data", "data");
         IUiExpression? when = null, each = null, itemKey = null;
         var properties = ImmutableDictionary.CreateBuilder<string, UiValue>(StringComparer.Ordinal);
         foreach (var attribute in element.Attributes())
@@ -113,17 +116,29 @@ public sealed partial class UiCompiler(UiCatalog? catalog = null, UiLimits? limi
             {
                 switch (attribute.Name.LocalName)
                 {
-                    case "Bind": stateKey = attribute.Value; UiJson.Identifier(stateKey, "State key"); break;
+                    case "Bind": if (stateKey != null) throw new UiException("invalid_binding", "Duplicate state input binding."); stateKey = attribute.Value; UiJson.Identifier(stateKey, "State key"); break;
                     case "Action": actionId = attribute.Value; UiJson.Identifier(actionId, "Action ID"); break;
-                    case "When": when = Expression(attribute.Value); break;
-                    case "Each": each = RepeatExpression(attribute.Value); break;
-                    case "ItemKey": itemKey = Expression(attribute.Value); break;
+                    case "With": context = ContextValue(attribute.Value, bindingScope.ContextRoot); break;
+                    case "When": when = ScopedExpression(attribute.Value, bindingScope.Root); break;
+                    case "Each": each = RepeatExpression(attribute.Value, bindingScope.RepeatRoot); break;
+                    case "ItemKey": itemKey = ScopedExpression(attribute.Value, "item"); break;
                     default: throw new UiException("unknown_directive", "Unknown intelligent UI directive.");
                 }
                 continue;
             }
             if (attribute.Name.NamespaceName.Length != 0 || !component.Properties.TryGetValue(attribute.Name.LocalName, out var property)) throw new UiException("unknown_property", "Property is not in the catalog: " + attribute.Name);
-            properties.Add(attribute.Name.LocalName, Value(attribute.Value, property));
+            if (UiBindingExpression.IsBinding(attribute.Value))
+            {
+                var binding = UiBindingExpression.Parse(attribute.Value, bindingScope.Root, Limits);
+                if (binding.Mode == "TwoWay" || binding.Mode == "Default" && component.InputProperty == attribute.Name.LocalName && binding.Root == "state")
+                {
+                    if (stateKey != null || component.InputProperty != attribute.Name.LocalName || binding.Root != "state" || binding.Path.Length != 1 ||
+                        binding.Fallback != null || binding.TargetNull != null || binding.Format != null)
+                        throw new UiException("invalid_binding", "TwoWay requires one declared state slot and no value conversion.");
+                    stateKey = binding.Path[0]; UiJson.Identifier(stateKey, "State key"); continue;
+                }
+            }
+            properties.Add(attribute.Name.LocalName, Value(attribute.Value, property, bindingScope.Root));
         }
         if (stateKey != null && component.InputProperty == null) throw new UiException("invalid_binding", "This component has no input property.");
         if (stateKey != null && properties.ContainsKey(component.InputProperty!)) throw new UiException("invalid_binding", "Do not combine ui:Bind with a value for the input property.");
@@ -133,20 +148,35 @@ public sealed partial class UiCompiler(UiCatalog? catalog = null, UiLimits? limi
         if (!string.IsNullOrWhiteSpace(text))
         {
             if (component.TextProperty == null || properties.ContainsKey(component.TextProperty)) throw new UiException("invalid_content", "Unexpected or duplicate text content.");
-            properties.Add(component.TextProperty, Value(text, component.Properties[component.TextProperty]));
+            properties.Add(component.TextProperty, Value(text, component.Properties[component.TextProperty], bindingScope.Root));
         }
         var children = ImmutableArray.CreateBuilder<UiPlanNode>();
         foreach (var child in element.Elements()) children.Add(Parse(child, key + "." + children.Count, depth + 1, keys, ref count));
         if (children.Count > component.MaximumChildren || component.ChildTypes is { } allowed && children.Any(child => !allowed.Contains(child.Component.Name, StringComparer.Ordinal))) throw new UiException("invalid_content", "Invalid children for " + component.Name);
         if (children.Count != 0 && (properties.ContainsKey("ItemsSource") || properties.ContainsKey("Content"))) throw new UiException("invalid_content", "Do not combine child elements with scalar Content or ItemsSource.");
-        return new(key, component, properties.ToImmutable(), children.ToImmutable(), stateKey, actionId, when, each, itemKey) { Styles = CompileStyles(element) };
+        return new(key, component, properties.ToImmutable(), children.ToImmutable(), stateKey, actionId, when, each, itemKey) { Styles = CompileStyles(element), Context = context };
     }
-    private UiValue Value(string text, UiProperty property)
+    private UiValue Value(string text, UiProperty property, string bindingRoot = "data")
     {
         if (text.Length > Limits.TextCharacters) throw new UiException("text_limit", "Property text exceeds the configured limit.");
+        if (UiBindingExpression.IsBinding(text)) return new(default, UiBindingExpression.Compile(text, bindingRoot, property, Limits));
         if (text.StartsWith("{}", StringComparison.Ordinal)) return new(property.ReadLiteral(text[2..]));
         if (text.StartsWith("{", StringComparison.Ordinal)) return new(default, Expression(text));
         return new(property.ReadLiteral(text));
+    }
+    private void ValidateAuthoringTemplate(XElement source)
+    {
+        var count = 0;
+        Parse(source, "template", 0, new HashSet<string>(StringComparer.Ordinal), ref count);
+    }
+    private IUiExpression ScopedExpression(string source, string root) => UiBindingExpression.IsBinding(source)
+        ? UiBindingExpression.Compile(source, root, null, Limits) : Expression(source);
+    private UiValue ContextValue(string source, string root)
+    {
+        if (UiBindingExpression.IsBinding(source)) return new(default, UiBindingExpression.Compile(source, root, null, Limits));
+        if (source == "{x:Null}") return new(UiJson.Element(null));
+        if (source.StartsWith("{}", StringComparison.Ordinal)) return new(UiJson.Element(source[2..]));
+        return source.StartsWith('{') ? new(default, Expression(source)) : new(UiJson.Element(source));
     }
     private IUiExpression Expression(string source)
     {

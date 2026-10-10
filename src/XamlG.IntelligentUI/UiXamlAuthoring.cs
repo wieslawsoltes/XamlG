@@ -6,7 +6,7 @@ namespace XamlG.IntelligentUI;
 
 /// <summary>Source-only authoring expansion. No runtime XAML loader or user assembly is involved.
 /// Resources retain their declaration scope; every expanded visual still goes through UiCompiler.</summary>
-internal sealed partial class UiXamlAuthoring(UiCatalog catalog, UiLimits limits)
+internal sealed partial class UiXamlAuthoring(UiCatalog catalog, UiLimits limits, Action<XElement>? validate = null)
 {
     private static readonly XNamespace Ns = UiCatalog.AvaloniaNamespace;
     private static readonly XNamespace Ui = UiCatalog.UiNamespace;
@@ -37,10 +37,11 @@ internal sealed partial class UiXamlAuthoring(UiCatalog catalog, UiLimits limits
     {
         if (element.Annotation<ExpandedTemplate>() != null) return;
         if (++_expanded > limits.Nodes * 8 || depth > limits.Depth) throw Error("node_limit", "Expanded authoring exceeds tree limits.");
-        var scope = new Scope(parent);
+        var scope = new Scope(parent, element.Attribute(Ui + "Each") != null ? "item" : null);
         var resourceNodes = Properties(element, "Resources");
         if (resourceNodes.Length > 1) throw Error("invalid_resource", "Duplicate Resources property.");
         if (resourceNodes.Length == 1) { ReadResources(resourceNodes[0], scope); resourceNodes[0].Remove(); }
+        NormalizeContext(element, scope, parent.BindingRoot);
         var styleNodes = Properties(element, "Styles");
         if (styleNodes.Length > 1) throw Error("invalid_style", "Duplicate Styles property.");
         if (styleNodes.Length == 1)
@@ -58,6 +59,7 @@ internal sealed partial class UiXamlAuthoring(UiCatalog catalog, UiLimits limits
             element.SetAttributeValue("Name", xname);
         }
         ExpandItemTemplate(element, scope, path, depth);
+        ExpandContentTemplate(element, scope, path, depth);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var property in element.Elements().Where(IsProperty).ToArray())
         {
@@ -120,6 +122,7 @@ internal sealed partial class UiXamlAuthoring(UiCatalog catalog, UiLimits limits
     }
     private string Scalar(XElement node, Scope scope)
     {
+        if (node.Name == Ns + "Binding" || node.Name == Ns + "CompiledBinding") return BindingMarkup(node);
         if (node.Name == X + "Null") { CheckAttributes(node); CheckText(node); if (node.HasElements) throw Error("invalid_resource", "Invalid null value."); return "{ui:Expr null}"; }
         if (node.Name == X + "Array")
         {
@@ -208,7 +211,7 @@ internal sealed partial class UiXamlAuthoring(UiCatalog catalog, UiLimits limits
         foreach (var key in local)
         {
             var resource = scope.Values[key];
-            if (resource.Node.Name == Ns + "DataTemplate") ValidateTemplate(resource.Node);
+            if (resource.Node.Name == Ns + "DataTemplate") ValidateUnusedTemplate(resource);
             else ResourceValue(resource);
         }
     }
@@ -223,9 +226,10 @@ internal sealed partial class UiXamlAuthoring(UiCatalog catalog, UiLimits limits
     }
     private static string Required(XElement element, string name) => (string?)element.Attribute(name) ?? throw Error("invalid_authoring", "Missing " + name + ".");
     private static UiException Error(string code, string message) => new(code, message);
-    private sealed class Scope(Scope? parent)
+    private sealed class Scope(Scope? parent, string? bindingRoot = null)
     {
         internal Scope? Parent { get; } = parent;
+        internal string BindingRoot { get; set; } = bindingRoot ?? parent?.BindingRoot ?? "data";
         internal Dictionary<string, Resource> Values { get; } = new(StringComparer.Ordinal);
     }
     private sealed class Resource(XElement node, Scope scope)

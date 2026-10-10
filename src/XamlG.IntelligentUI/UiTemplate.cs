@@ -35,6 +35,7 @@ public sealed class UiTemplate
             }
             return result.ToImmutable();
         }
+        if (node.Context != null) item = node.Context.Resolve(state, data, item);
         if (node.When != null && !UiExpression.Bool(UiJson.Value(node.When.Evaluate(state, data, item)))) return [];
         if (++count > _limits.Nodes) throw new UiException("node_limit", "Expanded UI exceeds the node limit.");
         var nodeKey = scope + "/" + node.Key;
