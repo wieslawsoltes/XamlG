@@ -1,0 +1,130 @@
+name: Solution workspaces
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths:
+      - 'src/XamlG.ProjectSystem/**'
+      - 'src/XamlG.Workspaces/**'
+      - 'tools/XamlG.Playground/**'
+      - 'tools/XamlG.Studio.Host/**'
+      - 'tests/XamlG.Workspaces.Tests/**'
+      - 'scripts/test-browser-studio.py'
+      - 'Directory.*.props'
+      - 'global.json'
+      - '.github/workflows/workspaces.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: solution-workspaces-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Capture exact validation source
+        run: |
+          mkdir -p artifacts/workspace-source
+          git rev-parse HEAD > artifacts/workspace-source/commit.txt
+          git cat-file -p HEAD | sed -n 's/^parent //p' > artifacts/workspace-source/parents.txt
+          git archive --format=tar.gz HEAD -o artifacts/workspace-source/source.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solution-workspace-source
+          path: artifacts/workspace-source
+          retention-days: 7
+          if-no-files-found: error
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Native workspace regression tests
+        run: dotnet test tests/XamlG.Workspaces.Tests/XamlG.Workspaces.Tests.csproj -c Release -p:NuGetAudit=false -warnaserror --logger trx --results-directory artifacts/workspaces/native
+      - name: Build the actual SDK companion
+        run: dotnet build tools/XamlG.Studio.Host/XamlG.Studio.Host.csproj -c Release -p:NuGetAudit=false -warnaserror
+      - name: Prepare browser toolchain and pinned assets
+        run: |
+          dotnet workload install wasm-tools --skip-manifest-update
+          cd tools/XamlG.Playground
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run prepare-assets
+          npx playwright install --with-deps chromium
+      - name: Publish production browser application
+        run: |
+          dotnet publish tools/XamlG.Playground/XamlG.Playground.csproj -c Release -p:NuGetAudit=false -o artifacts/playground
+          python scripts/prepare-pages.py --commit "${{ github.sha }}"
+      - name: Browser solutions, persistence, trust, SDK builds and Roslyn evaluation
+        working-directory: tools/XamlG.Playground
+        env:
+          PLAYGROUND_PAGES_PREVIEW: '1'
+          PLAYWRIGHT_HTML_OPEN: never
+        run: python ../../scripts/test-browser-studio.py solution-workspace.spec.mjs -- --reporter=list,html,./tests/workspace-reporter.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: solution-workspace-summary
+          path: |
+            artifacts/workspace-source/commit.txt
+            artifacts/workspace-source/parents.txt
+            artifacts/workspaces/native
+            tools/XamlG.Playground/test-results/workspace-browser-summary.json
+            tools/XamlG.Playground/test-results/**/error-context.md
+            tools/XamlG.Playground/test-results/**/test-failed-*.png
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: solution-workspace-validation
+          path: |
+            artifacts/workspaces
+            tools/XamlG.Playground/test-results
+            tools/XamlG.Playground/playwright-report
+          if-no-files-found: error
+  validation-summary:
+    if: always() && !cancelled()
+    needs: workspace
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: solution-workspace-summary
+          path: validation
+      - name: Exact source, native counters and browser assertions
+        shell: python
+        run: |
+          import json
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          root = Path('validation')
+          for name in ('commit.txt', 'parents.txt'):
+              for path in root.rglob(name):
+                  print(name + ': ' + path.read_text().strip(), flush=True)
+          for path in root.rglob('*.trx'):
+              tree = ET.parse(path)
+              counters = tree.find('.//{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}Counters')
+              print('Native: ' + json.dumps(counters.attrib if counters is not None else {}), flush=True)
+              for result in tree.findall('.//{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}UnitTestResult'):
+                  if result.get('outcome') != 'Passed':
+                      print(result.get('testName'), result.get('outcome'), flush=True)
+          reports = list(root.rglob('workspace-browser-summary.json'))
+          if len(reports) != 1:
+              raise SystemExit('Browser acceptance did not produce exactly one summary. Inspect the workspace job; validation is not complete.')
+          report = json.loads(reports[0].read_text())
+          print('Browser: ' + json.dumps({'status': report['status'], 'counts': report['counts']}), flush=True)
+          for test in report['tests']:
+              print(test['outcome'] + ': ' + test['title'], flush=True)
+              for attempt in test['attempts']:
+                  for error in attempt['errors']:
+                      print(error, flush=True)
+          for error in report['errors']:
+              print(error, flush=True)
+          if report['status'] != 'passed' or report['counts']['unexpected'] or report['errors']:
+              raise SystemExit(1)

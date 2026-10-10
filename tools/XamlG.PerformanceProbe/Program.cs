@@ -9,6 +9,7 @@ using XamlG.Syntax;
 if (args.Length != 1) throw new ArgumentException("Usage: XamlG.PerformanceProbe <output.json>");
 var measurements = new List<Measurement>();
 var pipelineSignature = PipelineProbe.Run(Measure);
+var emissionSignature = EmissionScalingProbe.Run(Measure);
 var generatedSources = NamedFieldProbe.Run(Measure);
 var markupAssignments = MarkupAssignmentProbe.Run(Measure);
 var semanticInputs = new List<string>
@@ -87,6 +88,7 @@ using (var writer = new BinaryWriter(snapshot, Encoding.UTF8, leaveOpen: true))
     var metadata = XamlSourceInfoTable.FromEncoded("view.xaml", 1, records);
     for (var i = 0; i < 1000; i++) writer.Write(JsonSerializer.Serialize(metadata[i]));
     writer.Write(pipelineSignature);
+    writer.Write(emissionSignature);
     foreach (var source in generatedSources) writer.Write(source);
     foreach (var markup in markupAssignments) writer.Write(markup.SemanticSignature);
 }

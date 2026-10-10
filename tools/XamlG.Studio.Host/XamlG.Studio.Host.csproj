@@ -8,6 +8,7 @@
     <NoWarn>$(NoWarn);OPENAI001</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../../src/XamlG.Workspaces/XamlG.Workspaces.csproj" />
     <ProjectReference Include="../../src/XamlG.Mcp/XamlG.Mcp.csproj" />
     <ProjectReference Include="../../src/XamlG.Agents.OpenAI/XamlG.Agents.OpenAI.csproj" />
     <ProjectReference Include="../../src/XamlG.Agents.Anthropic/XamlG.Agents.Anthropic.csproj" />

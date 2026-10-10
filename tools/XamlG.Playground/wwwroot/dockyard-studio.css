@@ -6,6 +6,11 @@
 .dockyard-workspace .explorer { height: 100%; overflow: auto; display: flex; }
 .dockyard-workspace .diagnostics { height: 100%; }
 .dockyard-workspace .ad-content { min-width: 0; min-height: 0; }
+/* Dockyard stores pixel splitter preferences as inline flex: 0 0 Npx. Permit
+   those panes to share a viewport deficit instead of clipping the right-hand
+   tools. Override only shrink: bases, growth, minimums and saved sizes survive
+   a narrow viewport and are restored naturally when space becomes available. */
+.dockyard-workspace .ad-group > :is(.ad-pane, .ad-group) { flex-shrink: 1 !important; }
 .automation-dialog { position:fixed; right:24px; top:110px; width:min(520px,calc(100vw - 48px)); max-height:75vh; overflow:auto; z-index:1000; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:8px; box-shadow:0 16px 64px #0008; padding:24px; }
 .automation-dialog h2 { margin-bottom:18px; }
 .automation-dialog label { display:flex; align-items:center; gap:10px; margin:12px 0; }

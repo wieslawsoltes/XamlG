@@ -129,14 +129,14 @@ test('owner compiler UI supports Undo, Redo, draft restoration and version-4 exp
   await expect(pane.getByRole('button', { name: 'Compile project', exact: true })).toBeEnabled();
   expect(await savedProject(page)).toEqual(savedDraft);
   await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
-  await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore preview draft', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Draft restored without executing');
   pane = await compilerPane(page);
   await expect(overflow()).toBeChecked();
   await expect(pane.getByLabel('Conditional symbols')).toHaveValue('FEATURE, TRACE');
   const downloadPromise = page.waitForEvent('download');
   await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
-  await page.getByRole('button', { name: 'Export project', exact: true }).click();
+  await page.getByRole('button', { name: 'Export preview project', exact: true }).click();
   const download = await downloadPromise;
   const project = JSON.parse(await readFile(await download.path(), 'utf8'));
   expect(project.version).toBe(4);
@@ -154,7 +154,7 @@ test('owner compiler UI supports Undo, Redo, draft restoration and version-4 exp
   await page.goto('./');
   await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
   await page.locator('.studio-menu > summary').filter({ hasText: /^Project$/ }).click();
-  await page.getByRole('button', { name: 'Restore draft', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore preview draft', exact: true }).click();
   await expect(page.locator('.statusbar')).toContainText('Draft restored without executing');
   pane = await compilerPane(page);
   await expect(overflow()).not.toBeChecked({ timeout: 15000 });
