@@ -37,7 +37,7 @@ public sealed class NamespaceEmissionPlanTests
         }
     };
 
-    private static BoundDocument Document(bool protect)
+    private static BoundDocument Document(bool protect, int extraMappings = 0)
     {
         var bound = new XamlCompiler().Bind(XamlSyntaxTree.Parse("<Owner xmlns='clr-namespace:NamespacePlanFixture'/>", "Namespaces.xaml"),
             CompilationFactory.Create(Model), Profile(protect));
@@ -49,18 +49,23 @@ public sealed class NamespaceEmissionPlanTests
             new XmlNamespaceMapping("urn:two", "Third", ""),
             new XmlNamespaceMapping("urn:one", "First", "A"),
             new XmlNamespaceMapping(XamlNames.Xml, "ExplicitXml"));
-        return bound with { Runtime = bound.Runtime with { NamespaceMappings = mappings } };
+        return bound with { Runtime = bound.Runtime with { NamespaceMappings = mappings.AddRange(Enumerable.Range(0, extraMappings)
+            .Select(i => new XmlNamespaceMapping("urn:extra" + i, "Extra" + i))) } };
     }
 
     private static NamespaceScope Scope(string text, NamespaceScope? parent = null) =>
         (parent ?? NamespaceScope.Empty).Push(XamlSyntaxTree.Parse(text).Root!);
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void Factories_match_legacy_bytes_for_shadowing_missing_aliases_duplicates_and_contracts(bool protect)
+    [InlineData(false, 0)]
+    [InlineData(true, 0)]
+    [InlineData(false, 10)]
+    [InlineData(true, 11)]
+    [InlineData(false, 512)]
+    [InlineData(true, 512)]
+    public void Factories_match_legacy_bytes_for_shadowing_missing_aliases_duplicates_and_contracts(bool protect, int extraMappings)
     {
-        using var context = new EmissionContext(Document(protect), default);
+        using var context = new EmissionContext(Document(protect, extraMappings), default);
         var emitter = new NamespaceMapEmitter(context);
         var root = Scope("<Owner xmlns:z='urn:two' xmlns:a='urn:one' xmlns:b='urn:one' xmlns:m='urn:missing'/>");
         var scopes = new[] { NamespaceScope.Empty, root, Scope("<Owner xmlns:a='urn:two'/>", root),
@@ -135,6 +140,28 @@ public sealed class NamespaceEmissionPlanTests
         Assert.Equal("Mapped", a[0]!.GetType().GetProperty("ClrNamespace")!.GetValue(a[0]));
         if (protect) Assert.Throws<NotSupportedException>(() => a[0] = b[0]);
         if (XamlRuntimeSession.TryGet(root, out var session)) session!.Dispose();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(10)]
+    [InlineData(11)]
+    [InlineData(512)]
+    public void Mapping_index_promotion_is_bounded_and_tiny_tables_stay_scan_only(int extraMappings)
+    {
+        using var context = new EmissionContext(Document(false, extraMappings), default);
+        var plan = context.NamespacePlan;
+        var contract = plan.Contracts[0];
+        var index = typeof(NamespaceEmissionPlan).GetField("_mappings", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var first = contract.GetArrayExpression("urn:one");
+        // An initializer-cache hit is not another mapping scan.
+        for (var i = 0; i < 32; i++) Assert.Same(first, contract.GetArrayExpression("urn:one"));
+        for (var i = 0; i < 3; i++) contract.GetArrayExpression("missing:" + i);
+        Assert.Null(index.GetValue(plan));
+        contract.GetArrayExpression("missing:fourth");
+        if (extraMappings <= 10) Assert.Null(index.GetValue(plan));
+        else Assert.NotNull(index.GetValue(plan));
+        Assert.Same(first, contract.GetArrayExpression("urn:one"));
     }
 
     [Fact]

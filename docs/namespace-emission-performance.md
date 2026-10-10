@@ -13,8 +13,11 @@ also recomputed lexical scope keys.
 An emission-local `NamespaceEmissionPlan` now owns an ordered snapshot per scope,
 an ordinal mapping index, and generated array expressions per service contract/URI.
 `ServiceContractEmitter` and `NamespaceMapEmitter` use the same context-owned plan.
-The mapping list is indexed once, and each used URI's initializer is formatted once
-per contract rather than once per occurrence across all scopes.
+Each used URI's initializer is formatted once per contract rather than once per
+occurrence across all scopes. Lists of at most 16 mappings use a bounded scan.
+Larger lists promote to the index only on a fifth uncached query; the first four
+scans cost at most 4*M and avoid full-index allocation for few-alias documents.
+Scope keys are formatted lazily, so factory-only emission does not compute unused keys.
 
 For M mappings and A alias occurrences across factories/contracts, selection changes
 from O(A * M) filtering to expected O(M + A), plus matching-record formatting and
@@ -49,16 +52,17 @@ contracts and protected/unprotected dictionaries. Additional tests compile and r
 factories to verify distinct alias arrays/items, isolate document mappings, exercise
 cancellation and check concurrent per-document output determinism.
 
-The identical baseline/candidate probe adds six workloads to the 57-workload manifest:
+The identical baseline/candidate probe adds eight workloads to the 57-workload manifest:
 factory-only and complete document emission at 1 scope / 2 aliases / 8 extra mappings,
-32 scopes / 16 aliases / 512 extra mappings, and 128 / 16 / 512. The mapping set contains
+1 / 2 / 512 (few aliases over a large mapping list), 32 / 16 / 512, and 128 / 16 / 512.
+The mapping set contains
 unused URIs as well as multiple records for used URIs. Every operation constructs a
 fresh emission context. Binding, delegate-bridge compilation and generated-code
 compilation checks are outside measured intervals. Both factory source and complete
 document source/mappings/diagnostics enter the mandatory cross-revision signature.
 
 All existing native/MSBuild, upstream, theme, package, host, browser and full catalog
-checks remain enabled. The performance gate requires all 63 pinned workloads, complete
+checks remain enabled. The performance gate requires all 65 pinned workloads, complete
 paired measurements, matching semantic signatures and byte-identical full catalog
 source. No speedup, universal cold-build improvement or XamlX parity is claimed without
 exact-head evidence. The local environment has no .NET SDK: local Python validation

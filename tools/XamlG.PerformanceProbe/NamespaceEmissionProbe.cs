@@ -43,7 +43,7 @@ internal static class NamespaceEmissionProbe
         };
         var (createContext, createEmitter, createWriter, emitFactory) = Bridges();
         var signature = new StringBuilder();
-        foreach (var (count, aliases, mappings) in new[] { (1, 2, 8), (32, 16, 512), (128, 16, 512) })
+        foreach (var (count, aliases, mappings) in new[] { (1, 2, 8), (1, 2, 512), (32, 16, 512), (128, 16, 512) })
         {
             var xaml = "<Owner xmlns='clr-namespace:NamespaceProbeModel' " + string.Join(" ", Enumerable.Range(0, aliases)
                 .Select(i => "xmlns:p" + i + "='urn:binding" + i + "'")) + ">" +

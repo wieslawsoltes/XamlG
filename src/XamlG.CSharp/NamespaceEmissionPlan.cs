@@ -12,6 +12,7 @@ internal sealed class NamespaceEmissionPlan
     private readonly EmissionContext _context;
     private readonly Dictionary<NamespaceScope, ScopeLayout> _scopes = new();
     private Dictionary<string, List<XmlNamespaceMapping>>? _mappings;
+    private int _mappingQueries;
     private ImmutableArray<ContractPlan> _contracts;
 
     public NamespaceEmissionPlan(EmissionContext context) => _context = context;
@@ -49,6 +50,20 @@ internal sealed class NamespaceEmissionPlan
     {
         if (_mappings == null)
         {
+            // Tiny lists are a fixed-size scan. On larger lists, defer indexing
+            // until a fifth uncached query: the common few-alias document pays
+            // no full index allocation. Four initial scans are bounded O(M), not
+            // an unbounded fallback that restores O(aliases * mappings) work.
+            if (_context.Document.Runtime.NamespaceMappings.Length <= 16 || _mappingQueries++ < 4)
+            {
+                List<XmlNamespaceMapping>? selected = null;
+                foreach (var mapping in _context.Document.Runtime.NamespaceMappings)
+                {
+                    _context.Cancellation.ThrowIfCancellationRequested();
+                    if (mapping.XmlNamespace == uri) (selected ??= new()).Add(mapping);
+                }
+                return selected;
+            }
             var index = new Dictionary<string, List<XmlNamespaceMapping>>(StringComparer.Ordinal);
             foreach (var mapping in _context.Document.Runtime.NamespaceMappings)
             {
@@ -68,10 +83,10 @@ internal sealed class NamespaceEmissionPlan
 
     internal sealed class ScopeLayout
     {
-        private ScopeLayout(ImmutableArray<KeyValuePair<string, string>> bindings, string key)
-        { Bindings = bindings; Key = key; }
+        private string? _key;
+        private ScopeLayout(ImmutableArray<KeyValuePair<string, string>> bindings) => Bindings = bindings;
         public ImmutableArray<KeyValuePair<string, string>> Bindings { get; }
-        public string Key { get; }
+        public string Key => _key ??= string.Join("\n", Bindings.Select(pair => pair.Key + "=" + pair.Value));
 
         public static ScopeLayout Create(NamespaceScope scope)
         {
@@ -80,7 +95,7 @@ internal sealed class NamespaceEmissionPlan
             // Preserve the existing helper identity byte-for-byte, including the
             // explicit-prefix filter and ordinal ordering. Runtime alias entries
             // are emitted from this same ordered snapshot rather than sorted again.
-            return new(bindings, string.Join("\n", bindings.Select(pair => pair.Key + "=" + pair.Value)));
+            return new(bindings);
         }
     }
 
