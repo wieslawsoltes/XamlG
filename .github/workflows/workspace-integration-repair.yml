@@ -1,10 +1,8 @@
 name: Prepare workspace integration fixes
 on:
-  workflow_dispatch:
-    inputs:
-      expected_head:
-        description: Exact source revision to patch; branch publication is performed separately
-        required: true
+  push:
+    branches: [feat/msbuild-solution-workspaces]
+    paths: [.github/workflows/workspace-integration-repair.yml]
 permissions:
   contents: write
 jobs:
@@ -14,12 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.expected_head }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Prepare audited source changes without moving a branch
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_HEAD: ${{ inputs.expected_head }}
+          EXPECTED_HEAD: ${{ github.sha }}
         shell: python
         run: |
           import json, os, pathlib, subprocess, urllib.request
@@ -56,7 +54,6 @@ jobs:
           subprocess.run(['git', 'diff'], check=True)
           base_tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
           tree = [{'path': path, 'mode': '100644', 'type': 'blob', 'content': content} for path, content in changes.items()]
-          # This one-shot preparation workflow is not part of the resulting product tree.
           tree.append({'path': '.github/workflows/workspace-integration-repair.yml', 'mode': '100644', 'type': 'blob', 'sha': None})
           created_tree = api('/git/trees', {'base_tree': base_tree, 'tree': tree})['sha']
           commit = api('/git/commits', {'message': 'Fix solution wizard mode, project graph refresh and browser control selectors', 'tree': created_tree, 'parents': [expected]})
