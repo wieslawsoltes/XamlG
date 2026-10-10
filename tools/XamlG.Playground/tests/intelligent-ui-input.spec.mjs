@@ -1,6 +1,6 @@
 import {test,expect} from './studio-fixture.mjs';
 import {openStudio,connectMcp} from './live-preview.mjs';
-import {mountNativeUi,clickNativeTopButton} from './intelligent-ui-host.mjs';
+import {mountNativeUi} from './intelligent-ui-host.mjs';
 
 // Executes actual Avalonia input handlers in the production Wasm guest. The fixture only
 // relays the public host protocol; it does not synthesize renderer input events or state.
@@ -26,7 +26,14 @@ test('native input discovery, three-state activation and slider keys preserve ty
     await app.host.evaluate(value=>window.publishNative(value),marker);
     await expect(app.guest.locator('details')).not.toContainText('Saved: 0');
     await expect(app.guest.locator('details')).toContainText('Mixed');
-    await clickNativeTopButton(app.guest);await expect(app.guest.locator('details')).toContainText('Unchecked');
+    // The stock CheckBox template only hit-tests its glyph/content, not the empty
+    // remainder of the authored width. The generic Button helper's x=80 hits that
+    // empty area for this short label. Target the actual glyph, with real pointer input.
+    const input=app.guest.locator('.avalonia-native-host');
+    await expect(input).toBeVisible();
+    await app.guest.locator('body').evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    await input.click({position:{x:10,y:20}});
+    await expect(app.guest.locator('details')).toContainText('Unchecked');
     await app.host.keyboard.press('Space');await expect(app.guest.locator('details')).toContainText('Checked');
     await app.host.keyboard.press('Space');await expect(app.guest.locator('details')).toContainText('Mixed');
     expect((await mcp.call('xamlg_ui_read',{id:marker.id})).state.choice).toBeNull();
