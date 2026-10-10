@@ -151,6 +151,21 @@ test('agent onboarding and all panels remain usable in a narrow dock and floatin
   const composer = await pane.locator('.agent-composer').boundingBox(), bounds = await pane.boundingBox();
   expect(composer.y + composer.height).toBeLessThanOrEqual(bounds.y + bounds.height + 1);
   await pane.getByRole('log').evaluate(element => { element.scrollTop = 0; });
+  await test.info().attach('agent-compact-layout', {
+    contentType: 'application/json',
+    body: JSON.stringify(await pane.evaluate(element => {
+      const selectors = ['.agent-shell', '.agent-content', '.agent-section-conversation', '.agent-conversation-body', '.agent-thread', '.agent-composer', '.agent-composer-toolbar', '.agent-send-button'];
+      const box = node => {
+        const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
+        return { tag: node.tagName, className: node.className, x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+          clientWidth: node.clientWidth, clientHeight: node.clientHeight, scrollWidth: node.scrollWidth, scrollHeight: node.scrollHeight,
+          overflow: style.overflow, minWidth: style.minWidth, minHeight: style.minHeight, flex: style.flex, grid: style.gridTemplateRows };
+      };
+      const ancestors = []; for (let node = element; node; node = node.parentElement) ancestors.push(box(node));
+      return { viewport: { width: innerWidth, height: innerHeight }, ancestors,
+        elements: Object.fromEntries(selectors.map(selector => [selector, element.querySelector(selector) ? box(element.querySelector(selector)) : null])) };
+    }), null, 2)
+  });
   await expect(pane.getByRole('button', { name: 'Send message', exact: true })).toBeInViewport();
 
   await page.setViewportSize({ width: 1440, height: 1000 });
