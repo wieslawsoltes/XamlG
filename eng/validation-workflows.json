@@ -7,8 +7,9 @@
     "playground.yml",
     "release.yml",
     "controlcatalog.yml",
-    "intelligent-ui.yml"
+    "intelligent-ui.yml",
+    "workspaces.yml"
   ],
-  "diagnostic": ["compiler-profile.yml"],
+  "diagnostic": ["compiler-profile.yml", "workspace-integration-repair.yml"],
   "deployment": ["pages.yml"]
 }

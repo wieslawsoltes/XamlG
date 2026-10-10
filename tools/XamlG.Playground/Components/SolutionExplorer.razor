@@ -24,9 +24,9 @@
     </details>
     @if (_error != null || Session.Error != null) { <p class="ws-error" role="alert">@(_error ?? Session.Error)</p> }
     <label class="ws-field">Solution / project
-        <select aria-label="Workspace solution or project" @bind:get="Session.Snapshot.EntryPath" @bind:set="EntryChangedAsync" disabled="@Disabled">
+        <select @key="_entryOptionsKey" aria-label="Workspace solution or project" @bind:get="Session.Snapshot.EntryPath" @bind:set="EntryChangedAsync" disabled="@Disabled">
             <option value="">Choose an entry file</option>
-            @foreach (var path in Session.EntryPaths) { <option value="@path">@path</option> }
+            @foreach (var path in Session.EntryPaths) { <option @key="path" value="@path">@path</option> }
         </select>
     </label>
     <div class="ws-toolbar">
@@ -74,7 +74,7 @@
             <button @onclick="MoveAsync" disabled="@Disabled">Apply move</button><button @onclick="() => _moveSource = null">Cancel</button>
         }
         <label class="ws-field">Selected project
-            <select @bind="Session.SelectedProject"><option value="">Choose a project</option>@foreach (var project in Session.Description.Projects.Where(project => project.Loaded)) { <option value="@project.Path">@project.Name</option> }</select>
+            <select @bind="Session.SelectedProject"><option value="">Choose a project</option>@foreach (var project in Session.Description.Projects.Where(project => project.Loaded)) { <option @key="project.Path" value="@project.Path">@project.Name</option> }</select>
         </label>
         <label class="ws-field">Property <input @bind="_propertyName" placeholder="TargetFramework" /></label>
         <label class="ws-field">Value <input @bind="_propertyValue" placeholder="net10.0" /></label>
@@ -86,7 +86,7 @@
         <button @onclick="RemovePackageAsync" disabled="@(Disabled || Session.SelectedProject == null || _package.Length == 0)">Remove package reference</button>
         <p class="ws-hint">Leave the version empty only when the repository manages package versions centrally. Removal affects authored unconditional references, not imported or conditional items.</p>
         <label class="ws-field">Project reference
-            <select @bind="_reference"><option value="">Choose a project</option>@foreach (var project in Session.Inventory.Where(file => WorkspacePath.IsProject(file.Path))) { <option value="@project.Path">@project.Path</option> }</select>
+            <select @bind="_reference"><option value="">Choose a project</option>@foreach (var project in Session.Inventory.Where(file => WorkspacePath.IsProject(file.Path))) { <option @key="project.Path" value="@project.Path">@project.Path</option> }</select>
         </label>
         <button @onclick="AddReferenceAsync" disabled="@(Disabled || Session.SelectedProject == null || _reference.Length == 0)">Add project reference</button>
         <button @onclick="RemoveReferenceAsync" disabled="@(Disabled || Session.SelectedProject == null || _reference.Length == 0)">Remove project reference</button>
@@ -96,7 +96,7 @@
         <details class="ws-management"><summary>Solution membership and configurations</summary>
             <label class="ws-field">Solution folder <input @bind="_solutionFolder" placeholder="src" /></label>
             <button @onclick="AddSolutionFolderAsync" disabled="@(Disabled || _solutionFolder.Length == 0)">Add solution folder</button>
-            <label class="ws-field">Existing project <select @bind="_solutionProject"><option value="">Choose a project</option>@foreach (var file in Session.Inventory.Where(file => WorkspacePath.IsProject(file.Path))) { <option value="@file.Path">@file.Path</option> }</select></label>
+            <label class="ws-field">Existing project <select @bind="_solutionProject"><option value="">Choose a project</option>@foreach (var project in Session.Inventory.Where(file => WorkspacePath.IsProject(file.Path))) { <option @key="project.Path" value="@project.Path">@project.Path</option> }</select></label>
             <button @onclick="AddMembershipAsync" disabled="@(Disabled || _solutionProject.Length == 0)">Add to solution</button>
             <button @onclick="RemoveMembershipAsync" disabled="@(Disabled || _solutionProject.Length == 0)">Remove from solution</button>
             <p class="ws-hint">Removing solution membership does not delete project files.</p>
@@ -134,6 +134,7 @@
     private SolutionExplorerNode? _root, _selected;
     private readonly HashSet<string> _expanded = new(StringComparer.Ordinal) { "solution-root" };
     private List<SolutionExplorerRow> _rows = [];
+    private string _entryOptionsKey = "";
     private string _filter = "", _newPath = "", _moveDestination = "", _propertyName = "TargetFramework", _propertyValue = "net10.0";
     private string _package = "", _packageVersion = "", _reference = "", _solutionFolder = "", _solutionProject = "", _newConfiguration = "", _newPlatform = "Any CPU";
     private string? _moveSource, _error;
@@ -152,6 +153,9 @@
     }
     private void Rebuild()
     {
+        // Recreate the select only when its option identities change. Reusing a selected
+        // option for an inserted project can make the DOM disagree with the saved entry.
+        _entryOptionsKey = string.Join("\0", Session.EntryPaths);
         _root = SolutionExplorerTree.Build(Session, _folderView);
         foreach (var node in _root.Children.Where(node => node.Kind is "project" or "solution-folder")) _expanded.Add(node.Id);
         _rows = SolutionExplorerTree.Flatten(_root, _expanded, _filter);
