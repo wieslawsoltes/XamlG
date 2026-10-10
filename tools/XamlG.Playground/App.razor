@@ -12,35 +12,49 @@
 <link rel="stylesheet" href="agent-workbench.css" />
 <link rel="stylesheet" href="intelligent-ui.css" />
 <link rel="stylesheet" href="runtime-workbench.css" />
-<div class="studio" inert="@(_renameVisible || _actionsVisible || _fileMoveVisible)" data-ready="@(_ready ? "true" : "false")">
+<link rel="stylesheet" href="solution-workspace.css" />
+<SolutionWorkspaceLifetime Session="_solutionSession" Changed="SolutionWorkspaceChangedAsync" />
+<div class="studio" inert="@(_renameVisible || _actionsVisible || _fileMoveVisible || _solutionWizardVisible)" data-ready="@(_ready ? "true" : "false")">
     <header class="titlebar studio-shell">
         <a class="brand" href="https://github.com/wieslawsoltes/XamlG" target="_blank" rel="noopener" aria-label="XamlG source"><span class="brand-mark">X</span><strong>XamlG</strong><span class="studio-name">Studio</span></a>
         <nav class="studio-menubar" aria-label="Studio commands">
             <details class="studio-menu"><summary>Project</summary><div class="studio-menu-items">
+                <button @onclick='() => ShowSolutionWizardAsync("solution")' disabled="@(!_solutionSession.Ready || _solutionSession.Busy)" data-testid="new-solution">New solution…</button>
+                <button @onclick='() => ShowSolutionWizardAsync("project")' disabled="@(!_solutionSession.Ready || _solutionSession.Busy)">New project…</button>
+                <button @onclick='() => ShowPaneAsync("explorer")'>Open solution / folder…</button>
+                <button @onclick="_solutionSession.SaveAllAsync" disabled="@(!_solutionSession.HasUnsavedChanges || _solutionSession.Busy)">Save all workspace documents</button>
+                <button @onclick="_solutionSession.ExportAsync" disabled="@(_solutionSession.Inventory.Count == 0 || _solutionSession.Busy)">Export workspace ZIP</button>
+                <hr /><strong class="menu-caption">Single-view preview project</strong>
                 <label class="example-picker"><span>Example</span><select aria-label="Example" value="@_exampleIndex" @onchange="SelectExampleAsync" disabled="@_busy">@for (var i = 0; i < PlaygroundExamples.All.Count; i++) { <option value="@i">@PlaygroundExamples.All[i].Name</option> }</select></label>
-                <button @onclick="RestoreDraftAsync" disabled="@(!_ready || _busy)">Restore draft</button>
-                <button @onclick="ExportAsync" disabled="@(!_ready || _busy)">Export project</button>
-                <hr /><button @onclick='() => ShowPaneAsync("resources")'>Manage XAML resources</button><button @onclick='() => ShowPaneAsync("code-files")'>Manage C# files</button>
+                <button @onclick="RestoreDraftAsync" disabled="@(!_ready || _busy)">Restore preview draft</button>
+                <button @onclick="ExportAsync" disabled="@(!_ready || _busy)">Export preview project</button>
+                <hr /><button @onclick='() => ShowPaneAsync("resources")'>Manage preview XAML resources</button><button @onclick='() => ShowPaneAsync("code-files")'>Manage preview C# files</button>
             </div></details>
             <details class="studio-menu"><summary>Edit</summary><div class="studio-menu-items">
-                <button @onclick="UndoAsync" disabled="@(!_workspaceEdits.CanUndo || _busy)">Undo source edit <kbd>Ctrl Z</kbd></button>
-                <button @onclick="RedoAsync" disabled="@(!_workspaceEdits.CanRedo || _busy)">Redo source edit <kbd>Ctrl Y</kbd></button><hr />
-                <button @onclick='() => RequestMainCommandAsync("rename")' disabled="@(!_ready || _busy || DocumentEditor(_activeDocumentPath) == null)">Rename symbol <kbd>F2</kbd></button>
-                <button @onclick='() => RequestMainCommandAsync("format")' disabled="@(!_ready || _busy || DocumentEditor(_activeDocumentPath) == null)">Format document</button>
-                <button @onclick='() => RequestMainCommandAsync("actions")' disabled="@(!_ready || _busy || DocumentEditor(_activeDocumentPath) == null)">Source actions <kbd>Ctrl .</kbd></button>
+                <button @onclick="UndoAsync" disabled="@(WorkspaceActive || !_workspaceEdits.CanUndo || _busy)">Undo preview source edit <kbd>Ctrl Z</kbd></button>
+                <button @onclick="RedoAsync" disabled="@(WorkspaceActive || !_workspaceEdits.CanRedo || _busy)">Redo preview source edit <kbd>Ctrl Y</kbd></button><hr />
+                <button @onclick='() => RequestMainCommandAsync("rename")' disabled="@(WorkspaceActive || !_ready || _busy || DocumentEditor(_activeDocumentPath) == null)">Rename symbol <kbd>F2</kbd></button>
+                <button @onclick='() => RequestMainCommandAsync("format")' disabled="@(WorkspaceActive || !_ready || _busy || DocumentEditor(_activeDocumentPath) == null)">Format document</button>
+                <button @onclick='() => RequestMainCommandAsync("actions")' disabled="@(WorkspaceActive || !_ready || _busy || DocumentEditor(_activeDocumentPath) == null)">Source actions <kbd>Ctrl .</kbd></button>
             </div></details>
             <details class="studio-menu"><summary>Run</summary><div class="studio-menu-items">
-                <button @onclick="CompileAsync" disabled="@(!_ready || _busy)">Compile project</button>
+                <button @onclick='() => RunWorkspaceCommandAsync("build")' disabled="@(!_solutionSession.IsLocal || !_solutionSession.Trusted || _solutionSession.Busy || _solutionSession.Snapshot.EntryPath == null)">Build solution with local SDK</button>
+                <button @onclick='() => RunWorkspaceCommandAsync("evaluate")' disabled="@(!_solutionSession.IsLocal || !_solutionSession.Trusted || _solutionSession.Busy || _solutionSession.Snapshot.EntryPath == null)">Evaluate MSBuild / Roslyn workspace</button>
+                <button @onclick="ShowWorkspaceOutputAsync">Workspace output</button>
+                <hr /><strong class="menu-caption">Single-view preview project</strong>
+                <button @onclick="CompileAsync" disabled="@(!_ready || _busy)">Compile preview project</button>
                 <button @onclick="RunTrustedAsync" disabled="@(!_ready || _busy)">Run trusted preview</button>
                 <button @onclick="RunIsolatedAsync" disabled="@(!_ready || _busy)" data-testid="run-isolated">Run isolated</button>
                 <button @onclick="ResetIsolationAsync" disabled="@(!_isolationVisible)" data-testid="reset-isolation">Reset isolation</button>
-                <hr /><strong class="menu-caption">Automatic updates</strong>
+                <hr /><strong class="menu-caption">Automatic preview updates</strong>
                 <label class="studio-auto-option"><input type="checkbox" checked="@_autoCompile" @onchange="AutoCompileChangedAsync" /> Auto compile</label>
                 <label class="studio-auto-option"><input type="checkbox" checked="@_autoPreview" @onchange="AutoPreviewChangedAsync" disabled="@(!_autoCompile)" /> Auto preview</label>
                 <p class="studio-auto-help">Compile after typing pauses. Auto preview runs valid owner edits in the current preview mode.</p>
             </div></details>
             <details class="studio-menu"><summary>View</summary><div class="studio-menu-items">
-                <strong class="menu-caption">Documents</strong>
+                <strong class="menu-caption">Workspace documents</strong>
+                @foreach (var document in _solutionSession.Documents.Values) { <button @onclick="() => OpenWorkspaceDocumentAsync(document)">@document.Path @(document.Dirty ? "●" : "")</button> }
+                <hr /><strong class="menu-caption">Preview documents</strong>
                 @foreach (var path in SourceDocumentPaths) { <button @onclick="() => OpenDocumentAsync(path)">@path</button> }
                 <hr /><button @onclick='() => ShowPaneAsync("generated")'>Generated C#</button>
                 <button @onclick="ResetDockyardAsync" disabled="@(!_dockReady)">Reset layout</button>
@@ -50,33 +64,53 @@
                 @foreach (var tool in ToolPanes) { <button @onclick="() => ShowPaneAsync(tool.Id)">@tool.Title</button> }
             </div></details>
         </nav>
-        <span class="toolbar-spacer"></span><span class="shell-project">@PlaygroundExamples.All[_exampleIndex].Name</span>
+        <span class="toolbar-spacer"></span><span class="shell-project">@(WorkspaceActive ? _solutionSession.Snapshot.EntryPath : PlaygroundExamples.All[_exampleIndex].Name)</span>
         <button class="icon-button" aria-label="Toggle color theme" @onclick="ToggleThemeAsync">◐</button>
     </header>
     <div class="toolbar studio-commandbar" aria-label="Project actions">
-        <button @onclick="CompileAsync" disabled="@(!_ready || _busy)">Compile</button>
-        <button class="primary" @onclick="RunTrustedAsync" disabled="@(!_ready || _busy)" data-testid="run-preview" title="Executes trusted project code and enables visual design">▷ Run preview</button>
-        <span class="toolbar-divider"></span>
-        <button class="icon-button" @onclick="UndoAsync" disabled="@(!_workspaceEdits.CanUndo || _busy)" aria-label="Undo" title="Undo source edit">↶</button>
-        <button class="icon-button" @onclick="RedoAsync" disabled="@(!_workspaceEdits.CanRedo || _busy)" aria-label="Redo" title="Redo source edit">↷</button>
-        <span class="active-document" title="@_activeDocumentPath">@_activeDocumentPath</span>
+        @if (WorkspaceActive)
+        {
+            <button @onclick="_solutionSession.SaveAllAsync" disabled="@_solutionSession.Busy">Save all</button>
+            <button class="primary" @onclick='() => RunWorkspaceCommandAsync("build")' disabled="@(!_solutionSession.IsLocal || !_solutionSession.Trusted || _solutionSession.Busy)">Build solution</button>
+            <button @onclick='() => RunWorkspaceCommandAsync("evaluate")' disabled="@(!_solutionSession.IsLocal || !_solutionSession.Trusted || _solutionSession.Busy)">Evaluate</button>
+            <span class="active-document" title="@ActiveWorkspaceDocument?.Path">@ActiveWorkspaceDocument?.Path @(ActiveWorkspaceDocument?.Dirty == true ? "●" : "")</span>
+            <small>@(_solutionSession.IsLocal ? "Local SDK" : "Browser · structural editing")</small>
+        }
+        else
+        {
+            <button @onclick="CompileAsync" disabled="@(!_ready || _busy)">Compile</button>
+            <button class="primary" @onclick="RunTrustedAsync" disabled="@(!_ready || _busy)" data-testid="run-preview" title="Executes trusted preview-project code and enables visual design">▷ Run preview</button>
+            <span class="toolbar-divider"></span>
+            <button class="icon-button" @onclick="UndoAsync" disabled="@(!_workspaceEdits.CanUndo || _busy)" aria-label="Undo" title="Undo source edit">↶</button>
+            <button class="icon-button" @onclick="RedoAsync" disabled="@(!_workspaceEdits.CanRedo || _busy)" aria-label="Redo" title="Redo source edit">↷</button>
+            <span class="active-document" title="@_activeDocumentPath">@_activeDocumentPath</span>
+        }
         <span class="toolbar-spacer"></span>
         <button @onclick='() => ShowPaneAsync("agent")' disabled="@(!_dockReady)" data-testid="agent-workbench">Coding agent</button>
         <button @onclick='() => ShowPaneAsync("agent-access")' disabled="@(!_dockReady)" data-testid="agent-access"><span class="@(_sharing ? "success-dot" : "access-dot")"></span><span>Agent access</span></button>
     </div>
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("explorer")" Context="pane">
-        <aside class="explorer">
-            <h2>EXPLORER</h2>
-            <div class="project-label">⌄ &nbsp; PLAYGROUND</div>
-            @foreach (var path in SourceDocumentPaths)
-            {
-                <button class="file @(_activeDocumentPath == path ? "selected" : "")" @onclick="() => OpenDocumentAsync(path)"><span class="file-icon">@(IsCSharpPath(path) ? "#" : "◇")</span><span class="file-path">@path</span><small>@(IsCSharpPath(path) ? "C#" : "XAML")</small></button>
-            }
-            <button class="file" @onclick='() => ShowPaneAsync("resources")'><span class="file-icon">＋</span> Manage resources <small>@Compiler.Resources.Snapshot.Count</small></button>
-            <button class="file" @onclick='() => ShowPaneAsync("code-files")'><span class="file-icon">＋</span> Manage C# files <small>@Compiler.CodeFiles.Snapshot.Count</small></button>
-            <div class="explorer-note"><span class="eyebrow">ONE COMPILER</span><p>Syntax → Roslyn symbols → typed operations → C#.</p><p>@PlaygroundExamples.All[_exampleIndex].Description</p></div>
-            <div class="trust-note">Auto preview and Design execute trusted code in this tab. Pause automatic updates from Run. Run isolated uses a separate opaque-origin frame. Compilation never sends source to a server.</div>
+        <aside class="explorer ws-explorer-host">
+            <SolutionExplorer Session="_solutionSession" OpenRequested="OpenWorkspaceDocumentAsync" NewRequested="ShowSolutionWizardAsync" OutputRequested="ShowWorkspaceOutputAsync" AccessRequested='() => ShowPaneAsync("agent-access")' />
+            <details class="ws-preview-project"><summary>Single-view preview project</summary>
+                <div class="project-label">⌄ &nbsp; PLAYGROUND</div>
+                @foreach (var path in SourceDocumentPaths)
+                {
+                    <button class="file @(!WorkspaceActive && _activeDocumentPath == path ? "selected" : "")" @onclick="() => OpenDocumentAsync(path)"><span class="file-icon">@(IsCSharpPath(path) ? "#" : "◇")</span><span class="file-path">@path</span><small>@(IsCSharpPath(path) ? "C#" : "XAML")</small></button>
+                }
+                <button class="file" @onclick='() => ShowPaneAsync("resources")'><span class="file-icon">＋</span> Manage resources <small>@Compiler.Resources.Snapshot.Count</small></button>
+                <button class="file" @onclick='() => ShowPaneAsync("code-files")'><span class="file-icon">＋</span> Manage C# files <small>@Compiler.CodeFiles.Snapshot.Count</small></button>
+                <div class="explorer-note"><span class="eyebrow">ONE COMPILER</span><p>Syntax → Roslyn symbols → typed operations → C#.</p><p>@PlaygroundExamples.All[_exampleIndex].Description</p></div>
+                <div class="trust-note">Auto preview and Design execute trusted code in this tab. Pause automatic updates from Run. Run isolated uses a separate opaque-origin frame. Preview compilation never sends source to a server.</div>
+            </details>
         </aside>
+    </BrowserTemplate>
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("workspace-document")" Context="pane">
+        @if (_solutionSession.Documents.TryGetValue(pane.GetProperty("ContentId").GetString()!, out var workspaceDocument))
+        { <WorkspaceDocumentView Session="_solutionSession" Document="workspaceDocument" OutputRequested="ShowWorkspaceOutputAsync" /> }
+    </BrowserTemplate>
+    <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("workspace-output")" Context="pane">
+        <WorkspaceOutput Session="_solutionSession" SourceRequested="OpenWorkspaceFileAsync" />
     </BrowserTemplate>
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("document")" Context="pane">
         @if (DocumentForId(pane.GetProperty("ContentId").GetString()!) is { } buffer)
@@ -100,21 +134,22 @@
         }
     </BrowserTemplate>
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("problems")" Context="pane">
-            <section class="diagnostics" aria-label="Compiler diagnostics">
-                <div class="panel-heading"><h2>PROBLEMS <span class="count">@(_result?.Diagnostics.Length ?? 0)</span></h2><small>@(_result == null ? "Compile to inspect" : $"{_result.ElapsedMilliseconds:0.0} ms · semantic analysis + C# diagnostics")</small></div>
-                @if (_error != null) { <div class="runtime-error" role="alert">@_error</div> }
-                @if (_result?.Diagnostics.Length == 0) { <p class="empty"><span class="success-dot"></span>No compiler diagnostics. Ready to run.</p> }
-                @if (_result != null)
+        <section class="diagnostics" aria-label="Compiler diagnostics">
+            <div class="panel-heading"><h2>PROBLEMS <span class="count">@(_result?.Diagnostics.Length ?? 0)</span></h2><small>@(_result == null ? "Compile to inspect" : $"{_result.ElapsedMilliseconds:0.0} ms · semantic analysis + C# diagnostics")</small></div>
+            @if (_error != null) { <div class="runtime-error" role="alert">@_error</div> }
+            @if (_result?.Diagnostics.Length == 0) { <p class="empty"><span class="success-dot"></span>No compiler diagnostics. Ready to run.</p> }
+            @if (_result != null)
+            {
+                @foreach (var diagnostic in _result.Diagnostics)
                 {
-                    @foreach (var diagnostic in _result.Diagnostics)
-                    {
-                        <button class="diagnostic-row" @onclick="() => RevealDiagnosticAsync(diagnostic)"><span class="@(diagnostic.Severity == "Error" && !diagnostic.IsSuppressed ? "error-dot" : "warning-dot")"></span><code>@diagnostic.Code</code><span>@diagnostic.Message</span><small>@diagnostic.Severity @(diagnostic.IsSuppressed ? "· suppressed" : "") · @diagnostic.Path:@diagnostic.StartLine</small></button>
-                    }
+                    <button class="diagnostic-row" @onclick="() => RevealDiagnosticAsync(diagnostic)"><span class="@(diagnostic.Severity == "Error" && !diagnostic.IsSuppressed ? "error-dot" : "warning-dot")"></span><code>@diagnostic.Code</code><span>@diagnostic.Message</span><small>@diagnostic.Severity @(diagnostic.IsSuppressed ? "· suppressed" : "") · @diagnostic.Path:@diagnostic.StartLine</small></button>
                 }
-            </section>
+            }
+        </section>
     </BrowserTemplate>
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("preview")" Context="pane">
         <section class="dock-preview">
+            @if (WorkspaceActive) { <p class="ws-preview-context">This canvas belongs to the separate single-view preview project. Solution files use the workspace build/evaluation commands; they are not flattened into this preview.</p> }
             <div class="preview-heading">
                 <h2>@(_isolationVisible ? "ISOLATED PREVIEW" : "LIVE PREVIEW") <span class="badge subtle">AVALONIA</span></h2>
                 <button class="preview-auto-toggle" aria-pressed='@(_autoCompile && _autoPreview ? "true" : "false")' @onclick="() => AutoPreviewChangedAsync(new ChangeEventArgs { Value = !_autoPreview })" disabled="@(!_autoCompile)" title="Refresh the preview automatically after owner edits compile">Auto @(_autoCompile && _autoPreview ? "on" : "off")</button>
@@ -130,84 +165,82 @@
     </BrowserTemplate>
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("inspector")" Context="pane">
         @{ var inspectorId = pane.GetProperty("ContentId").GetString()!; var inspectorTitle = ToolPanes.Single(tool => tool.Id == inspectorId).Title; }
-        <section class="dock-inspector">
-            <div class="inspector-body">
-                @if (inspectorTitle == "C# output")
-                {
-                    <div class="generated-files"><p class="muted">Generated documents open as read-only tabs.</p>
-                        @foreach (var path in GeneratedPaths) { <button class="file" @onclick="() => OpenDocumentAsync(path, generated: true)"># &nbsp; @path</button> }
-                        @if (!GeneratedPaths.Any()) { <p class="empty">Compile the project to inspect generated C#.</p> }
-                    </div>
-                }
-                @if (inspectorTitle == "C# files")
-                {
-                    <ProjectCode @ref="_projectCodeEditor" Documents="Compiler.CodeFiles" Busy="_busy" Changed="ProjectCodeChangedAsync" CaptureRequested="CaptureEditorsAsync" OpenRequested="path => OpenDocumentAsync(path)" />
-                }
-                @if (inspectorTitle == "Resources")
-                {
-                    <ProjectResources @ref="_resourceEditor" Documents="Compiler.Resources" Result="_result" Busy="@(_busy || _fileMoveWorking)" Changed="ResourceChangedAsync" LoadExample="LoadResourceExampleAsync"
-                        CaptureRequested="CaptureEditorsAsync" OpenRequested="path => OpenDocumentAsync(path)" GeneratedRequested="OpenGeneratedDocumentAsync" SyntaxRequested="OpenResourceSyntaxAsync" RenameRequested="OpenFileMoveAsync" />
-                }
-                @if (inspectorTitle is "Syntax" or "Bound tree")
-                {
-                    <label class="inspection-path">Document <select aria-label="Inspected XAML document" value="@_inspectionPath" @onchange="InspectionPathChanged">@foreach (var path in InspectionPaths) { <option>@path</option> }</select></label>
-                }
-                @if (inspectorTitle == "Syntax") { <div class="tree-scroll"><InspectionTree Items="@(InspectionAnalysis == null ? Array.Empty<XamlInspectionNode>() : XamlInspector.Syntax(InspectionAnalysis.Syntax))" Selected="SelectSyntaxAsync" /></div> }
-                @if (inspectorTitle == "Bound tree") { <div class="tree-scroll">@if (InspectionAnalysis != null && XamlInspector.Bound(InspectionAnalysis.Document) is { } bound) { <InspectionTree Items="@(new[] { bound })" Selected="SelectSyntaxAsync" /> }</div> }
-                @if (inspectorTitle == "Visual tree") { <div class="tree-scroll">@if (_visualTree != null) { <VisualTree Node="_visualTree" Selected="SelectVisual" /> } else { <p class="empty">Run a preview to inspect realized framework visuals.</p> }</div> }
-                @if (RuntimePanel(inspectorId) is { } runtimePanel)
-                {
-                    <RuntimeWorkbench Panel="@runtimePanel" SelectedObjectId="@_runtimeSelectedId" SelectedObjectIdChanged="RuntimeSelectionChanged" ObjectHandle="@(inspectorId == "runtime-objects" ? _runtimeObjectHandle : null)"
-                        ObjectRequested="OpenRuntimeObjectAsync" Execute="ExecuteRuntimeUiAsync" Tools="_automation.Tools" HostBusy="@(_busy || !_ready)" PreviewRevision="@(Preview.Root == null ? -1 : Preview.Revision)" RuntimeRevision="@(_runtimeInspector?.Revision ?? -1)" SourceRevision="SourceRevision" SourceRequested="NavigateRuntimeSourceAsync" />
-                }
-                @if (inspectorTitle == "Compiler") { <CompilerWorkbench Execute="ExecuteCompilerUiAsync" Tools="_automation.Tools" SourceRevision="SourceRevision" HostBusy="@(_busy || !_ready)" /> }
-                @if (inspectorTitle == "Designer") { <DesignerWorkbench Execute="ExecuteRuntimeUiAsync" HostBusy="@(_busy || !_ready)" DesignerRevision="Preview.DesignRevision" PreviewRevision="@(Preview.Root == null ? -1 : Preview.Revision)" SourceRevision="SourceRevision" SourceRequested="NavigateRuntimeSourceAsync" /> }
-                @if (inspectorTitle == "Properties")
-                {
-                    <div class="properties">
-                        <h3>@(_selectedElement?.Name ?? "Select a syntax node")</h3>
-                        @if (_selectedElement != null)
-                        {
-                            <p><code>@SelectedDesignerSyntax.Path</code></p>
-                            @foreach (var item in _selectedElement.Attributes.Where(a => !a.IsNamespace)) { <div class="property-readout"><code>@item.Name</code><span>@item.Value</span></div> }
-                            <label>Property <input @bind="_propertyName" placeholder="Text" /></label>
-                            <label>Value <input @bind="_propertyValue" placeholder="New value" /></label>
-                            <button class="primary" @onclick="ApplyDesignerPropertyAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_propertyName))">Apply to XAML</button>
-                            <StructureEditor Destinations="ReparentDestinations" @bind-Destination="_reparentDestination" @bind-Markup="_newElementMarkup"
-                                Disabled="_busy" IsRoot="@ReferenceEquals(_selectedElement, SelectedDesignerSyntax.Root)"
-                                Reparent="ReparentSelectedAsync" Insert="InsertSelectedAsync" Remove="RemoveSelectedAsync" />
-                        }
-                        @if (_selectedVisual != null) { <h3>Realized visual</h3><code>@_selectedVisual.TypeName</code><p>@($"Bounds: {_selectedVisual.X:0.##}, {_selectedVisual.Y:0.##} · {_selectedVisual.Width:0.##} × {_selectedVisual.Height:0.##}")</p><p>Visible: @_selectedVisual.IsVisible</p> }
-                    </div>
-                }
-                @if (inspectorTitle == "Pipeline")
-                {
-                    <div class="pipeline"><h3>Inspect the real compilation</h3><p>All hosts consume the same immutable syntax and bound operations.</p>
-                        <div><b>01</b><strong>Source-preserving syntax</strong><span>@(_result?.Analysis.Syntax.Root?.DescendantsAndSelf().Count() ?? 0) elements</span></div>
-                        @if (_result != null)
-                        {
-                            var statistics = _result.Analysis.Syntax.Statistics;
-                            <p>@(statistics.IsIncremental ? $"{statistics.ParsedCharacters} characters reparsed · {statistics.ReusedNodes} nodes reused" : $"Full parse · {statistics.ParsedCharacters} characters")</p>
-                        }
-                        <div><b>02</b><strong>Roslyn semantic binding</strong><span>@(_result?.Analysis.Document.Symbols.Length ?? 0) root symbol occurrences</span></div>
-                        <div><b>03</b><strong>Project resource linking</strong><span>@(_result?.Project?.Documents.Length ?? 0) compiled documents · direct factory references</span></div>
-                        <div><b>04</b><strong>State-preserving replacement</strong><span>Named identities and unchanged declarations</span></div>
-                        @foreach (var warning in Preview.LastWarnings) { <p class="muted">@warning</p> }
-                        <p class="muted">Structural reload transfers eligible interaction state and swaps roots. Opaque-origin isolation protects editor DOM/storage, not CPU or memory quotas. Resource includes require project documents or exported compiled factories; no runtime XAML loader fallback.</p>
-                    </div>
-                }
-            </div>
-</section>
+        <section class="dock-inspector"><div class="inspector-body">
+            @if (inspectorTitle == "C# output")
+            {
+                <div class="generated-files"><p class="muted">Generated documents open as read-only tabs.</p>
+                    @foreach (var path in GeneratedPaths) { <button class="file" @onclick="() => OpenDocumentAsync(path, generated: true)"># &nbsp; @path</button> }
+                    @if (!GeneratedPaths.Any()) { <p class="empty">Compile the project to inspect generated C#.</p> }
+                </div>
+            }
+            @if (inspectorTitle == "C# files")
+            {
+                <ProjectCode @ref="_projectCodeEditor" Documents="Compiler.CodeFiles" Busy="_busy" Changed="ProjectCodeChangedAsync" CaptureRequested="CaptureEditorsAsync" OpenRequested="path => OpenDocumentAsync(path)" />
+            }
+            @if (inspectorTitle == "Resources")
+            {
+                <ProjectResources @ref="_resourceEditor" Documents="Compiler.Resources" Result="_result" Busy="@(_busy || _fileMoveWorking)" Changed="ResourceChangedAsync" LoadExample="LoadResourceExampleAsync"
+                    CaptureRequested="CaptureEditorsAsync" OpenRequested="path => OpenDocumentAsync(path)" GeneratedRequested="OpenGeneratedDocumentAsync" SyntaxRequested="OpenResourceSyntaxAsync" RenameRequested="OpenFileMoveAsync" />
+            }
+            @if (inspectorTitle is "Syntax" or "Bound tree")
+            {
+                <label class="inspection-path">Document <select aria-label="Inspected XAML document" value="@_inspectionPath" @onchange="InspectionPathChanged">@foreach (var path in InspectionPaths) { <option>@path</option> }</select></label>
+            }
+            @if (inspectorTitle == "Syntax") { <div class="tree-scroll"><InspectionTree Items="@(InspectionAnalysis == null ? Array.Empty<XamlInspectionNode>() : XamlInspector.Syntax(InspectionAnalysis.Syntax))" Selected="SelectSyntaxAsync" /></div> }
+            @if (inspectorTitle == "Bound tree") { <div class="tree-scroll">@if (InspectionAnalysis != null && XamlInspector.Bound(InspectionAnalysis.Document) is { } bound) { <InspectionTree Items="@(new[] { bound })" Selected="SelectSyntaxAsync" /> }</div> }
+            @if (inspectorTitle == "Visual tree") { <div class="tree-scroll">@if (_visualTree != null) { <VisualTree Node="_visualTree" Selected="SelectVisual" /> } else { <p class="empty">Run a preview to inspect realized framework visuals.</p> }</div> }
+            @if (RuntimePanel(inspectorId) is { } runtimePanel)
+            {
+                <RuntimeWorkbench Panel="@runtimePanel" SelectedObjectId="@_runtimeSelectedId" SelectedObjectIdChanged="RuntimeSelectionChanged" ObjectHandle="@(inspectorId == "runtime-objects" ? _runtimeObjectHandle : null)"
+                    ObjectRequested="OpenRuntimeObjectAsync" Execute="ExecuteRuntimeUiAsync" Tools="_automation.Tools" HostBusy="@(_busy || !_ready)" PreviewRevision="@(Preview.Root == null ? -1 : Preview.Revision)" RuntimeRevision="@(_runtimeInspector?.Revision ?? -1)" SourceRevision="SourceRevision" SourceRequested="NavigateRuntimeSourceAsync" />
+            }
+            @if (inspectorTitle == "Compiler") { <CompilerWorkbench Execute="ExecuteCompilerUiAsync" Tools="_automation.Tools" SourceRevision="SourceRevision" HostBusy="@(_busy || !_ready)" /> }
+            @if (inspectorTitle == "Designer") { <DesignerWorkbench Execute="ExecuteRuntimeUiAsync" HostBusy="@(_busy || !_ready)" DesignerRevision="Preview.DesignRevision" PreviewRevision="@(Preview.Root == null ? -1 : Preview.Revision)" SourceRevision="SourceRevision" SourceRequested="NavigateRuntimeSourceAsync" /> }
+            @if (inspectorTitle == "Properties")
+            {
+                <div class="properties"><h3>@(_selectedElement?.Name ?? "Select a syntax node")</h3>
+                    @if (_selectedElement != null)
+                    {
+                        <p><code>@SelectedDesignerSyntax.Path</code></p>
+                        @foreach (var item in _selectedElement.Attributes.Where(a => !a.IsNamespace)) { <div class="property-readout"><code>@item.Name</code><span>@item.Value</span></div> }
+                        <label>Property <input @bind="_propertyName" placeholder="Text" /></label>
+                        <label>Value <input @bind="_propertyValue" placeholder="New value" /></label>
+                        <button class="primary" @onclick="ApplyDesignerPropertyAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_propertyName))">Apply to XAML</button>
+                        <StructureEditor Destinations="ReparentDestinations" @bind-Destination="_reparentDestination" @bind-Markup="_newElementMarkup"
+                            Disabled="_busy" IsRoot="@ReferenceEquals(_selectedElement, SelectedDesignerSyntax.Root)"
+                            Reparent="ReparentSelectedAsync" Insert="InsertSelectedAsync" Remove="RemoveSelectedAsync" />
+                    }
+                    @if (_selectedVisual != null) { <h3>Realized visual</h3><code>@_selectedVisual.TypeName</code><p>@($"Bounds: {_selectedVisual.X:0.##}, {_selectedVisual.Y:0.##} · {_selectedVisual.Width:0.##} × {_selectedVisual.Height:0.##}")</p><p>Visible: @_selectedVisual.IsVisible</p> }
+                </div>
+            }
+            @if (inspectorTitle == "Pipeline")
+            {
+                <div class="pipeline"><h3>Inspect the real compilation</h3><p>All hosts consume the same immutable syntax and bound operations.</p>
+                    <div><b>01</b><strong>Source-preserving syntax</strong><span>@(_result?.Analysis.Syntax.Root?.DescendantsAndSelf().Count() ?? 0) elements</span></div>
+                    @if (_result != null)
+                    {
+                        var statistics = _result.Analysis.Syntax.Statistics;
+                        <p>@(statistics.IsIncremental ? $"{statistics.ParsedCharacters} characters reparsed · {statistics.ReusedNodes} nodes reused" : $"Full parse · {statistics.ParsedCharacters} characters")</p>
+                    }
+                    <div><b>02</b><strong>Roslyn semantic binding</strong><span>@(_result?.Analysis.Document.Symbols.Length ?? 0) root symbol occurrences</span></div>
+                    <div><b>03</b><strong>Project resource linking</strong><span>@(_result?.Project?.Documents.Length ?? 0) compiled documents · direct factory references</span></div>
+                    <div><b>04</b><strong>State-preserving replacement</strong><span>Named identities and unchanged declarations</span></div>
+                    @foreach (var warning in Preview.LastWarnings) { <p class="muted">@warning</p> }
+                    <p class="muted">Structural reload transfers eligible interaction state and swaps roots. Opaque-origin isolation protects editor DOM/storage, not CPU or memory quotas. Resource includes require project documents or exported compiled factories; no runtime XAML loader fallback.</p>
+                </div>
+            }
+        </div></section>
     </BrowserTemplate>
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("agent")" Context="pane"><AgentWorkbench @ref="_agentWorkbench" UiStore="_intelligentUi" UiReady="_ready" UiTools="_automation.Tools" UiToolRequested="ExecuteIntelligentUiToolAsync" BrowserRuntime="_browserAgents" SourceRevision="SourceRevision" SourceRequested="NavigateAgentSourceAsync" AccessRequested='() => ShowPaneAsync("agent-access")' /></BrowserTemplate>
     <BrowserTemplate TItem="JsonElement" Id="@PaneTemplate("agent-access")" Context="pane">
     <section class="agent-access-panel" aria-label="Agent access">
         <h2>MCP agent access</h2>
-        <p>Share this workspace with external MCP clients. Direct API coding agents use their own permissions in the Coding agent tool.</p>
+        <p>Share the single-view preview project with external MCP clients. Local solution filesystem operations are separately authorized to the paired browser owner; the MCP client token does not grant local disk access.</p>
         <details class="companion-setup">
             <summary>Start the local companion</summary>
             <p>From a XamlG checkout, run:</p>
             <pre><code>dotnet run --project tools/XamlG.Studio.Host -c Release</code></pre>
+            <p>To enable solution/project filesystem access, set <code>XAMLG_STUDIO_WORKSPACE_ROOT</code> to an existing source directory before starting the companion. Select Open local workspace in Solution Explorer after pairing.</p>
             <p>Keep this page open, then paste the printed Owner token below. The companion accepts the published GitHub Pages app by default. Allow local network access if your browser requests it when connecting.</p>
             <p>Set provider keys in the companion environment before starting it. External MCP clients use the separate MCP client token at <code>http://127.0.0.1:4893/mcp</code>.</p>
         </details>
@@ -254,7 +287,7 @@
     </main>
     <footer class="statusbar">
         <span id="studio-storage-error" role="alert" hidden></span>
-        <span><i class="@(_error == null ? "success-dot" : "error-dot")"></i><span class="status-message" title="@_status">@_status</span></span>
+        <span><i class="@(_error == null ? "success-dot" : "error-dot")"></i><span class="status-message" title="@_status">@(WorkspaceActive ? _solutionSession.Busy ? "Workspace operation running" : _solutionSession.Error ?? _solutionSession.Snapshot.EntryPath : _status)</span></span>
         @if (_startupFailed)
         {
             <button class="startup-retry" @onclick="InitializeStudioAsync" disabled="@_initializing" data-testid="retry-startup">Retry loading</button>
@@ -263,6 +296,7 @@
     </footer>
 </div>
 
+<SolutionProjectWizard Session="_solutionSession" Visible="_solutionWizardVisible" Mode="_solutionWizardMode" Cancel="CloseSolutionWizard" Created="SolutionCreatedAsync" />
 @if (_automationReview != null)
 {
     <section class="automation-dialog automation-review" role="dialog" aria-label="Review agent operation" aria-modal="true">
