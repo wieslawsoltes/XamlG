@@ -42,7 +42,7 @@ jobs:
           PLAYGROUND_PAGES_PREVIEW: '1'
         run: |
           dotnet build ../XamlG.Studio.Host -c Release -warnaserror
-          python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/intelligent-ui-lifecycle.spec.mjs tests/intelligent-ui-parity.spec.mjs
+          python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/intelligent-ui-lifecycle.spec.mjs tests/intelligent-ui-parity.spec.mjs tests/intelligent-ui-authoring.spec.mjs tests/intelligent-ui-input.spec.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -2,7 +2,7 @@
 async function publishContext(result,generation){if(current(generation)&&capabilities.updateModelContext)await request('ui/update-model-context',{structuredContent:{surfaceId:result.id,sessionId:result.sessionId,revision:result.revision,stateRevision:result.stateRevision,state:result.state}});}
 function changeState(entry,explicit){
   if(applying||!snapshot||entry.disabled||!entry.node.stateKey||entry.node.properties.IsReadOnly)return Promise.resolve();
-  const value=explicit!==undefined?explicit:toggles.has(entry.type)?entry.input.checked:['Slider','NumericUpDown'].includes(entry.type)?entry.input.value===''?null:Number(entry.input.value):dates.has(entry.type)?entry.input.value?entry.input.value+'T00:00:00Z':null:entry.type==='TimePicker'?entry.input.value||null:['ComboBox','ListBox'].includes(entry.type)?entry.input.selectedIndex:entry.input.value;
+  const value=explicit!==undefined?explicit:toggles.has(entry.type)?entry.input.indeterminate?null:entry.input.checked:['Slider','NumericUpDown'].includes(entry.type)?entry.input.value===''?null:Number(entry.input.value):dates.has(entry.type)?entry.input.value?entry.input.value+'T00:00:00Z':null:entry.type==='TimePicker'?entry.input.value||null:['ComboBox','ListBox'].includes(entry.type)?entry.input.selectedIndex:entry.input.value;
   const generation=epoch,revision=snapshot.revision,id=snapshot.id,key=entry.node.stateKey,nodeKey=entry.node.key;
   return enqueue(async()=>{
     if(!snapshot||snapshot.id!==id||snapshot.revision!==revision||entries.get(nodeKey)!==entry)return;
@@ -32,10 +32,10 @@ async function prepare(entry,explicitCall=null){
     const call=explicitCall||{id,expectedRevision:revision,expectedStateRevision:snapshot.stateRevision,nodeKey};
     const local=Array.isArray(snapshot.actions)&&snapshot.actions.some(action=>action.id===entry.node.actionId&&action.kind==='state');busy=true;error('');
     try{
-      if(local){const result=await tool('xamlg_ui_state_action',call);busy=false;if(current(generation)){accept(result);await publishContext(result,generation);}return;}
+      if(local){const result=await tool('xamlg_ui_state_action',call);busy=false;if(current(generation)){accept(result);await publishContext(result,generation);return true;}return false;}
       const intent=await tool('xamlg_ui_action',call);if(!current(generation))return;
       review={call,intent,generation};$('intent').textContent=JSON.stringify(intent,null,2);$('review').hidden=false;
-    }catch(failure){if(current(generation))error(failure);}finally{busy=false;if(local&&current(generation)&&snapshot)accept(snapshot);}
+    }catch(failure){if(current(generation))error(failure);return false;}finally{busy=false;if(local&&current(generation)&&snapshot)accept(snapshot);}
   },generation).catch(failure=>{if(current(generation))error(failure);});
 }
 async function confirm(){

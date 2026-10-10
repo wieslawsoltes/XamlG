@@ -102,3 +102,28 @@ test('unbound three-state inputs cycle locally without host mutations',async({pa
   for(const value of ['true','mixed','false']){await toggle.click();await expect(toggle).toHaveAttribute('aria-checked',value);}
   expect(await values(page)).toEqual([]);
 });
+
+
+test('a cancelled action cannot coerce a focused mixed checkbox to false',async({page})=>{
+  const app=await mountInput(page,{roots:[n('/toggle','CheckBox',{IsChecked:null,IsThreeState:true},{stateKey:'choice'}),n('/cancel','Button',{Content:'Cancel',IsCancel:true},{actionId:'cancel'})],state:{choice:null,count:0},actions:[{id:'cancel',kind:'state'}]});
+  await app.getByRole('checkbox').focus();await page.keyboard.press('Escape');
+  await expect.poll(()=>page.evaluate(()=>window.readInput().state.count)).toBe(1);
+  expect(await values(page)).toEqual([]);expect(await page.evaluate(()=>window.readInput().state.choice)).toBeNull();
+});
+test('a rejected repeat stops rather than retrying a failing host indefinitely',async({page})=>{
+  const app=await mountInput(page,{roots:[n('/repeat','RepeatButton',{Content:'Hold',Delay:20,Interval:16},{actionId:'repeat'})],actions:[{id:'repeat',kind:'state'}]});
+  await page.evaluate(()=>window.failAction=true);await key(app,'/repeat').hover();await page.mouse.down();
+  await expect(app.getByRole('alert')).toContainText('Rejected action');await page.waitForTimeout(120);
+  expect(await page.evaluate(()=>window.inputCalls.filter(c=>c.name==='xamlg_ui_state_action').length)).toBe(1);
+  await page.mouse.move(0,0);await page.mouse.up();
+});
+test('standalone content presenters retain children and an unowned items presenter remains empty',async({page})=>{
+  const presenter=n('/presenter','ContentPresenter',{Content:'Initial'}),items=n('/items','ItemsPresenter');
+  const app=await mountInput(page,{roots:[presenter,items]});await expect(key(app,'/presenter')).toHaveText('Initial');
+  presenter.properties={};presenter.children=[n('/child','TextBlock',{Text:'Child'})];
+  await page.evaluate(roots=>window.publishInput({roots}),[presenter,items]);await expect(app.getByRole('status')).toContainText('revision 2');
+  await key(app,'/child').evaluate(e=>e.retained=true);
+  presenter.properties={Padding:8};await page.evaluate(roots=>window.publishInput({roots}),[presenter,items]);
+  await expect(app.getByRole('status')).toContainText('revision 3');expect(await key(app,'/child').evaluate(e=>e.retained)).toBe(true);
+  await expect(key(app,'/items')).toBeEmpty();await expect(app.getByRole('alert')).toBeEmpty();
+});

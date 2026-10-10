@@ -31,6 +31,7 @@ function installUiInput(entry){
   const target=uiInputTarget(entry);
   entry.inputDefaults={tabIndex:target.getAttribute('tabindex'),focusable:target.matches('button,input,textarea,select,summary')};
   if(toggles.has(entry.type)){
+    target.addEventListener('change',()=>{if(!applying&&!entry.node.stateKey){entry.localToggle=target.indeterminate?null:target.checked;applyUiToggle(entry);}});
     target.addEventListener('click',event=>{
       const p=entry.node.properties;
       if(!p.IsThreeState||entry.type==='RadioButton')return;
@@ -132,7 +133,8 @@ function startUiRepeat(entry){
   const tick=async()=>{
     if(heldUiRepeat!==hold||!hold.alive()){if(heldUiRepeat===hold)stopUiRepeat();return;}
     // Await each host result. A slow host never creates an unbounded timer/request backlog.
-    await prepare(entry);
+    const completed=await prepare(entry);
+    if(completed!==true){if(heldUiRepeat===hold)stopUiRepeat();return;}
     if(heldUiRepeat===hold&&hold.alive())hold.timer=setTimeout(tick,entry.node.properties.Interval??100);
   };
   hold.timer=setTimeout(tick,entry.node.properties.Delay??300);

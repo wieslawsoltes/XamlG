@@ -29,8 +29,22 @@ public sealed class UiSelectorTests
     [InlineData("Button:not(.a,.b)")][InlineData("Button:nth-child(2n1)")]
     [InlineData("Button:nth-child(2147483647n)")][InlineData("Button:nth-child(n+-1)")]
     [InlineData("Button:nth-child(2):nth-child(3)")][InlineData("Button:is(TextBlock)")]
+    [InlineData("Button:nth-child(1 2)")][InlineData("Button:nth-child(o d d)")]
+    [InlineData("Button:nth-child(n + 1 2)")][InlineData("Button:nth-child(n - -1)")]
     [InlineData("Button;body")][InlineData("StackPanel > .untyped")]
     public void Invalid_grammar_is_rejected(string source) => Assert.Throws<UiException>(() => UiStyles.ParseSelector(source));
+    [AvaloniaFact]
+    public void Export_uses_native_positional_and_universal_selector_grammar()
+    {
+        var source = $"<StackPanel {Ns}><StackPanel.Styles><Style Selector=\"* > TextBlock:nth-child( odd )\"><Setter Property=\"FontSize\" Value=\"23\"/></Style></StackPanel.Styles><TextBlock Text=\"Odd\"/></StackPanel>";
+        var snapshot = new UiSessionStore().Publish(new("export-selector", 0, 1, source), "owner");
+        var xaml = UiSourceExporter.Xaml(snapshot);
+        Assert.Contains(":is(Control)", xaml); Assert.Contains(":nth-child(2n+1)", xaml);
+        var root = Assert.IsType<StackPanel>(AvaloniaRuntimeXamlLoader.Load(xaml));
+        var window = new Window { Content = root }; window.Show();
+        try { Assert.Equal(23, Assert.IsType<TextBlock>(root.Children[0]).FontSize); }
+        finally { window.Close(); }
+    }
     [Fact]
     public void Groups_and_unused_types_are_validated_before_publication()
     {

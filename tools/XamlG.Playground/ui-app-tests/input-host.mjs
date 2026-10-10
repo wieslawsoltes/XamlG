@@ -10,7 +10,7 @@ export function inputHost({html,initial}){
   const marker=()=>({format:'xamlg.intelligent-ui/1',id:value.id,sessionId:value.sessionId,revision:value.revision,stateRevision:value.stateRevision});
   const notify=()=>send({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:{structuredContent:marker()}});
   const flat=roots=>roots.flatMap(node=>[node,...flat(node.children)]);
-  window.inputCalls=[];window.inputDelay=0;window.failInput=false;
+  window.inputCalls=[];window.inputDelay=0;window.failInput=false;window.failAction=false;
   window.publishInput=next=>{value={...value,...next,revision:value.revision+1};notify();};
   window.readInput=()=>value;
   window.teardownInput=()=>send({jsonrpc:'2.0',id:'teardown',method:'ui/resource-teardown',params:{}});
@@ -32,6 +32,7 @@ export function inputHost({html,initial}){
         value={...value,stateRevision:value.stateRevision+1,state:{...value.state,[a.key]:a.value}};
         node.properties={...node.properties,[property]:a.value};
       }else if(name==='xamlg_ui_state_action'){
+        if(window.failAction){window.failAction=false;reply({isError:true,content:[{type:'text',text:'Rejected action'}]});return;}
         value={...value,stateRevision:value.stateRevision+1,state:{...value.state,count:(value.state.count??0)+1}};
       }else if(name==='xamlg_ui_action'){
         reply({structuredContent:{kind:'message',text:'Review before sending'},content:[]});return;

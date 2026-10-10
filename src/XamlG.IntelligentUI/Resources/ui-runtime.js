@@ -45,7 +45,7 @@ function validSnapshot(value){
       if(Array.isArray(v)){if(name!=='ItemsSource'||v.length>512||v.some(item=>typeof item!=='string'||item.length>1024))throw new Error('Invalid item source.');continue;}
       if(!['string','number','boolean'].includes(typeof v)||typeof v==='string'&&v.length>16384||typeof v==='number'&&!Number.isFinite(v))throw new Error('Invalid component property.');
     }
-    validateAvaloniaFeatures(node);validateUiInput(node);
+    validateAvaloniaFeatures(node);validateUiInput(node);validateUiPresenters(node);
     if(node.form&&(typeof node.form.id!=='string'||node.form.id.length>8192||!['form','input','submit','summary','error'].includes(node.form.role)))throw new Error('Invalid form annotation.');
     if(node.formState&&(!Array.isArray(node.formState.fields)||node.formState.fields.length>4096||typeof node.formState.id!=='string'))throw new Error('Invalid form state.');
     for(const child of node.children)check(child,depth+1);

@@ -20,12 +20,12 @@ function parseUiSelector(source){
   const known=name=>{if(!types.has(name)&&!widgets.has(name)&&!['ContentPresenter','ItemsPresenter'].includes(name))throw new Error('Unknown selector type.');return name;};
   function position(text,fromEnd){
     if(text.length>64)throw new Error('Positional formula exceeds its budget.');
-    text=text.replace(/\s/g,'');if(text==='odd')return {step:2,offset:1,fromEnd};if(text==='even')return {step:2,offset:0,fromEnd};
+    text=text.trim();if(text==='odd')return {step:2,offset:1,fromEnd};if(text==='even')return {step:2,offset:0,fromEnd};
     const num=value=>{if(!/^[+-]?\d+$/.test(value))throw new Error('Invalid positional coefficient.');return integer(Number(value),-4096,4096);};
     const n=text.indexOf('n');if(n<0)return {step:0,offset:num(text),fromEnd};
-    const prefix=text.slice(0,n),suffix=text.slice(n+1),step=prefix===''||prefix==='+'?1:prefix==='-'?-1:num(prefix);
-    if(suffix&&!/^[+-]/.test(suffix))throw new Error('A positional offset requires a sign.');
-    return {step,offset:suffix?num(suffix):0,fromEnd};
+    const prefix=text.slice(0,n).trimEnd(),suffix=text.slice(n+1).trim(),step=prefix===''||prefix==='+'?1:prefix==='-'?-1:num(prefix);
+    if(suffix&&!/^[+-]\s*\d+$/.test(suffix))throw new Error('A positional offset requires a sign.');
+    return {step,offset:suffix?(suffix[0]==='-'?-1:1)*num(suffix.slice(1).trim()):0,fromEnd};
   }
   function compound(depth){
     if(depth>4)throw new Error('Selector nesting budget exceeded.');

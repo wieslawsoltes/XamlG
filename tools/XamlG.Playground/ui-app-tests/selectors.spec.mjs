@@ -60,7 +60,7 @@ test('native template boundaries never select ordinary response descendants',asy
   await expect(byKey(app,'/border')).not.toHaveCSS('background-color','rgb(255, 0, 0)');
   await expect(byKey(app,'/text')).toBeVisible();
 });
-for(const selector of ['StackPanel >','TextBlock:not()','Button:nth-child(2n1)','Window TextBlock','StackPanel TextBlock:not(Window)','TextBlock:nth-child(999999999999n)','TextBlock:not(.a,.b)']){
+for(const selector of ['StackPanel >','TextBlock:not()','Button:nth-child(2n1)','Window TextBlock','StackPanel TextBlock:not(Window)','TextBlock:nth-child(999999999999n)','TextBlock:not(.a,.b)','TextBlock:nth-child(1 2)','TextBlock:nth-child(o d d)','TextBlock:nth-child(n + 1 2)']){
   test('rejects invalid logical selector without replacing committed content: '+selector,async({page})=>{
     const scope=node('/root','StackPanel',{},[node('/text','TextBlock',{Text:'Good'})],[rule('TextBlock',{Foreground:'Blue'})]);
     const app=await mount(page,[scope]);scope.styles=[rule(selector,{Opacity:.5})];scope.children[0].properties.Text='Invalid';

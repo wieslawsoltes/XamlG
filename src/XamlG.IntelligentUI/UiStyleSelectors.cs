@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text;
 
 namespace XamlG.IntelligentUI;
 
@@ -137,17 +138,55 @@ public static class UiStyleSelectors
     private static UiSelectorPosition Position(string source, bool fromEnd)
     {
         if (source.Length > 64) throw Invalid("Positional formula exceeds its budget.");
-        var value = string.Concat(source.Where(c => !char.IsWhiteSpace(c)));
+        var value = source.Trim();
         if (value == "odd") return new(2, 1, fromEnd);
         if (value == "even") return new(2, 0, fromEnd);
-        int Number(string text) => int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var n) && n is >= -4096 and <= 4096
+        int Number(string text, NumberStyles styles = NumberStyles.AllowLeadingSign) => int.TryParse(text, styles, CultureInfo.InvariantCulture, out var n) && n is >= -4096 and <= 4096
             ? n : throw Invalid("Positional coefficients must be integers in [-4096,4096].");
         var index = value.IndexOf('n');
         if (index < 0) return new(0, Number(value), fromEnd);
-        var prefix = value[..index]; var suffix = value[(index + 1)..];
+        var prefix = value[..index].TrimEnd(); var suffix = value[(index + 1)..].Trim();
         var step = prefix switch { "" or "+" => 1, "-" => -1, _ => Number(prefix) };
         if (suffix.Length > 0 && suffix[0] is not ('+' or '-')) throw Invalid("A positional offset requires a sign.");
-        return new(step, suffix.Length == 0 ? 0 : Number(suffix), fromEnd);
+        var offset = suffix.Length == 0 ? 0 : Number(suffix[1..].Trim(), NumberStyles.None);
+        return new(step, suffix.Length > 0 && suffix[0] == '-' ? -offset : offset, fromEnd);
+    }
+    /// <summary>Serialize a validated AST using the native XAML selector grammar. A bare
+    /// universal predicate maps to the framework Control base; source identity is unchanged.</summary>
+    public static string ToAvaloniaSelector(string source)
+    {
+        var selector = Parse(source); var text = new StringBuilder(source.Length);
+        void Compound(UiSelectorCompound predicate)
+        {
+            var start = text.Length;
+            if (predicate.Type is { } type)
+            {
+                if (predicate.IncludeDerived) text.Append(":is(").Append(type).Append(')');
+                else text.Append(type);
+            }
+            if (predicate.Name is { } controlName) text.Append('#').Append(controlName);
+            foreach (var name in predicate.Classes) text.Append('.').Append(name);
+            foreach (var name in predicate.PseudoClasses) text.Append(':').Append(name);
+            foreach (var negative in predicate.Negations) { text.Append(":not("); Compound(negative); text.Append(')'); }
+            foreach (var position in predicate.Positions)
+            {
+                text.Append(position.FromEnd ? ":nth-last-child(" : ":nth-child(");
+                if (position.Step != 0) text.Append(position.Step.ToString(CultureInfo.InvariantCulture)).Append('n');
+                if (position.Step == 0 || position.Offset != 0)
+                {
+                    if (position.Step != 0 && position.Offset >= 0) text.Append('+');
+                    text.Append(position.Offset.ToString(CultureInfo.InvariantCulture));
+                }
+                text.Append(')');
+            }
+            if (text.Length == start) text.Append(":is(Control)");
+        }
+        foreach (var step in selector.Steps)
+        {
+            text.Append(step.Relation switch { UiSelectorRelation.Child => " > ", UiSelectorRelation.Descendant => " ", UiSelectorRelation.Template => " /template/ ", _ => "" });
+            Compound(step.Predicate);
+        }
+        return text.ToString();
     }
     private static UiException Invalid(string text) => new("invalid_style", text);
 }

@@ -65,7 +65,7 @@ public static class UiSourceExporter
                 {
                     var source = Convert(new UiElement("style", node.Type, ImmutableDictionary<string, JsonElement>.Empty, []) { Styles = [style] });
                     var rule = new XElement(source.Element(ns + (node.Type + ".Styles"))!.Elements().Single());
-                    rule.SetAttributeValue("Selector", "^" + style.Selector[theme.TargetType.Length..]); definition.Add(rule);
+                    rule.SetAttributeValue("Selector", "^" + UiStyleSelectors.ToAvaloniaSelector(style.Selector)[theme.TargetType.Length..]); definition.Add(rule);
                 }
                 element.Add(new XElement(ns + (node.Type + ".Theme"), definition));
             }
@@ -74,7 +74,7 @@ public static class UiSourceExporter
                 var styles = new XElement(ns + (node.Type + ".Styles"));
                 foreach (var rule in node.Styles)
                 {
-                    var style = new XElement(ns + "Style", new XAttribute("Selector", rule.Selector));
+                    var style = new XElement(ns + "Style", new XAttribute("Selector", UiStyleSelectors.ToAvaloniaSelector(rule.Selector)));
                     foreach (var setter in rule.Properties.OrderBy(p => p.Key, StringComparer.Ordinal))
                     {
                         if (UiBrushValues.IsProperty(setter.Key) && setter.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Null)
