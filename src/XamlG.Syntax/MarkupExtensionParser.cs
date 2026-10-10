@@ -9,11 +9,13 @@ public static class MarkupExtensionParser
     public static MarkupExtensionSyntax? ParseAtSource(string text, TextSpan span, string source, Action<XamlDiagnostic> report)
     {
         if (text.Length == 0 || text[0] != '{' || text.StartsWith("{}", StringComparison.Ordinal)) return null;
+        // Retain the existing direct-parse fallback for an unavailable source.
+        if (source == null) return Parse(text, span, report);
         // The overwhelmingly common identity mapping needs no map object, copied
         // source string, remapping delegate, second argument array or record copies.
         // If identical raw text would normalize/decode differently, the old path
         // also falls back to Parse, so this preserves that public API behavior.
-        if (source != null && span.Length == text.Length && span.End <= source.Length &&
+        if (span.Length == text.Length && span.End <= source.Length &&
             string.CompareOrdinal(source, span.Start, text, 0, text.Length) == 0)
             return Parse(text, span, report);
         return ParseMapped(text, span, source, report);
