@@ -19,12 +19,12 @@ public sealed class WideEmissionTests
         var properties = string.Concat(Enumerable.Range(0, width).Select(i => "public string P" + i + " { get; set; } = \"\";"));
         var model = "using System.Collections.Generic; using XamlG.Runtime; namespace Wide { " +
             "public class Root { [Content] public List<object> Children { get; } = new(); } " +
-            "public class Holder { public object Value { get; set; } } " +
+            "public class Holder { public Holder() { } public Holder(Leaf value) { Value = value; } public object Value { get; set; } } " +
             "public class Leaf { " + properties + " } public class WideExtension { " + properties +
             " public object ProvideValue() => this; } }";
-        var leaf = "<Leaf " + string.Join(" ", Enumerable.Range(0, width).Select(i => "P" + i + "='value_" + i + "'")) + "/>";
+        var leaf = "<Holder><x:Arguments><Leaf " + string.Join(" ", Enumerable.Range(0, width).Select(i => "P" + i + "='value_" + i + "'")) + "/></x:Arguments></Holder>";
         var markup = "<Holder Value='{Wide " + string.Join(", ", Enumerable.Range(0, width).Select(i => "P" + i + "=value_" + i)) + "}'/>";
-        var xaml = "<Root xmlns='clr-namespace:Wide'>" + leaf + leaf + markup + markup + "</Root>";
+        var xaml = "<Root xmlns='clr-namespace:Wide' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>" + leaf + leaf + markup + markup + "</Root>";
         using var code = CompiledXaml.Create(xaml, model, shareAcrossDocuments: project, options: new() { EmitLineDirectives = directives });
         Assert.Contains("__XamlGCreateLeaf_", code.Emission.Source, StringComparison.Ordinal);
         Assert.Contains("__XamlGAssignMarkup_", code.Emission.Source, StringComparison.Ordinal);
@@ -38,7 +38,7 @@ public sealed class WideEmissionTests
             for (var child = 0; child < children.Count; child++)
             {
                 var value = children[child]!;
-                if (child >= 2) value = value.GetType().GetProperty("Value")!.GetValue(value)!;
+                value = value.GetType().GetProperty("Value")!.GetValue(value)!;
                 Assert.NotNull(session!.FindNode(value));
                 for (var i = 0; i < width; i++) Assert.Equal("value_" + i, value.GetType().GetProperty("P" + i)!.GetValue(value));
             }

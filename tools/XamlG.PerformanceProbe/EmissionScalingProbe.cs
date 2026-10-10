@@ -38,20 +38,23 @@ internal static class EmissionScalingProbe
             var properties = string.Concat(Enumerable.Range(0, width).Select(i => "public string P" + i + " { get; set; } = \"\";"));
             var model = "using System.Collections.Generic; using XamlG.Runtime; namespace WideProbe { " +
                 "public class Root { [Content] public List<object> Children { get; } = new(); } " +
-                "public class Holder { public object Value { get; set; } } " +
+                "public class Holder { public Holder() { } public Holder(Leaf value) { Value = value; } public object Value { get; set; } } " +
                 "public class Leaf { " + properties + " } public class WideExtension { " + properties +
                 " public object ProvideValue() => this; } }";
             var compilation = CSharpCompilation.Create("WideProbe", new[] { CSharpSyntaxTree.ParseText(model) }, references,
                 new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-            var leaf = "<Leaf " + string.Join(" ", Enumerable.Range(0, width).Select(i => "P" + i + "='value_" + i + "'")) + "/>";
+            var leaf = "<Holder><x:Arguments><Leaf " + string.Join(" ", Enumerable.Range(0, width).Select(i => "P" + i + "='value_" + i + "'")) + "/></x:Arguments></Holder>";
             var markup = "<Holder Value='{Wide " + string.Join(", ", Enumerable.Range(0, width).Select(i => "P" + i + "=value_" + i)) + "}'/>";
             foreach (var (kind, child) in new[] { ("leaf", leaf), ("markup", markup) })
             {
-                var xaml = "<Root xmlns='clr-namespace:WideProbe'>" + string.Concat(Enumerable.Repeat(child, 8)) + "</Root>";
+                var xaml = "<Root xmlns='clr-namespace:WideProbe' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>" + string.Concat(Enumerable.Repeat(child, 8)) + "</Root>";
                 var document = new XamlCompiler().Bind(XamlSyntaxTree.Parse(xaml, "src/Views/Wide.xaml"), compilation);
                 if (!document.Success) throw new InvalidOperationException(string.Join("\n", document.Diagnostics));
                 var emitted = new CSharpEmitter().Emit(document);
                 if (!emitted.Success) throw new InvalidOperationException(string.Join("\n", emitted.Diagnostics));
+                var helper = kind == "leaf" ? "__XamlGCreateLeaf_" : "__XamlGAssignMarkup_";
+                if (!emitted.Source.Contains(helper, StringComparison.Ordinal))
+                    throw new InvalidOperationException("The " + kind + " fixture did not exercise its intended helper path.");
                 measure("emit-wide-" + kind + "-" + width, width == 8 ? 8 : 2,
                     () => new CSharpEmitter().Emit(document).Source.Length);
                 writer.Write(emitted.Source);

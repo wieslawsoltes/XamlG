@@ -82,7 +82,7 @@ internal sealed class DeferredConstructionEmitter(EmissionContext context, Sourc
 
     private bool Node(BoundObject value) => !value.IsRoot && value.Name == null && value.Type.IsReferenceType &&
         value.FactoryMethod == null && value.Constructor != null && value.Constructor.Parameters.Length == value.Arguments.Length &&
-        value.Constructor.Parameters.All(parameter => parameter.RefKind != RefKind.None) &&
+        value.Constructor.Parameters.All(parameter => parameter.RefKind == RefKind.None) &&
         ReferenceEquals(value.Scope, context.Document.Root!.Scope);
 
     private static bool Constant(BoundConstantExpression value, ITypeSymbol type) => value.Value == null
