@@ -138,12 +138,7 @@ internal sealed partial class UiXamlAuthoring(UiCatalog catalog, UiLimits limits
             if (node.HasElements) throw Error("invalid_resource", "Invalid resource reference.");
             return ResourceValue(Find(scope, Required(node, "ResourceKey")));
         }
-        if (node.Name == Ns + "SolidColorBrush")
-        {
-            CheckAttributes(node, "Color"); CheckText(node);
-            if (node.HasElements) throw Error("invalid_resource", "Brush values must use declared attributes.");
-            return Resolve((string?)node.Attribute("Color") ?? "Transparent", scope);
-        }
+        if (node.Name.Namespace == Ns && node.Name.LocalName is "SolidColorBrush" or "LinearGradientBrush" or "RadialGradientBrush") return Brush(node, scope);
         if (node.Name == Ns + "MatrixTransform")
         {
             CheckAttributes(node, "Matrix"); CheckText(node);

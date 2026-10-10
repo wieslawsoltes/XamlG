@@ -59,6 +59,12 @@ internal static class UiAvaloniaFeatureSchema
                 ("StrokeDashArray", text), ("StrokeDashOffset", new(UiPropertyKind.Number, -1000000, 1000000)),
                 ("StrokeLineCap", Choice("Flat", "Round", "Square")), ("StrokeJoin", Choice("Miter", "Round", "Bevel")),
                 ("StrokeMiterLimit", new(UiPropertyKind.Number, 1, 10000)));
+        foreach (var name in components.Keys.ToArray())
+        {
+            var component = components[name];
+            components[name] = component with { Properties = component.Properties.SetItems(component.Properties
+                .Where(p => UiBrushValues.IsProperty(p.Key)).Select(p => new KeyValuePair<string, UiProperty>(p.Key, new(UiPropertyKind.Brush, Nullable: true)))) };
+        }
         return components.Values;
     }
 

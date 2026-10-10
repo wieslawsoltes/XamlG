@@ -97,7 +97,9 @@ internal static class UiAvaloniaFeatureCatalog
             var registration = entries[component.Name];
             var properties = registration.Setters.ToBuilder();
             foreach (var property in component.Properties.Keys)
-                if (!properties.ContainsKey(property)) properties.Add(property, setters[property]);
+                if (component.Properties[property].Kind == UiPropertyKind.Brush)
+                    properties[property] = (control, value) => UiAvaloniaBrushes.Set(control, property, value);
+                else if (!properties.ContainsKey(property)) properties.Add(property, setters[property]);
             entries[component.Name] = registration with { Setters = properties.ToImmutable() };
         }
         return entries;

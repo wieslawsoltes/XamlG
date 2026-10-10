@@ -81,7 +81,7 @@ public sealed class UiTests
     }
     [Theory]
     [InlineData("<Button Click=\"DeleteAll\"/>")]
-    [InlineData("<TextBlock Text=\"{Binding Password}\"/>")]
+    [InlineData("<TextBlock Text=\"{Binding Password, Converter=Unregistered}\"/>")]
     [InlineData("<Unknown/>")]
     [InlineData("<Button Width=\"-1\"/>")]
     [InlineData("<TextBlock xmlns:evil=\"clr-namespace:Exploit\"/>")]

@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace XamlG.IntelligentUI;
 
-public enum UiPropertyKind { Text, Number, Boolean, Color, Choice, Integer, Thickness, CornerRadius, Point, Date, Time, StringArray }
+public enum UiPropertyKind { Text, Number, Boolean, Color, Choice, Integer, Thickness, CornerRadius, Point, Date, Time, StringArray, Brush }
 public sealed record UiProperty(UiPropertyKind Kind, decimal Minimum = 0, decimal Maximum = 10000, string[]? Choices = null, bool Nullable = false)
 {
     internal JsonElement ReadLiteral(string text)
@@ -17,6 +17,7 @@ public sealed record UiProperty(UiPropertyKind Kind, decimal Minimum = 0, decima
             UiPropertyKind.Boolean when bool.TryParse(text, out var flag) => UiJson.Element(flag),
             UiPropertyKind.Thickness or UiPropertyKind.CornerRadius when decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var scalar) => Validate(UiJson.Element(scalar)),
             UiPropertyKind.StringArray => ReadArray(text),
+            UiPropertyKind.Brush => UiBrushValues.ParseLiteral(text),
             UiPropertyKind.Text or UiPropertyKind.Color or UiPropertyKind.Choice or UiPropertyKind.Thickness or UiPropertyKind.CornerRadius or UiPropertyKind.Point or UiPropertyKind.Date or UiPropertyKind.Time => Validate(UiJson.Element(text)),
             _ => throw new UiException("invalid_property", "Invalid " + Kind + " literal.")
         };
@@ -30,6 +31,7 @@ public sealed record UiProperty(UiPropertyKind Kind, decimal Minimum = 0, decima
     internal JsonElement Validate(JsonElement value)
     {
         if (Nullable && value.ValueKind == JsonValueKind.Null) return value.Clone();
+        if (Kind == UiPropertyKind.Brush) { UiBrushValues.Read(value); return value.Clone(); }
         var valid = Kind switch
         {
             UiPropertyKind.Number => Numeric(value, false), UiPropertyKind.Integer => Numeric(value, true),
