@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Roslyn;
 using XamlG.Syntax;
+using XamlG.Internal;
 
 namespace XamlG.Compiler;
 
@@ -29,10 +30,10 @@ public sealed class XamlDelimitedListTextRule : IXamlTextConversionRule
             !_definitions.Any(name => collection.OriginalDefinition.HasMetadataName(name))) return false;
         var element = collection.TypeArguments[0];
         var values = ImmutableArray.CreateBuilder<BoundExpression>();
-        foreach (var token in text.Split(Separators, StringSplitOptions.RemoveEmptyEntries))
+        foreach (var token in new SpanSplitEnumerator(text.AsSpan(), Separators, removeEmpty: true))
         {
             context.Cancellation.ThrowIfCancellationRequested();
-            var value = context.Values.TryText(token, element, scope, span);
+            var value = context.Values.TryText(token.ToString(), element, scope, span);
             if (value == null) return true;
             values.Add(value);
         }

@@ -42,8 +42,9 @@ public sealed class XamlTextObjectExpressionRule : IXamlObjectExpressionRule
         if (!syntax.Children.OfType<XamlTextSyntax>().Any()) return false;
         var text = string.Concat(syntax.Children.OfType<XamlTextSyntax>().Select(node => node.Value));
         if (type.SpecialType != SpecialType.System_String && string.IsNullOrWhiteSpace(text)) return false;
-        expression = context.Values.TryText(type.SpecialType == SpecialType.System_String ? text : XmlWhitespace.Normalize(text, scope.PreserveSpace),
-            type, scope, syntax.Span);
+        // Text-object conversion precedes content-property whitespace processing
+        // in XamlX. The converter owns its grammar, including surrounding spaces.
+        expression = context.Values.TryText(text, type, scope, syntax.Span);
         return expression != null;
     }
 }

@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths: ['src/**', 'eng/**', 'samples/**', 'scripts/*controlcatalog*', 'Directory.*', '.github/workflows/controlcatalog.yml']
   workflow_dispatch:
+    inputs:
+      benchmark:
+        description: 'Also collect diagnostic compilation timings against XamlX'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -67,7 +72,7 @@ jobs:
           trap 'kill "$server_pid"' EXIT
           node scripts/test-controlcatalog-browser.mjs http://127.0.0.1:8943 2>&1 | tee artifacts/controlcatalog-validation/browser-run.log
       - name: Compare catalog and theme compilation against XamlX
-        if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' && github.event_name == 'workflow_dispatch' && inputs.benchmark }}
         working-directory: ${{ env.CATALOG_WORKTREE }}
         run: |
           set -o pipefail

@@ -6,6 +6,7 @@ namespace XamlG.Syntax;
 /// <summary>An immutable, source-preserving snapshot. Semantic work never changes the source tree.</summary>
 public sealed class XamlSyntaxTree
 {
+    private XamlElementIndex? _elementIndex;
     internal XamlSyntaxTree(string text, string path, long version, XamlParseOptions options, ImmutableArray<XamlSyntaxNode> nodes, ImmutableArray<XamlDiagnostic> diagnostics, XamlParseStatistics? statistics = null)
     { Text = text; Path = path; Version = version; Options = options; Nodes = nodes; Diagnostics = diagnostics; Root = nodes.OfType<XamlElementSyntax>().FirstOrDefault(); Lines = new(text); Statistics = statistics ?? new(text.Length, 0, false); }
     public XamlParseStatistics Statistics { get; }
@@ -42,6 +43,20 @@ public sealed class XamlSyntaxTree
         output.Append(Text, offset, Text.Length - offset); var text = output.ToString();
         return text == Text ? this : XamlIncrementalParser.Parse(this, text, ordered, cancellationToken);
     }
-    public XamlElementSyntax? FindElement(int position) => Root?.DescendantsAndSelf().Where(n => n.Span.Start <= position && n.Span.End >= position).OrderBy(n => n.Span.Length).FirstOrDefault();
+    public XamlElementSyntax? FindElement(int position)
+    {
+        if (Root == null) return null;
+        // Source metadata and tooling query the same immutable tree repeatedly.
+        // Build once in O(n log n), then perform allocation-free O(log n) lookups
+        // instead of a full descendant walk per object. Each edited tree owns its
+        // own index; publishing it cannot keep an older source snapshot alive.
+        var index = Volatile.Read(ref _elementIndex);
+        if (index == null)
+        {
+            var created = new XamlElementIndex(Root);
+            index = Interlocked.CompareExchange(ref _elementIndex, created, null) ?? created;
+        }
+        return index.Find(position);
+    }
     public override string ToString() => Text;
 }

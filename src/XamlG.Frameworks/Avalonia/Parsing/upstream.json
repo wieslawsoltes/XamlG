@@ -1,0 +1,196 @@
+{
+  "repository": "https://github.com/wieslawsoltes/Avalonia",
+  "commit": "a9429a328057befa287ffb5e981f58b86a86eda0",
+  "files": [
+    {
+      "source": "src/Avalonia.Base/Media/Color.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Color.cs",
+      "sha256": "768222f2311ae8e9e81c1915132d351d318f9ef549b2854fe91c642c5656a8c0"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/HslColor.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/HslColor.cs",
+      "sha256": "730a97f5570e639c5158915e762af4e0c92dc0f6034afaba37ee79b95cf6b29a"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/HsvColor.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/HsvColor.cs",
+      "sha256": "589e54a798529cc3b6a5b3054a9de9007d1f09c9e6c0dde49c312804e1d53c60"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/KnownColors.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/KnownColors.cs",
+      "sha256": "b47cc76e60bfe8ca5e61dea53619f158f02cc728c840176d656a546577f6ed5c"
+    },
+    {
+      "source": "src/Avalonia.Base/Utilities/SpanHelpers.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/SpanHelpers.cs",
+      "sha256": "4fdca9a407535044f53874b60e41c5115cb0a1669a4c7718c4a7d0a86dd25758"
+    },
+    {
+      "source": "src/Avalonia.Base/Utilities/MathUtilities.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/MathUtilities.cs",
+      "sha256": "63e171f3d8e7ee634b0e36e4fd66fa3a23c1ccebb08413ee73ece4107026d570"
+    },
+    {
+      "source": "src/Avalonia.Base/Animation/Cue.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Cue.cs",
+      "sha256": "795f7262d620cd9996fb5dd96b29b44b608f91baa584a995e5a753e1bba685c2"
+    },
+    {
+      "source": "src/Avalonia.Base/Animation/IterationCount.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/IterationCount.cs",
+      "sha256": "4890b65a03c883b6686b6699678e51b512450fb1c930191a1da24723544621cc"
+    },
+    {
+      "source": "src/Avalonia.Base/Animation/KeySpline.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/KeySpline.cs",
+      "sha256": "388c66ab78a2ba7be356db04a3d3b3dc7b88b350db15f75bee919df1c4d90fd2"
+    },
+    {
+      "source": "src/Avalonia.Base/Animation/Easings/Easing.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Easing.cs",
+      "sha256": "9c84306f715c8358df9fb9776991ec40de22179543e00fcef0bc840291c003df"
+    },
+    {
+      "source": "src/Avalonia.Base/Utilities/SpanStringTokenizer.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/SpanStringTokenizer.cs",
+      "sha256": "c41378ae61f26a74a8d9039f32781447d4e1f1b73ceb8ced2a9f8f57b748d2b3"
+    },
+    {
+      "source": "src/Avalonia.Base/Input/KeyGesture.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/KeyGesture.cs",
+      "sha256": "3aee6af3c2bf51e89f6200a9e76309c4fd6c651043fb7137fc505a2bcad79a25"
+    },
+    {
+      "source": "src/Avalonia.Base/Input/Key.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Key.cs",
+      "sha256": "1521a13a06bc1f159f70f15e87b1f724c929b11b05ae0d071677dade5b226aaa"
+    },
+    {
+      "source": "src/Avalonia.Base/Input/IKeyboardDevice.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/IKeyboardDevice.cs",
+      "sha256": "e44fde43fde5eb018eb16ea20ca5602627017bff0760ec0bc235dec464905c99"
+    },
+    {
+      "source": "src/Avalonia.Base/Input/Cursor.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Cursor.cs",
+      "sha256": "40479c6084f5f654416f77f7edcd4b280dae783cbc5e0922cb1a5bf9e082c9d3"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/FontFeature.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/FontFeature.cs",
+      "sha256": "b2573b77ae12914109da8d92a9598a1adcc25d1973a0dc3622000e14f4631b33"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/BoxShadow.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/BoxShadow.cs",
+      "sha256": "43e26ba0b06a85e63386745c2aab042e55693acf6c3ac96e47f6a71537c2d269"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/BoxShadows.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/BoxShadows.cs",
+      "sha256": "9a1377429b06020e473295f081376b2fd2ff618559dff5d73f53a1f02eb441a5"
+    },
+    {
+      "source": "src/Avalonia.Base/Utilities/StringSplitter.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/StringSplitter.cs",
+      "sha256": "3f8e954f0cff47270a7f09e703159e30c037d549daaa655839c167808859e8c3"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/Transformation/TransformParser.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/TransformParser.cs",
+      "sha256": "8a234c444ac98146cd2f462bcf07a4b5337f1b098063827dcdaa44c27b124a3c"
+    },
+    {
+      "source": "src/Avalonia.Base/PixelPoint.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/PixelPoint.cs",
+      "sha256": "82b308b0a7f2bb7185c7897e2056f4098d3640ee0030d4a27cf35986a8a84865"
+    },
+    {
+      "source": "src/Avalonia.Base/PixelSize.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/PixelSize.cs",
+      "sha256": "a619fe998a1b511f310f5cc7f7406de740e50080ae3eee92eac58fa174b0fea3"
+    },
+    {
+      "source": "src/Avalonia.Base/RelativeScalar.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/RelativeScalar.cs",
+      "sha256": "bed7e459e799d0483a61131f6f6610d80267482e8e7096efe4ad5534579f3050"
+    },
+    {
+      "source": "src/Avalonia.Base/RelativeRect.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/RelativeRect.cs",
+      "sha256": "d43751fc6d2f5321c3fea92da1ce027b5911db99f45b144935c3e71180d63a00"
+    },
+    {
+      "source": "src/Avalonia.Base/Vector3D.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Vector3D.cs",
+      "sha256": "7b840e3ed25b759063866497d7715b4e081ec416eef8021f958281963edb7c33"
+    },
+    {
+      "source": "src/Avalonia.Base/Matrix.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Matrix.cs",
+      "sha256": "1154e167efad2d6f3df5e8172ff8c4fa0f13685184e1a1898f1c1703b921fd75"
+    },
+    {
+      "source": "src/Avalonia.Controls/FlexPanel/FlexBasis.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/FlexBasis.cs",
+      "sha256": "0dc420c25c2e90d3839c0b14708eaf9173a22b03bc0064ed3efa51fbd05f2b6a"
+    },
+    {
+      "source": "src/Avalonia.Controls/FlexPanel/FlexBasisKind.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/FlexBasisKind.cs",
+      "sha256": "ac9ced5f63dacf1b3dbeec2f3cd5242063659a8afce76649808e47f3fe518057"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/UnicodeRange.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/UnicodeRange.cs",
+      "sha256": "902db249bac31ea34331794c9d3969ad5e9cf550809a140869a6a11281e01721"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/Fonts/OpenTypeTag.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/OpenTypeTag.cs",
+      "sha256": "4804ba1dd10d2fb02c48d4ec3095ab732a6423d770e275007348eacaa002f05b"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/FontVariationSettings.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/FontVariationSettings.cs",
+      "sha256": "85704b8938574b6a3bec4648b0c6649ed217ed9236262cc6d5b9c18978fe8805"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/PathMarkupParser.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/PathMarkupParser.cs",
+      "sha256": "84c7386b5eb787811839c221b0003047073516e3381cc6942197a379528b466f"
+    },
+    {
+      "source": "src/Avalonia.Base/Platform/IGeometryContext.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/IGeometryContext.cs",
+      "sha256": "2d34516d31775ffacaeae5b702d1567941b05429b0f5dcd3487ddc363c2910ea"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/Effects/Effect.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/Effect.cs",
+      "sha256": "4b29572ad987a43283d268c8c73148ffa6286752328a925d1c99ece684fedb86"
+    },
+    {
+      "source": "src/Avalonia.Base/Rendering/Composition/Expressions/TokenParser.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/TokenParser.cs",
+      "sha256": "ebd37c4ff87e4d9d304e35619f6c4547456c40f068dd40a993355aec110281e7"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/CacheMode.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/CacheMode.cs",
+      "sha256": "b39fee89f27950b31ac23acacb6df4bfaff64ee907dce6669a001ad8cce2c9cd"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/TextDecorationCollection.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/TextDecorationCollection.cs",
+      "sha256": "52b7461ed34d02a37faaad4d336f174bf0e91363bc352206cfbfa273bfd86225"
+    },
+    {
+      "source": "src/Avalonia.Base/Media/TextDecorationLocation.cs",
+      "destination": "src/XamlG.Frameworks/Avalonia/Parsing/TextDecorationLocation.cs",
+      "sha256": "3a65aa30c1e4322a71fdbaf53ec616d454df9c911f92649b2cab960e92c799a3"
+    }
+  ]
+}

@@ -84,10 +84,11 @@ public static class XamlInspector
         {
             BoundChoiceExpression c => ImmutableArray.Create<BoundExpression>(new BoundObjectExpression(c.Extension)).AddRange(c.Branches.SelectMany(b => new[] { b.Option, b.Value })).AddRange(c.Default == null ? Enumerable.Empty<BoundExpression>() : new[] { c.Default }),
             BoundCastExpression c => ImmutableArray.Create(c.Value),
+            BoundCachedExpression c => ImmutableArray.Create(c.Value),
             BoundValueConverterExpression c => ImmutableArray.Create(c.Value),
             BoundArrayExpression a => a.Values,
             BoundCollectionExpression c => c.Values,
-            BoundNewExpression n => n.Arguments,
+            BoundNewExpression n => n.Arguments.Concat(n.Initializers.Select(initializer => initializer.Value)),
             BoundCallExpression c => c.Receiver == null ? c.Arguments : c.Arguments.Insert(0, c.Receiver),
             BoundDeferredExpression d => ImmutableArray.Create(d.Content),
             BoundLambdaExpression l => l.Parameters.Cast<BoundExpression>().Append(l.Body).ToImmutableArray(),

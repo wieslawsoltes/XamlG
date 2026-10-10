@@ -1,37 +1,90 @@
+using System.Buffers;
 using System.Globalization;
-using System.Text;
+using XamlG.Internal;
+
 namespace XamlG.Syntax;
 
 internal static class XmlEntityDecoder
 {
-    public static string Decode(string text, int sourceStart, Action<XamlDiagnostic> report, bool attribute)
+    private static readonly char[] AttributeEscapes = { '&', '\r', '\n', '\t' };
+    private static readonly char[] TextEscapes = { '&', '\r' };
+
+    internal static int FindEscape(ReadOnlySpan<char> text, bool attribute) =>
+        text.IndexOfAny(attribute ? AttributeEscapes : TextEscapes);
+
+    // The decoder accepts at most 31 characters between '&' and ';'. Bound the
+    // search itself so repeated unterminated entities cannot rescan the suffix.
+    internal static int FindEntityEnd(ReadOnlySpan<char> afterAmpersand) =>
+        afterAmpersand.Slice(0, Math.Min(32, afterAmpersand.Length)).IndexOf(';');
+
+    public static string Decode(ReadOnlySpan<char> text, int sourceStart, Action<XamlDiagnostic> report, bool attribute)
     {
-        var output = new StringBuilder(text.Length);
-        for (var i = 0; i < text.Length; i++)
+        var firstEscape = FindEscape(text, attribute);
+        if (firstEscape < 0) return text.ToString();
+        char[]? rented = null;
+        Span<char> output = text.Length <= 256 ? stackalloc char[text.Length] : (rented = ArrayPool<char>.Shared.Rent(text.Length));
+        try
         {
-            var c = text[i];
-            if (c == '\r') { if (i + 1 < text.Length && text[i + 1] == '\n') i++; output.Append(attribute ? ' ' : '\n'); continue; }
-            if (attribute && (c == '\n' || c == '\t')) { output.Append(' '); continue; }
-            if (c != '&') { output.Append(c); continue; }
-            var end = text.IndexOf(';', i + 1);
-            if (end < 0 || end - i > 32) { report(new("XG0008", "Unterminated XML entity.", new(sourceStart + i, 1))); output.Append(c); continue; }
-            var name = text.Substring(i + 1, end - i - 1);
-            string? value = name switch { "lt" => "<", "gt" => ">", "amp" => "&", "apos" => "'", "quot" => "\"", _ => null };
-            if (value == null && name.StartsWith("#", StringComparison.Ordinal))
+            text.Slice(0, firstEscape).CopyTo(output);
+            var written = firstEscape;
+            for (var i = firstEscape; i < text.Length; i++)
             {
-                var hex = name.StartsWith("#x", StringComparison.Ordinal);
-                if (int.TryParse(name.Substring(hex ? 2 : 1), hex ? NumberStyles.AllowHexSpecifier : NumberStyles.None, CultureInfo.InvariantCulture, out var scalar) &&
-                    (scalar is 9 or 10 or 13 || scalar >= 0x20 && scalar <= 0xD7FF || scalar >= 0xE000 && scalar <= 0xFFFD || scalar >= 0x10000 && scalar <= 0x10FFFF))
-                    value = char.ConvertFromUtf32(scalar);
+                var c = text[i];
+                if (c == '\r')
+                {
+                    if (i + 1 < text.Length && text[i + 1] == '\n') i++;
+                    output[written++] = attribute ? ' ' : '\n';
+                    continue;
+                }
+                if (attribute && (c == '\n' || c == '\t')) { output[written++] = ' '; continue; }
+                if (c != '&') { output[written++] = c; continue; }
+                var relativeEnd = FindEntityEnd(text.Slice(i + 1));
+                if (relativeEnd < 0)
+                {
+                    report(new("XG0008", "Unterminated XML entity.", new(sourceStart + i, 1)));
+                    output[written++] = c;
+                    continue;
+                }
+                var end = i + 1 + relativeEnd;
+                var name = text.Slice(i + 1, relativeEnd);
+                if (!TryDecodeEntity(name, out var scalar))
+                {
+                    report(new("XG0008", $"Unknown or invalid XML entity '&{name.ToString()};'.", new(sourceStart + i, end - i + 1)));
+                    var raw = text.Slice(i, end - i + 1);
+                    raw.CopyTo(output.Slice(written));
+                    written += raw.Length;
+                }
+                else if (scalar <= 0xFFFF) output[written++] = (char)scalar;
+                else
+                {
+                    scalar -= 0x10000;
+                    output[written++] = (char)(0xD800 + (scalar >> 10));
+                    output[written++] = (char)(0xDC00 + (scalar & 0x3FF));
+                }
+                i = end;
             }
-            if (value == null)
-            {
-                report(new("XG0008", $"Unknown or invalid XML entity '&{name};'.", new(sourceStart + i, end - i + 1)));
-                output.Append(text, i, end - i + 1);
-            }
-            else output.Append(value);
-            i = end;
+            return output.Slice(0, written).ToString();
         }
-        return output.ToString();
+        finally { if (rented != null) ArrayPool<char>.Shared.Return(rented); }
+    }
+
+    internal static bool TryDecodeEntity(ReadOnlySpan<char> name, out int scalar)
+    {
+        if (name.SequenceEqual("lt".AsSpan())) scalar = '<';
+        else if (name.SequenceEqual("gt".AsSpan())) scalar = '>';
+        else if (name.SequenceEqual("amp".AsSpan())) scalar = '&';
+        else if (name.SequenceEqual("apos".AsSpan())) scalar = '\'';
+        else if (name.SequenceEqual("quot".AsSpan())) scalar = '"';
+        else
+        {
+            scalar = 0;
+            if (name.IsEmpty || name[0] != '#') return false;
+            var hex = name.Length > 1 && name[1] == 'x';
+            return SpanNumberParser.TryParseInt(name.Slice(hex ? 2 : 1),
+                hex ? NumberStyles.AllowHexSpecifier : NumberStyles.None, CultureInfo.InvariantCulture, out scalar) &&
+                (scalar is 9 or 10 or 13 || scalar is >= 0x20 and <= 0xD7FF ||
+                    scalar is >= 0xE000 and <= 0xFFFD || scalar is >= 0x10000 and <= 0x10FFFF);
+        }
+        return true;
     }
 }

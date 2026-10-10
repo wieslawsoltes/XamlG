@@ -50,6 +50,59 @@ public sealed class SharedPropertyTests
     [Theory]
     [InlineData(1)]
     [InlineData(4)]
+    public void InheritedAccessorsShareAcrossDerivedOwnersWithoutMergingDistinctMembers(int concurrency)
+    {
+        const string model = """
+            namespace Shared {
+              public class Base { public virtual string Text { get; set; } }
+              public class First : Base { }
+              public class Second : Base { }
+              public class Override : Base {
+                public override string Text { get => base.Text; set => base.Text = "override:" + value; }
+              }
+              public class Hidden : Base { public new string Text { get; set; } }
+              public class Slot<T> { public T Value { get; set; } }
+              public class TextSlot : Slot<string> { }
+              public class NumberSlot : Slot<int> { }
+            }
+            """;
+        var compilation = CompilationFactory.Create(model).AddReferences(MetadataReference.CreateFromFile(typeof(XamlRuntimeContext).Assembly.Location));
+        static XamlProjectDocument Input(string type, string property, string value) => new(XamlSyntaxTree.Parse(
+            "<" + type + " xmlns='clr-namespace:Shared' " + property + "='" + value + "'/>", type + ".xaml"), type + ".xaml");
+        var documents = new[] { Input("First", "Text", "first"), Input("Second", "Text", "second"),
+            Input("Override", "Text", "initial"), Input("Hidden", "Text", "hidden"),
+            Input("TextSlot", "Value", "text"), Input("NumberSlot", "Value", "42") };
+        var compiler = new XamlProjectCompiler();
+        var options = new XamlCompilerOptions { MaxDegreeOfParallelism = concurrency };
+        var project = compiler.Compile(documents, compilation, options: options);
+        var assembly = Emit(compilation, project);
+        var first = Build(assembly, project, "First.xaml");
+        var second = Build(assembly, project, "Second.xaml");
+        var overridden = Build(assembly, project, "Override.xaml");
+        var hidden = Build(assembly, project, "Hidden.xaml");
+        var text = Build(assembly, project, "TextSlot.xaml");
+        var number = Build(assembly, project, "NumberSlot.xaml");
+        Update(first, "Text", "edited first"); Update(second, "Text", "edited second");
+        Update(overridden, "Text", "edited"); Update(hidden, "Text", "edited hidden");
+        Update(text, "Value", "edited text"); Update(number, "Value", 123);
+        Assert.Equal("edited first", Property(first, "Text"));
+        Assert.Equal("edited second", Property(second, "Text"));
+        Assert.Equal("override:edited", Property(overridden, "Text"));
+        Assert.Equal("edited hidden", Property(hidden, "Text"));
+        Assert.Null(assembly.GetType("Shared.Base")!.GetProperty("Text")!.GetValue(hidden));
+        Assert.Equal("edited text", Property(text, "Value")); Assert.Equal(123, Property(number, "Value"));
+        var sources = string.Join("\n", project.Documents.Select(document => document.Output.Source));
+        Assert.Equal(2, sources.Split("((global::Shared.Base)__target).@Text").Length - 1); // One getter and setter.
+        var changed = compiler.Compile(documents.Skip(1), compilation, options: options);
+        var survivor = Build(Emit(compilation, changed), changed, "Second.xaml");
+        Update(survivor, "Text", "survived"); Assert.Equal("survived", Property(survivor, "Text"));
+        var fresh = new XamlProjectCompiler().Compile(documents.Skip(1), compilation, options: options);
+        Assert.Equal(fresh.Documents.Select(document => document.Output.Source), changed.Documents.Select(document => document.Output.Source));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
     public void ChangedTableLayoutsReuseBindingsAndMatchFreshBuilds(int concurrency)
     {
         var compilation = Compilation(); var compiler = new XamlProjectCompiler();
@@ -93,5 +146,81 @@ public sealed class SharedPropertyTests
         Assert.Equal("private", Property(root, "ReadSecret"));
         Update(root, "Secret", "changed private"); Update(root, "Text", "changed public");
         Assert.Equal("changed private", Property(root, "ReadSecret")); Assert.Equal("changed public", Property(root, "Text"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public void GeneralSetterLayoutChangesInvalidateCallersAndSurviveOwnerRemoval(int concurrency)
+    {
+        var compilation = CompilationFactory.Create("namespace SetterLayout; public class Node { public object Value { get; set; } } public class Payload { public string Text { get; set; } }")
+            .AddReferences(MetadataReference.CreateFromFile(typeof(XamlRuntimeContext).Assembly.Location));
+        static XamlProjectDocument Input(string path, string value, bool child = false) => new(XamlSyntaxTree.Parse(
+            "<Node xmlns='clr-namespace:SetterLayout' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'><Node.Value>" +
+            (child ? "<Payload Text='" + value + "'/>" : "<x:String>" + value + "</x:String>") + "</Node.Value></Node>", path), path);
+        var documents = new[] { Input("First.xaml", "first"), Input("Second.xaml", "second"), Input("Third.xaml", "third") };
+        var options = new XamlCompilerOptions { MaxDegreeOfParallelism = concurrency };
+        var compiler = new XamlProjectCompiler();
+        var initial = compiler.Compile(documents, compilation, options: options);
+        Assert.DoesNotContain(".Assign", string.Join("\n", initial.Documents.Select(document => document.Output.Source)), StringComparison.Ordinal);
+        documents[0] = Input("First.xaml", "first child", child: true);
+        documents[1] = Input("Second.xaml", "second child", child: true);
+        var changed = compiler.Compile(documents, compilation, options: options);
+        Assert.Equal(new XamlProjectStatistics(2, 1, 3, 0), changed.Statistics);
+        var fresh = new XamlProjectCompiler().Compile(documents, compilation, options: options);
+        Assert.Equal(fresh.Documents.Select(document => document.Output.Source), changed.Documents.Select(document => document.Output.Source));
+        Assert.Contains(".Assign", string.Join("\n", changed.Documents.Select(document => document.Output.Source)), StringComparison.Ordinal);
+        var assembly = Emit(compilation, changed);
+        var first = Build(assembly, changed, "First.xaml");
+        Assert.Equal("first child", Property(Property(first, "Value")!, "Text"));
+        Update(first, "Value", "edited"); Assert.Equal("edited", Property(first, "Value"));
+        Assert.Equal("third", Property(Build(assembly, changed, "Third.xaml"), "Value"));
+        var survivor = compiler.Compile(documents.Skip(1), compilation, options: options);
+        fresh = new XamlProjectCompiler().Compile(documents.Skip(1), compilation, options: options);
+        Assert.Equal(fresh.Documents.Select(document => document.Output.Source), survivor.Documents.Select(document => document.Output.Source));
+        assembly = Emit(compilation, survivor);
+        var second = Build(assembly, survivor, "Second.xaml");
+        Assert.Equal("second child", Property(Property(second, "Value")!, "Text"));
+        Update(second, "Value", "survived"); Assert.Equal("survived", Property(second, "Value"));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    public void ScalarHelperLayoutChangesInvalidateCallersWithoutChangingTheEditingTable(int concurrency)
+    {
+        var compilation = CompilationFactory.Create("namespace ScalarLayout; public class Node { public object Value { get; set; } }")
+            .AddReferences(MetadataReference.CreateFromFile(typeof(XamlRuntimeContext).Assembly.Location));
+        static XamlProjectDocument Input(string path, string type, string value) => new(XamlSyntaxTree.Parse(
+            "<Node xmlns='clr-namespace:ScalarLayout' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>" +
+            "<Node.Value><x:" + type + ">" + value + "</x:" + type + "></Node.Value></Node>", path), path);
+        var documents = new[] { Input("First.xaml", "Int32", "1"), Input("Second.xaml", "Int32", "2"), Input("Third.xaml", "Int32", "3") };
+        var options = new XamlCompilerOptions { MaxDegreeOfParallelism = concurrency };
+        var compiler = new XamlProjectCompiler();
+        var initial = compiler.Compile(documents, compilation, options: options);
+        var initialSource = string.Join("\n", initial.Documents.Select(document => document.Output.Source));
+        Assert.Equal(1, initialSource.Split("internal static void SetScalar", StringSplitOptions.None).Length - 1);
+        var assembly = Emit(compilation, initial);
+        Assert.Equal(3, Property(Build(assembly, initial, "Third.xaml"), "Value"));
+
+        documents[0] = Input("First.xaml", "String", "first");
+        documents[1] = Input("Second.xaml", "String", "second");
+        var changed = compiler.Compile(documents, compilation, options: options);
+        Assert.Equal(new XamlProjectStatistics(2, 1, 3, 0), changed.Statistics);
+        var fresh = new XamlProjectCompiler().Compile(documents, compilation, options: options);
+        Assert.Equal(fresh.Documents.Select(document => document.Output.Source), changed.Documents.Select(document => document.Output.Source));
+        var changedSource = string.Join("\n", changed.Documents.Select(document => document.Output.Source));
+        Assert.Equal(1, changedSource.Split("internal static void SetScalar", StringSplitOptions.None).Length - 1);
+        assembly = Emit(compilation, changed);
+        var first = Build(assembly, changed, "First.xaml");
+        var third = Build(assembly, changed, "Third.xaml");
+        Assert.Equal("first", Property(first, "Value")); Assert.Equal(3, Property(third, "Value"));
+        Update(first, "Value", "edited"); Update(third, "Value", 4);
+        Assert.Equal("edited", Property(first, "Value")); Assert.Equal(4, Property(third, "Value"));
+
+        var survivor = compiler.Compile(documents.Skip(1), compilation, options: options);
+        assembly = Emit(compilation, survivor);
+        Assert.Equal("second", Property(Build(assembly, survivor, "Second.xaml"), "Value"));
+        Assert.Equal(3, Property(Build(assembly, survivor, "Third.xaml"), "Value"));
     }
 }

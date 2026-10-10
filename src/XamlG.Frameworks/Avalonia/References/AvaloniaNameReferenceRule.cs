@@ -39,7 +39,7 @@ public sealed class AvaloniaNameReferenceRule : IXamlNameReferenceRule
                 if (!IsBinding(occurrence.Syntax.Name)) continue;
                 foreach (var argument in occurrence.Syntax.Arguments)
                 {
-                    if (argument.ValueSpan is not { } span || occurrence.SourceMap.Text.Substring(span.Start, span.Length) != argument.Value) continue;
+                    if (argument.ValueSpan is not { } span || !occurrence.SourceMap.Text.AsSpan(span.Start, span.Length).SequenceEqual(argument.Value.AsSpan())) continue;
                     if (argument.Name == AvaloniaBindingMetadata.ElementName) yield return new(argument.Value, occurrence.SourceMap.ToSource(span));
                     else if (argument.Name is null or AvaloniaBindingMetadata.PathMember)
                         foreach (var reference in PathReferences(occurrence.SourceMap, argument.Value, span.Start, cancellationToken)) yield return reference;

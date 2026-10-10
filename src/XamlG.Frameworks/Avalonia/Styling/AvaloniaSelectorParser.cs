@@ -1,4 +1,6 @@
+using System.Buffers;
 using System.Collections.Immutable;
+using XamlG.Internal;
 using System.Globalization;
 using System.Threading;
 using XamlG.Syntax;
@@ -101,7 +103,7 @@ public sealed class AvaloniaSelectorParser
                             {
                                 var argumentStart = _position;
                                 while (_position < _text.Length && _text[_position] != ')') _position++;
-                                var argument = _text.Substring(argumentStart, _position - argumentStart);
+                                var argument = _text.AsSpan(argumentStart, _position - argumentStart);
                                 if (!Take(')') || !Nth(argument, out var coefficient, out var offset)) { Error("Invalid nth-child expression.", tokenStart); break; }
                                 step = new(pseudo == "nth-child" ? SelectorStepKind.NthChild : SelectorStepKind.NthLastChild, pseudo, null, Span(tokenStart)) { Step = coefficient, Offset = offset };
                             }
@@ -120,7 +122,7 @@ public sealed class AvaloniaSelectorParser
                             if (c == ']') break;
                             _position++;
                         }
-                        var property = _text.Substring(propertyStart, _position - propertyStart).Trim();
+                        var property = _text.AsSpan(propertyStart, _position - propertyStart).Trim().ToString();
                         if (property.Length == 0 || parenthesis != 0 || !Take('=')) { Error("Property selectors require [Property=Value].", tokenStart); break; }
                         var valueStart = _position;
                         while (_position < _text.Length && _text[_position] != ']') _position++;
@@ -169,18 +171,37 @@ public sealed class AvaloniaSelectorParser
         _failed = true;
         _report(new("XG3100", message, new(_sourceOffset + start, Math.Min(1, _text.Length - start))));
     }
-    private static bool Nth(string text, out int step, out int offset)
+    private static bool Nth(ReadOnlySpan<char> text, out int step, out int offset)
     {
-        text = string.Concat(text.Where(c => !char.IsWhiteSpace(c)));
+        // Most selectors contain no whitespace. Compact only when it is present,
+        // retaining the pinned grammar's removal of whitespace even inside numbers.
+        var whitespace = 0;
+        while (whitespace < text.Length && !char.IsWhiteSpace(text[whitespace])) whitespace++;
+        if (whitespace == text.Length) return NthCore(text, out step, out offset);
+        char[]? rented = null;
+        Span<char> compact = text.Length <= 256 ? stackalloc char[text.Length] : (rented = ArrayPool<char>.Shared.Rent(text.Length));
+        try
+        {
+            text.Slice(0, whitespace).CopyTo(compact);
+            var length = whitespace;
+            for (var i = whitespace + 1; i < text.Length; i++)
+                if (!char.IsWhiteSpace(text[i])) compact[length++] = text[i];
+            return NthCore(compact.Slice(0, length), out step, out offset);
+        }
+        finally { if (rented != null) ArrayPool<char>.Shared.Return(rented); }
+    }
+
+    private static bool NthCore(ReadOnlySpan<char> text, out int step, out int offset)
+    {
         step = 0; offset = 0;
-        if (text == "odd") { step = 2; offset = 1; return true; }
-        if (text == "even") { step = 2; return true; }
+        if (text.SequenceEqual("odd".AsSpan())) { step = 2; offset = 1; return true; }
+        if (text.SequenceEqual("even".AsSpan())) { step = 2; return true; }
         var n = text.IndexOf('n');
-        if (n < 0) return int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out offset);
-        var coefficient = text.Substring(0, n);
-        if (coefficient is "" or "+") step = 1;
-        else if (coefficient == "-") step = -1;
-        else if (!int.TryParse(coefficient, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out step)) return false;
-        return n == text.Length - 1 || int.TryParse(text.Substring(n + 1), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out offset);
+        if (n < 0) return SpanNumberParser.TryParseInt(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out offset);
+        var coefficient = text.Slice(0, n);
+        if (coefficient.IsEmpty || coefficient.SequenceEqual("+".AsSpan())) step = 1;
+        else if (coefficient.SequenceEqual("-".AsSpan())) step = -1;
+        else if (!SpanNumberParser.TryParseInt(coefficient, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out step)) return false;
+        return n == text.Length - 1 || SpanNumberParser.TryParseInt(text.Slice(n + 1), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out offset);
     }
 }

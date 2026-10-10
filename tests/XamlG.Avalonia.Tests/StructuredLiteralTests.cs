@@ -45,6 +45,11 @@ public sealed class StructuredLiteralTests
     [InlineData("RelativePoint", "25%,75%")]
     [InlineData("RelativePoint", "-25%%,150%%")]
     [InlineData("RelativePoint", "NaN%,Infinity%")]
+    [InlineData("Rect", "1,2,3,4")]
+    [InlineData("Rect", "-1 -2 -3 -4")]
+    [InlineData("Rect", "NaN Infinity -Infinity -0")]
+    [InlineData("PixelRect", "1,2,3,4")]
+    [InlineData("PixelRect", "-2147483648 2147483647 -1 +2")]
     public void StructuredValuesPreserveThePinnedComponents(string property, string literal)
     {
         var xaml = Root(property, literal);
@@ -72,6 +77,12 @@ public sealed class StructuredLiteralTests
     [InlineData("RelativePoint", "25%,1")]
     [InlineData("RelativePoint", "1,25%")]
     [InlineData("RelativePoint", "1,2,3")]
+    [InlineData("Rect", "1,2,3")]
+    [InlineData("Rect", "1,2,3,4,")]
+    [InlineData("Rect", "1,2,3,4,5")]
+    [InlineData("PixelRect", "1.5,2,3,4")]
+    [InlineData("PixelRect", "2147483648,0,1,2")]
+    [InlineData("PixelRect", "1,,2,3,4")]
     public void InvalidStructuredValuesFailDuringBinding(string property, string literal)
     {
         var xaml = Root(property, literal);
@@ -179,6 +190,8 @@ public sealed class StructuredLiteralTests
         }
         foreach (var property in expected.GetType().GetProperties().Where(property => property.PropertyType == typeof(double)))
             Assert.Equal(BitConverter.DoubleToInt64Bits((double)property.GetValue(expected)!), BitConverter.DoubleToInt64Bits((double)property.GetValue(actual)!));
+        foreach (var property in expected.GetType().GetProperties().Where(property => property.PropertyType == typeof(int)))
+            Assert.Equal(property.GetValue(expected), property.GetValue(actual));
     }
 }
 
@@ -191,6 +204,8 @@ public sealed class StructuredLiteralProbe
     public Size Size { get; set; }
     public Matrix Matrix { get; set; }
     public RelativePoint RelativePoint { get; set; }
+    public Rect Rect { get; set; }
+    public PixelRect PixelRect { get; set; }
     public TextTrimming? Trimming { get; set; }
     public TextDecorationCollection? Decorations { get; set; }
     public WindowTransparencyLevel Transparency { get; set; }

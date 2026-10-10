@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Immutable;
 namespace XamlG.Syntax;
 
@@ -66,14 +67,16 @@ public static class MarkupExtensionParser
             }
             if (quote != '\0' || depth != 0) report(new("XG0010", "Unbalanced markup-extension argument.", new(span.Start + start, position - start)));
             var argumentSpan = new TextSpan(span.Start + start, position - start);
-            string? key = equals < 0 ? null : text.Substring(start, equals - start).Trim();
+            string? key = equals < 0 ? null : text.AsSpan(start, equals - start).Trim().ToString();
             var valueStart = equals < 0 ? start : equals + 1;
             var valueEnd = position;
             while (valueStart < valueEnd && char.IsWhiteSpace(text[valueStart])) valueStart++;
             while (valueEnd > valueStart && char.IsWhiteSpace(text[valueEnd - 1])) valueEnd--;
-            var value = text.Substring(valueStart, valueEnd - valueStart);
-            if (value.Length >= 2 && (value[0] is '\'' or '"') && value[value.Length - 1] == value[0])
-            { value = Unquote(value); valueStart++; valueEnd--; }
+            var valueText = text.AsSpan(valueStart, valueEnd - valueStart);
+            string value;
+            if (valueText.Length >= 2 && (valueText[0] is '\'' or '"') && valueText[valueText.Length - 1] == valueText[0])
+            { value = Unquote(valueText.Slice(1, valueText.Length - 2)); valueStart++; valueEnd--; }
+            else value = valueText.ToString();
             if (key != null) { sawNamed = true; if (key.Length == 0 || !names.Add(key)) report(new("XG0010", "A named markup argument is empty or duplicated.", argumentSpan)); }
             else if (sawNamed) report(new("XG0010", "Positional arguments must precede named arguments.", argumentSpan));
             if (value.Length != 0 || key != null) arguments.Add(new(key, value, argumentSpan)
@@ -96,10 +99,23 @@ public static class MarkupExtensionParser
         while (position < end && char.IsWhiteSpace(text[position])) position++;
         return position < end && text[position] == '=';
     }
-    private static string Unquote(string value)
+    private static string Unquote(ReadOnlySpan<char> value)
     {
-        var result = new System.Text.StringBuilder(value.Length - 2);
-        for (var i = 1; i < value.Length - 1; i++) { if (value[i] == '\\' && i + 1 < value.Length - 1) i++; result.Append(value[i]); }
-        return result.ToString();
+        var escape = value.IndexOf('\\');
+        if (escape < 0) return value.ToString();
+        char[]? rented = null;
+        Span<char> result = value.Length <= 256 ? stackalloc char[value.Length] : (rented = ArrayPool<char>.Shared.Rent(value.Length));
+        try
+        {
+            value.Slice(0, escape).CopyTo(result);
+            var length = escape;
+            for (var i = escape; i < value.Length; i++)
+            {
+                if (value[i] == '\\' && i + 1 < value.Length) i++;
+                result[length++] = value[i];
+            }
+            return result.Slice(0, length).ToString();
+        }
+        finally { if (rented != null) ArrayPool<char>.Shared.Return(rented); }
     }
 }

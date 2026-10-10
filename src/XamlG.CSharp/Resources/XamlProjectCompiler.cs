@@ -118,7 +118,7 @@ public sealed class XamlProjectCompiler
             { emission = cachedOutput; Interlocked.Increment(ref reusedOutputs); }
             else
             {
-                emission = XamlResourceExports.Add(bound[i], new CSharpEmitter().Emit(bound[i], cancellationToken, shareServices: true, properties?[i])); Interlocked.Increment(ref emittedCount);
+                emission = new CSharpEmitter().Emit(bound[i], cancellationToken, shareServices: true, properties?[i], exportResources: true); Interlocked.Increment(ref emittedCount);
                 if (ReferenceEquals(bound[i], entries[i].Document))
                 {
                     entries[i].Output = emission;
@@ -137,9 +137,9 @@ public sealed class XamlProjectCompiler
         {
             var emission = emissions[i];
             if (!emission.Success) continue;
-            var owned = emission.SharedSources.Where(source => published.Add(source.TypeName)).ToArray();
+            var owned = emission.SharedSources.Where(source => published.Add(source.Identity)).ToArray();
             if (owned.Length == 0) continue;
-            var identity = string.Join("\n", owned.Select(source => source.TypeName));
+            var identity = string.Join("\n", owned.Select(source => source.Identity));
             if (ReferenceEquals(emission, entries[i].Output))
             {
                 var entry = entries[i];

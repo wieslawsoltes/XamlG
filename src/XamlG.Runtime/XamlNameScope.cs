@@ -17,7 +17,12 @@ internal sealed class XamlNameScope
     public void Defer(Action assignment) => _fixups.Add(assignment);
     public void Complete()
     {
-        var pending = _fixups.ToArray(); _fixups.Clear();
-        foreach (var assignment in pending) assignment();
+        // Constructing a deferred child can enqueue its own reference assignments.
+        // Drain those batches before publishing the completed graph as well.
+        while (_fixups.Count != 0)
+        {
+            var pending = _fixups.ToArray(); _fixups.Clear();
+            foreach (var assignment in pending) assignment();
+        }
     }
 }

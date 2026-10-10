@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using XamlG.Internal;
 namespace XamlG.Syntax;
 
 /// <summary>Persistent namespace and XML-space scope. A child never mutates its parent.</summary>
@@ -23,8 +24,8 @@ public sealed class NamespaceScope
             var name = result.Expand(a.Name, true);
             if (name.Namespace == XamlNames.Xml && name.LocalName == "space") preserve = a.Value == "preserve" || a.Value != "default" && preserve;
             if (name.Namespace == XamlNames.Compatibility && name.LocalName == "Ignorable")
-                foreach (var prefix in a.Value.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
-                    if (bindings.TryGetValue(prefix, out var ns)) ignored = ignored.Add(ns);
+                foreach (var prefix in new SpanSplitEnumerator(a.Value.AsSpan(), " \t\r\n".AsSpan(), removeEmpty: true))
+                    if (bindings.TryGetValue(prefix.ToString(), out var ns)) ignored = ignored.Add(ns);
         }
         return ReferenceEquals(ignored, result.IgnoredNamespaces) && preserve == result.PreserveSpace
             ? result : new NamespaceScope(bindings, ignored, preserve, declared);

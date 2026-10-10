@@ -56,7 +56,8 @@ test('shell menus, generated documents and individual runtime tool panels work a
   const generated = page.locator('.generated-files button').first();
   const path = (await generated.textContent()).replace(/^#\s*/, '').trim(); await generated.click();
   await expect(page.locator(`[data-tab-id="generated:${encodeURIComponent(path)}"]`)).toHaveAttribute('aria-selected', 'true');
-  expect(await page.evaluate(path => monaco.editor.getEditors().find(editor => editor.getModel()?.uri.path.endsWith('/' + path))?.getOption(monaco.editor.EditorOption.readOnly), path)).toBe(true);
+  // Tab selection precedes the component's asynchronous Monaco mount.
+  await expect.poll(() => page.evaluate(path => monaco.editor.getEditors().find(editor => editor.getModel()?.uri.path.endsWith('/' + path))?.getOption(monaco.editor.EditorOption.readOnly), path)).toBe(true);
   await menu(page, 'Edit');
   await expect(page.getByRole('button', { name: 'Format document', exact: true })).toBeDisabled();
   await page.keyboard.press('Escape');

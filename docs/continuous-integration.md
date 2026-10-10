@@ -1,6 +1,6 @@
 # Continuous integration and merge evidence
 
-The maintained workflow inventory is `eng/validation-workflows.json`. Seven workflows validate pull requests; one deploys the merged product. `scripts/verify-workflow-inventory.py` rejects missing or unlisted workflow files. It validates the inventory, not whether a build is correct or green.
+The maintained workflow inventory is `eng/validation-workflows.json`. Eight workflows validate pull requests, one provides optional profiling diagnostics, and one deploys the merged product. `scripts/verify-workflow-inventory.py` rejects missing or unlisted workflow files. It validates the inventory, not whether a build is correct or green.
 
 | Workflow | Responsibility |
 | --- | --- |
@@ -11,6 +11,8 @@ The maintained workflow inventory is `eng/validation-workflows.json`. Seven work
 | `playground.yml` | Production WebAssembly publish and the unchanged browser acceptance suite, including trusted/isolated loader execution and editor ownership. |
 | `release.yml` | Complete package inventory, clean installed tools and real consuming applications, resource-bearing assembly emission, package metadata/checksums and release-candidate artifacts. Publishing remains restricted to its existing tag/explicit-publish path and protected environment. |
 | `controlcatalog.yml` | Complete pinned catalog and both copied XamlG themes: component construction, real Skia rendering, desktop lifetime and trimmed WebAssembly page/demo sweeps. |
+| `intelligent-ui.yml` | Intelligent UI and MCP contracts, browser bridge ownership and MCP App integration. |
+| `compiler-profile.yml` | Real Csc commands for Simple, Fluent and ControlCatalog with all generators/analyzers retained; fresh-process timings, generated sources, managed stack traces and allocation/GC reports. Manual diagnostic workflow only; performance targets are canceled. Catalog correctness validation runs independently, with compilation benchmarks available through its manual `benchmark` input. |
 | `pages.yml` | Main-only Pages build/deployment followed by deployed-revision and public browser acceptance verification. |
 
 ## Removed workflows
@@ -21,7 +23,7 @@ Standalone compiler/Avalonia/tooling/workspace/LSP native test workflows, the se
 
 ## Merge policy
 
-Evaluate the latest completed runs for the exact PR head (and its tested merge with the current base). All seven PR validation workflows above must succeed, including every native platform and both theme jobs. An absent, queued, cancelled, skipped or failed validation job is not a pass. Do not merge because an obsolete workflow count was reached. Recheck the head/base before merging and use an expected-head constraint.
+Evaluate the latest completed runs for the exact PR head (and its tested merge with the current base). All eight PR validation workflows above must succeed, including every native platform and both theme jobs. An absent, queued, cancelled, skipped or failed validation job is not a pass. Do not merge because an obsolete workflow count was reached. Recheck the head/base before merging and use an expected-head constraint.
 
 Workflow cleanup does not alter branch protection or authorize bypassing required checks. Repositories with externally configured required check names must keep those rules aligned with this inventory through their normal administrative process. A successful merge is not a NuGet release; tags and publication are separate actions.
 

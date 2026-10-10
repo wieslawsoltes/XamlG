@@ -5,6 +5,39 @@ namespace XamlG.Tests;
 
 public sealed class DecodedTextMapTests
 {
+    [Theory]
+    [InlineData("", true)]
+    [InlineData("m:Box(m:Item)", true)]
+    [InlineData("literal 😀 value", true)]
+    [InlineData("line\nwith\ttabs", false)]
+    public void UnchangedTextMapsEveryUtf16RangeWithoutNormalization(string text, bool attribute)
+    {
+        var source = "prefix " + text + " suffix";
+        var map = XamlDecodedTextMap.Create(source, new(7, text.Length), attribute);
+        Assert.Equal(text, map.Text);
+        for (var start = 0; start <= text.Length; start++)
+            for (var end = start; end <= text.Length; end++)
+                Assert.Equal(new(7 + start, end - start), map.ToSource(TextSpan.FromBounds(start, end)));
+        Assert.Throws<ArgumentException>(() => map.ToSource(new(text.Length, 1)));
+        Assert.Throws<ArgumentException>(() => map.ToSource(new(text.Length + 1, 0)));
+    }
+
+    [Theory]
+    [InlineData(true, "a  b c d&😀")]
+    [InlineData(false, "a\t\nb\nc\nd&😀")]
+    public void NormalizedTextRetainsEntityAndLineEndingBoundaries(bool attribute, string expected)
+    {
+        const string value = "a\t\nb\r\nc\rd&amp;😀";
+        var map = XamlDecodedTextMap.Create("prefix " + value + " suffix", new(7, value.Length), attribute);
+        Assert.Equal(expected, map.Text);
+        Assert.Equal(new(7, value.Length), map.ToSource(new(0, expected.Length)));
+        Assert.Equal(new(11, 2), map.ToSource(new(4, 1)));
+        // A literal surrogate pair retains ordinary UTF-16 boundaries even on the
+        // decoded path; only a pair produced by one numeric entity is indivisible.
+        Assert.Equal(new(7 + value.Length - 2, 1), map.ToSource(new(expected.Length - 2, 1)));
+        Assert.Throws<ArgumentException>(() => map.ToSource(new(expected.Length, 1)));
+    }
+
     [Fact]
     public void NumericEntitiesAndXmlAttributeNormalizationMapBackExactly()
     {

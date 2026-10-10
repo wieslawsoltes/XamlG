@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Text;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
 using XamlG.Frameworks.Avalonia.Styling;
@@ -49,6 +51,25 @@ internal sealed class BindingAccessorBuilder(BindingContext context)
             : new BoundConstantExpression(null, setterType, span);
         BoundExpression info = new BoundNewExpression(constructor,
             ImmutableArray.Create(expressions.Text(name, span), getter, setterExpression, expressions.Type(valueType, span)), span);
+        // ClrPropertyInfo and its delegates are immutable. XamlX caches these
+        // descriptors; each binding still owns its accessor and subscriptions.
+        if (indices.All(index => index is BoundConstantExpression))
+        {
+            var key = new StringBuilder("Avalonia.ClrPropertyInfo:");
+            void Part(string text) => key.Append(text.Length.ToString(CultureInfo.InvariantCulture)).Append(':').Append(text);
+            Part(member.ContainingAssembly.Identity.ToString());
+            Part(member.Kind.ToString());
+            Part(member.ToDisplayString(SymbolDisplayFormat.CSharpErrorMessageFormat));
+            Part(writable.ToString());
+            foreach (var argument in indices.Cast<BoundConstantExpression>())
+            {
+                Part(argument.Type?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) ?? string.Empty);
+                Part(argument.Value?.GetType().FullName ?? "null");
+                Part(Convert.ToString(argument.Value, CultureInfo.InvariantCulture) ?? string.Empty);
+            }
+            info = new BoundCachedExpression(key.ToString(), info, span)
+            { ShareAcrossDocuments = CompiledBindingPathCache.Closed(member.ContainingType) && CompiledBindingPathCache.Closed(valueType) };
+        }
         var factoryType = (INamedTypeSymbol)propertyMethod.Parameters[1].Type;
         var factoryOwner = context.Types.Find(AvaloniaBindingMetadata.AccessorFactory);
         BoundExpression factory;

@@ -1,14 +1,45 @@
 using Microsoft.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using XamlG.Compiler;
 using XamlG.Roslyn;
 
 namespace XamlG.CSharp;
 
-internal sealed record PropertyAccessor(string Type, string Name, string Get, string Set)
+internal sealed class PropertyAccessor(string type, string name, string get, string set)
 {
-    public string Key => Type + "\0" + Name + "\0" + Get + "\0" + Set;
+    private static readonly ConditionalWeakTable<IPropertySymbol, PropertyAccessor> Properties = new();
+    public string Type { get; } = type;
+    public string Name { get; } = name;
+    public string Get { get; } = get;
+    public string Set { get; } = set;
+    public string Key { get; } = type + "\0" + name + "\0" + get + "\0" + set;
+
+    // An inherited CLR property has the same editing accessor on every derived
+    // owner. Use its resolved declaring type, preserving virtual dispatch and
+    // keeping hidden/overridden and closed generic members distinct. Custom
+    // setters retain their original receiver and conversion contracts.
+    public static ITypeSymbol ReceiverType(ITypeSymbol owner, BoundMember member) =>
+        owner.IsReferenceType && member is { Kind: BoundMemberKind.Property, StaticSetter: null,
+            Symbol: IPropertySymbol { IsStatic: false } property }
+            ? property.ContainingType : owner;
 
     public static PropertyAccessor Create(ITypeSymbol owner, BoundMember member)
+    {
+        owner = ReceiverType(owner, member);
+        if (member is { Kind: BoundMemberKind.Property, StaticSetter: null, Symbol: IPropertySymbol { IsStatic: false } property } &&
+            owner.IsReferenceType && SymbolEqualityComparer.Default.Equals(owner, property.ContainingType) &&
+            member.Name == property.Name && SymbolEqualityComparer.Default.Equals(member.ValueType, property.Type))
+        {
+            // Only strings survive in the value; weak symbol keys do not retain
+            // compilations across incremental generator or editor sessions.
+            if (Properties.TryGetValue(property, out var cached)) return cached;
+            var created = CreateCore(owner, member);
+            return Properties.GetValue(property, _ => created);
+        }
+        return CreateCore(owner, member);
+    }
+
+    private static PropertyAccessor CreateCore(ITypeSymbol owner, BoundMember member)
     {
         var receiver = "((" + owner.CSharpName() + ")__target)";
         return new(member.ValueType.TypeKind == TypeKind.Dynamic ? "object" : member.ValueType.CSharpName(), member.Name,

@@ -1,4 +1,3 @@
-using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Compiler;
 using XamlG.Syntax;
@@ -7,16 +6,21 @@ namespace XamlG.CSharp.Resources;
 
 internal static class XamlResourceExports
 {
-    public static XamlEmissionResult Add(BoundDocument document, XamlEmissionResult output)
+    public static void Emit(EmissionContext context, string factoryTypeName, string? buildMethodName)
     {
-        if (!output.Success || output.IsSkipped || document.ClassModifier != "public" || document.Options.ResourceUri == null || output.BuildMethodName == null || !IsPublic(document.Root!.Type)) return output;
+        var document = context.Document;
+        if (context.Diagnostics.Any(diagnostic => diagnostic.Severity == XamlSeverity.Error) || document.ClassModifier != "public" ||
+            document.Options.ResourceUri == null || buildMethodName == null || !IsPublic(document.Root!.Type)) return;
         var prefix = "[assembly: global::XamlG.Runtime.XamlCompiledResourceAttribute(" + CSharpNames.Literal(document.Options.ResourceUri) +
-            ", typeof(global::" + output.FactoryTypeName + "), " + CSharpNames.Literal(output.BuildMethodName) + ")]\n";
-        return output with
+            ", typeof(global::" + factoryTypeName + "), " + CSharpNames.Literal(buildMethodName) + ")]\n";
+        // Add exports before materializing the generated string. Prefixing the
+        // final string copied the entire document, including all nested templates.
+        context.Writer.Prepend(prefix);
+        for (var index = 0; index < context.Mappings.Count; index++)
         {
-            Source = prefix + output.Source,
-            SourceMappings = output.SourceMappings.Select(m => m with { GeneratedSpan = new TextSpan(m.GeneratedSpan.Start + prefix.Length, m.GeneratedSpan.Length) }).ToImmutableArray()
-        };
+            var mapping = context.Mappings[index];
+            context.Mappings[index] = mapping with { GeneratedSpan = new TextSpan(mapping.GeneratedSpan.Start + prefix.Length, mapping.GeneratedSpan.Length) };
+        }
     }
     private static bool IsPublic(INamedTypeSymbol type)
     {

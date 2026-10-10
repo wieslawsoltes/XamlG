@@ -78,6 +78,44 @@ public sealed class LiteralConstructionTests
         Assert.Equal(expected.Color, actual.Color);
     }
 
+    [AvaloniaFact]
+    public void KnownAndComputedColorsAreCompiledToNumericValues()
+    {
+        var literals = typeof(Colors).GetProperties(BindingFlags.Public | BindingFlags.Static)
+            .Where(property => property.PropertyType == typeof(Color)).Select(property => property.Name.ToLowerInvariant())
+            .Concat(new[]
+            {
+                "#123", "#4123", "#00112233", "#aAbBcC", "# 12345",
+                "rgba(10,20,30,0.5)", "rgb(10%,20%,30%)", "rgba(0%,100%,50%,25%)",
+                "rgb(10%ignored,20,30)", "rgb(10.0,20,30) ", "hsl(120,100%,50%)",
+                "hsla(240,1,0.5,0.25)", "hsv(30,100%,100%)", "hsva(30,1,1,50%)",
+                "hsl(360,150%,-10%)", "hsva(-60,-1,2,2)", "rgba(50%,50%,50%,50%)"
+            }).ToArray();
+        var entries = literals.Select((literal, index) => "<Color x:Key='" + index + "'>" + Escape(literal) + "</Color>");
+        var fixture = new ResourceProjectFixture(new[] { ("Colors.axaml", ResourceProjectFixture.Dictionary(string.Join("", entries))) });
+        var root = Assert.IsType<ResourceDictionary>(fixture.Build("Colors.axaml"));
+        for (var index = 0; index < literals.Length; index++)
+            Assert.Equal(Color.Parse(literals[index]), Assert.IsType<Color>(root[index.ToString(CultureInfo.InvariantCulture)]));
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", fixture.Result.Documents.Single().Output.Source);
+    }
+
+    [AvaloniaTheory]
+    [InlineData("HslColor", "hsl(120,100%,50%)")]
+    [InlineData("HslColor", "hsla(240,1,0.5,0.25)")]
+    [InlineData("HslColor", "hsl(360,150%,-10%)")]
+    [InlineData("HsvColor", "hsv(30,100%,100%)")]
+    [InlineData("HsvColor", "hsva(30,1,1,50%)")]
+    [InlineData("HsvColor", "hsva(-60,-1,2,2)")]
+    public void ColorModelsAreCompiledWithoutRuntimeTextParsing(string type, string literal)
+    {
+        var fixture = new ResourceProjectFixture(new[] { ("Model.axaml", ResourceProjectFixture.Dictionary(
+            "<" + type + " x:Key='value'>" + Escape(literal) + "</" + type + ">")) });
+        var root = Assert.IsType<ResourceDictionary>(fixture.Build("Model.axaml"));
+        if (type == "HslColor") Assert.Equal(HslColor.Parse(literal), Assert.IsType<HslColor>(root["value"]));
+        else Assert.Equal(HsvColor.Parse(literal), Assert.IsType<HsvColor>(root["value"]));
+        Assert.DoesNotMatch(@"\.\s*@?Parse\s*\(", fixture.Result.Documents.Single().Output.Source);
+    }
+
     [AvaloniaTheory]
     [InlineData(false)]
     [InlineData(true)]
@@ -191,6 +229,7 @@ public sealed class LiteralConstructionTests
     [InlineData("Color", "rgb(256,0,0)")]
     [InlineData("Color", "hsl(120%,1,1)")]
     [InlineData("Color", "#12")]
+    [InlineData("Cursor", "unknown-cursor")]
     [InlineData("Uri", "http://")]
     [InlineData("Duration", "NaN")]
     [InlineData("Duration", "Infinity")]
@@ -218,7 +257,6 @@ public sealed class LiteralConstructionTests
     }
 
     [AvaloniaTheory]
-    [InlineData("Cursor", "unknown-cursor")]
     [InlineData("Brush", " Red ")]
     [InlineData("Brush", "rgb(256,0,0)")]
     [InlineData("ConcreteBrush", "not-a-color")]

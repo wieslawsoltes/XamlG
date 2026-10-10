@@ -66,10 +66,40 @@ public sealed class AvaloniaConstructorLiteralRule : IXamlTextConversionRule
             BoundExpression? value = field == null ? null : new BoundStaticExpression(field, field.Type, span);
             if (cursorType != null && long.TryParse(text, out var numeric))
                 value = new BoundCastExpression(new BoundConstantExpression(unchecked((int)numeric), context.Types.Special(SpecialType.System_Int32), span), cursorType, span);
+            var intrinsic = value != null;
+            if (!intrinsic && cursorType != null)
+            {
+                try
+                {
+                    var parsed = Parsing.Cursor.Parse(text);
+                    value = new BoundCastExpression(new BoundConstantExpression((int)parsed.Type,
+                        context.Types.Special(SpecialType.System_Int32), span), cursorType, span);
+                }
+                catch (ArgumentException) { return Invalid(context, text, target, span); }
+            }
             if (value == null) return false;
             var constructor = target.InstanceConstructors.FirstOrDefault(method => context.Types.IsAccessible(method) && method.Parameters.Length == 1 &&
                 SymbolEqualityComparer.Default.Equals(method.Parameters[0].Type, cursorType));
-            if (constructor != null) expression = Located(context, constructor, span, value);
+            if (constructor != null) expression = Located(context, constructor, span, value) with { SuppressSourceInfo = !intrinsic };
+            return true;
+        }
+        if (target.HasMetadataName("Avalonia.Media.HslColor") || target.HasMetadataName("Avalonia.Media.HsvColor"))
+        {
+            double[] values;
+            if (target.HasMetadataName("Avalonia.Media.HslColor"))
+            {
+                if (!Parsing.HslColor.TryParse(text, out var value)) return Invalid(context, text, target, span);
+                values = new[] { value.A, value.H, value.S, value.L };
+            }
+            else
+            {
+                if (!Parsing.HsvColor.TryParse(text, out var value)) return Invalid(context, text, target, span);
+                values = new[] { value.A, value.H, value.S, value.V };
+            }
+            var constructor = target.InstanceConstructors.FirstOrDefault(method => context.Types.IsAccessible(method) && method.Parameters.Length == 4 &&
+                method.Parameters.All(parameter => parameter.Type.SpecialType == SpecialType.System_Double));
+            if (constructor != null) expression = Located(context, constructor, span,
+                values.Select(value => (BoundExpression)new BoundConstantExpression(value, context.Types.Special(SpecialType.System_Double), span)).ToArray());
             return true;
         }
         var isColor = target.HasMetadataName(AvaloniaLiteralMetadata.Color);
@@ -77,21 +107,21 @@ public sealed class AvaloniaConstructorLiteralRule : IXamlTextConversionRule
         var isBrush = brush != null && context.Types.Compilation.ClassifyCommonConversion(target, brush).IsImplicit;
         if (!isColor && !isBrush) return false;
         var colorText = isColor ? text.Trim() : text;
-        if (!AvaloniaColorLiteral.IsValid(context.Types, colorText))
+        if (!Parsing.Color.TryParse(colorText, out var colorValue))
             return isColor && Invalid(context, text, target, span);
         var color = context.Types.Find(AvaloniaLiteralMetadata.Color);
-        var parse = color?.GetMembers("Parse").OfType<IMethodSymbol>().FirstOrDefault(method => method.IsStatic && method.Parameters.Length == 1 &&
-            method.Parameters[0].Type.SpecialType == SpecialType.System_String && context.Types.IsAccessible(method));
-        if (parse == null) return true;
-        var parsed = new BoundParseExpression(colorText, parse, color!, span);
-        if (isColor) expression = parsed;
+        var packed = new BoundConstantExpression(colorValue.ToUInt32(), context.Types.Special(SpecialType.System_UInt32), span);
+        if (isColor)
+        {
+            var factory = color?.GetMembers("FromUInt32").OfType<IMethodSymbol>().FirstOrDefault(method => method.IsStatic && method.Parameters.Length == 1 &&
+                method.Parameters[0].Type.SpecialType == SpecialType.System_UInt32 && context.Types.IsAccessible(method));
+            if (factory != null) expression = new BoundCallExpression(factory, null, ImmutableArray.Create<BoundExpression>(packed), span);
+        }
         else
         {
             var constructor = context.Types.Find(AvaloniaLiteralMetadata.ImmutableSolidColorBrush)?.InstanceConstructors.FirstOrDefault(method =>
                 context.Types.IsAccessible(method) && method.Parameters.Length == 1 && method.Parameters[0].Type.SpecialType == SpecialType.System_UInt32);
-            var packed = color!.GetMembers("ToUInt32").OfType<IMethodSymbol>().FirstOrDefault(method => !method.IsStatic && method.Parameters.Length == 0 && context.Types.IsAccessible(method));
-            if (constructor != null && packed != null)
-                expression = Located(context, constructor, span, new BoundCallExpression(packed, parsed, ImmutableArray<BoundExpression>.Empty, span));
+            if (constructor != null) expression = Located(context, constructor, span, packed);
         }
         return true;
     }

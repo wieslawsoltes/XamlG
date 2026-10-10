@@ -5,7 +5,6 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using XamlG.Compiler;
 using XamlG.Frameworks;
-using XamlG.Roslyn;
 using XamlG.Syntax;
 
 namespace XamlG.Generator;
@@ -18,7 +17,6 @@ internal sealed record GeneratorCompilationOptOuts(bool AllDocuments, ImmutableH
         XamlFrameworkProfile profile;
         try { profile = KnownFrameworkProfiles.Select(compilation, options.Framework, options.CompileBindingsByDefault, options.CreateSourceInfo); }
         catch (ArgumentException) { return Empty; }
-        var types = new RoslynTypeSystem(compilation, profile.TypeSystem);
         var skipped = ImmutableHashSet.CreateBuilder<ISymbol>(SymbolEqualityComparer.Default);
         var compiled = ImmutableHashSet.CreateBuilder<ISymbol>(SymbolEqualityComparer.Default);
         var count = 0; var skippedCount = 0;
@@ -31,7 +29,7 @@ internal sealed record GeneratorCompilationOptOuts(bool AllDocuments, ImmutableH
             var syntax = XamlSyntaxTree.Parse(input.Text, input.LogicalPath, cancellationToken);
             var isSkipped = !profile.Directives.ShouldCompile(syntax, new XamlCompilerOptions { IsPrecompilation = true });
             if (isSkipped) skippedCount++;
-            if (syntax.Root is { } root && NamespaceScope.Empty.Push(root).Directive(root, "Class") is { } directive && types.Find(directive.Value) is { } type)
+            if (syntax.Root is { } root && NamespaceScope.Empty.Push(root).Directive(root, "Class") is { } directive && compilation.GetTypeByMetadataName(directive.Value) is { } type)
                 (isSkipped ? skipped : compiled).Add(type);
         }
         skipped.ExceptWith(compiled);
