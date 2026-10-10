@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Collections.Immutable;
+using Avalonia.Styling;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -51,11 +53,13 @@ public sealed class UiAvaloniaRenderer : IDisposable
             parents.Add(node.Key, item.Parent);
             if (!_catalog.Registrations.TryGetValue(node.Type, out var native) || !_schema.Components.TryGetValue(node.Type, out var component)) throw new UiException("unknown_component", "No trusted native factory: " + node.Type);
             UiTreeValidation.ValidateElement(node, component);
+            UiStyles.Validate(node.Styles, _schema);
             if (node.Properties.Keys.Any(key => !native.Setters.ContainsKey(key))) throw new UiException("unknown_property", "No trusted property setter.");
             foreach (var child in node.Children.Reverse()) pending.Push((child, node.Key, item.Depth + 1));
         }
+        UiStyleTree.Validate(snapshot.Roots);
         var newSession = _snapshot != null && _snapshot.SessionId != snapshot.SessionId;
-        var replacements = _entries.Values.Where(entry => newSession || !nodes.TryGetValue(entry.Node.Key, out var node) || node.Type != entry.Node.Type).Select(entry => entry.Node.Key).ToHashSet(StringComparer.Ordinal);
+        var replacements = _entries.Values.Where(entry => newSession || !nodes.TryGetValue(entry.Node.Key, out var node) || node.Type != entry.Node.Type || !SameName(node, entry.Node)).Select(entry => entry.Node.Key).ToHashSet(StringComparer.Ordinal);
         var prepared = new Dictionary<string, Entry>(StringComparer.Ordinal);
         // Constructor/conversion failures for new controls occur while detached.
         try
@@ -111,9 +115,18 @@ public sealed class UiAvaloniaRenderer : IDisposable
             if (property.Key == "SelectedIndex") continue;
             if (initial || property.Key == _schema.Components[node.Type].InputProperty || !entry.Node.Properties.TryGetValue(property.Key, out var previous) || !JsonElement.DeepEquals(previous, property.Value) || property.Key == "Value" && (Changed("Minimum") || Changed("Maximum"))) setters[property.Key](entry.Control, property.Value);
         }
+        if (initial || !UiStyles.Equivalent(entry.Node.Styles, node.Styles))
+        {
+            var styles = UiAvaloniaStyles.Create(node.Styles, _catalog);
+            foreach (var style in entry.Styles) entry.Control.Styles.Remove(style);
+            foreach (var style in styles) entry.Control.Styles.Add(style);
+            entry.Styles = styles;
+        }
         entry.Node = node;
         bool Changed(string key) => entry.Node.Properties.TryGetValue(key, out var old) != node.Properties.TryGetValue(key, out var next) || !JsonElement.DeepEquals(old, next);
     }
+    private static bool SameName(UiElement left, UiElement right)
+        => left.Properties.TryGetValue("Name", out var a) == right.Properties.TryGetValue("Name", out var b) && JsonElement.DeepEquals(a, b);
     private void Subscribe(Entry entry)
     {
         entry.PropertyChanged = (_, args) =>
@@ -139,6 +152,8 @@ public sealed class UiAvaloniaRenderer : IDisposable
     {
         entry.Control.PropertyChanged -= entry.PropertyChanged;
         if (entry.Control is Button button && entry.Click != null) button.Click -= entry.Click;
+        foreach (var style in entry.Styles) entry.Control.Styles.Remove(style);
+        entry.Styles = [];
         entry.Registration.Retire?.Invoke(entry.Control);
     }
     private static void Children(Control parent, IReadOnlyList<Control> children, bool itemsSource, bool scalarContent)
@@ -217,6 +232,7 @@ public sealed class UiAvaloniaRenderer : IDisposable
     }
     private sealed class Entry(UiElement node, Control control, string parent, UiControlRegistration registration)
     {
+        internal ImmutableArray<Style> Styles = [];
         internal UiElement Node = node;
         internal Control Control { get; } = control;
         internal string Parent = parent;

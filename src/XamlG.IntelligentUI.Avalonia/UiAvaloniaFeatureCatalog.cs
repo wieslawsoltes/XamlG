@@ -34,6 +34,13 @@ internal static class UiAvaloniaFeatureCatalog
         entries.Add("Label", entries["ContentControl"] with { Create = () => new Label() });
         var setters = new Dictionary<string, Action<Control, JsonElement?>>(StringComparer.Ordinal)
         {
+            ["Classes"] = (control, value) =>
+            {
+                var classes = value is { } literal ? UiStyles.ReadClasses(literal.GetString()!) : [];
+                foreach (var name in control.Classes.ToArray()) if (!name.StartsWith(':')) control.Classes.Remove(name);
+                foreach (var name in classes) control.Classes.Add(name);
+            },
+            ["Name"] = Set(StyledElement.NameProperty, value => value.GetString()),
             ["ZIndex"] = Set(Control.ZIndexProperty, Integer),
             ["IsHitTestVisible"] = Set(Control.IsHitTestVisibleProperty, value => value.GetBoolean()),
             ["UseLayoutRounding"] = Set(Control.UseLayoutRoundingProperty, value => value.GetBoolean()),

@@ -17,6 +17,9 @@ public static class UiTreeValidation
             if (property.Value.ValueKind == System.Text.Json.JsonValueKind.String && property.Value.GetString()!.Length > textLimit) throw new UiException("text_limit", "Computed property text exceeds the limit.");
         }
         UiDrawingValues.Validate(node);
+        if (properties.TryGetValue("Classes", out var classes)) UiStyles.ReadClasses(classes.GetString()!);
+        if (properties.TryGetValue("Name", out var name) && !UiStyles.IsIdentifier(name.GetString()!))
+            throw new UiException("invalid_property", "Invalid control name.");
         foreach (var axis in new[] { "Width", "Height" })
             if (properties.TryGetValue("Min" + axis, out var minimum) && properties.TryGetValue("Max" + axis, out var maximum) && minimum.GetDecimal() > maximum.GetDecimal())
                 throw new UiException("invalid_property", "Minimum size must not exceed maximum size.");

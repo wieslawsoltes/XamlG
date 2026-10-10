@@ -14,11 +14,14 @@ internal sealed record UiValue(JsonElement Literal, IUiExpression? Expression = 
     internal JsonElement Resolve(JsonElement state, JsonElement data, JsonElement? item) => Expression?.Evaluate(state, data, item) ?? Literal;
 }
 internal sealed record UiPlanNode(string Key, UiComponent Component, ImmutableDictionary<string, UiValue> Properties,
-    ImmutableArray<UiPlanNode> Children, string? StateKey, string? ActionId, IUiExpression? When, IUiExpression? Each, IUiExpression? ItemKey);
+    ImmutableArray<UiPlanNode> Children, string? StateKey, string? ActionId, IUiExpression? When, IUiExpression? Each, IUiExpression? ItemKey)
+{
+    internal ImmutableArray<UiPlanStyle> Styles { get; init; } = [];
+}
 
 /// <summary>Compiles a declared Avalonia XAML vocabulary to immutable operations. The default
 /// expression backend is non-executable. Only a trusted host may supply another expression compiler.</summary>
-public sealed class UiCompiler(UiCatalog? catalog = null, UiLimits? limits = null, IUiExpressionCompiler? expressionCompiler = null)
+public sealed partial class UiCompiler(UiCatalog? catalog = null, UiLimits? limits = null, IUiExpressionCompiler? expressionCompiler = null)
 {
     public UiCatalog Catalog { get; } = catalog ?? UiCatalog.Default;
     public UiLimits Limits { get; } = limits ?? new();
@@ -33,6 +36,7 @@ public sealed class UiCompiler(UiCatalog? catalog = null, UiLimits? limits = nul
         {
             var document = Read(xaml, isFinal, diagnostics);
             if (document?.Root == null) return new(null, diagnostics.ToImmutable(), false);
+            new UiXamlAuthoring(Catalog, Limits).Normalize(document.Root);
             var keys = new HashSet<string>(StringComparer.Ordinal); var count = 0;
             var root = Parse(document.Root, "root", 0, keys, ref count);
             return new(new UiTemplate(root, Limits, Catalog), diagnostics.ToImmutable(), diagnostics.Count == 0);
@@ -91,7 +95,7 @@ public sealed class UiCompiler(UiCatalog? catalog = null, UiLimits? limits = nul
                 : throw new UiException("unknown_component", "Unknown response component: " + element.Name.LocalName);
         else throw new UiException("unknown_namespace", "Only declared Avalonia and intelligent UI component namespaces are allowed.");
         XNamespace ui = UiCatalog.UiNamespace; XNamespace x = "http://schemas.microsoft.com/winfx/2006/xaml";
-        var key = (string?)element.Attribute(ui + "Key") ?? (string?)element.Attribute(x + "Name") ?? implicitKey;
+        var key = (string?)element.Attribute(ui + "Key") ?? (string?)element.Attribute(x + "Name") ?? (string?)element.Attribute("Name") ?? implicitKey;
         UiJson.Identifier(key, "UI key");
         if (!keys.Add(key)) throw new UiException("duplicate_key", "Duplicate UI key: " + key);
         string? stateKey = null, actionId = null;
@@ -112,7 +116,7 @@ public sealed class UiCompiler(UiCatalog? catalog = null, UiLimits? limits = nul
                     case "Bind": stateKey = attribute.Value; UiJson.Identifier(stateKey, "State key"); break;
                     case "Action": actionId = attribute.Value; UiJson.Identifier(actionId, "Action ID"); break;
                     case "When": when = Expression(attribute.Value); break;
-                    case "Each": each = Expression(attribute.Value); break;
+                    case "Each": each = RepeatExpression(attribute.Value); break;
                     case "ItemKey": itemKey = Expression(attribute.Value); break;
                     default: throw new UiException("unknown_directive", "Unknown intelligent UI directive.");
                 }
@@ -135,7 +139,7 @@ public sealed class UiCompiler(UiCatalog? catalog = null, UiLimits? limits = nul
         foreach (var child in element.Elements()) children.Add(Parse(child, key + "." + children.Count, depth + 1, keys, ref count));
         if (children.Count > component.MaximumChildren || component.ChildTypes is { } allowed && children.Any(child => !allowed.Contains(child.Component.Name, StringComparer.Ordinal))) throw new UiException("invalid_content", "Invalid children for " + component.Name);
         if (children.Count != 0 && (properties.ContainsKey("ItemsSource") || properties.ContainsKey("Content"))) throw new UiException("invalid_content", "Do not combine child elements with scalar Content or ItemsSource.");
-        return new(key, component, properties.ToImmutable(), children.ToImmutable(), stateKey, actionId, when, each, itemKey);
+        return new(key, component, properties.ToImmutable(), children.ToImmutable(), stateKey, actionId, when, each, itemKey) { Styles = CompileStyles(element) };
     }
     private UiValue Value(string text, UiProperty property)
     {

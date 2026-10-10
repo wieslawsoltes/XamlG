@@ -33,6 +33,22 @@ public static class UiSourceExporter
                 if (property.Value.ValueKind == JsonValueKind.String && value.StartsWith('{')) value = "{}" + value;
                 element.Add(new XAttribute(property.Key, value));
             }
+            if (!node.Styles.IsDefaultOrEmpty)
+            {
+                var styles = new XElement(ns + (node.Type + ".Styles"));
+                foreach (var rule in node.Styles)
+                {
+                    var style = new XElement(ns + "Style", new XAttribute("Selector", rule.Selector));
+                    foreach (var setter in rule.Properties.OrderBy(p => p.Key, StringComparer.Ordinal))
+                    {
+                        var value = setter.Value.ValueKind == JsonValueKind.String ? setter.Value.GetString()! : setter.Value.GetRawText();
+                        if (value.StartsWith('{')) value = "{}" + value;
+                        style.Add(new XElement(ns + "Setter", new XAttribute("Property", setter.Key), new XAttribute("Value", value)));
+                    }
+                    styles.Add(style);
+                }
+                element.Add(styles);
+            }
             foreach (var item in items) element.Add(item);
             foreach (var child in node.Children) element.Add(Convert(child));
             return element;

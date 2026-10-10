@@ -31,7 +31,7 @@ internal static class UiAvaloniaFeatureSchema
         });
         components.Add("Label", components["ContentControl"] with { Name = "Label" });
         foreach (var name in components.Keys.ToArray())
-            Add(name, ("Margin", new(UiPropertyKind.Thickness, -10000, 10000)),
+            Add(name, ("Classes", text), ("Name", text), ("Margin", new(UiPropertyKind.Thickness, -10000, 10000)),
                 ("ZIndex", new(UiPropertyKind.Integer, -32768, 32767)), ("IsHitTestVisible", boolean),
                 ("UseLayoutRounding", boolean), ("FlowDirection", Choice("LeftToRight", "RightToLeft")),
                 ("RenderTransform", text), ("RenderTransformOrigin", text), ("Clip", text));
