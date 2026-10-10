@@ -24,22 +24,29 @@ public sealed class XamlLoaderAdapterCompiler
         if (loader == null) return XamlSourceIntegrationResult.Empty;
         if (!project.Documents.IsEmpty && project.Documents.All(document => document.Document.IsSkipped) && !project.Resources.Resources.Any())
             return XamlSourceIntegrationResult.Empty;
-        bool IsSkipped(ITypeSymbol? type) => type != null &&
-            !project.Documents.Any(document => !document.Document.IsSkipped && SymbolEqualityComparer.Default.Equals(document.Document.ClassSymbol, type)) &&
-            project.Documents.Any(document => document.Document.IsSkipped && SymbolEqualityComparer.Default.Equals(document.Document.ClassSymbol, type));
+        var active = new Dictionary<ITypeSymbol, XamlProjectDocumentResult>(SymbolEqualityComparer.Default);
+        var skipped = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
+        foreach (var document in project.Documents)
+        {
+            if (document.Document.ClassSymbol is not { } type) continue;
+            if (document.Document.IsSkipped) skipped.Add(type);
+            else if (!active.ContainsKey(type)) active.Add(type, document);
+        }
+        bool IsSkipped(ITypeSymbol? type) => type != null && !active.ContainsKey(type) && skipped.Contains(type);
         var calls = new List<LoaderCall>();
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
         foreach (var tree in compilation.SyntaxTrees.OrderBy(t => t.FilePath, StringComparer.Ordinal))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var root = tree.GetRoot(cancellationToken);
+            var candidates = LoaderSyntaxCandidates.Get(tree, configuration.MethodName, cancellationToken);
+            if (candidates.Invocations.IsEmpty && candidates.MethodGroups.IsEmpty) continue;
+            // Always resolve candidates against the current compilation. The weak
+            // syntax cache contains no symbols, targets, errors or intercept locations.
             var model = compilation.GetSemanticModel(tree);
-            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            foreach (var invocation in candidates.Invocations)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var name = invocation.Expression is MemberAccessExpressionSyntax access ? access.Name.Identifier.ValueText :
-                    invocation.Expression is SimpleNameSyntax simple ? simple.Identifier.ValueText : string.Empty;
-                if (name != configuration.MethodName || model.GetOperation(invocation, cancellationToken) is not IInvocationOperation operation ||
+                if (model.GetOperation(invocation, cancellationToken) is not IInvocationOperation operation ||
                     !SymbolEqualityComparer.Default.Equals(operation.TargetMethod.ContainingType, loader)) continue;
                 var method = operation.TargetMethod;
                 if (!TryKind(method, out var kind, out var hasServices))
@@ -49,7 +56,7 @@ public sealed class XamlLoaderAdapterCompiler
                 {
                     IOperation value = operation.Arguments.Single(a => a.Parameter?.Ordinal == method.Parameters.Length - 1).Value;
                     while (value is IConversionOperation conversion) value = conversion.Operand;
-                    target = project.Documents.FirstOrDefault(d => !d.Document.IsSkipped && SymbolEqualityComparer.Default.Equals(d.Document.ClassSymbol, value.Type));
+                    if (value.Type != null) active.TryGetValue(value.Type, out target);
                     if (IsSkipped(value.Type)) continue;
                     if (target != null && (!target.Output.Success || !target.Document.Options.GenerateInitializeComponent || !CanReference(compilation, target.Document.ClassSymbol!)))
                     { diagnostics.Add(LoaderDiagnostics.Error(invocation.GetLocation(), "This source component cannot expose a compiled initializer. Resolve its XAML diagnostics, enable initialization, and use an accessible nongeneric component or its explicit Populate API.")); continue; }
@@ -69,12 +76,10 @@ public sealed class XamlLoaderAdapterCompiler
             }
             // Delegates and function pointers do not have interceptable invocation locations.
             // Never silently leave a known method-group use bound to a throwing placeholder.
-            foreach (var identifier in root.DescendantNodes().OfType<IdentifierNameSyntax>().Where(n => n.Identifier.ValueText == configuration.MethodName))
+            foreach (var identifier in candidates.MethodGroups)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 ExpressionSyntax expression = identifier.Parent is MemberAccessExpressionSyntax member && ReferenceEquals(member.Name, identifier) ? member : identifier;
-                if (expression.Parent is InvocationExpressionSyntax call && ReferenceEquals(call.Expression, expression)) continue;
-                if (identifier.Ancestors().OfType<InvocationExpressionSyntax>().Any(i => i.Expression is IdentifierNameSyntax n && n.Identifier.ValueText == "nameof")) continue;
                 var symbol = model.GetSymbolInfo(expression, cancellationToken).Symbol as IMethodSymbol;
                 if (symbol != null && SymbolEqualityComparer.Default.Equals(symbol.ContainingType, loader))
                 {

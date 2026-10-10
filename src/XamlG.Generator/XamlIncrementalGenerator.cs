@@ -30,8 +30,13 @@ public sealed class XamlIncrementalGenerator : IIncrementalGenerator
             .WithComparer(GeneratorOutputComparer.Instance).WithTrackingName("XamlG.Emit");
         context.RegisterSourceOutput(output, static (production, result) =>
         {
-            var text = SourceText.From(result.Text, Encoding.UTF8);
-            foreach (var diagnostic in result.Diagnostics) production.ReportDiagnostic(GeneratorDiagnosticReporter.Create(result.Path, text, diagnostic));
+            // Successful outputs need no second SourceText for their XAML input.
+            // Keep exact line/span mapping when reporting any source diagnostic.
+            if (!result.Diagnostics.IsEmpty)
+            {
+                var text = SourceText.From(result.Text, Encoding.UTF8);
+                foreach (var diagnostic in result.Diagnostics) production.ReportDiagnostic(GeneratorDiagnosticReporter.Create(result.Path, text, diagnostic));
+            }
             foreach (var diagnostic in result.HostDiagnostics) production.ReportDiagnostic(diagnostic.Create());
             if (result.Source.Length != 0) production.AddSource(result.HintName, SourceText.From(result.Source, Encoding.UTF8));
         });

@@ -7,8 +7,13 @@
     "playground.yml",
     "release.yml",
     "controlcatalog.yml",
-    "intelligent-ui.yml"
+    "intelligent-ui.yml",
+    "git-workspaces.yml"
   ],
-  "diagnostic": ["compiler-profile.yml"],
-  "deployment": ["pages.yml"]
+  "diagnostic": [
+    "compiler-profile.yml"
+  ],
+  "deployment": [
+    "pages.yml"
+  ]
 }

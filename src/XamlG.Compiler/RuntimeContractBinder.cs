@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
+using XamlG.Syntax;
 using Microsoft.CodeAnalysis;
 using XamlG.Roslyn;
 
@@ -6,11 +8,48 @@ namespace XamlG.Compiler;
 
 internal static class RuntimeContractBinder
 {
+    // Two weak identity keys: a result is valid only for this immutable compilation/
+    // type-system configuration and this runtime configuration. Values never retain
+    // a BindingContext, source tree, cancellation token or document-specific mapping.
+    private static readonly ConditionalWeakTable<RoslynTypeSystem,
+        ConditionalWeakTable<XamlRuntimeConfiguration, Contract>> Contracts = new();
+    private sealed record Contract(BoundRuntimeConfiguration Runtime, ImmutableArray<XamlDiagnostic> Diagnostics);
+
     public static BoundRuntimeConfiguration Bind(BindingContext context)
+    {
+        context.Cancellation.ThrowIfCancellationRequested();
+        var cache = Contracts.GetValue(context.Types, static _ => new());
+        if (!cache.TryGetValue(context.Profile.Runtime, out var contract)) contract = BindMissing(cache, context);
+        context.Cancellation.ThrowIfCancellationRequested();
+        context.Diagnostics.AddRange(contract.Diagnostics);
+        // Namespace declarations belong to the document, never the cached contract.
+        return contract.Runtime with { NamespaceMappings = RuntimeNamespaceResolver.Collect(context) };
+    }
+
+    private static Contract BindMissing(ConditionalWeakTable<XamlRuntimeConfiguration, Contract> cache, BindingContext context) =>
+        cache.GetValue(context.Profile.Runtime, _ =>
+        {
+            var start = context.Diagnostics.Count;
+            try
+            {
+                var runtime = BindCore(context);
+                context.Cancellation.ThrowIfCancellationRequested();
+                return new(runtime, context.Diagnostics.Skip(start).ToImmutableArray());
+            }
+            finally
+            {
+                // GetValue may run competing factories. Replay only the published
+                // entry's diagnostics once per caller, even when this factory loses.
+                context.Diagnostics.RemoveRange(start, context.Diagnostics.Count - start);
+            }
+        });
+
+    private static BoundRuntimeConfiguration BindCore(BindingContext context)
     {
         var services = ImmutableArray.CreateBuilder<BoundServiceContract>();
         foreach (var mapping in context.Profile.Runtime.Services)
         {
+            context.Cancellation.ThrowIfCancellationRequested();
             var type = context.Types.Find(mapping.InterfaceMetadataName);
             if (type == null || type.TypeKind != TypeKind.Interface || !context.Types.IsAccessible(type))
             {
@@ -95,7 +134,7 @@ internal static class RuntimeContractBinder
         return new(services.ToImmutable(),
             Resolve(context, context.Profile.Runtime.InnerServiceProviderFactory, 1),
             Resolve(context, context.Profile.Runtime.DeferredContentCustomizer, 2),
-            RuntimeNamespaceResolver.Collect(context), context.Types.Compilation.AssemblyName ?? string.Empty)
+            ImmutableArray<XmlNamespaceMapping>.Empty, context.Types.Compilation.AssemblyName ?? string.Empty)
         {
             RootServiceProviderFactory = Resolve(context, context.Profile.Runtime.RootServiceProviderFactory, 1),
             NameScope = BindNameScope(context),

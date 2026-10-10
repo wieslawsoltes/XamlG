@@ -22,7 +22,10 @@ internal sealed record SharedPropertyTables(
         string generatedNamespace, CancellationToken cancellation)
     {
         if (documents.Length < 2) return new SharedPropertyTables?[documents.Length];
-        var groups = new SortedDictionary<string, SortedDictionary<string, PropertyAccessor>>(StringComparer.Ordinal);
+        // Collect repeated assignments with expected O(1) lookup. Only unique
+        // shared groups/accessors are sorted at publication; output remains ordinal
+        // and independent of dictionary enumeration or document completion order.
+        var groups = new Dictionary<string, Dictionary<string, PropertyAccessor>>(StringComparer.Ordinal);
         var sharedGroups = new HashSet<string>(StringComparer.Ordinal);
         var keys = new HashSet<string>?[documents.Length];
         var scalarKeys = new HashSet<LiteralAssignmentEmitter.Key>?[documents.Length];
@@ -57,14 +60,15 @@ internal sealed record SharedPropertyTables(
                     var key = accessor.Key;
                     if ((keys[i] ??= new(StringComparer.Ordinal)).Add(key) && group.ContainsKey(key)) sharedGroups.Add(ownerName);
                     group[key] = accessor;
-                    if (!LiteralAssignmentEmitter.TryKey(set, owner, out _) && PropertyAssignmentEmitter.TryKey(set, owner, out var assignmentKey))
+                    var isScalar = LiteralAssignmentEmitter.TryKey(set, owner, out var scalar);
+                    if (!isScalar && PropertyAssignmentEmitter.TryKey(set, owner, out var assignmentKey))
                     {
                         if (!assignmentGroups.TryGetValue(ownerName, out var assignments))
                             assignmentGroups.Add(ownerName, assignments = new(StringComparer.Ordinal));
                         assignments.TryGetValue(assignmentKey, out var current);
                         assignments[assignmentKey] = (set.Member, current.Count + 1);
                     }
-                    if (LiteralAssignmentEmitter.TryKey(set, owner, out var scalar) &&
+                    if (isScalar &&
                         scalar.GeneratedDescriptor == null && (scalar.Descriptor == null ||
                             Accessible(scalar.Descriptor.ContainingType) && Accessible(scalar.Descriptor) &&
                             (scalar.Descriptor is not IPropertySymbol descriptorProperty ||
@@ -83,17 +87,25 @@ internal sealed record SharedPropertyTables(
         var scalarRegistrations = new Dictionary<LiteralAssignmentEmitter.Key, (string Alias, string Method, SharedGeneratedSource Source)>(LiteralAssignmentEmitter.Keys);
         var assignmentRegistrations = new Dictionary<string, (string Alias, string Method, SharedGeneratedSource Source)>(StringComparer.Ordinal);
         using var hash = System.Security.Cryptography.SHA256.Create();
-        foreach (var pair in groups)
+        var orderedGroups = sharedGroups.ToArray();
+        Array.Sort(orderedGroups, StringComparer.Ordinal);
+        foreach (var ownerName in orderedGroups)
         {
-            if (!sharedGroups.Contains(pair.Key)) continue;
             cancellation.ThrowIfCancellationRequested();
-            var group = pair.Value;
-            var accessors = group.Values.ToArray();
+            var group = groups[ownerName];
+            var orderedKeys = group.Keys.ToArray();
+            Array.Sort(orderedKeys, StringComparer.Ordinal);
+            var accessors = new PropertyAccessor[orderedKeys.Length];
+            var slots = new Dictionary<string, int>(orderedKeys.Length, StringComparer.Ordinal);
+            for (var i = 0; i < orderedKeys.Length; i++)
+            {
+                accessors[i] = group[orderedKeys[i]];
+                slots.Add(orderedKeys[i], i);
+            }
             var body = new CSharpWriter { Indent = 2 };
             PropertyTableEmitter.Emit(body, accessors, "Table", "Get", "Set", "internal");
-            var slots = group.Keys.Select((key, index) => (key, index)).ToDictionary(value => value.key, value => value.index, StringComparer.Ordinal);
             var assignmentMethods = new Dictionary<string, string>(StringComparer.Ordinal);
-            if (assignmentGroups.TryGetValue(pair.Key, out var groupAssignments))
+            if (assignmentGroups.TryGetValue(ownerName, out var groupAssignments))
                 foreach (var assignment in groupAssignments.Where(entry => entry.Value.Count >= 2).OrderBy(entry => entry.Key, StringComparer.Ordinal))
                 {
                     var method = "Assign" + slots[assignment.Key];
@@ -101,7 +113,7 @@ internal sealed record SharedPropertyTables(
                     PropertyAssignmentEmitter.EmitHelper(body, assignment.Value.Member, method, slots[assignment.Key]);
                 }
             var scalarMethods = new Dictionary<LiteralAssignmentEmitter.Key, string>(LiteralAssignmentEmitter.Keys);
-            if (scalarGroups.TryGetValue(pair.Key, out var groupScalars))
+            if (scalarGroups.TryGetValue(ownerName, out var groupScalars))
             {
                 foreach (var scalar in groupScalars.Where(entry => entry.Value.Count >= 2)
                     .OrderBy(entry => LiteralAssignmentEmitter.StableKey(entry.Key, entry.Value.Member), StringComparer.Ordinal))
@@ -125,8 +137,7 @@ internal sealed record SharedPropertyTables(
             writer.Append(bodyText);
             writer.Close(); writer.Close();
             var source = new SharedGeneratedSource("global::" + ns + "." + name, writer.ToString());
-            var index = 0;
-            foreach (var key in group.Keys) registrations.Add(key, ("__p_" + id, index++, source));
+            for (var i = 0; i < orderedKeys.Length; i++) registrations.Add(orderedKeys[i], ("__p_" + id, i, source));
             foreach (var scalar in scalarMethods) scalarRegistrations.Add(scalar.Key, ("__p_" + id, scalar.Value, source));
             foreach (var assignment in assignmentMethods) assignmentRegistrations.Add(assignment.Key, ("__p_" + id, assignment.Value, source));
         }
@@ -135,7 +146,7 @@ internal sealed record SharedPropertyTables(
         {
             if (keys[i] is not { } documentKeys) continue;
             var entries = new Dictionary<string, (string Alias, int Index, SharedGeneratedSource Source)>(StringComparer.Ordinal);
-            var sources = new SortedDictionary<string, SharedGeneratedSource>(StringComparer.Ordinal);
+            var sources = new Dictionary<string, SharedGeneratedSource>(StringComparer.Ordinal);
             foreach (var key in documentKeys)
             {
                 if (!registrations.TryGetValue(key, out var entry)) continue;
@@ -151,7 +162,7 @@ internal sealed record SharedPropertyTables(
                 var assignments = new Dictionary<string, (string Alias, string Method, SharedGeneratedSource Source)>(StringComparer.Ordinal);
                 foreach (var key in documentKeys)
                     if (assignmentRegistrations.TryGetValue(key, out var entry)) assignments.Add(key, entry);
-                result[i] = new(entries, sources.Select(pair => (pair.Key, pair.Value)).ToImmutableArray())
+                result[i] = new(entries, sources.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => (pair.Key, pair.Value)).ToImmutableArray())
                     { ScalarAssignments = scalars, Assignments = assignments };
             }
         }

@@ -68,7 +68,7 @@ public sealed class AgentHarnessTests
         var run = harness.RunAsync(task.Id, "Change", new(), async (_, token) =>
         { reviewing.SetResult(); await Task.Delay(Timeout.Infinite, token); return AgentApproval.AllowOnce; }, cancellationToken: TestContext.Current.CancellationToken);
         await reviewing.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken); harness.Stop(); await run;
-        Assert.Equal(AgentTaskStatus.Cancelled, task.Status); Assert.Equal(0, writes);
+        Assert.Equal(AgentTaskStatus.Paused, task.Status); Assert.Equal(0, writes);
     }
 
     private static AutomationCatalog Host(Func<int> execute)
@@ -108,7 +108,7 @@ public sealed class AgentHarnessTests
         using var harness = new AgentHarness(Host(() => 0));
         harness.EventPublished += _ => throw new InvalidOperationException("A broken UI observer");
         var task = harness.CreateTask("Follow-up", provider, "test-model", TestContext.Current.CancellationToken);
-        var run = harness.RunAsync(task.Id, "First requirement", new(), cancellationToken: TestContext.Current.CancellationToken);
+        var run = harness.RunAsync(task.Id, "First requirement", new() { ContinueQueuedMessages = false }, cancellationToken: TestContext.Current.CancellationToken);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         harness.QueueMessage(task.Id, "Second requirement");
         Assert.DoesNotContain("Second requirement", harness.ExportTranscript(task.Id));
@@ -164,7 +164,7 @@ public sealed class AgentHarnessTests
         var provider = new ScriptedProvider(new("", [new("one", "edit", AutomationJson.Element(new Edit(0)))], new(1, 1), new object()),
             new("Done", [], new(1, 1), new object()), new("Follow-up done", [], new(1, 1), new object()));
         using var harness = new AgentHarness(Host(() => 1)); var task = harness.CreateTask("Paused", provider, "test-model", TestContext.Current.CancellationToken);
-        var options = new AgentRunOptions { Limits = new() { RequestsPerRun = 1 }, Policy = new() { Profile = PermissionProfile.AutoEdit } };
+        var options = new AgentRunOptions { ContinueQueuedMessages = false, Limits = new() { RequestsPerRun = 1 }, Policy = new() { Profile = PermissionProfile.AutoEdit } };
         await harness.RunAsync(task.Id, "Initial turn", options, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(AgentTaskStatus.Paused, task.Status);
         harness.QueueMessage(task.Id, "Later turn"); var queue = task.Queue;

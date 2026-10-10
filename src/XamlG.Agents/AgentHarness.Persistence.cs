@@ -26,10 +26,12 @@ public sealed partial class AgentHarness
             {
                 Id = task.Id, Name = task.Name, Provider = task.ProviderId, Account = codec?.AccountIdentity, Model = task.Model,
                 Status = task.Status, StatusReason = task.StatusReason, PreviousWorkspace = task.IsPreviousWorkspace, WorkspaceIdentity = task.WorkspaceIdentity,
+                Mode = task.Mode, ProposedPlan = task.ProposedPlan, ActiveGoal = task.ActiveGoal,
                 ReportedTokens = task.ReportedTokens, EstimatedTokens = task.EstimatedTokens, LastUsage = task.LastUsage,
                 RetryAfterUtc = task.RetryAfterUtc, OutputLimitToExceed = task.OutputLimitToExceed, NativeContextBytes = task.NativeContextBytes,
-                PlanRevision = task.PlanRevision, CheckpointCount = task.CheckpointCount, Draft = task.Draft, Plan = task.Plan.ToArray(),
+                PlanRevision = task.PlanRevision, CheckpointCount = task.CheckpointCount, Draft = task.Draft, DraftRevision = task.DraftRevision, Plan = task.Plan.ToArray(),
                 Events = task.PublicEvents.Where(item => item.Kind != "text_delta").ToArray(), Queue = task.Queue,
+                Submissions = new Dictionary<string, string>(task.Submissions, StringComparer.Ordinal),
                 Changes = task.Changes, LatestRunChanges = task.LatestRunChanges, BeforeRun = task.BeforeRun, BeforeLatestRun = task.BeforeLatestRun,
                 Messages = task.Messages.Select(message => new AgentStoredMessage(message.Kind, message.Text, message.ToolCallId, message.Native == null ? null : Native(message.Native))).ToArray(),
                 ActiveRequestIndex = task.ActiveRequest == null ? null : task.Messages.IndexOf(task.ActiveRequest), UserRequests = task.UserRequests.ToArray(),
@@ -52,7 +54,10 @@ public sealed partial class AgentHarness
             {
                 if (string.IsNullOrWhiteSpace(saved.Id) || saved.Id.Length > 200 || saved.Name.Length > 200 || saved.Model.Length > 200 ||
                     saved.Messages.Count > 25000 || saved.Events.Count > 1200 || saved.Draft.Length > 262144 || saved.ReportedTokens < 0 || saved.EstimatedTokens < 0 ||
-                    saved.NextTool < 0 || saved.NextTool > (saved.PendingReply?.ToolCalls.Count ?? 0) || saved.ActiveRequestIndex is < 0 || saved.ActiveRequestIndex >= saved.Messages.Count)
+                    saved.NextTool < 0 || saved.NextTool > (saved.PendingReply?.ToolCalls.Count ?? 0) || saved.ActiveRequestIndex is < 0 || saved.ActiveRequestIndex >= saved.Messages.Count ||
+                    !Enum.IsDefined(saved.Mode) || saved.ProposedPlan is { Markdown.Length: > 262144 } || saved.Submissions.Count > 256 ||
+                    saved.Submissions.Any(entry => entry.Key.Length is < 1 or > 100 || entry.Value.Length != 64) ||
+                    saved.ActiveGoal is { } goal && (string.IsNullOrWhiteSpace(goal.Objective) || goal.Objective.Length > 100000 || !Enum.IsDefined(goal.Status) || goal.TokensUsed < 0 || goal.TokenBudget is < 1 or > 100_000_000))
                     throw new ArgumentException("Invalid saved task.");
                 var selected = provider(saved.Provider, saved.Account);
                 var codec = selected as IAgentProviderState;
@@ -60,9 +65,12 @@ public sealed partial class AgentHarness
                     saved.PreviousWorkspace || saved.WorkspaceIdentity != null && saved.WorkspaceIdentity != workspaceIdentity ? new CancellationToken(true) : workspaceLifetime, saved.WorkspaceIdentity)
                 {
                     Status = saved.Status, StatusReason = saved.StatusReason, ReportedTokens = saved.ReportedTokens, EstimatedTokens = saved.EstimatedTokens,
+                    Mode = saved.Mode, ProposedPlan = saved.ProposedPlan,
+                    ActiveGoal = saved.ActiveGoal is { Status: AgentGoalStatus.Active } activeGoal
+                        ? activeGoal with { Status = AgentGoalStatus.Paused, Evidence = "Session restored. Resume the goal to continue." } : saved.ActiveGoal,
                     LastUsage = saved.LastUsage, RetryAfterUtc = saved.RetryAfterUtc, OutputLimitToExceed = saved.OutputLimitToExceed,
                     NativeContextBytes = saved.NativeContextBytes, PlanRevision = saved.PlanRevision, CheckpointCount = saved.CheckpointCount,
-                    Draft = saved.Draft, Plan = saved.Plan.ToArray(), QueueRevision = saved.Queue.Revision,
+                    Draft = saved.Draft, DraftRevision = saved.DraftRevision, Plan = saved.Plan.ToArray(), QueueRevision = saved.Queue.Revision,
                     Changes = RebaseReview(saved.Changes), LatestRunChanges = RebaseReview(saved.LatestRunChanges),
                     BeforeRun = saved.BeforeRun, BeforeLatestRun = saved.BeforeLatestRun, Goal = saved.Goal, LatestRequest = saved.LatestRequest
                 };
@@ -71,6 +79,7 @@ public sealed partial class AgentHarness
                         ? codec?.RestoreNative(native) ?? throw new ArgumentException("The saved provider continuation cannot be restored.") : null));
                 if (saved.ActiveRequestIndex is { } index) task.ActiveRequest = task.Messages[index];
                 task.UserRequests.AddRange(saved.UserRequests); task.FollowUps.AddRange(saved.Queue.Messages);
+                foreach (var entry in saved.Submissions) task.Submissions.Add(entry.Key, entry.Value);
                 task.PublicEvents.AddRange(saved.Events); task.EnabledTools.UnionWith(saved.EnabledTools);
                 if (saved.PendingReply is { } pending)
                 {

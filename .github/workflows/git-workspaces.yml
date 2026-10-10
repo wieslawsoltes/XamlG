@@ -7,6 +7,9 @@ on:
       - 'tools/XamlG.Playground/Components/Git*.razor'
       - 'tools/XamlG.Playground/Git/**'
       - 'tools/XamlG.Playground/App.*'
+      - 'tools/XamlG.Playground/wwwroot/startup.js'
+      - 'tools/XamlG.Playground/tests/git-workspaces.spec.mjs'
+      - 'eng/validation-workflows.json'
       - 'tests/git/**'
       - '.github/workflows/git-workspaces.yml'
   push:
@@ -17,6 +20,9 @@ on:
       - 'tools/XamlG.Playground/Components/Git*.razor'
       - 'tools/XamlG.Playground/Git/**'
       - 'tools/XamlG.Playground/App.*'
+      - 'tools/XamlG.Playground/wwwroot/startup.js'
+      - 'tools/XamlG.Playground/tests/git-workspaces.spec.mjs'
+      - 'eng/validation-workflows.json'
       - 'tests/git/**'
       - '.github/workflows/git-workspaces.yml'
   workflow_dispatch:
@@ -39,3 +45,41 @@ jobs:
         with:
           node-version: 22
       - run: node --test tests/git/*.test.mjs
+  studio-git:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.401'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install browser workload
+        run: dotnet workload install wasm-tools --skip-manifest-update
+      - name: Prepare production editor and browser
+        working-directory: tools/XamlG.Playground
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run prepare-assets
+          npx playwright install --with-deps chromium
+      - name: Publish real Studio with Git integration
+        run: |
+          dotnet publish tools/XamlG.Playground/XamlG.Playground.csproj -c Release -p:NuGetAudit=false -o artifacts/playground
+          python scripts/prepare-pages.py --commit "${{ github.sha }}"
+      - name: Dockyard, Monaco and IndexedDB Git acceptance
+        working-directory: tools/XamlG.Playground
+        env:
+          PLAYGROUND_PAGES_PREVIEW: '1'
+        run: npx playwright test tests/git-workspaces.spec.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: git-studio-acceptance
+          path: |
+            tools/XamlG.Playground/test-results
+            tools/XamlG.Playground/playwright-report
+          if-no-files-found: ignore

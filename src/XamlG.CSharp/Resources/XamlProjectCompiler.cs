@@ -21,6 +21,7 @@ public sealed class XamlProjectCompiler
     private XamlCompilerOptions? _options;
     private RoslynTypeSystem? _types;
     private XamlResourceCatalog? _catalog;
+    private bool _propertyLayoutsDirty;
     private readonly XamlLoaderAdapterCompiler _loader = new();
 
     public XamlProjectCompilation Compile(IEnumerable<XamlProjectDocument> documents, CSharpCompilation compilation,
@@ -57,14 +58,15 @@ public sealed class XamlProjectCompiler
     public void ClearCache() { lock (_gate) ClearCore(); }
     private void ClearCore()
     {
-        _documents.Clear(); _catalog = null; _types = null;
+        _documents.Clear(); _catalog = null; _types = null; _propertyLayoutsDirty = false;
         _compilation = null; _profile = null; _options = null;
     }
     private XamlProjectCompilation CompileCore(XamlProjectDocument[] inputs, RoslynTypeSystem types,
         XamlFrameworkProfile profile, XamlCompilerOptions options, XamlResourceCatalog catalog, CancellationToken cancellationToken)
     {
         var livePaths = new HashSet<string>(inputs.Select(d => d.LogicalPath), StringComparer.Ordinal);
-        foreach (var key in _documents.Keys.Where(key => !livePaths.Contains(key)).ToArray()) _documents.Remove(key);
+        foreach (var key in _documents.Keys.Where(key => !livePaths.Contains(key)).ToArray())
+        { _documents.Remove(key); _propertyLayoutsDirty = true; }
         var bound = new BoundDocument[inputs.Length];
         var entries = new CachedProjectDocument[inputs.Length];
         var addresses = new string?[inputs.Length];
@@ -103,7 +105,7 @@ public sealed class XamlProjectCompiler
         XamlResourceGraph.Validate(bound, cancellationToken);
         // Regenerate only outputs whose shared accessor layout changed; their bound
         // documents remain reusable. Keep successful builds independent of edit history.
-        var properties = entries.Where((entry, index) => !ReferenceEquals(bound[index], entry.Document) || entry.Output == null).Any()
+        var properties = _propertyLayoutsDirty || entries.Where((entry, index) => !ReferenceEquals(bound[index], entry.Document) || entry.Output == null).Any()
             ? SharedPropertyTables.Create(bound, types, options.GeneratedNamespace, cancellationToken)
             : null;
         // During binding failures cached survivors keep their complete, valid helpers.
@@ -129,6 +131,9 @@ public sealed class XamlProjectCompiler
             emissions[i] = emission;
         });
         XamlResourceGraph.ValidateEmissions(bound, emissions, cancellationToken);
+        // A canceled/failed pass must not forget removal-only invalidation. Clear
+        // the marker only after every surviving output has its checked layout.
+        if (checkPropertyLayouts) _propertyLayoutsDirty = false;
         // Publish each identical helper implementation once, in stable input order.
         // Keep the cached base output independent of ownership so additions/removals
         // can move a shared definition without rebinding unaffected documents.

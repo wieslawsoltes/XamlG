@@ -8,6 +8,20 @@ public static class MarkupExtensionParser
     /// <summary>Parses decoded XML text while retaining exact raw-source ranges, including entities.</summary>
     public static MarkupExtensionSyntax? ParseAtSource(string text, TextSpan span, string source, Action<XamlDiagnostic> report)
     {
+        if (text.Length == 0 || text[0] != '{' || text.StartsWith("{}", StringComparison.Ordinal)) return null;
+        // Retain the existing direct-parse fallback for an unavailable source.
+        if (source == null) return Parse(text, span, report);
+        // The overwhelmingly common identity mapping needs no map object, copied
+        // source string, remapping delegate, second argument array or record copies.
+        // If identical raw text would normalize/decode differently, the old path
+        // also falls back to Parse, so this preserves that public API behavior.
+        if (span.Length == text.Length && span.End <= source.Length &&
+            string.CompareOrdinal(source, span.Start, text, 0, text.Length) == 0)
+            return Parse(text, span, report);
+        return ParseMapped(text, span, source, report);
+    }
+    private static MarkupExtensionSyntax? ParseMapped(string text, TextSpan span, string source, Action<XamlDiagnostic> report)
+    {
         XamlDecodedTextMap map;
         try { map = XamlDecodedTextMap.Create(source, span); }
         catch (ArgumentException) { return Parse(text, span, report); }
@@ -30,17 +44,17 @@ public static class MarkupExtensionParser
         if (text.Length == 0 || text[0] != '{' || text.StartsWith("{}", StringComparison.Ordinal)) return null;
         var end = text.Length;
         if (text[end - 1] != '}') { report(new("XG0010", "Markup extension is missing a closing brace.", span)); } else end--;
-        var position = 1; while (position < end && char.IsWhiteSpace(text[position])) position++;
+        var position = XamlTextScanner.SkipWhitespace(text, 1, end);
         var nameStart = position;
         while (position < end && !char.IsWhiteSpace(text[position]) && text[position] != ',') position++;
         var name = text.Substring(nameStart, position - nameStart);
         if (name.Length == 0) { report(new("XG0010", "Markup extension requires a type name.", span)); return null; }
-        while (position < end && char.IsWhiteSpace(text[position])) position++;
+        position = XamlTextScanner.SkipWhitespace(text, position, end);
         if (position < end && text[position] == ',') position++;
-        var arguments = ImmutableArray.CreateBuilder<MarkupArgumentSyntax>(); var names = new HashSet<string>(StringComparer.Ordinal); var sawNamed = false;
+        var arguments = ImmutableArray.CreateBuilder<MarkupArgumentSyntax>(); HashSet<string>? names = null; var sawNamed = false;
         while (position < end)
         {
-            while (position < end && char.IsWhiteSpace(text[position])) position++;
+            position = XamlTextScanner.SkipWhitespace(text, position, end);
             var start = position; var equals = -1; var depth = 0; char quote = '\0'; var escaped = false;
             while (position < end)
             {
@@ -68,16 +82,15 @@ public static class MarkupExtensionParser
             if (quote != '\0' || depth != 0) report(new("XG0010", "Unbalanced markup-extension argument.", new(span.Start + start, position - start)));
             var argumentSpan = new TextSpan(span.Start + start, position - start);
             string? key = equals < 0 ? null : text.AsSpan(start, equals - start).Trim().ToString();
-            var valueStart = equals < 0 ? start : equals + 1;
+            var valueStart = XamlTextScanner.SkipWhitespace(text, equals < 0 ? start : equals + 1, position);
             var valueEnd = position;
-            while (valueStart < valueEnd && char.IsWhiteSpace(text[valueStart])) valueStart++;
             while (valueEnd > valueStart && char.IsWhiteSpace(text[valueEnd - 1])) valueEnd--;
             var valueText = text.AsSpan(valueStart, valueEnd - valueStart);
             string value;
             if (valueText.Length >= 2 && (valueText[0] is '\'' or '"') && valueText[valueText.Length - 1] == valueText[0])
             { value = Unquote(valueText.Slice(1, valueText.Length - 2)); valueStart++; valueEnd--; }
             else value = valueText.ToString();
-            if (key != null) { sawNamed = true; if (key.Length == 0 || !names.Add(key)) report(new("XG0010", "A named markup argument is empty or duplicated.", argumentSpan)); }
+            if (key != null) { sawNamed = true; if (key.Length == 0 || !(names ??= new(StringComparer.Ordinal)).Add(key)) report(new("XG0010", "A named markup argument is empty or duplicated.", argumentSpan)); }
             else if (sawNamed) report(new("XG0010", "Positional arguments must precede named arguments.", argumentSpan));
             if (value.Length != 0 || key != null) arguments.Add(new(key, value, argumentSpan)
             {
@@ -91,12 +104,12 @@ public static class MarkupExtensionParser
     private static bool NextIsNamedArgument(string text, int position, int end)
     {
         var start = position;
-        while (position < end && char.IsWhiteSpace(text[position])) position++;
+        position = XamlTextScanner.SkipWhitespace(text, position, end);
         if (position == start) return false;
         var nameStart = position;
         while (position < end && (char.IsLetterOrDigit(text[position]) || text[position] is '_' or ':' or '.' or '-')) position++;
         if (position == nameStart) return false;
-        while (position < end && char.IsWhiteSpace(text[position])) position++;
+        position = XamlTextScanner.SkipWhitespace(text, position, end);
         return position < end && text[position] == '=';
     }
     private static string Unquote(ReadOnlySpan<char> value)

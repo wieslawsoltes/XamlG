@@ -1,9 +1,12 @@
+using System.Threading;
+
 namespace XamlG.Runtime;
 
 /// <summary>Compiled property dispatch shared by the instances of one generated document.</summary>
 public sealed class XamlPropertyTable
 {
     private readonly Type[] _types;
+    private readonly XamlRuntimeProperty?[] _accessors;
     private readonly string[]? _names;
     private readonly Func<object, int, object?> _get;
     private readonly Action<object, int, object?> _set;
@@ -14,6 +17,7 @@ public sealed class XamlPropertyTable
         if (Array.Exists(_types, static type => type == null)) throw new ArgumentException("Property types cannot be null.", nameof(types));
         _get = get ?? throw new ArgumentNullException(nameof(get));
         _set = set ?? throw new ArgumentNullException(nameof(set));
+        _accessors = new XamlRuntimeProperty?[_types.Length];
     }
 
     public XamlPropertyTable(Type[] types, string[] names, Func<object, int, object?> get, Action<object, int, object?> set)
@@ -34,11 +38,21 @@ public sealed class XamlPropertyTable
     }
 
     public void Register(XamlRuntimeSession session, string key, string member, object target, int index) =>
-        (session ?? throw new ArgumentNullException(nameof(session))).RegisterProperty(key, member, new Property(this, target, index));
+        (session ?? throw new ArgumentNullException(nameof(session))).RegisterProperty(key, member, new XamlRuntimePropertyBinding(Accessor(index), target));
 
-    private sealed class Property(XamlPropertyTable table, object target, int index) : XamlRuntimeProperty(table._types[index])
+    private XamlRuntimeProperty Accessor(int index)
     {
-        public override object? Get() => table._get(target, index);
-        public override void Set(object? value) => table._set(target, index, value);
+        // Bounds are checked here, before session/thread validation, just as the
+        // former per-registration Property constructor checked the type slot.
+        var cached = Volatile.Read(ref _accessors[index]);
+        if (cached != null) return cached;
+        var created = new Property(this, index);
+        return Interlocked.CompareExchange(ref _accessors[index], created, null) ?? created;
+    }
+
+    private sealed class Property(XamlPropertyTable table, int index) : XamlRuntimeProperty(table._types[index])
+    {
+        public override object? Get(object? target) => table._get(target!, index);
+        public override void Set(object? target, object? value) => table._set(target!, index, value);
     }
 }

@@ -10,17 +10,30 @@ public sealed class BindingContext
     private readonly Dictionary<int, Dictionary<string, (ITypeSymbol Type, TextSpan Span)>> _names = new();
     private int _scopeCounter;
     private int _objectCounter;
+    private BoundRuntimeConfiguration? _runtime;
     public BindingContext(XamlSyntaxTree syntax, RoslynTypeSystem types, XamlFrameworkProfile profile, XamlCompilerOptions options, CancellationToken cancellation)
+        : this(syntax, types, profile, options, cancellation, deferRuntime: false) { }
+
+    internal BindingContext(XamlSyntaxTree syntax, RoslynTypeSystem types, XamlFrameworkProfile profile,
+        XamlCompilerOptions options, CancellationToken cancellation, bool deferRuntime)
     {
         Syntax = syntax; Types = types; Profile = profile; Options = options; Cancellation = cancellation;
         Values = new ValueBinder(this); Members = new MemberBinder(this); Objects = new ObjectBinder(this);
         Diagnostics.AddRange(syntax.Diagnostics);
-        Runtime = RuntimeContractBinder.Bind(this);
+        if (!deferRuntime) _runtime = RuntimeContractBinder.Bind(this);
     }
+    /// <summary>Creates a root-signature binding context. Runtime metadata is bound
+    /// on first access; ordinary document binding retains eager diagnostics.</summary>
+    public static BindingContext CreateSignatureProbe(XamlSyntaxTree syntax, RoslynTypeSystem types,
+        XamlFrameworkProfile profile, XamlCompilerOptions options, CancellationToken cancellation = default) =>
+        new(syntax, types, profile, options, cancellation, deferRuntime: true);
+
     public XamlSyntaxTree Syntax { get; }
     public RoslynTypeSystem Types { get; }
     public XamlFrameworkProfile Profile { get; }
-    public BoundRuntimeConfiguration Runtime { get; }
+    // Lightweight root-signature probes do not need service binding or a whole-tree
+    // namespace walk. Custom type rules can still request the complete contract.
+    public BoundRuntimeConfiguration Runtime => _runtime ??= RuntimeContractBinder.Bind(this);
     public XamlCompilerOptions Options { get; }
     public CancellationToken Cancellation { get; }
     public ValueBinder Values { get; }

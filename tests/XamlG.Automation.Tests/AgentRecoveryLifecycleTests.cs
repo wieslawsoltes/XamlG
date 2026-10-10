@@ -30,7 +30,7 @@ public sealed class AgentRecoveryLifecycleTests
         });
         var task = harness.CreateTask("Revoke", provider, "fixture", cancellation == "workspace" ? lifetime.Token : Token);
         await harness.RunAsync(task.Id, "Inspect", Options, cancellationToken: cancellation == "caller" ? lifetime.Token : Token);
-        Assert.Equal(AgentTaskStatus.Cancelled, task.Status);
+        Assert.Equal(AgentTaskStatus.Paused, task.Status);
         Assert.DoesNotContain(task.Events, item => item.Kind is "assistant" or "completed");
         Assert.Equal("Public unfinished reply", Assert.Single(task.Events, item => item.Kind == "assistant_incomplete").Text);
         Assert.Equal(15, task.ReportedTokens); Assert.Equal(0, task.EstimatedTokens);
@@ -141,7 +141,7 @@ public sealed class AgentRecoveryLifecycleTests
         var run = harness.RunAsync(task.Id, "Edit", Options with { Policy = new() }, async (_, token) =>
         { entered.SetResult(); await Task.Delay(Timeout.Infinite, token); return AgentApproval.AllowOnce; }, cancellationToken: Token);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), Token); session.Cancel(); await run;
-        Assert.Equal(AgentTaskStatus.Cancelled, task.Status); Assert.Empty(effects); Assert.Single(provider.Requests);
+        Assert.Equal(AgentTaskStatus.Paused, task.Status); Assert.Empty(effects); Assert.Single(provider.Requests);
     }
 
     [Fact]
@@ -159,7 +159,7 @@ public sealed class AgentRecoveryLifecycleTests
         using var harness = new AgentHarness(host);
         var task = harness.CreateTask("Account tool", provider, "fixture", Token);
         await harness.RunAsync(task.Id, "Edit twice", Options, cancellationToken: Token);
-        Assert.Equal(AgentTaskStatus.Cancelled, task.Status); Assert.Equal([1], effects); Assert.Single(provider.Requests);
+        Assert.Equal(AgentTaskStatus.Paused, task.Status); Assert.Equal([1], effects); Assert.Single(provider.Requests);
     }
 
     [Fact]
