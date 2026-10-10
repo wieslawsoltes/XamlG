@@ -79,10 +79,8 @@ export async function mutateRuntime(invoke, name, args) {
   return invoke(name, { ...args, expectedRevision: tree.revision });
 }
 
-
 // Preview sources are intentionally separate from an MSBuild solution.
-// Open the visible disclosure through the UI rather than forcing clicks
-// into a collapsed subtree or replacing the workspace explorer contract.
+// Open the disclosure through the UI, never by forcing a hidden file click.
 export async function openPreviewDocument(page, path) {
   const preview = page.locator('.explorer .ws-preview-project');
   if (await preview.getAttribute('open') === null)
@@ -90,6 +88,6 @@ export async function openPreviewDocument(page, path) {
   await preview.getByRole('button').filter({
     has: page.locator('.file-path').filter({ hasText: new RegExp('^' + path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$') })
   }).click();
-  await expect(page.locator('.source-pane').filter({ has: page.locator('.code-editor') })
-    .filter({ visible: true })).toHaveAttribute('data-document-path', path);
+  // Other source documents may remain visible in another dock group.
+  await expect(page.locator(`.source-pane[data-document-path=${JSON.stringify(path)}] .code-editor`)).toBeVisible();
 }
