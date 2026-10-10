@@ -276,7 +276,7 @@ export function activateDockContent(manager, id, focus = true) {
 }
 export function reconcileDockDocuments(manager, ids, registered = []) {
     const current = new Set(ids);
-    const obsolete = dockyardContents(manager).filter(item => /^(document|generated):/.test(item.id) && !current.has(item.id));
+    const obsolete = dockyardContents(manager).filter(item => /^(document|generated|workspace):/.test(item.id) && !current.has(item.id));
     manager.Transaction('Retire removed documents', () => {
         for (const item of obsolete) {
             const model = manager.Find(item.id);
@@ -290,7 +290,7 @@ export function installDockyardWorkspace(manager, owner) {
     const pending = new Set(), permitted = new Set();
     const protect = operation => (_sender, args) => {
         const item = args.Model, id = item?.ContentId;
-        if (!id || permitted.has(id) || !(/^(document|generated):/.test(id) || id === 'agent' || id === 'agent-access')) return;
+        if (!id || permitted.has(id) || !(/^(document|generated|workspace):/.test(id) || id === 'agent' || id === 'agent-access')) return;
         args.Cancel = true;
         if (pending.has(id) || disposed) return;
         pending.add(id);

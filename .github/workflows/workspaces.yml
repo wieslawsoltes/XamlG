@@ -31,7 +31,7 @@ jobs:
         run: |
           mkdir -p artifacts/workspace-source
           git rev-parse HEAD > artifacts/workspace-source/commit.txt
-          git show -s --format=%P HEAD > artifacts/workspace-source/parents.txt
+          git cat-file -p HEAD | sed -n 's/^parent //p' > artifacts/workspace-source/parents.txt
           git archive --format=tar.gz HEAD -o artifacts/workspace-source/source.tar.gz
       - uses: actions/upload-artifact@v4
         with:

@@ -62,3 +62,10 @@ These checks do not turn structural browser inspection into MSBuild evaluation.
 Arbitrary SDKs, imports, targets, analyzers, templates and native builds execute
 through the explicitly trusted companion. The evaluated Roslyn graph is a snapshot,
 not a claim of a persistent Visual Studio project-system or debugger replacement.
+
+Workspace document tabs participate in the docking close guard. Cancel keeps the
+buffer, Save checks its before-image, and Discard leaves saved source untouched.
+Tab removal is persisted before releasing the buffer; a storage conflict leaves
+the tab and dirty text available. Retiring or replacing a workspace also removes
+its obsolete dock panes. Acceptance covers close cancellation, save/discard,
+reload without closed tabs, and quota failure during close.

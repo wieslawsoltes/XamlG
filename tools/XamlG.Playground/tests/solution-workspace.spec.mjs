@@ -175,3 +175,84 @@ test('paired owner creates an actual SDK solution and builds and evaluates the s
   expect(graph.compilerDiagnostics.filter(diagnostic => diagnostic.severity === 'Error')).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+test('workspace tab close supports cancel, save, discard and persistent tab removal', async ({ page }) => {
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await openStudio(page, false);
+  const pane = await explorer(page); await create(page, pane);
+  const program = 'WorkspaceDemo/Program.cs';
+  const tab = page.getByRole('tab').filter({ hasText: program });
+  const document = page.locator(`[data-workspace-document="${program}"]`);
+  const persisted = async () => (await savedWorkspace(page)).files.find(file => file.path === program).content;
+  await expect.poll(() => sourceText(page, program)).toContain('Console');
+  const original = await persisted();
+  const savedText = '// saved on close\nSystem.Console.WriteLine("Close test");\n';
+  const edit = async text => {
+    await page.evaluate(({ program, text }) => monaco.editor.getModels().find(model => model.uri.path.endsWith('/' + program)).setValue(text), { program, text });
+    await expect(document.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  };
+  const choices = [];
+  page.on('dialog', async dialog => {
+    const choice = choices.shift();
+    if (choice === 'accept') await dialog.accept();
+    else await dialog.dismiss();
+  });
+  await edit(savedText);
+  choices.push('dismiss', 'dismiss');
+  await tab.getByRole('button', { name: 'Close tab', exact: true }).click();
+  await expect.poll(() => choices.length).toBe(0);
+  await expect(document).not.toHaveAttribute('inert', '');
+  await expect(tab).toHaveCount(1);
+  expect(await persisted()).toBe(original);
+  expect(await sourceText(page, program)).toBe(savedText);
+  choices.push('accept');
+  await tab.getByRole('button', { name: 'Close tab', exact: true }).click();
+  await expect(tab).toHaveCount(0);
+  await expect.poll(persisted).toBe(savedText);
+  expect((await savedWorkspace(page)).openDocuments).not.toContain(program);
+  await page.reload();
+  await expect(page.locator('.studio')).toHaveAttribute('data-ready', 'true');
+  await expect(tab).toHaveCount(0);
+  await pane.locator(`.ws-tree-row[title="${program}"]`).dblclick();
+  await expect.poll(() => sourceText(page, program)).toBe(savedText);
+  await edit('// discard this buffer\n');
+  choices.push('dismiss', 'accept');
+  await tab.getByRole('button', { name: 'Close tab', exact: true }).click();
+  await expect(tab).toHaveCount(0);
+  expect(await persisted()).toBe(savedText);
+  expect((await savedWorkspace(page)).openDocuments).not.toContain(program);
+  expect(errors).toEqual([]);
+});
+
+test('failed close persistence keeps the dirty buffer and tab available for recovery', async ({ page }) => {
+  await openStudio(page, false);
+  const pane = await explorer(page); await create(page, pane);
+  const program = 'WorkspaceDemo/Program.cs';
+  const tab = page.getByRole('tab').filter({ hasText: program });
+  const document = page.locator(`[data-workspace-document="${program}"]`);
+  const text = '// keep this buffer when closing cannot persist\n';
+  await expect.poll(() => sourceText(page, program)).toContain('Console');
+  await page.evaluate(({ program, text }) => monaco.editor.getModels().find(model => model.uri.path.endsWith('/' + program)).setValue(text), { program, text });
+  await expect(document.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  await page.evaluate(() => {
+    window.workspaceOriginalPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (...args) {
+      if (this.transaction.db.name === 'xamlg.solution-workspace.v1') throw new DOMException('Close storage failure', 'QuotaExceededError');
+      return window.workspaceOriginalPut.apply(this, args);
+    };
+  });
+  let dialogs = 0;
+  page.on('dialog', async dialog => { if (dialogs++ === 0) await dialog.dismiss(); else await dialog.accept(); });
+  try {
+    await tab.getByRole('button', { name: 'Close tab', exact: true }).click();
+    await expect(document.getByRole('alert')).toContainText('Close storage failure');
+    await expect(tab).toHaveCount(1);
+    await expect(document).not.toHaveAttribute('inert', '');
+    expect(await sourceText(page, program)).toBe(text);
+    expect((await savedWorkspace(page)).openDocuments).toContain(program);
+  } finally {
+    await page.evaluate(() => { IDBObjectStore.prototype.put = window.workspaceOriginalPut; delete window.workspaceOriginalPut; });
+  }
+  await document.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(async () => (await savedWorkspace(page)).files.find(file => file.path === program).content).toBe(text);
+});

@@ -23,6 +23,7 @@ public sealed class WorkspaceEditorDocument(string id, string path, WorkspaceFil
     public string? DiskHash { get; set; } = diskHash;
     public string Encoding { get; set; } = encoding;
     public bool Dirty => !IsBinary && Text != SavedFile.Content;
+    public bool Closing { get; internal set; }
     public string? Error { get; set; }
     public CodeEditor? Editor;
 }
@@ -285,12 +286,39 @@ public sealed class SolutionWorkspaceSession : IAsyncDisposable
 
     public async Task<bool> PrepareCloseAsync(WorkspaceEditorDocument document)
     {
-        await CaptureAsync(document);
-        if (!document.Dirty) return true;
-        var choice = await _module!.InvokeAsync<string>("confirmDocumentClose", document.Path);
-        if (choice == "cancel") return false;
-        if (choice == "save") { await SaveAsync(document); return !document.Dirty; }
-        document.Text = document.SavedFile.Content; document.Error = null; Notify(); return true;
+        var closed = false;
+        await ExecuteAsync(async () =>
+        {
+            if (!_documents.TryGetValue(document.Id, out var current) || !ReferenceEquals(current, document))
+            { closed = true; return; }
+            document.Closing = true;
+            Notify();
+            try
+            {
+                await CaptureAsync(document);
+                if (document.Dirty)
+                {
+                    var choice = await _module!.InvokeAsync<string>("confirmDocumentClose", document.Path);
+                    if (choice == "cancel") return;
+                    if (choice == "save")
+                    {
+                        await SaveCoreAsync([document]);
+                        if (document.Dirty) throw new InvalidOperationException("The document changed during save; it remains open.");
+                    }
+                    else if (choice != "discard") throw new InvalidOperationException("Unknown document-close response.");
+                }
+                // Persist the tab list before releasing the buffer. A quota or revision
+                // conflict must leave the document open, including its unsaved text.
+                if (!IsLocal)
+                    await PersistBrowserAsync(Snapshot, SelectedProject,
+                        _documents.Values.Where(item => item.Id != document.Id).Select(item => item.Path));
+                _documents.Remove(document.Id);
+                closed = true;
+            }
+            catch (Exception error) { document.Error = error.Message; throw; }
+            finally { document.Closing = false; }
+        });
+        return closed;
     }
 
     public Task ReloadDocumentAsync(WorkspaceEditorDocument document) => ExecuteAsync(async () =>

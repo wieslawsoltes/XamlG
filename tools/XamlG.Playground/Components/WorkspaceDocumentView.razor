@@ -1,6 +1,6 @@
 @using XamlG.Playground.Workspaces
 
-<section class="ws-document" data-workspace-document="@Document.Path" aria-label="@Document.Path">
+<section class="ws-document" data-workspace-document="@Document.Path" aria-label="@Document.Path" inert="@Document.Closing">
     <div class="ws-document-toolbar">
         <strong title="@Document.Path">@Document.Path @(Document.Dirty ? "●" : "")</strong>
         <span class="toolbar-spacer"></span>
