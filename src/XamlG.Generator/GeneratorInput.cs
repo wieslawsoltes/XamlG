@@ -10,7 +10,9 @@ internal sealed record GeneratorInput(string Path, string LogicalPath, string Te
     public static GeneratorInput Read(AdditionalText text, AnalyzerConfigOptionsProvider options, CancellationToken cancellationToken)
     {
         var metadata = options.GetOptions(text);
+        var compile = GeneratorOptions.ReadBoolean(options.GlobalOptions, GeneratorPropertyNames.Enabled, true) &&
+            XamlInputMetadata.ShouldCompile(metadata);
         return new(text.Path, XamlInputMetadata.LogicalPath(text.Path, metadata, options.GlobalOptions),
-            text.GetText(cancellationToken)?.ToString() ?? string.Empty, XamlInputMetadata.ShouldCompile(metadata));
+            compile ? text.GetText(cancellationToken)?.ToString() ?? string.Empty : string.Empty, compile);
     }
 }

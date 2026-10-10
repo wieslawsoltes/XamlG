@@ -109,7 +109,8 @@ jobs:
           paths = ['src/XamlG.Syntax', 'src/XamlG.Roslyn', 'src/XamlG.Compiler', 'src/XamlG.CSharp',
                    'src/XamlG.Frameworks', 'src/XamlG.Generator', 'src/XamlG.Runtime',
                    'tools/XamlG.PerformanceProbe', 'scripts/compare-fast-paths.py',
-                   'scripts/compare-controlcatalog-compilers.py', '.github/workflows/ci.yml']
+                   'scripts/compare-controlcatalog-compilers.py', 'scripts/verify-compiler-performance.py',
+                   'scripts/test-compiler-performance-gates.py', '.github/workflows/ci.yml']
           changed = subprocess.check_output(['git', 'diff', '--name-only', os.environ['BASELINE_REF'], 'HEAD', '--', *paths], text=True)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('run=' + str(bool(changed.strip())).lower() + '\n')
@@ -127,6 +128,11 @@ jobs:
         run: |
           python3 scripts/prepare-controlcatalog.py
           python3 scripts/compare-controlcatalog-compilers.py --baseline-ref "$BASELINE_REF" --iterations 3
+      - name: Enforce complete semantic and byte-identical generated-source evidence
+        if: steps.changes.outputs.run == 'true'
+        run: |
+          python3 scripts/test-compiler-performance-gates.py
+          python3 scripts/verify-compiler-performance.py --baseline "$BASELINE_REF" --candidate "$(git rev-parse HEAD)" --require-identical-sources
       - name: Publish measurements and generated-source identities
         if: ${{ !cancelled() && steps.changes.outputs.run == 'true' }}
         run: |

@@ -51,8 +51,9 @@ internal sealed class LoaderSourceEmitter(CSharpCompilation compilation, XamlPro
         var compiled = project.Documents.Where(d => d.Output.Success && !d.Document.IsSkipped && d.Document.ClassSymbol != null && d.Document.Options.GenerateInitializeComponent &&
             XamlLoaderAdapterCompiler.CanReference(compilation, d.Document.ClassSymbol)).ToArray();
         var original = OriginalLoader(uri: false);
+        var compiledTypes = new HashSet<ITypeSymbol>(compiled.Select(d => d.Document.ClassSymbol!), SymbolEqualityComparer.Default);
         var skipped = project.Documents.Where(d => d.Document.IsSkipped && d.Document.ClassSymbol != null &&
-            !compiled.Any(active => SymbolEqualityComparer.Default.Equals(active.Document.ClassSymbol, d.Document.ClassSymbol)));
+            !compiledTypes.Contains(d.Document.ClassSymbol)).ToArray();
         // The most specific declaration wins even when an opted-out component and a
         // compiled component inherit from one another.
         var targets = compiled.Concat(original == null ? Enumerable.Empty<XamlProjectDocumentResult>() : skipped)
@@ -89,7 +90,12 @@ internal sealed class LoaderSourceEmitter(CSharpCompilation compilation, XamlPro
         Line("var absolute = global::XamlG.Runtime.XamlCompiledResourceAddress.Absolute(uri, baseUri);");
         Line("var key = global::XamlG.Runtime.XamlCompiledResourceAddress.Key(absolute);");
         Line("switch (key) {");
-        foreach (var group in project.Resources.Resources.GroupBy(r => r.Uri, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal))
+        var documentsByUri = new Dictionary<string, XamlProjectDocumentResult>(StringComparer.Ordinal);
+        foreach (var document in project.Documents)
+            if (document.ResourceUri is { } uri && !documentsByUri.ContainsKey(uri)) documentsByUri.Add(uri, document);
+        var resourceGroups = project.Resources.Resources.GroupBy(r => r.Uri, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal).ToArray();
+        var exportedUris = new HashSet<string>(resourceGroups.Select(group => group.Key), StringComparer.Ordinal);
+        foreach (var group in resourceGroups)
         {
             if (group.Count() != 1) continue;
             var resource = group.Single();
@@ -98,7 +104,7 @@ internal sealed class LoaderSourceEmitter(CSharpCompilation compilation, XamlPro
                 factory = external.ContainingType.CSharpName() + "." + CSharpNames.Method(external);
             else
             {
-                var document = project.Documents.FirstOrDefault(d => d.ResourceUri == resource.Uri);
+                documentsByUri.TryGetValue(resource.Uri, out var document);
                 if (document?.Output.Success == true && document.Output.BuildMethodName != null &&
                     (document.Document.ClassSymbol == null || XamlLoaderAdapterCompiler.CanReference(compilation, document.Document.ClassSymbol)))
                     factory = Factory(document) + "." + document.Output.BuildMethodName;
@@ -109,7 +115,7 @@ internal sealed class LoaderSourceEmitter(CSharpCompilation compilation, XamlPro
         var optedOutLoader = OriginalLoader(uri: true);
         if (optedOutLoader != null)
             foreach (var uri in project.Documents.Where(document => document.Document.IsSkipped && document.ResourceUri != null &&
-                !project.Resources.Resources.Any(resource => resource.Uri == document.ResourceUri)).Select(document => document.ResourceUri!).Distinct(StringComparer.Ordinal))
+                !exportedUris.Contains(document.ResourceUri)).Select(document => document.ResourceUri!).Distinct(StringComparer.Ordinal))
                 Line("case " + CSharpNames.Literal(uri) + ": return " + OriginalCall(optedOutLoader, "absolute, null") + ";");
         Line("}");
         // Existing referenced binaries already contain compiled code. Preserve their official

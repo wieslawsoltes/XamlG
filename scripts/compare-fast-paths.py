@@ -91,7 +91,8 @@ def main():
             row[variant] = {key: statistics.median(value for entry in entries for value in entry[key])
                             for key in ('Nanoseconds', 'AllocatedBytes')}
         row['time_ratio'] = row['after']['Nanoseconds'] / row['before']['Nanoseconds']
-        row['allocation_ratio'] = row['after']['AllocatedBytes'] / row['before']['AllocatedBytes']
+        row['allocation_ratio'] = (row['after']['AllocatedBytes'] / row['before']['AllocatedBytes']
+                                   if row['before']['AllocatedBytes'] != 0 else None)
         summary.append(row)
     report['summary'] = summary
     lines = ['| Workload | Time before (us) | Time after (us) | After/before | Bytes before | Bytes after |',
