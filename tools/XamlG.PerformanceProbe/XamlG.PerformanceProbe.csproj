@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/XamlG.Syntax/XamlG.Syntax.csproj" />
+    <ProjectReference Include="../../src/XamlG.Runtime/XamlG.Runtime.csproj" />
+    <ProjectReference Include="../../src/XamlG.CSharp/XamlG.CSharp.csproj" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+  </ItemGroup>
+</Project>

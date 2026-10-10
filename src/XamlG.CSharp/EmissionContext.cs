@@ -129,14 +129,19 @@ internal sealed class EmissionContext : IDisposable
         }
         if (_propertyAccessors.Count != 0)
         {
-            var accessors = _propertyAccessors.Values.OrderBy(accessor => accessor.Index).Select(accessor => accessor.Accessor).ToArray();
+            // Slots were assigned densely at registration. Scatter once instead
+            // of sorting already-indexed entries (O(n), no comparison/key arrays).
+            var accessors = new PropertyAccessor[_propertyAccessors.Count];
+            foreach (var accessor in _propertyAccessors.Values) accessors[accessor.Index] = accessor.Accessor;
             PropertyTableEmitter.Emit(Writer, accessors, "__properties_" + Id, "__GetProperty_" + Id, "__SetProperty_" + Id, "private");
         }
         if (_sourceRecords.Count != 0)
         {
+            var ordered = new string[_sourceRecords.Count];
+            foreach (var pair in _sourceRecords) ordered[pair.Value] = pair.Key;
             var records = new System.Text.StringBuilder();
-            foreach (var pair in _sourceRecords.OrderBy(pair => pair.Value))
-                records.Append(pair.Key.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(':').Append(pair.Key);
+            foreach (var record in ordered)
+                records.Append(record.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(':').Append(record);
             Writer.Line("private static readonly global::XamlG.Runtime.XamlSourceInfoTable __source_" + Id +
                 " = global::XamlG.Runtime.XamlSourceInfoTable.FromEncoded(" + CSharpNames.Literal(Document.Syntax.Path) + ", " +
                 Document.Syntax.Version.ToString(System.Globalization.CultureInfo.InvariantCulture) + "L, " + CSharpNames.Literal(records.ToString()) + ");");

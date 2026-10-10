@@ -14,6 +14,7 @@ internal sealed class ObjectEmitter
     private readonly SourceInfoEmitter _source;
     private readonly LeafConstructionEmitter _leaves;
     private readonly DeferredConstructionEmitter _deferred;
+    private NamedObjectFieldIndex? _namedFields;
     public ObjectEmitter(EmissionContext context)
     {
         _context = context; _namespaces = new(context); _runtime = new(context, _namespaces);
@@ -78,9 +79,14 @@ internal sealed class ObjectEmitter
             if (!value.Assignments.OfType<BoundSetAssignment>().Any(assignment => assignment.RegisterName))
                 _runtime.RegisterName(frame, CSharpNames.Literal(value.Name), variable);
         }
-        if (_context.Document.ClassSymbol != null && _context.Document.CanAugmentClass && _context.Document.Options.GenerateNamedFields)
-            foreach (var field in _context.NamedFields.Where(field => ReferenceEquals(field.Object, value)))
+        if (_context.Document.ClassSymbol != null && _context.Document.CanAugmentClass &&
+            _context.Document.Options.GenerateNamedFields && !_context.NamedFields.IsEmpty)
+        {
+            // O(F) indexing once, then expected O(1) lookup rather than scanning
+            // all F named fields for every one of N objects. Enumeration allocates nothing.
+            foreach (var field in (_namedFields ??= new(_context.NamedFields)).For(value))
                 writer.Line(_context.RootVariable + "." + CSharpNames.Identifier(field.Name) + " = " + variable + ";");
+        }
         if (value.SupportsInitialize && !initialized) writer.Line("((global::System.ComponentModel.ISupportInitialize)" + variable + ").BeginInit();");
         initialize?.Invoke(variable);
         if (value.UsableDuringInitialization) consume?.Invoke(variable);
