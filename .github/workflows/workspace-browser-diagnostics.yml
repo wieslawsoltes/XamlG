@@ -8,33 +8,40 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
-      - name: Extract cancellation and first browser failures
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        shell: bash
+      - uses: actions/download-artifact@v4
+        with:
+          name: playground-validation
+          run-id: 38070784803
+          github-token: ${{ github.token }}
+          path: evidence
+      - name: Summarize assertion failures without logging request credentials
+        shell: python
         run: |
-          gh api --allow-escape-sequences "repos/$GH_REPO/actions/jobs/114267627830/logs" > "$RUNNER_TEMP/browser-job.log"
-          gh api "repos/$GH_REPO/actions/jobs/114267627830" --jq '{conclusion,started_at,completed_at,check_run_url,steps}'
-          python - <<'PY'
-          import os, re
+          import json, re, zipfile
           from pathlib import Path
-          text = Path(os.environ['RUNNER_TEMP'], 'browser-job.log').read_text(errors='replace')
-          text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
-          lines = text.splitlines()
-          first = []
-          for index, line in enumerate(lines):
-              if re.search(r'✘|\bfailed\b|Timed out|TimeoutError|Error:|##\[error\]|exceeded', line, re.I):
-                  first.append((index, line))
-          print('\nMATCH COUNT:', len(first))
-          for index, line in first[:45]:
-              print(f'{index + 1}: {line[:1200]}')
-          print('\nFIRST FAILURE CONTEXT:')
-          candidates = [index for index, line in first if '✘' in line or 'TimeoutError' in line or '##[error]' in line]
-          if candidates:
-              index = candidates[0]
-              print('\n'.join(lines[max(0, index - 15):index + 55])[:18000])
-          print('\nFINAL LOG CONTEXT:\n' + '\n'.join(lines[-110:])[-18000:])
-          PY
+          for path in sorted(Path('evidence').rglob('trace.zip')):
+              print('\nTRACE:', path)
+              with zipfile.ZipFile(path) as archive:
+                  for name in archive.namelist():
+                      if not name.endswith('.trace'): continue
+                      events = []
+                      errors = []
+                      for line in archive.read(name).splitlines():
+                          try: event = json.loads(line)
+                          except ValueError: continue
+                          if event.get('type') == 'before':
+                              events.append(str(event.get('title') or event.get('apiName') or event.get('method') or ''))
+                          if event.get('error'):
+                              error = event['error']
+                              message = error.get('message', str(error)) if isinstance(error, dict) else str(error)
+                              message = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', message)
+                              errors.append(message[:2600])
+                      if errors:
+                          print('Entry:', name)
+                          print('Last actions:', json.dumps(events[-14:]))
+                          for error in dict.fromkeys(errors): print('ERROR:', error)
+          for path in sorted(Path('evidence').rglob('error-context.md')):
+              print('\nCONTEXT:', path)
+              print(path.read_text(errors='replace')[:2400])
