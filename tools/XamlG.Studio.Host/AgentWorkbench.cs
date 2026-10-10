@@ -54,7 +54,7 @@ public sealed class AgentWorkbench : AgentWorkbenchSession
         }
         return AutomationJson.Element(new { accepted = true });
     }
-    public sealed record AccountSignInArgs(string? AccountId = null, string? Label = null, bool Remember = true, string? RetrySignInId = null, string? RequestPlanConsentCompatibility = null, bool RequestPlanConsent = false);
+    public sealed record AccountSignInArgs(string? AccountId = null, string? Label = null, bool Remember = true, string? RetrySignInId = null, bool RequestPlanConsent = false);
     public sealed record AccountConfigureArgs(string Id, string Label, bool Remember);
 }
 
