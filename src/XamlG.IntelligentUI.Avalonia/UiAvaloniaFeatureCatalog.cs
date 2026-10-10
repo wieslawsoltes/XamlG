@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Collections;
@@ -25,7 +26,10 @@ internal static class UiAvaloniaFeatureCatalog
         entries.Add("LayoutTransformControl", entries["Viewbox"] with
         {
             Create = () => new LayoutTransformControl(),
-            Setters = entries["Viewbox"].Setters.Remove("Stretch").Remove("StretchDirection")
+            Setters = entries["Viewbox"].Setters.Remove("Stretch").Remove("StretchDirection"),
+            // Avalonia's opt-in render-transform bridge owns a property subscription.
+            // Disabling the bridge releases it when the renderer retires the control.
+            Retire = control => control.ClearValue(LayoutTransformControl.UseRenderTransformProperty)
         });
         entries.Add("Label", entries["ContentControl"] with { Create = () => new Label() });
         var setters = new Dictionary<string, Action<Control, JsonElement?>>(StringComparer.Ordinal)
@@ -117,8 +121,12 @@ internal static class UiAvaloniaFeatureCatalog
         for (var i = 0; i < points.Length; i++) points[i] = new Point(coordinates[2 * i], coordinates[2 * i + 1]);
         return points;
     }
+    // Thickness/point literals retain the existing catalog's comma/space grammar.
+    // Geometry and matrices use the stricter drawing grammar instead.
     private static double[] Tuple(JsonElement value) => value.ValueKind == JsonValueKind.Number
-        ? [Number(value)] : UiDrawingValues.ReadNumbers(value.GetString().AsSpan(), 4);
+        ? [Number(value)]
+        : value.GetString()!.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(part => (double)decimal.Parse(part, NumberStyles.Float, CultureInfo.InvariantCulture)).ToArray();
     private static Thickness ThicknessValue(JsonElement value)
     {
         var p = Tuple(value);
