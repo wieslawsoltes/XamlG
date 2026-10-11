@@ -265,5 +265,13 @@
   "whitespace-buffer-boundary-65536",
   "whitespace-buffer-dense-131073",
   "whitespace-buffer-late-131073",
-  "whitespace-buffer-boundary-131073"
+  "whitespace-buffer-boundary-131073",
+  "whitespace-transition-dense-first-257",
+  "whitespace-transition-long-first-257",
+  "whitespace-transition-dense-first-4096",
+  "whitespace-transition-long-first-4096",
+  "whitespace-transition-dense-first-16385",
+  "whitespace-transition-long-first-16385",
+  "whitespace-transition-dense-first-65536",
+  "whitespace-transition-long-first-65536"
 ]

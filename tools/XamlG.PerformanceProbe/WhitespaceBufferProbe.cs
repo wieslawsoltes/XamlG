@@ -37,6 +37,27 @@ internal static class WhitespaceBufferProbe
                 measure("whitespace-buffer-" + shape + "-" + length, Math.Max(1, 32768 / length),
                     () => XmlWhitespace.Collapse(text, true, true).Length);
             }
+            foreach (var length in new[] { 257, 4096, 16385, 65536 })
+            foreach (var longFirst in new[] { false, true })
+            {
+                var characters = new char[length];
+                const string pattern = "ab\t\r\n c\u00a0\ud800\udfff";
+                for (var i = 0; i < length; i++)
+                    characters[i] = (i < length / 2) == longFirst ? 'x' : pattern[i % pattern.Length];
+                characters[0] = '\t'; characters[length - 1] = '\r';
+                var text = new string(characters);
+                var shape = longFirst ? "long-first" : "dense-first";
+                writer.Write(length); writer.Write(shape);
+                for (var mask = 0; mask < 4; mask++)
+                {
+                    var value = XmlWhitespace.Collapse(text, (mask & 1) != 0, (mask & 2) != 0);
+                    if (value.Length > length) throw new InvalidOperationException("Whitespace expanded source length.");
+                    writer.Write(mask); writer.Write(value.Length);
+                    foreach (var character in value) writer.Write((ushort)character);
+                }
+                measure("whitespace-transition-" + shape + "-" + length, Math.Max(1, 32768 / length),
+                    () => XmlWhitespace.Collapse(text, true, true).Length);
+            }
         }
         // The shared harness uses warmed fresh processes, not guaranteed cold pool
         // rents. Allocated bytes are not total retained-pool/process-heap measurements.
