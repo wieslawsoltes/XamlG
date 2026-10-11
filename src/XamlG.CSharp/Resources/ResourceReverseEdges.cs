@@ -2,13 +2,17 @@ using XamlG.Compiler.Resources;
 
 namespace XamlG.CSharp.Resources;
 
-/// <summary>Build-local ordered reverse adjacency. One geometrically grown edge
-/// buffer replaces a List and its backing array for every referenced document.
-/// Append order is preserved: it determines which competing failure is reported.</summary>
+/// <summary>Build-local ordered reverse adjacency. Bounded edge blocks replace
+/// per-target List objects without copying edges when the graph grows. Append
+/// order is preserved: it determines which competing failure is reported.</summary>
 internal sealed class ResourceReverseEdges
 {
+    private const int FirstCapacity = 4;
+    private const int BlockShift = 5;
+    private const int BlockCapacity = 1 << BlockShift;
     private readonly Endpoints[] _targets;
-    private Entry[] _entries = Array.Empty<Entry>();
+    private Entry[] _first = Array.Empty<Entry>();
+    private Entry[][] _blocks = Array.Empty<Entry[]>();
     private int _count;
 
     public ResourceReverseEdges(int documentCount)
@@ -20,26 +24,49 @@ internal sealed class ResourceReverseEdges
     public void Add(int target, int parent, BoundResourceExpression edge)
     {
         // Links are one-based so default-zero target slots need no initialization
-        // pass. No user callbacks run between reservation and link publication.
+        // pass. Reserve before linking; no callbacks run during publication.
         ref var endpoints = ref _targets[target];
-        if (_count == _entries.Length) Grow();
-        _entries[_count] = new(parent, edge);
-        var link = ++_count;
+        Reserve();
+        var link = _count + 1;
+        At(link) = new(parent, edge);
         if (endpoints.Last == 0) endpoints.First = link;
-        else _entries[endpoints.Last - 1].Next = link;
+        else At(endpoints.Last).Next = link;
         endpoints.Last = link;
+        _count = link;
     }
 
-    // Enumeration is used only after building is complete. It owns no mutable
-    // project state and allocates neither an iterator nor an interface wrapper.
-    public Enumerator Incoming(int target) => new(_entries, _targets[target].First);
+    // Used only after construction. A value cursor retains this build-local
+    // owner, not a snapshot/copy of its edge buffers or mutable project state.
+    public Enumerator Incoming(int target) => new(this, _targets[target].First);
 
-    private void Grow()
+    private ref Entry At(int link)
+    {
+        var index = link - 1;
+        if (index < FirstCapacity) return ref _first[index];
+        index -= FirstCapacity;
+        return ref _blocks[index >> BlockShift][index & (BlockCapacity - 1)];
+    }
+
+    private void Reserve()
     {
         if (_count == int.MaxValue) throw new OutOfMemoryException();
-        var capacity = _entries.Length == 0 ? 4 :
-            _entries.Length <= int.MaxValue / 2 ? _entries.Length * 2 : int.MaxValue;
-        Array.Resize(ref _entries, capacity);
+        if (_count < FirstCapacity)
+        {
+            if (_first.Length == 0) _first = new Entry[FirstCapacity];
+            return;
+        }
+        var index = _count - FirstCapacity;
+        if ((index & (BlockCapacity - 1)) != 0) return;
+        var block = index >> BlockShift;
+        if (block == _blocks.Length)
+        {
+            // Only the small directory of block references grows. Existing edge
+            // records never move/copy; spare edge capacity is at most 31 slots.
+            var capacity = _blocks.Length == 0 ? 4 :
+                _blocks.Length <= int.MaxValue / 2 ? _blocks.Length * 2 : int.MaxValue;
+            Array.Resize(ref _blocks, capacity);
+        }
+        _blocks[block] = new Entry[BlockCapacity];
     }
 
     private struct Endpoints
@@ -48,7 +75,6 @@ internal sealed class ResourceReverseEdges
         public int Last;
     }
 
-    // Reference followed by two Int32 fields avoids a padding gap on 64-bit CLR.
     internal struct Entry
     {
         public readonly BoundResourceExpression Edge;
@@ -59,17 +85,17 @@ internal sealed class ResourceReverseEdges
 
     internal struct Enumerator
     {
-        private readonly Entry[] _entries;
+        private readonly ResourceReverseEdges _owner;
         private int _next;
         private int _current;
-        public Enumerator(Entry[] entries, int first) { _entries = entries; _next = first; _current = 0; }
+        public Enumerator(ResourceReverseEdges owner, int first) { _owner = owner; _next = first; _current = 0; }
         public Enumerator GetEnumerator() => this;
-        public Entry Current => _entries[_current - 1];
+        public Entry Current => _owner.At(_current);
         public bool MoveNext()
         {
             if (_next == 0) return false;
             _current = _next;
-            _next = _entries[_current - 1].Next;
+            _next = _owner.At(_current).Next;
             return true;
         }
     }

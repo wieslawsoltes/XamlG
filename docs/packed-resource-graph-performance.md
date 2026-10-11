@@ -11,30 +11,39 @@ Every referenced target allocated a List and at least a four-element backing arr
 even when only one caller existed. Chains, trees and small disconnected components
 therefore allocated many small objects that were discarded after validation.
 
-ResourceReverseEdges uses one target-endpoint array and one geometrically grown
-edge array. An edge contains the original resource-expression reference, its caller
-index and the next edge index. Target endpoints contain the first and last links.
-Links are one-based: zero means absent and fresh arrays need no sentinel-fill pass.
-Appending updates the previous last link and preserves per-target insertion order.
-The buffer grows before the new link becomes reachable. Growth is checked against
-integer overflow; runtime array-size/allocation limits still apply.
+ResourceReverseEdges uses one target-endpoint array, a four-entry initial block,
+and lazily allocated 32-entry continuation blocks. An edge contains the original
+resource-expression reference, its caller index and the next edge index. Target
+endpoints contain the first and last links. Links are one-based: zero means absent
+and fresh arrays need no sentinel-fill pass. Appending preserves per-target order.
+Capacity is reserved before the new link becomes reachable.
 
-This is indexed linked adjacency in a contiguous backing buffer, not CSR: edges for
-one target need not occupy adjacent slots. Enumeration follows integer links using
-a pattern-based value-type enumerator, without iterator/interface allocation. Both
-binding validation and backend-only failure propagation consume the same storage.
-Neither callback effects nor generated execution are deduplicated by this container.
-It even preserves repeated parent/descriptor values when used directly; production
-URI compaction remains the existing separate responsibility.
+This is indexed linked adjacency in bounded backing blocks, not CSR: edges for one
+target need not occupy adjacent slots. Enumeration follows integer links using a
+pattern-based value-type cursor, without iterator/interface allocation. Both graph
+validators consume the same storage. Direct container use preserves even repeated
+parent/descriptor values; production URI compaction is a separate responsibility.
 
-Construction and all complete graph walks remain expected O(D + E), excluding URI
-character hashing and dependency discovery. Storage remains O(D + E). Geometric
-resizing gives amortized constant-time insertion, with spare capacity and transient
-copies of earlier arrays. A concentrated fan-in target already used one large List;
-that shape may see little allocation benefit and pays the new link bookkeeping.
-Sparse graphs with mostly one caller per target are the intended memory win.
-The graph is build-local, unpooled and not cached. No cross-invocation references,
-input IR, project validity or cancellation tokens acquire a longer lifetime.
+Continuation blocks never resize or copy their edge records. Only the small directory
+of block references grows geometrically. There are at most 31 spare edge slots,
+rather than up to an entire spare geometric edge array. Indexing is constant-time:
+the first four links address the initial block, then a shift/mask selects the block
+and slot. The directory and edges are retained only for this validation call.
+
+Construction and complete graph walks remain expected O(D + E), excluding URI
+character hashing and dependency discovery. Storage remains O(D + E). Add is
+amortized constant-time; directory growth copies references, not edge records.
+Bounded blocks introduce an extra indexing indirection and more small allocations
+than a single growable array. They avoid its full-edge copies and concentrate spare
+capacity in at most one block. Architecture-dependent field/reference sizes and
+concentrated fan-in costs must still be measured, not assumed universally better.
+The graph is build-local, unpooled and uncached; no input or project state gains a
+longer lifetime. Integer guards and runtime array/allocation limits remain in force.
+
+The first candidate used one geometrically grown edge buffer. Its exact-output gate
+passed, with lower chain/fan-out allocation, but lattice allocation increased and
+cold concentrated fan-in was slower. The final blocked representation responds to
+that evidence rather than hiding it. The original measurements remain in PR #39.
 
 ## Reuse topological counts
 
@@ -56,7 +65,7 @@ There is no mutation of the immutable resource-reference snapshots.
 
 ## Tests and evidence
 
-Seventeen C# cases cover empty targets, interleaving and geometric growth boundaries,
+Twenty-four C# cases cover empty targets, interleaving, initial-block/directory growth boundaries, bounded noncopying blocks,
 exact descriptor identity, repeated values and allocation-free completed enumeration.
 Frozen original graph/reference oracles independently compare full diagnostic order,
 spans, record identity, mappings and helper preservation for fan-in, fan-out, sparse

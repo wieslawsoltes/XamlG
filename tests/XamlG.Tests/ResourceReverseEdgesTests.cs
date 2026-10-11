@@ -15,6 +15,12 @@ public sealed class ResourceReverseEdgesTests
     [InlineData(31)]
     [InlineData(32)]
     [InlineData(33)]
+    [InlineData(35)]
+    [InlineData(36)]
+    [InlineData(37)]
+    [InlineData(131)]
+    [InlineData(132)]
+    [InlineData(133)]
     [InlineData(1024)]
     public void Interleaved_targets_preserve_exact_append_order_across_growth(int count)
     {
@@ -65,6 +71,37 @@ public sealed class ResourceReverseEdgesTests
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         GC.KeepAlive(checksum);
         Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void Edge_blocks_are_bounded_and_are_not_copied_when_the_directory_grows()
+    {
+        var fixture = new EmissionAnalysisFixture();
+        var edge = new BoundResourceExpression(new("u", fixture.Root.Type, "u", "Generated", null), default);
+        var graph = new ResourceReverseEdges(1);
+        for (var i = 0; i < 36; i++) graph.Add(0, i, edge);
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var firstField = typeof(ResourceReverseEdges).GetField("_first", flags)!;
+        var blocksField = typeof(ResourceReverseEdges).GetField("_blocks", flags)!;
+        var first = (Array)firstField.GetValue(graph)!;
+        var directory = (Array)blocksField.GetValue(graph)!;
+        var initialBlock = directory.GetValue(0);
+        Assert.Equal(4, first.Length);
+        Assert.Equal(32, Assert.IsAssignableFrom<Array>(initialBlock).Length);
+        for (var i = 36; i < 1024; i++) graph.Add(0, i, edge);
+        var grown = (Array)blocksField.GetValue(graph)!;
+        Assert.Same(first, firstField.GetValue(graph));
+        Assert.NotSame(directory, grown);
+        Assert.Same(initialBlock, grown.GetValue(0));
+        foreach (var block in grown)
+            if (block != null) Assert.Equal(32, Assert.IsAssignableFrom<Array>(block).Length);
+        var count = 0;
+        foreach (var incoming in graph.Incoming(0))
+        {
+            Assert.Equal(count++, incoming.Parent);
+            Assert.Same(edge, incoming.Edge);
+        }
+        Assert.Equal(1024, count);
     }
 
     [Fact]
