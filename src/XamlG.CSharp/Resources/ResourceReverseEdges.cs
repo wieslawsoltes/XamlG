@@ -10,7 +10,10 @@ internal sealed class ResourceReverseEdges
     private const int FirstCapacity = 4;
     private const int BlockShift = 5;
     private const int BlockCapacity = 1 << BlockShift;
-    private readonly Endpoints[] _targets;
+    private readonly int _documentCount;
+    private Endpoints[]? _targets;
+    private int _firstTarget = -1;
+    private int _linearPrefix;
     private Entry[] _first = Array.Empty<Entry>();
     private Entry[][] _blocks = Array.Empty<Entry[]>();
     private int _count;
@@ -18,26 +21,54 @@ internal sealed class ResourceReverseEdges
     public ResourceReverseEdges(int documentCount)
     {
         if (documentCount < 0) throw new ArgumentOutOfRangeException(nameof(documentCount));
-        _targets = new Endpoints[documentCount];
+        _documentCount = documentCount;
     }
 
     public void Add(int target, int parent, BoundResourceExpression edge)
     {
-        // Links are one-based so default-zero target slots need no initialization
-        // pass. Reserve before linking; no callbacks run during publication.
-        ref var endpoints = ref _targets[target];
+        CheckTarget(target);
+        // Reserve before publishing either the entry or target endpoints.
         Reserve();
         var link = _count + 1;
         At(link) = new(parent, edge);
-        if (endpoints.Last == 0) endpoints.First = link;
-        else At(endpoints.Last).Next = link;
-        endpoints.Last = link;
+        if (_targets == null)
+        {
+            if (_count == 0) _firstTarget = target;
+            else if (target != _firstTarget)
+            {
+                // Until the first different destination, links are implicit and
+                // no per-document endpoint array is needed. Promotion is O(D),
+                // not O(E): old edges stay in place and need no relinking pass.
+                var targets = new Endpoints[_documentCount];
+                targets[_firstTarget] = new Endpoints { First = 1, Last = _count };
+                _linearPrefix = _count;
+                _targets = targets;
+            }
+        }
+        if (_targets != null)
+        {
+            ref var endpoints = ref _targets[target];
+            if (endpoints.Last == 0) endpoints.First = link;
+            else At(endpoints.Last).Next = link;
+            endpoints.Last = link;
+        }
         _count = link;
     }
 
     // Used only after construction. A value cursor retains this build-local
     // owner, not a snapshot/copy of its edge buffers or mutable project state.
-    public Enumerator Incoming(int target) => new(this, _targets[target].First);
+    public Enumerator Incoming(int target)
+    {
+        CheckTarget(target);
+        return _targets == null
+            ? new(this, target == _firstTarget ? 1 : 0, _count)
+            : new(this, _targets[target].First, target == _firstTarget ? _linearPrefix : 0);
+    }
+
+    private void CheckTarget(int target)
+    {
+        if (unchecked((uint)target) >= (uint)_documentCount) throw new IndexOutOfRangeException();
+    }
 
     private ref Entry At(int link)
     {
@@ -86,16 +117,18 @@ internal sealed class ResourceReverseEdges
     internal struct Enumerator
     {
         private readonly ResourceReverseEdges _owner;
+        private readonly int _linearEnd;
         private int _next;
         private int _current;
-        public Enumerator(ResourceReverseEdges owner, int first) { _owner = owner; _next = first; _current = 0; }
+        public Enumerator(ResourceReverseEdges owner, int first, int linearEnd)
+        { _owner = owner; _next = first; _current = 0; _linearEnd = linearEnd; }
         public Enumerator GetEnumerator() => this;
         public Entry Current => _owner.At(_current);
         public bool MoveNext()
         {
             if (_next == 0) return false;
             _current = _next;
-            _next = _owner.At(_current).Next;
+            _next = _current < _linearEnd ? _current + 1 : _owner.At(_current).Next;
             return true;
         }
     }
