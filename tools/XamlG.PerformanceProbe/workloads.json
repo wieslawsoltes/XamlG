@@ -83,5 +83,21 @@
   "resource-graph-warm-fanout-1024",
   "resource-graph-backend-fanout-1024",
   "resource-graph-warm-duplicates-1024",
-  "resource-graph-warm-cycle-1024"
+  "resource-graph-warm-cycle-1024",
+  "member-lookup-warm-one",
+  "member-lookup-cold-one",
+  "member-lookup-warm-repeated-1000",
+  "member-lookup-cold-repeated-1000",
+  "member-lookup-warm-unique-1000",
+  "member-lookup-cold-unique-1000",
+  "member-lookup-warm-missing-1000",
+  "member-lookup-cold-missing-1000",
+  "member-lookup-warm-deep-1000",
+  "member-lookup-saturated-deep-missing-1000",
+  "member-assignment-repeated-1000",
+  "member-assignment-unique-1000",
+  "member-bind-warm-32x8",
+  "member-bind-cold-32x8",
+  "member-bind-warm-1024x8",
+  "member-bind-cold-1024x8"
 ]

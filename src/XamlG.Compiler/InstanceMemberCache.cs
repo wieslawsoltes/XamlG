@@ -25,7 +25,9 @@ internal sealed class InstanceMemberCache(RoslynTypeSystem types)
         var retain = name.Length <= MaximumNameLength;
         var key = new Key(target, name, within);
         if (retain && _entries.TryGetValue(key, out var cached)) return cached.Symbol;
-        var symbol = Find(target, name, within, cancellation);
+        var symbol = !retain || Volatile.Read(ref _count) >= MaximumEntries
+            ? FindCachedCandidates(target, name, within, cancellation)
+            : Find(target, name, within, cancellation);
         cancellation.ThrowIfCancellationRequested();
         if (!retain) return symbol;
         // Reserve bounded capacity without Count's global lock. A race for the
@@ -39,6 +41,21 @@ internal sealed class InstanceMemberCache(RoslynTypeSystem types)
             break;
         }
         return symbol;
+    }
+
+    private ISymbol? FindCachedCandidates(ITypeSymbol target, string name, INamedTypeSymbol? within, CancellationToken cancellation)
+    {
+        // At saturation keep the old weak member-list reuse. Otherwise repeated
+        // deep misses would rescan the entire inheritance chain on every query.
+        // This adds no retention policy to the existing candidate-list cache.
+        var candidates = target.Members(name);
+        for (var kind = 0; kind < 2; kind++)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            foreach (var member in candidates)
+                if (Eligible(member, kind == 0) && types.IsAccessible(member, within)) return member;
+        }
+        return null;
     }
 
     private ISymbol? Find(ITypeSymbol target, string name, INamedTypeSymbol? within, CancellationToken cancellation)
@@ -66,14 +83,13 @@ internal sealed class InstanceMemberCache(RoslynTypeSystem types)
     private ISymbol? FindDeclared(INamedTypeSymbol target, string name, INamedTypeSymbol? within, bool property)
     {
         foreach (var member in target.GetMembers(name))
-        {
-            var eligible = property
-                ? member is IPropertySymbol { IsStatic: false, IsIndexer: false }
-                : member is IEventSymbol { IsStatic: false };
-            if (eligible && types.IsAccessible(member, within)) return member;
-        }
+            if (Eligible(member, property) && types.IsAccessible(member, within)) return member;
         return null;
     }
+
+    private static bool Eligible(ISymbol member, bool property) => property
+        ? member is IPropertySymbol { IsStatic: false, IsIndexer: false }
+        : member is IEventSymbol { IsStatic: false };
 
     private readonly record struct Selection(ISymbol? Symbol);
     // Do not merge distinct constructed symbol instances: Roslyn's default
