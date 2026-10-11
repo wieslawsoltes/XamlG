@@ -19,6 +19,7 @@ var finalizationSignature = ProjectFinalizationProbe.Run(Measure);
 var conversionSignature = TextConversionProbe.Run(Measure);
 var memberSignature = MemberBindingProbe.Run(Measure);
 var contentSignature = ContentNormalizationProbe.Run(Measure);
+var whitespaceBufferSignature = WhitespaceBufferProbe.Run(Measure);
 var generatedSources = NamedFieldProbe.Run(Measure);
 var markupAssignments = MarkupAssignmentProbe.Run(Measure);
 var semanticInputs = new List<string>
@@ -107,6 +108,7 @@ using (var writer = new BinaryWriter(snapshot, Encoding.UTF8, leaveOpen: true))
     writer.Write(conversionSignature);
     writer.Write(memberSignature);
     writer.Write(contentSignature);
+    writer.Write(whitespaceBufferSignature);
     foreach (var source in generatedSources) writer.Write(source);
     foreach (var markup in markupAssignments) writer.Write(markup.SemanticSignature);
 }
