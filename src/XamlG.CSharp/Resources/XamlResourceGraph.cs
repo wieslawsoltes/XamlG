@@ -122,7 +122,6 @@ internal static class XamlResourceGraph
         bool countDependencies, CancellationToken cancellation, out int[]? remaining)
     {
         List<Incoming>?[]? reverse = null;
-        int[]? seenParents = null;
         remaining = null;
         for (var parent = 0; parent < documents.Length; parent++)
         {
@@ -133,14 +132,12 @@ internal static class XamlResourceGraph
                 if (reverse == null)
                 {
                     reverse = new List<Incoming>?[documents.Length];
-                    seenParents = new int[documents.Length];
                     if (countDependencies) remaining = new int[documents.Length];
                 }
-                // One dense stamp array replaces a HashSet per caller. Mark the
-                // parent with +1 because zero is the array's unvisited value. Keep
-                // its first edge/span; duplicate includes never add dependency counts.
-                if (seenParents![target] == parent + 1) continue;
-                seenParents[target] = parent + 1;
+                // References contains one first-occurrence representative per ordinal
+                // URI. Each unambiguous URI maps to one unique document index, so
+                // caller/target pairs are already unique. No second stamp array or
+                // deduplication pass is needed; preserve that representative's span.
                 (reverse[target] ??= new()).Add(new(parent, edge));
                 if (remaining != null) remaining[parent]++;
             }
