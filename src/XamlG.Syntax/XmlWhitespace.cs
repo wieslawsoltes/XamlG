@@ -17,26 +17,30 @@ public static class XmlWhitespace
                 return !trimStart && !trimEnd ? " " : string.Empty;
             if (position - start == 1 && text[start] == ' ' &&
                 (start != 0 || !trimStart) && (position != text.Length || !trimEnd)) continue;
-            return CollapseChanged(text, start, trimStart, trimEnd);
+            return CollapseChanged(text, start, position, trimStart, trimEnd);
         }
         return text;
     }
 
-    private static string CollapseChanged(string text, int position, bool trimStart, bool trimEnd)
+    private static string CollapseChanged(string text, int prefixLength, int position, bool trimStart, bool trimEnd)
     {
         var output = new StringBuilder(text.Length);
-        output.Append(text, 0, position);
-        while (position < text.Length)
+        output.Append(text, 0, prefixLength);
+        // Collapse already scanned the first changed whitespace run. Begin after
+        // it with pending=true instead of reading those characters a second time.
+        // A single pending-space loop avoids substring-Append dispatch for every
+        // tiny content run in whitespace-dense values, while preserving the
+        // unchanged prefix and the original XML-only trim-state machine.
+        var pending = true;
+        for (; position < text.Length; position++)
         {
-            var whitespace = position;
-            while (position < text.Length && IsWhitespace(text[position])) position++;
-            if (position != whitespace && (output.Length != 0 || !trimStart) &&
-                (position != text.Length || !trimEnd)) output.Append(' ');
-            var content = position;
-            while (position < text.Length && !IsWhitespace(text[position])) position++;
-            // Copy unchanged runs rather than dispatching one Append per code unit.
-            output.Append(text, content, position - content);
+            var character = text[position];
+            if (IsWhitespace(character)) { pending = true; continue; }
+            if (pending && (output.Length != 0 || !trimStart)) output.Append(' ');
+            pending = false;
+            output.Append(character);
         }
+        if (pending && !trimEnd && (output.Length != 0 || !trimStart)) output.Append(' ');
         return output.ToString();
     }
 }
