@@ -49,6 +49,13 @@ internal sealed class ResourceDependencyScanner
                 case BoundResourceExpression resource:
                     AddResource(resource);
                     break;
+                case BoundCastExpression cast:
+                    if (item.Budget != 0 || CanExpand(cast))
+                        Push(cast.Value, item.Budget == 0 ? SegmentBudget : item.Budget - 1);
+                    break;
+                case BoundArrayExpression array:
+                    PushArray(array, item.Budget);
+                    break;
                 case BoundObject owner:
                     // Distinct expression wrappers can share the SAME BoundObject.
                     // Marking wrappers alone would still repeatedly expand its edges.
@@ -74,7 +81,7 @@ internal sealed class ResourceDependencyScanner
                     if (choice.Default is { } fallback) Push(fallback, SegmentBudget);
                     break;
                 case BoundExpression expression:
-                    PushChildren(expression, item.Budget);
+                    PushChildren(expression);
                     break;
             }
         }
@@ -125,20 +132,25 @@ internal sealed class ResourceDependencyScanner
         }
     }
 
-    private void PushChildren(BoundExpression expression, int budget)
+    private void PushArray(BoundArrayExpression array, int budget)
+    {
+        if (array.Values.IsEmpty) return;
+        var admit = budget == 0 || array.Values.Length > 2;
+        if (admit && !CanExpand(array)) return;
+        var next = admit ? SegmentBudget : array.Values.Length == 2 ? (budget - 1) / 2 : budget - 1;
+        foreach (var value in array.Values) Push(value, next);
+    }
+
+    private void PushChildren(BoundExpression expression)
     {
         // Leaves never enter the identity set. Probe only the first child before
         // checking identity; a repeated composite is NOT traversed to completion.
-        // Reuse the existing child grammar for every non-object/choice shape.
+        // Reuse the existing grammar for shapes other than casts, arrays, objects and choices.
         var children = BoundTraversal.Children(expression, includeDeferred: true).GetEnumerator();
         try
         {
-            if (!children.MoveNext()) return;
-            var admit = budget == 0 || expression is not (BoundCastExpression or BoundArrayExpression { Values.Length: <= 2 });
-            if (admit && !CanExpand(expression)) return;
-            var next = admit ? SegmentBudget : expression is BoundArrayExpression { Values.Length: 2 }
-                ? (budget - 1) / 2 : budget - 1;
-            do { Push(children.Current, next); } while (children.MoveNext());
+            if (!children.MoveNext() || !CanExpand(expression)) return;
+            do { Push(children.Current, SegmentBudget); } while (children.MoveNext());
         }
         finally { children.Dispose(); }
     }
