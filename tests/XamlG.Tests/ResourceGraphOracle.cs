@@ -89,7 +89,7 @@ internal static class ResourceGraphOracle
         }
     }
     internal static ImmutableArray<BoundResourceExpression> References(BoundDocument document, CancellationToken cancellationToken = default) =>
-        ResourceReferenceCache.Get(document, cancellationToken);
+        ResourceReferenceOracle.Scan(document, cancellationToken);
     private static BoundDocument Error(BoundDocument document, string code, string message, TextSpan span) =>
         document with { Diagnostics = document.Diagnostics.Add(new XamlDiagnostic(code, message, span)) };
 }
