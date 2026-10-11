@@ -10,7 +10,11 @@ namespace XamlG.CSharp.Resources;
 internal sealed class ResourceDependencyScanner
 {
     private readonly CancellationToken _cancellation;
-    private Stack<object>? _pending;
+    // Each outgoing edge of an admitted aggregate may expand at most 31 small
+    // cast/binary nodes before another exact-admission boundary. Binary branches
+    // divide this work budget; it is NOT a 31-level branching depth allowance.
+    private const int SegmentBudget = 31;
+    private Stack<Pending>? _pending;
     private object? _firstNode;
     private ResourceVisitFilter _visits;
     private BoundResourceExpression? _firstResource;
@@ -34,12 +38,13 @@ internal sealed class ResourceDependencyScanner
         // of assignments or containers; those retain the general child grammar.
         if (TryScanFlat(root)) return Finish();
         _firstNode = root;
-        var pending = _pending = new Stack<object>();
+        var pending = _pending = new Stack<Pending>();
         PushObject(root);
         while (pending.Count != 0)
         {
             _cancellation.ThrowIfCancellationRequested();
-            switch (pending.Pop())
+            var item = pending.Pop();
+            switch (item.Node)
             {
                 case BoundResourceExpression resource:
                     AddResource(resource);
@@ -50,26 +55,26 @@ internal sealed class ResourceDependencyScanner
                     if (CanExpand(owner)) PushObject(owner);
                     break;
                 case BoundObjectExpression wrapper:
-                    pending.Push(wrapper.Object);
+                    pending.Push(new(wrapper.Object, 0));
                     break;
                 case BoundMarkupExpression markup:
-                    _pending!.Push(markup.Extension);
+                    _pending!.Push(new(markup.Extension, 0));
                     break;
                 case BoundChoiceExpression choice:
                     if (!CanExpand(choice)) break;
                     // Push in forward order; LIFO visits default, branches and then
                     // the extension, exactly like Children(choice, true) previously.
-                    _pending!.Push(choice.Extension);
+                    _pending!.Push(new(choice.Extension, 0));
                     foreach (var branch in choice.Branches)
                     {
                         _cancellation.ThrowIfCancellationRequested();
-                        _pending!.Push(branch.Option);
-                        _pending!.Push(branch.Value);
+                        Push(branch.Option, SegmentBudget);
+                        Push(branch.Value, SegmentBudget);
                     }
-                    if (choice.Default is { } fallback) _pending!.Push(fallback);
+                    if (choice.Default is { } fallback) Push(fallback, SegmentBudget);
                     break;
                 case BoundExpression expression:
-                    PushChildren(expression);
+                    PushChildren(expression, item.Budget);
                     break;
             }
         }
@@ -110,17 +115,17 @@ internal sealed class ResourceDependencyScanner
 
     private void PushObject(BoundObject value)
     {
-        foreach (var argument in value.Arguments) Push(argument);
+        foreach (var argument in value.Arguments) Push(argument, SegmentBudget);
         foreach (var assignment in value.Assignments)
         {
             _cancellation.ThrowIfCancellationRequested();
             // Reuse the common assignment-child grammar: descriptors, arguments
             // and post-calls retain their order without intermediate child arrays.
-            foreach (var expression in BoundTraversal.Expressions(assignment)) Push(expression);
+            foreach (var expression in BoundTraversal.Expressions(assignment)) Push(expression, SegmentBudget);
         }
     }
 
-    private void PushChildren(BoundExpression expression)
+    private void PushChildren(BoundExpression expression, int budget)
     {
         // Leaves never enter the identity set. Probe only the first child before
         // checking identity; a repeated composite is NOT traversed to completion.
@@ -128,16 +133,26 @@ internal sealed class ResourceDependencyScanner
         var children = BoundTraversal.Children(expression, includeDeferred: true).GetEnumerator();
         try
         {
-            if (!children.MoveNext() || !CanExpand(expression)) return;
-            do { Push(children.Current); } while (children.MoveNext());
+            if (!children.MoveNext()) return;
+            var admit = budget == 0 || expression is not (BoundCastExpression or BoundArrayExpression { Values.Length: <= 2 });
+            if (admit && !CanExpand(expression)) return;
+            var next = admit ? SegmentBudget : expression is BoundArrayExpression { Values.Length: 2 }
+                ? (budget - 1) / 2 : budget - 1;
+            do { Push(children.Current, next); } while (children.MoveNext());
         }
         finally { children.Dispose(); }
     }
 
-    private void Push(BoundExpression expression)
+    private void Push(BoundExpression expression, int budget)
     {
         _cancellation.ThrowIfCancellationRequested();
-        _pending!.Push(expression);
+        _pending!.Push(new(expression, budget));
+    }
+
+    private readonly struct Pending(object node, int budget)
+    {
+        public object Node { get; } = node;
+        public int Budget { get; } = budget;
     }
 
     private bool CanExpand(object value)

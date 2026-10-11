@@ -70,6 +70,30 @@ def compact(root, fingerprints):
     return tuple(found.values()), expanded, pops, len(admission.exact)
 
 
+def segmented_compact(root, fingerprints):
+    pending = [(root, 31)]
+    admission = Admission()
+    found = {}
+    admitted = Counter()
+    pops = 0
+    while pending:
+        node, budget = pending.pop()
+        pops += 1
+        if node.uri is not None:
+            found.setdefault(node.uri, node)
+        elif node.children:
+            memoize = budget == 0 or len(node.children) > 2
+            if memoize:
+                if not admission.expand(node, fingerprints[node]):
+                    continue
+                admitted[node] += 1
+                next_budget = 31
+            else:
+                next_budget = (budget - 1) // len(node.children)
+            pending.extend((child, next_budget) for child in node.children)
+    return tuple(found.values()), admitted, pops, len(admission.exact)
+
+
 def reachable(root):
     seen = set()
     pending = [root]
@@ -206,6 +230,59 @@ class DependencyModelTests(unittest.TestCase):
         result, _, _, _ = compact(root, {root: 0})
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].occurrence, 32767)
+
+
+class SegmentedDependencyModelTests(unittest.TestCase):
+    def test_segmented_dags_preserve_first_references_and_linear_work_bound(self):
+        rng = random.Random(724161)
+        for sample in range(1000):
+            pool = [(Node(uri='u' + str(rng.randrange(4)), occurrence=i), 1) for i in range(8)]
+            for _ in range(24):
+                chosen = [rng.choice(pool) for _ in range(rng.randrange(1, 6))]
+                cost = 1 + sum(cost for _, cost in chosen)
+                if cost <= 2048:
+                    pool.append((Node(tuple(node for node, _ in chosen)), cost))
+            root = Node(tuple(node for node, _ in pool[-3:]))
+            unique = reachable(root)
+            expected = first_uris(occurrences(root)[0])
+            for fingerprints in ({node: 0 for node in unique}, {node: rng.randrange(2**31) for node in unique}):
+                actual, admitted, pops, _ = segmented_compact(root, fingerprints)
+                self.assertEqual(expected, actual)
+                self.assertTrue(all(count <= 2 for count in admitted.values()))
+                self.assertLessEqual(pops, 64 * (1 + sum(len(node.children) for node in unique)))
+
+    def test_segmented_shared_depth_128_stays_bounded_with_variable_fanout(self):
+        for fanout in (2, 3, 5):
+            leaf = Node(uri='u')
+            value = leaf
+            for _ in range(128):
+                value = Node((value,) * fanout)
+            unique = reachable(value)
+            actual, admitted, pops, _ = segmented_compact(value, {node: 0 for node in unique})
+            self.assertEqual((leaf,), actual)
+            self.assertTrue(all(count <= 2 for count in admitted.values()))
+            self.assertLessEqual(pops, 64 * (1 + 128 * fanout))
+
+    def test_segmented_unary_exact_entries_are_bounded_even_with_constant_fingerprints(self):
+        leaf = Node(uri='u')
+        root = leaf
+        for _ in range(4096):
+            root = Node((root,))
+        unique = reachable(root)
+        actual, _, pops, retained = segmented_compact(root, {node: 0 for node in unique})
+        self.assertEqual((leaf,), actual)
+        self.assertEqual(pops, len(unique))
+        self.assertLessEqual(retained, 128)
+
+    def test_segmented_unshared_binary_tree_does_not_store_every_aggregate(self):
+        def tree(depth):
+            return Node((tree(depth - 1), tree(depth - 1))) if depth else Node(uri='u')
+        root = tree(10)
+        unique = reachable(root)
+        actual, _, pops, retained = segmented_compact(root, {node: 0 for node in unique})
+        self.assertEqual(1, len(actual))
+        self.assertEqual(pops, len(unique))
+        self.assertLessEqual(retained, 32)
 
 
 if __name__ == '__main__':
