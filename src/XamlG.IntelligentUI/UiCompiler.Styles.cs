@@ -27,7 +27,8 @@ public sealed partial class UiCompiler
         foreach (var source in element.Annotation<UiStyleSources>()?.Rules ?? [])
         {
             var selector = (string?)source.Attribute("Selector") ?? throw new UiException("invalid_style", "Style requires Selector.");
-            var target = Catalog.Get(UiStyles.ParseSelector(selector).Target);
+            var parsed = UiStyles.ParseSelector(selector); UiStyleSelectors.ValidateTypes(parsed, Catalog);
+            var target = Catalog.Get(parsed.Target);
             var properties = ImmutableDictionary.CreateBuilder<string, UiValue>(StringComparer.Ordinal);
             foreach (var setter in source.Elements())
             {

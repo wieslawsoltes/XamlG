@@ -1,6 +1,6 @@
 # IntelligentUI Avalonia fidelity and contract audit
 
-PR #22 extends the shared IntelligentUI compiler, native Avalonia renderer and portable MCP resource. The catalog contains **47 native controls and 18 source-only response composites**. Component count is not a claim of full Avalonia authoring parity.
+PR #22 extends the shared IntelligentUI compiler, native Avalonia renderer and portable MCP resource. With the follow-up native-template work, the catalog contains **49 native controls and 18 source-only response composites**. Component count is not a claim of full Avalonia authoring parity.
 
 The detailed [resource, style, binding, template and brush authoring guide](intelligent-ui-xaml-authoring.md) specifies the new source grammar, reactive behavior, validation and portability boundaries. `xamlg_ui_catalog` exposes these contracts and the executable `drawingExample` and `authoringExample`.
 
@@ -9,6 +9,8 @@ The detailed [resource, style, binding, template and brush authoring guide](inte
 The repository's `xamlg.intelligent-ui/1` dialect is a versioned response-authoring contract with bounded data and explicit authority. [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview) is the public host-interoperability target. Avalonia **12.1.3**, pinned in `Directory.Packages.props`, supplies the actual native controls/layout/rendering APIs. These are three separate targets.
 
 The architectural inspiration described by OpenUI is not an official specification of a private ChatGPT DIL or operation wire format. No such compatibility is claimed. Likewise, a portable CSS/SVG projection is not a replacement Avalonia layout engine. Full trusted application XAML uses the existing XamlG project compiler and explicit execution workflow, not arbitrary CLR construction through a response catalog.
+
+See [selectors and input authoring](intelligent-ui-selectors-input.md) for PR #30, its executable examples and precise native/portable boundaries. The current catalog has 49 controls, including the presenters added with native control-template support.
 
 ## Native renderer repairs
 
@@ -32,10 +34,10 @@ Brush properties accept solid, linear and radial brush declarations, including o
 | --- | --- | --- |
 | Property elements | Registered scalar values, control content/children, Grid row/column definitions, brush and binding objects | Arbitrary CLR object graphs, collection owners and directives are not automatically accepted |
 | Resources | Inline dictionaries/merges, lexical lookup, static/dynamic source references, duplicate and cycle detection | No remote includes or general live/theme-variant resource graph |
-| Styles | Native typed presentation setters, class/name/type qualifiers, selected pseudoclasses and nested `^` rules; local precedence | No arbitrary selector combinators, includes, control themes/templates or behavior-changing setters |
+| Styles | Native typed presentation setters, logical child/descendant/template relationships, :is/:not/positional predicates, source groups and nested `^` rules; local precedence | No arbitrary includes, property selectors or behavior-changing setters |
 | Bindings | JSON paths/indices/quoted keys, inherited DataContext, explicit state/data/item scopes, bounded fallback/null replacement and invariant formatting | No CLR source objects, converters, ancestor/element references or arbitrary binding modes; CompiledBinding is a JSON-path spelling here |
-| Input updates | TwoWay/Default registered inputs targeting one declared state slot, with ordinary owner/revision/type/range checks | Nested data mutation and arbitrary CLR property writeback are not implied |
-| Templates | Reusable inline/resource ItemTemplate and ContentTemplate, lexical resources, instance-scoped keys, current-item action capture, unused-template validation | Expansion is bounded and nonvirtualized; no control-template parts, hierarchical templates or templated-parent binding |
+| Input updates | TwoWay/Default registered inputs, nullable toggles, native keyboard/range/caret/timing metadata, with ordinary owner/revision/type/range checks | Nested data mutation and arbitrary CLR property writeback are not implied |
+| Templates | Reusable inline/resource ItemTemplate and ContentTemplate, lexical resources, instance-scoped keys, current-item action capture, unused-template validation | Data expansion is bounded and nonvirtualized. Native ControlTemplate/ControlTheme/BasedOn and typed TemplateBinding are implemented; broader hierarchical/virtualized data templates remain |
 | Native visuals | All catalog entries have explicit matching factories/setters; geometry/transforms, layout/content properties, typography and three brush kinds are available | Full Avalonia public API, third-party controls, effects and animations require more registration and semantic work |
 | Response behavior | Existing local/state actions, keyed rows, retained tool data, forms and revisioned streaming remain intact | Broader chart/table interactions and first-class rich asset/reference components remain separate work |
 | Export | Static resolved native XAML, styles, brush elements/null values and reactive C# wrapper | Static export is a resolved view, not lossless recovery of source templates/bindings or runtime interaction history |

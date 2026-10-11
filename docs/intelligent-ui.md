@@ -18,7 +18,7 @@ Direct provider agents and paired companion agents share the catalog. The provid
 
 ## Component catalog
 
-The default native catalog has **47 controls**, with explicitly typed properties and matching native factories:
+The default native catalog has **49 controls**, with explicitly typed properties and matching native factories:
 
 | Category | Components |
 | --- | --- |
@@ -28,12 +28,13 @@ The default native catalog has **47 controls**, with explicitly typed properties
 | Selection/hierarchy | ItemsControl, ListBox, ListBoxItem, ComboBox, ComboBoxItem, TabControl, TabItem, TreeView, TreeViewItem, Expander |
 | Dates/time | DatePicker, CalendarDatePicker, Calendar, TimePicker |
 | Shapes | Rectangle, Ellipse, Line, Path, Polyline, Polygon |
+| Presenters | ContentPresenter, ItemsPresenter |
 
 **18 source-only composites** add headings, paragraphs, badges, cards, callouts, metrics, key/value rows, code blocks, tables/rows, bar/line/scatter charts/data points, and forms/fields/submit buttons/validation summaries. They use the `ui:` namespace and lower to the same validated native controls. `xamlg_ui_catalog` returns both catalogs and complete examples. Generated nodes, geometry and validation messages obey the original tree budgets.
 
 Shared properties include sizing, alignment, opacity, visibility/enabling, signed margins, accessible names, tooltips, Grid positions/spans, DockPanel placement, Canvas coordinates, Z-order, hit testing, layout rounding, flow direction, matrices, transform origins and geometry clipping. Registered controls additionally expose typed typography, content alignment, scrolling policies and shape pen properties. Component-specific descriptors cover ranges, selection, item lists, headers, nullable date/time/numeric inputs, and shape geometry. Numeric formats, integer indices, array sizes, selected indices, input text limits, child types and conflicting content/items are validated before native mutation. A component name is not permission to set arbitrary CLR properties.
 
-Drawing matrices use `matrix(m11,m12,m21,m22,offsetX,offsetY)` or `none`; geometry and point lists use bounded grammars documented in the [fidelity audit](intelligent-ui-avalonia-fidelity.md#literal-grammars-and-budgets). `UiDrawingExamples.LayoutAndDrawing()` and catalog discovery's `drawingExample` demonstrate a finite viewport, scrolling and the new vector controls. The default catalog still does not expose all Avalonia templates, resources, controls or rendering APIs.
+Drawing matrices use `matrix(m11,m12,m21,m22,offsetX,offsetY)` or `none`; geometry and point lists use bounded grammars documented in the [fidelity audit](intelligent-ui-avalonia-fidelity.md#native-property-and-drawing-surface). `UiDrawingExamples.LayoutAndDrawing()` and catalog discovery's `drawingExample` demonstrate a finite viewport, scrolling and the new vector controls. The default catalog still does not expose all Avalonia templates, resources, controls or rendering APIs.
 
 Extend `UiCatalog` and `UiAvaloniaCatalog` together with trusted application factories, typed setters and input adapters. The native renderer retains controls by stable key, detaches event handlers on retirement and reconciles content/item containers. It validates transport-provided trees independently and recovers the previous snapshot on setter/conversion failure. Custom application controls require corresponding registration; this is not a claim to cover every third-party Avalonia control automatically.
 
@@ -174,7 +175,7 @@ Views call tools through their host and never inherit permission from an annotat
 
 `tests/XamlG.IntelligentUI.Tests` covers pure/full C#, component/input adapters, composites, contextual actions, form validation, transactional state/source/data errors, archives and conflicts, owner isolation, native reconciliation, MCP round trips, proposal non-execution and exported XAML loaded by Avalonia. The test-only runtime XAML loader is not a production dependency.
 
-`tools/XamlG.Playground/ui-app-tests` executes the real embedded portable resource and IndexedDB adapter, including all 47 default types, nullable/date/selection messages, local state actions, action reviews, hostile text, parent-source/origin checks, stale sessions, cross-tab writes and reloads. Fidelity tests additionally cover vector properties, keyed visual resets, layout transforms, editing tabs, host context and nested content alignment.
+`tools/XamlG.Playground/ui-app-tests` executes the real embedded portable resource and IndexedDB adapter, including all 49 default types, nullable/date/selection messages, local state actions, action reviews, hostile text, parent-source/origin checks, stale sessions, cross-tab writes and reloads. Fidelity tests additionally cover vector properties, keyed visual resets, layout transforms, editing tabs, host context and nested content alignment.
 
 `tools/XamlG.Playground/tests/intelligent-ui.spec.mjs` covers native Studio cards and deterministic OpenAI/Anthropic/Gemini continuations. `intelligent-ui-lifecycle.spec.mjs` covers owner-controlled archive reload/forget, proposed full C# execution in an actual opaque-origin Wasm frame, and the native MCP resource communicating through a real companion and public host protocol. `intelligent-ui-parity.spec.mjs` additionally covers native local actions, chart updates, surface replacement, form submission and contextual actions after keyed row reordering. These fixtures use synthetic credentials and do not claim successful paid inference or testing inside every commercial MCP host.
 
@@ -189,3 +190,5 @@ python ../../scripts/test-browser-studio.py tests/intelligent-ui.spec.mjs tests/
 ```
 
 The browser workflow publishes the real Wasm/Skia app; `WasmBuildNative=false` is not working-browser evidence. Strict builds use warnings as errors and explicit bash pipefail. CI checks apply to their exact commit, not later source. Release-manifest inclusion, successful package validation, merge status, public Pages deployment and NuGet publication are separate facts. PR #18 records the preceding implementation; PR #19 tracks rich-authoring parity, and PR #22 tracks the Avalonia fidelity audit, extensions and exact-revision evidence.
+
+See [selectors and input authoring](intelligent-ui-selectors-input.md) for the newer keyboard, nullable-input, control-template and logical-selector contracts and their remaining native/portable boundaries.
