@@ -8,6 +8,7 @@ namespace XamlG.Compiler;
 public sealed class MemberBinder
 {
     private readonly BindingContext _context;
+    private InstanceMemberCache? _instanceMembers;
     public MemberBinder(BindingContext context) => _context = context;
     public BoundMember? Resolve(ITypeSymbol target, string name, NamespaceScope scope, TextSpan span, string? valueHint = null, bool report = true)
     {
@@ -47,10 +48,10 @@ public sealed class MemberBinder
         }
         if (owner == null || _context.Types.Compilation.ClassifyCommonConversion(target, owner).IsImplicit)
         {
-            var property = (owner ?? target).Members(memberName).OfType<IPropertySymbol>().FirstOrDefault(p => !p.IsStatic && !p.IsIndexer && _context.Types.IsAccessible(p, _context.RootClass));
-            if (property != null) return BindProperty(property, span);
-            var ev = (owner ?? target).Members(memberName).OfType<IEventSymbol>().FirstOrDefault(e => !e.IsStatic && _context.Types.IsAccessible(e, _context.RootClass));
-            if (ev != null)
+            var selected = (_instanceMembers ??= InstanceMemberCache.For(_context.Types))
+                .Resolve(owner ?? target, memberName, _context.RootClass, _context.Cancellation);
+            if (selected is IPropertySymbol property) return BindProperty(property, span);
+            if (selected is IEventSymbol ev)
             { _context.Symbols.Add(new(span, ev, "event")); return new(memberName, BoundMemberKind.Event, ev, ev.Type, null, ev.AddMethod, span); }
         }
         if (owner != null)
