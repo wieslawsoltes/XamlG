@@ -78,7 +78,20 @@ public sealed class ProjectFinalizationIntegrationTests
         {
             var actual = compiler.Compile(inputs, compilation, options: options);
             var expected = new XamlProjectCompiler().Compile(inputs, compilation, options: options);
-            AssertEquivalent(expected, actual);
+            AssertDiagnosticsEquivalent(expected, actual);
+            if (actual.Success) AssertEquivalent(expected, actual);
+            else
+            {
+                // A failed edit intentionally retains valid cached survivor layouts.
+                // A fresh failing compiler can choose different helpers, but repeated
+                // failure publication must be deterministic and the survivor must compile.
+                AssertEquivalent(actual, compiler.Compile(inputs, compilation, options: options));
+            }
+            var trees = actual.Documents.Where(d => d.Output.Success).Select(d =>
+                CSharpSyntaxTree.ParseText(d.Output.Source, new CSharpParseOptions(LanguageVersion.Preview)));
+            using var stream = new MemoryStream();
+            var emitted = compilation.AddSyntaxTrees(trees).Emit(stream);
+            Assert.True(emitted.Success, string.Join("\n", emitted.Diagnostics));
             foreach (var item in actual.Documents)
             {
                 var codes = item.Document.Diagnostics.Select(d => d.Code).ToArray();
@@ -95,6 +108,17 @@ public sealed class ProjectFinalizationIntegrationTests
 
     private static void AssertEquivalent(XamlProjectCompilation expected, XamlProjectCompilation actual)
     {
+        AssertDiagnosticsEquivalent(expected, actual);
+        for (var i = 0; i < actual.Documents.Length; i++)
+        {
+            Assert.Equal(expected.Documents[i].Output.Source, actual.Documents[i].Output.Source);
+            Assert.Equal(expected.Documents[i].Output.SourceMappings.Select(m => (m.GeneratedSpan, m.SourceSpan, m.SourcePath)),
+                actual.Documents[i].Output.SourceMappings.Select(m => (m.GeneratedSpan, m.SourceSpan, m.SourcePath)));
+        }
+    }
+
+    private static void AssertDiagnosticsEquivalent(XamlProjectCompilation expected, XamlProjectCompilation actual)
+    {
         Assert.Equal(expected.Success, actual.Success);
         Assert.Equal(expected.Documents.Length, actual.Documents.Length);
         for (var i = 0; i < actual.Documents.Length; i++)
@@ -102,9 +126,6 @@ public sealed class ProjectFinalizationIntegrationTests
             Assert.Equal(expected.Documents[i].Input.LogicalPath, actual.Documents[i].Input.LogicalPath);
             Assert.Equal(expected.Documents[i].Document.Diagnostics.ToArray(), actual.Documents[i].Document.Diagnostics.ToArray());
             Assert.Equal(expected.Documents[i].Output.Diagnostics.ToArray(), actual.Documents[i].Output.Diagnostics.ToArray());
-            Assert.Equal(expected.Documents[i].Output.Source, actual.Documents[i].Output.Source);
-            Assert.Equal(expected.Documents[i].Output.SourceMappings.Select(m => (m.GeneratedSpan, m.SourceSpan, m.SourcePath)),
-                actual.Documents[i].Output.SourceMappings.Select(m => (m.GeneratedSpan, m.SourceSpan, m.SourcePath)));
         }
     }
 }

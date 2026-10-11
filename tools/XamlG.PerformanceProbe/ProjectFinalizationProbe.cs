@@ -67,13 +67,41 @@ internal static class ProjectFinalizationProbe
             measure("project-finalize-duplicates-" + count, 1,
                 () => new XamlProjectCompiler().Compile(duplicates, compilation, options: options).Documents.Length);
         }
+        // A cached survivor of a failed edit deliberately keeps its valid helper
+        // layout. Compare the complete transition with the other compiler REVISION,
+        // not with a fresh failing compilation that can select different helpers.
+        var recovery = new XamlProjectCompiler();
+        var retainedFailureLayout = false;
+        var first = Document(0, property: true, withClass: true);
+        var second = Document(1, property: true, withClass: true);
+        var normal = Document(2, property: true);
+        foreach (var phase in new[]
+        {
+            new[] { first, normal },
+            new[] { first, second with { LogicalPath = first.LogicalPath }, normal },
+            new[] { first with { ResourceUri = "avares://fixture/shared.xaml" }, second with { ResourceUri = "avares://fixture/shared.xaml" }, normal },
+            new[] { first, second, normal }, new[] { first, normal }, new[] { normal }
+        })
+        {
+            var actual = recovery.Compile(phase, compilation, options: options);
+            signature.Append(Signature(actual));
+            Require(Signature(actual) == Signature(recovery.Compile(phase, compilation, options: options)),
+                "Repeated failure/recovery publication is nondeterministic");
+            var fresh = new XamlProjectCompiler().Compile(phase, compilation, options: options);
+            if (actual.Success)
+                Require(Signature(actual) == Signature(fresh), "Recovered output differs from a fresh successful build");
+            else retainedFailureLayout |= Signature(actual) != Signature(fresh);
+            RequireCompiled(actual);
+        }
+        Require(retainedFailureLayout, "Recovery fixture did not exercise retained failed-edit helper layouts");
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(signature.ToString())));
 
         void RequireCompiled(XamlProjectCompilation project)
         {
-            // Untimed. Every successful generated fixture is actually compiled.
+            // Untimed. Compile every successful output, including cached survivors
+            // in failing projects. Failed outputs are represented by diagnostics.
             using var stream = new MemoryStream();
-            var result = compilation.AddSyntaxTrees(project.Documents.Select(d => CSharpSyntaxTree.ParseText(d.Output.Source, parse))).Emit(stream);
+            var result = compilation.AddSyntaxTrees(project.Documents.Where(d => d.Output.Success).Select(d => CSharpSyntaxTree.ParseText(d.Output.Source, parse))).Emit(stream);
             Require(result.Success, "Generated finalization fixture failed: " + string.Join("\n", result.Diagnostics));
         }
     }
