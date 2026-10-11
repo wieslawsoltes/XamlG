@@ -135,7 +135,7 @@ internal static class TextConversionProbe
             var xaml = "<Root xmlns='clr-namespace:ConversionProbe'>" +
                 string.Concat(Enumerable.Range(0, count).Select(i => "<Item P='parse" + i + "' C='convert" + i + "' F='A, B' N='12'/>")) + "</Root>";
             var tree = XamlSyntaxTree.Parse(xaml, "Conversion" + count + ".xaml");
-            var bound = new XamlCompiler().Bind(tree, types);
+            var bound = new XamlCompiler().Bind(tree, types, XamlFrameworkProfile.Portable);
             Require(bound.Success, string.Join("\n", bound.Diagnostics));
             var emission = new CSharpEmitter().Emit(bound);
             Require(emission.Success, string.Join("\n", emission.Diagnostics));
@@ -144,9 +144,9 @@ internal static class TextConversionProbe
             Require(output.Success, "Generated conversion fixture failed: " + string.Join("\n", output.Diagnostics));
             signature.Append(emission.Source).Append(JsonSerializer.Serialize(emission.SourceMappings)).Append(JsonSerializer.Serialize(emission.Diagnostics));
             measure("conversion-bind-warm-" + count, count == 32 ? 3 : 1,
-                () => new XamlCompiler().Bind(tree, types).Root!.Assignments.Length);
+                () => new XamlCompiler().Bind(tree, types, XamlFrameworkProfile.Portable).Root!.Assignments.Length);
             measure("conversion-bind-cold-" + count, count == 32 ? 3 : 1,
-                () => new XamlCompiler().Bind(tree, new RoslynTypeSystem(compilation)).Root!.Assignments.Length);
+                () => new XamlCompiler().Bind(tree, new RoslynTypeSystem(compilation), XamlFrameworkProfile.Portable).Root!.Assignments.Length);
         }
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(signature.ToString())));
     }
