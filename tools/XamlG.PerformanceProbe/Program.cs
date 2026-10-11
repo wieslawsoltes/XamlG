@@ -14,6 +14,7 @@ var analysisSignature = EmissionAnalysisProbe.Run(Measure);
 var namespaceSignature = NamespaceEmissionProbe.Run(Measure);
 var resourceGraphSignature = ResourceGraphProbe.Run(Measure);
 var resourceDiscovery = ResourceDiscoveryProbe.Run(Measure);
+var resourceSnapshotSignature = ResourceSnapshotProbe.Run(Measure);
 var finalizationSignature = ProjectFinalizationProbe.Run(Measure);
 var conversionSignature = TextConversionProbe.Run(Measure);
 var memberSignature = MemberBindingProbe.Run(Measure);
@@ -100,6 +101,7 @@ using (var writer = new BinaryWriter(snapshot, Encoding.UTF8, leaveOpen: true))
     writer.Write(namespaceSignature);
     writer.Write(resourceGraphSignature);
     writer.Write(resourceDiscovery.SemanticSignature);
+    writer.Write(resourceSnapshotSignature);
     writer.Write(finalizationSignature);
     writer.Write(conversionSignature);
     writer.Write(memberSignature);
