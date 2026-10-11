@@ -19,11 +19,27 @@ internal static class ResourceReferenceCache
     {
         cancellation.ThrowIfCancellationRequested();
         if (document.Root is not { } root) return Empty.Values;
+        // Empty immutable roots cannot acquire dependencies. Avoid retaining even
+        // a weak-table slot for them; preserve the final cancellation observation.
+        if (root.Arguments.IsEmpty && root.Assignments.IsEmpty)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            return Empty.Values;
+        }
         if (!Roots.TryGetValue(root, out var snapshot))
-            snapshot = Roots.GetValue(root, value => Scan(value, cancellation));
+            snapshot = GetOrCreate(root, cancellation);
         cancellation.ThrowIfCancellationRequested();
         return snapshot.Values;
     }
+
+    private static Snapshot GetOrCreate(BoundObject root, CancellationToken cancellation) =>
+        cancellation.CanBeCanceled ? GetCancelable(root, cancellation) :
+            Roots.GetValue(root, static value => Scan(value, default));
+
+    private static Snapshot GetCancelable(BoundObject root, CancellationToken cancellation) =>
+        // Keep this capture in a separate cold method. Neither a cache hit nor
+        // an uncancelable miss should allocate its display class or delegate.
+        Roots.GetValue(root, value => Scan(value, cancellation));
 
     private static Snapshot Scan(BoundObject root, CancellationToken cancellation)
     {
