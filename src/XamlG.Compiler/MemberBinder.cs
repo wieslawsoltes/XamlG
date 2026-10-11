@@ -8,6 +8,7 @@ namespace XamlG.Compiler;
 public sealed class MemberBinder
 {
     private readonly BindingContext _context;
+    private InstanceMemberCache? _instanceMembers;
     public MemberBinder(BindingContext context) => _context = context;
     public BoundMember? Resolve(ITypeSymbol target, string name, NamespaceScope scope, TextSpan span, string? valueHint = null, bool report = true)
     {
@@ -47,34 +48,41 @@ public sealed class MemberBinder
         }
         if (owner == null || _context.Types.Compilation.ClassifyCommonConversion(target, owner).IsImplicit)
         {
-            var property = (owner ?? target).Members(memberName).OfType<IPropertySymbol>().FirstOrDefault(p => !p.IsStatic && !p.IsIndexer && _context.Types.IsAccessible(p, _context.RootClass));
-            if (property != null) return BindProperty(property, span);
-            var ev = (owner ?? target).Members(memberName).OfType<IEventSymbol>().FirstOrDefault(e => !e.IsStatic && _context.Types.IsAccessible(e, _context.RootClass));
-            if (ev != null)
+            var selected = (_instanceMembers ??= InstanceMemberCache.For(_context.Types))
+                .Resolve(owner ?? target, memberName, _context.RootClass, _context.Cancellation);
+            if (selected is IPropertySymbol property) return BindProperty(property, span);
+            if (selected is IEventSymbol ev)
             { _context.Symbols.Add(new(span, ev, "event")); return new(memberName, BoundMemberKind.Event, ev, ev.Type, null, ev.AddMethod, span); }
         }
-        if (owner != null)
-        {
-            var setters = owner.Members(ClrNames.SetPrefix + memberName).OfType<IMethodSymbol>().Where(m => m.IsStatic && m.Parameters.Length == 2 &&
-                _context.Types.IsAccessible(m, _context.RootClass) && _context.Types.Compilation.ClassifyCommonConversion(target, m.Parameters[0].Type).IsImplicit).ToArray();
-            var setter = setters.OrderBy(m => SymbolEqualityComparer.Default.Equals(target, m.Parameters[0].Type) ? 0 : 1)
-                .ThenBy(m => valueHint == null || _context.Values.TryText(valueHint, m.Parameters[1].Type, scope, span) != null ? 0 : 1).FirstOrDefault();
-            var getter = owner.Members(ClrNames.GetPrefix + memberName).OfType<IMethodSymbol>().FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 1 &&
-                _context.Types.IsAccessible(m, _context.RootClass) && _context.Types.Compilation.ClassifyCommonConversion(target, m.Parameters[0].Type).IsImplicit);
-            if (setter != null || getter != null)
-            {
-                var symbol = setter ?? getter!; _context.Symbols.Add(new(span, symbol, "attached-property"));
-                return new(memberName, BoundMemberKind.AttachedProperty, symbol, setter?.Parameters[1].Type ?? getter!.ReturnType, getter, setter, span);
-            }
-            var addHandler = owner.Members("Add" + memberName + "Handler").OfType<IMethodSymbol>().FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 2 &&
-                m.Parameters[1].Type.TypeKind == TypeKind.Delegate && _context.Types.IsAccessible(m) && _context.Types.Compilation.ClassifyCommonConversion(target, m.Parameters[0].Type).IsImplicit);
-            if (addHandler != null)
-            {
-                _context.Symbols.Add(new(span, addHandler, "attached-event"));
-                return new(memberName, BoundMemberKind.AttachedEvent, addHandler, addHandler.Parameters[1].Type, null, addHandler, span);
-            }
-        }
+        if (owner != null && ResolveAttached(target, owner, memberName, scope, span, valueHint) is { } attached) return attached;
         if (report) _context.Report("XG1005", $"Member '{name}' was not found or is inaccessible on '{target.ToDisplayString()}'.", span);
+        return null;
+    }
+    // Keep attached-overload predicates outside ordinary resolution: capturing
+    // its parameters would otherwise allocate a display class even on an early
+    // property/event return or a missing unqualified name. The fallback's
+    // ordering and occurrence-local conversion-rule effects are unchanged.
+    private BoundMember? ResolveAttached(ITypeSymbol target, INamedTypeSymbol owner, string memberName,
+        NamespaceScope scope, TextSpan span, string? valueHint)
+    {
+        var setters = owner.Members(ClrNames.SetPrefix + memberName).OfType<IMethodSymbol>().Where(m => m.IsStatic && m.Parameters.Length == 2 &&
+            _context.Types.IsAccessible(m, _context.RootClass) && _context.Types.Compilation.ClassifyCommonConversion(target, m.Parameters[0].Type).IsImplicit).ToArray();
+        var setter = setters.OrderBy(m => SymbolEqualityComparer.Default.Equals(target, m.Parameters[0].Type) ? 0 : 1)
+            .ThenBy(m => valueHint == null || _context.Values.TryText(valueHint, m.Parameters[1].Type, scope, span) != null ? 0 : 1).FirstOrDefault();
+        var getter = owner.Members(ClrNames.GetPrefix + memberName).OfType<IMethodSymbol>().FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 1 &&
+            _context.Types.IsAccessible(m, _context.RootClass) && _context.Types.Compilation.ClassifyCommonConversion(target, m.Parameters[0].Type).IsImplicit);
+        if (setter != null || getter != null)
+        {
+            var symbol = setter ?? getter!; _context.Symbols.Add(new(span, symbol, "attached-property"));
+            return new(memberName, BoundMemberKind.AttachedProperty, symbol, setter?.Parameters[1].Type ?? getter!.ReturnType, getter, setter, span);
+        }
+        var addHandler = owner.Members("Add" + memberName + "Handler").OfType<IMethodSymbol>().FirstOrDefault(m => m.IsStatic && m.Parameters.Length == 2 &&
+            m.Parameters[1].Type.TypeKind == TypeKind.Delegate && _context.Types.IsAccessible(m) && _context.Types.Compilation.ClassifyCommonConversion(target, m.Parameters[0].Type).IsImplicit);
+        if (addHandler != null)
+        {
+            _context.Symbols.Add(new(span, addHandler, "attached-event"));
+            return new(memberName, BoundMemberKind.AttachedEvent, addHandler, addHandler.Parameters[1].Type, null, addHandler, span);
+        }
         return null;
     }
     public void BindAttribute(ObjectBindingBuilder target, XamlAttributeSyntax attribute, NamespaceScope scope)
@@ -165,7 +173,7 @@ public sealed class MemberBinder
     {
         if (value.Type != null && !_context.Types.Compilation.ClassifyCommonConversion(value.Type, member.ValueType).IsImplicit)
         { _context.Report("XG1023", $"Value of type '{value.Type}' cannot be assigned to '{member.ValueType}'.", span); return; }
-        var key = member.Symbol.ToDisplayString();
+        var key = AssignmentMemberName.Get(member.Symbol);
         if (!target.AssignedScalars.Add(key) && !member.AllowRepeatedAssignments) { _context.Report("XG1014", $"Property '{member.Name}' is assigned more than once.", span); return; }
         target.Assignments.Add(new BoundSetAssignment(member, value, span));
     }
