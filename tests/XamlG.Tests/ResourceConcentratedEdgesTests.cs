@@ -76,6 +76,38 @@ public sealed class ResourceConcentratedEdgesTests
         Assert.Equal(0, allocated);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Value_cursor_copies_keep_independent_entries_and_positions(bool distributed)
+    {
+        var fixture = new EmissionAnalysisFixture();
+        var edge = new BoundResourceExpression(new("u", fixture.Root.Type, "source", "Generated", null), default);
+        var graph = new ResourceReverseEdges(2);
+        var references = new List<BoundResourceExpression>();
+        for (var i = 0; i < 80; i++)
+        {
+            var current = edge with { };
+            graph.Add(distributed ? i % 2 : 0, i, current);
+            if (!distributed || i % 2 == 0) references.Add(current);
+        }
+        var left = graph.Incoming(0);
+        Assert.True(left.MoveNext());
+        var right = left;
+        Assert.Same(references[0], right.Current.Edge);
+        Assert.True(left.MoveNext());
+        Assert.Same(references[1], left.Current.Edge);
+        Assert.Same(references[0], right.Current.Edge);
+        for (var i = 1; i < references.Count; i++)
+        {
+            Assert.True(right.MoveNext());
+            Assert.Same(references[i], right.Current.Edge);
+        }
+        Assert.False(right.MoveNext());
+        Assert.False(right.MoveNext());
+        Assert.Same(references[1], left.Current.Edge);
+    }
+
     [Fact]
     public void Invalid_targets_do_not_publish_entries_before_or_after_promotion()
     {
