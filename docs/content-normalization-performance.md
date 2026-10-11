@@ -1,6 +1,7 @@
 # Content normalization: linear coalescing and copy-on-change whitespace
 
-Baseline: `1fcd01dc841d6551a38846990911e84fbea4ee2a` (merged member-binding pass).
+Baseline for the combined continuation: `1571b66f6518d7bf77533acec3ab5b8374dbcf7d` (concentrated packed-resource graph).
+The continuation integrates the resource-discovery, snapshot and concentrated packed-graph passes without dropping their tests or probe signatures. Use the current PR baseline in reproduction commands.
 
 ## Algorithms and allocation
 
@@ -27,8 +28,8 @@ is memoized. Their original evaluation order and short-circuit conditions remain
 
 `XmlWhitespace.Collapse` remains O(text length). It finds the first actual change
 before allocating output, returns canonical immutable strings directly, handles
-all-whitespace input without a buffer, and copies unchanged character runs on the
-changed path. Only XML space, tab, CR and LF are collapsed; NBSP, Unicode separators,
+all-whitespace input without a buffer, and copies the unchanged prefix once before resuming the original pending-space
+state machine after the first changed run. Only XML space, tab, CR and LF are collapsed; NBSP, Unicode separators,
 NUL and UTF-16 surrogate code units are preserved. All four boundary trim policies
 and `Normalize(..., preserve: true)` retain their behavior.
 
@@ -64,20 +65,20 @@ context diagnostic/symbol lists are cleared inside measured calls to avoid accum
 results. Complete binding timings include a new XamlCompiler call on warmed Roslyn and
 preconstructed syntax; they are not cold processes or complete MSBuild runs.
 
-Twenty-nine additional workloads cover canonical/changed/blank whitespace at two
+Thirty-five additional workloads cover canonical/changed/blank whitespace at two
 sizes, 1/2/32/256/2048 text fragments with collapse/preserve semantics, complete fragmented
 binding, 8/128/512 XML attributes, ordinary element sequences and canonical-text
 binding. Every generated fixture must compile. Recursive normalized-node, diagnostic,
 symbol, generated-source and source-mapping bytes enter the cross-revision signature.
-The committed manifest retains all previous cases and requires 173 workloads.
+The committed manifest retains all previous cases and requires 243 workloads after integration of the packed-resource pass.
 
 ```sh
 dotnet test XamlG.slnx -c Release
-python3 scripts/compare-fast-paths.py --baseline-ref 1fcd01dc841d6551a38846990911e84fbea4ee2a --pairs 3
+python3 scripts/compare-fast-paths.py --baseline-ref 1571b66f6518d7bf77533acec3ab5b8374dbcf7d --pairs 3
 python3 scripts/prepare-controlcatalog.py
-python3 scripts/compare-controlcatalog-compilers.py --baseline-ref 1fcd01dc841d6551a38846990911e84fbea4ee2a --iterations 3
+python3 scripts/compare-controlcatalog-compilers.py --baseline-ref 1571b66f6518d7bf77533acec3ab5b8374dbcf7d --iterations 3
 python3 scripts/verify-compiler-performance.py \
-  --baseline 1fcd01dc841d6551a38846990911e84fbea4ee2a --candidate "$(git rev-parse HEAD)" \
+  --baseline 1571b66f6518d7bf77533acec3ab5b8374dbcf7d --candidate "$(git rev-parse HEAD)" \
   --require-identical-sources --workload-manifest tools/XamlG.PerformanceProbe/workloads.json
 ```
 
@@ -87,3 +88,14 @@ mandatory. Generated code shape/runtime behavior must remain unchanged. Use the 
 exact-head evidence for measured results, including residual costs and whole-Csc
 wall/CPU behavior. The complexity fix does not establish XamlX parity or a whole-build
 multiplier.
+
+## Measured-regression correction
+
+The original normalization candidate passed equivalence but the changed-whitespace
+fixture was approximately twice as slow. Per-run substring Append dispatch was
+replaced with the original pending-space state machine after the first detected
+change. That first whitespace run is not rescanned. Canonical/all-whitespace fast
+paths remain allocation-free. Four additional C# cases cover transitions after
+empty and long canonical prefixes under all trim policies. Six extra workloads
+measure late, sparse and boundary-only changes at 32 and 4,096 characters; no
+previous scenario is removed. New timing claims require final integrated evidence.

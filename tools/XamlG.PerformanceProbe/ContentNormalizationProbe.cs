@@ -22,7 +22,10 @@ internal static class ContentNormalizationProbe
                 ["canonical"] = new string('x', size),
                 ["spaces"] = string.Join(" ", Enumerable.Repeat("ab", size / 3)),
                 ["changed"] = string.Concat(Enumerable.Repeat(" a\t \nb \r\n", Math.Max(1, size / 9))),
-                ["blank"] = new string('\t', size)
+                ["blank"] = new string('\t', size),
+                ["late-change"] = new string('x', size - 3) + "\t y",
+                ["sparse-change"] = new string('x', size / 2) + "\t" + new string('y', size / 2),
+                ["boundary-change"] = "\t" + new string('x', size) + "\r\n"
             };
             foreach (var item in samples)
             {

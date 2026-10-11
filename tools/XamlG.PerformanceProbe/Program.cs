@@ -13,6 +13,8 @@ var emissionSignature = EmissionScalingProbe.Run(Measure);
 var analysisSignature = EmissionAnalysisProbe.Run(Measure);
 var namespaceSignature = NamespaceEmissionProbe.Run(Measure);
 var resourceGraphSignature = ResourceGraphProbe.Run(Measure);
+var resourceDiscovery = ResourceDiscoveryProbe.Run(Measure);
+var resourceSnapshotSignature = ResourceSnapshotProbe.Run(Measure);
 var finalizationSignature = ProjectFinalizationProbe.Run(Measure);
 var conversionSignature = TextConversionProbe.Run(Measure);
 var memberSignature = MemberBindingProbe.Run(Measure);
@@ -99,6 +101,8 @@ using (var writer = new BinaryWriter(snapshot, Encoding.UTF8, leaveOpen: true))
     writer.Write(analysisSignature);
     writer.Write(namespaceSignature);
     writer.Write(resourceGraphSignature);
+    writer.Write(resourceDiscovery.SemanticSignature);
+    writer.Write(resourceSnapshotSignature);
     writer.Write(finalizationSignature);
     writer.Write(conversionSignature);
     writer.Write(memberSignature);
@@ -114,7 +118,8 @@ var result = new
     semantic_inputs = semanticInputs.Count,
     semantic_sha256 = Convert.ToHexString(SHA256.HashData(snapshot.ToArray())),
     measurements,
-    markup_assignments = markupAssignments
+    markup_assignments = markupAssignments,
+    resource_discovery = resourceDiscovery.Snapshots
 };
 File.WriteAllText(args[0], JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }) + "\n");
 

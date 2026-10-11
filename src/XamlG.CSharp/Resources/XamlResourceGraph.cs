@@ -6,7 +6,9 @@ using XamlG.Syntax;
 
 namespace XamlG.CSharp.Resources;
 
-/// <summary>Iterative dependency validation with O(V + E) work and no per-document dependency sets.</summary>
+/// <summary>Iterative dependency validation with O(D + U) graph work after
+/// O(V + E) discovery over distinct immutable IR nodes/edges. D is the document
+/// count and U the distinct per-document dependency URI count.</summary>
 internal static class XamlResourceGraph
 {
     public static BoundDocument[] Validate(BoundDocument[] documents, CancellationToken cancellationToken)
@@ -19,44 +21,42 @@ internal static class XamlResourceGraph
         var queue = new Queue<int>();
         for (var i = 0; i < documents.Length; i++)
             if (remaining![i] == 0) queue.Enqueue(i);
-        var visited = new bool[documents.Length];
         while (queue.Count != 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var index = queue.Dequeue();
-            visited[index] = true;
-            if (reverse[index] is not { } parents) continue;
-            foreach (var incoming in parents)
+            foreach (var incoming in reverse.Incoming(index))
                 if (--remaining![incoming.Parent] == 0) queue.Enqueue(incoming.Parent);
         }
         for (var i = 0; i < documents.Length; i++)
         {
-            if (visited[i]) continue;
+            if (remaining![i] == 0) continue;
             // Reference snapshots retain the old traversal order. Select precisely
             // the first unresolved local edge, including documents leading into a cycle.
             foreach (var edge in References(documents[i], cancellationToken))
             {
-                if (!local.TryGetValue(edge.Resource.Uri, out var target) || target < 0 || visited[target]) continue;
+                if (!local.TryGetValue(edge.Resource.Uri, out var target) || target < 0 || remaining![target] == 0) continue;
                 documents[i] = Error(documents[i], "XG3304", "This document depends on a compiled-resource cycle through '" + edge.Resource.Uri + "'.", edge.Span);
                 break;
             }
         }
-        // Reuse the exhausted queue and visited storage for failure propagation.
+        // Kahn leaves exactly the processed documents at zero remaining dependencies.
+        // After cycle diagnostics, reuse those counts as failure marks; no visited
+        // array or separate failure set is needed. Reuse the exhausted queue too.
         // Seed in document order, as before: it determines the first diagnostic when
         // a caller includes more than one independently failed resource.
         for (var i = 0; i < documents.Length; i++)
         {
-            visited[i] = !documents[i].Success;
-            if (visited[i]) queue.Enqueue(i);
+            remaining![i] = documents[i].Success ? 0 : 1;
+            if (remaining[i] != 0) queue.Enqueue(i);
         }
         while (queue.Count != 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (reverse[queue.Dequeue()] is not { } parents) continue;
-            foreach (var incoming in parents)
+            foreach (var incoming in reverse.Incoming(queue.Dequeue()))
             {
-                if (visited[incoming.Parent]) continue;
-                visited[incoming.Parent] = true;
+                if (remaining![incoming.Parent] != 0) continue;
+                remaining[incoming.Parent] = 1;
                 documents[incoming.Parent] = Error(documents[incoming.Parent], "XG3305",
                     "The included document failed compilation: " + incoming.Edge.Resource.Uri, incoming.Edge.Span);
                 queue.Enqueue(incoming.Parent);
@@ -81,8 +81,7 @@ internal static class XamlResourceGraph
         while (queue.Count != 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (reverse[queue.Dequeue()] is not { } parents) continue;
-            foreach (var incoming in parents)
+            foreach (var incoming in reverse.Incoming(queue.Dequeue()))
             {
                 var parent = incoming.Parent;
                 if (!outputs[parent].Success) continue;
@@ -116,11 +115,10 @@ internal static class XamlResourceGraph
         return unique == 0 ? null : local;
     }
 
-    private static List<Incoming>?[]? ReverseEdges(BoundDocument[] documents, Dictionary<string, int> local,
+    private static ResourceReverseEdges? ReverseEdges(BoundDocument[] documents, Dictionary<string, int> local,
         bool countDependencies, CancellationToken cancellation, out int[]? remaining)
     {
-        List<Incoming>?[]? reverse = null;
-        int[]? seenParents = null;
+        ResourceReverseEdges? reverse = null;
         remaining = null;
         for (var parent = 0; parent < documents.Length; parent++)
         {
@@ -130,28 +128,22 @@ internal static class XamlResourceGraph
                 if (!local.TryGetValue(edge.Resource.Uri, out var target) || target < 0) continue;
                 if (reverse == null)
                 {
-                    reverse = new List<Incoming>?[documents.Length];
-                    seenParents = new int[documents.Length];
+                    reverse = new ResourceReverseEdges(documents.Length);
                     if (countDependencies) remaining = new int[documents.Length];
                 }
-                // One dense stamp array replaces a HashSet per caller. Mark the
-                // parent with +1 because zero is the array's unvisited value. Keep
-                // its first edge/span; duplicate includes never add dependency counts.
-                if (seenParents![target] == parent + 1) continue;
-                seenParents[target] = parent + 1;
-                (reverse[target] ??= new()).Add(new(parent, edge));
+                // References contains one first-occurrence representative per ordinal
+                // URI. Each unambiguous URI maps to one unique document index, so
+                // caller/target pairs are already unique. No second stamp array or
+                // deduplication pass is needed; preserve that representative's span.
+                reverse.Add(target, parent, edge);
                 if (remaining != null) remaining[parent]++;
             }
         }
         return reverse;
     }
 
-    private readonly struct Incoming(int parent, BoundResourceExpression edge)
-    {
-        public int Parent { get; } = parent;
-        public BoundResourceExpression Edge { get; } = edge;
-    }
-
+    // Compact first-URI representatives, in historical reverse traversal order.
+    // Never use this dependency-only view to emit, evaluate or count occurrences.
     internal static ImmutableArray<BoundResourceExpression> References(BoundDocument document, CancellationToken cancellationToken = default) =>
         ResourceReferenceCache.Get(document, cancellationToken);
     private static BoundDocument Error(BoundDocument document, string code, string message, TextSpan span) =>
