@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {loadUiResource} from './resource.mjs';
 const html=loadUiResource();
-const names='StackPanel Grid Border TextBlock SelectableTextBlock Button RepeatButton TextBox Slider CheckBox ToggleButton RadioButton ToggleSwitch ProgressBar Separator ScrollViewer Panel Canvas WrapPanel DockPanel UniformGrid Viewbox ContentControl UserControl Expander TabControl TabItem ItemsControl ListBox ListBoxItem ComboBox ComboBoxItem TreeView TreeViewItem NumericUpDown DatePicker CalendarDatePicker Calendar TimePicker Rectangle Ellipse Line Path Polyline Polygon LayoutTransformControl Label'.split(' ');
+const names='StackPanel Grid Border TextBlock SelectableTextBlock Button RepeatButton TextBox Slider CheckBox ToggleButton RadioButton ToggleSwitch ProgressBar Separator ScrollViewer Panel Canvas WrapPanel DockPanel UniformGrid Viewbox ContentControl UserControl Expander TabControl TabItem ItemsControl ListBox ListBoxItem ComboBox ComboBoxItem TreeView TreeViewItem NumericUpDown DatePicker CalendarDatePicker Calendar TimePicker Rectangle Ellipse Line Path Polyline Polygon LayoutTransformControl Label ContentPresenter ItemsPresenter'.split(' ');
 async function mount(page,nodes){
   await page.setContent('<iframe title="catalog" sandbox="allow-scripts" style="width:900px;height:800px"></iframe>');
   await page.evaluate(({html,nodes})=>{
@@ -31,9 +31,9 @@ async function mount(page,nodes){
 }
 const node=(type,p={},children=[],extra={})=>({key:'/'+type,type,properties:p,children,...extra});
 test('portable renderer accepts every declared default control without external code',async({page})=>{
-  expect(names).toHaveLength(47);
+  expect(names).toHaveLength(49);
   const app=await mount(page,names.map(name=>node(name,name==='NumericUpDown'?{Value:null}:name==='ComboBox'||name==='ListBox'||name==='ItemsControl'?{ItemsSource:['A','B']}:name==='Line'?{StartPoint:'0,0',EndPoint:'80,40',Stroke:'Blue'}:{})));
-  await expect(app.getByRole('alert')).toBeEmpty();await expect(app.locator('#surface > .node')).toHaveCount(47);await expect(app.locator('svg')).toHaveCount(6);
+  await expect(app.getByRole('alert')).toBeEmpty();await expect(app.locator('#surface > .node')).toHaveCount(49);await expect(app.locator('svg')).toHaveCount(6);
 });
 test('portable selection, nullable numeric and date inputs send typed values',async({page})=>{
   const app=await mount(page,[node('ComboBox',{ItemsSource:['A','B'],SelectedIndex:0},[],{stateKey:'choice'}),node('NumericUpDown',{Value:2,Minimum:0,Maximum:10},[],{stateKey:'amount'}),node('DatePicker',{SelectedDate:null},[],{stateKey:'date'})]);

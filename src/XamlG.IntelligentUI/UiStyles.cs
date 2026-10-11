@@ -6,7 +6,10 @@ namespace XamlG.IntelligentUI;
 
 /// <summary>Inert, scoped presentation styles. These do not define inputs, actions or execution authority.</summary>
 public sealed record UiStyleRule(string Selector, ImmutableDictionary<string, JsonElement> Properties);
-public sealed record UiStyleSelector(string Target, string? Name, ImmutableArray<string> Classes, ImmutableArray<string> PseudoClasses);
+public sealed record UiStyleSelector(string Target, string? Name, ImmutableArray<string> Classes, ImmutableArray<string> PseudoClasses)
+{
+    public ImmutableArray<UiSelectorStep> Steps { get; init; } = [];
+}
 internal sealed record UiPlanStyle(string Selector, UiComponent Target, ImmutableDictionary<string, UiValue> Properties);
 
 /// <summary>A bounded selector and property vocabulary shared by compilation, native rendering and export.</summary>
@@ -38,34 +41,8 @@ public static class UiStyles
             throw Invalid("Use up to 32 distinct class identifiers, separated by whitespace.");
         return values.ToImmutableArray();
     }
-    public static UiStyleSelector ParseSelector(string source)
-    {
-        if (string.IsNullOrEmpty(source) || source.Length > 512) throw Invalid("Selector exceeds its budget.");
-        var p = 0;
-        string Read()
-        {
-            var start = p;
-            while (p < source.Length && (char.IsAsciiLetterOrDigit(source[p]) || source[p] is '_' or '-')) p++;
-            var value = source[start..p];
-            if (!IsIdentifier(value)) throw Invalid("Expected a selector identifier.");
-            return value;
-        }
-        var target = Read(); string? name = null;
-        var classes = ImmutableArray.CreateBuilder<string>(); var pseudos = ImmutableArray.CreateBuilder<string>();
-        while (p < source.Length)
-        {
-            var token = source[p++]; var value = Read();
-            switch (token)
-            {
-                case '.': if (classes.Contains(value)) throw Invalid("Duplicate selector class."); classes.Add(value); break;
-                case '#': if (name != null) throw Invalid("Duplicate selector name."); name = value; break;
-                case ':': if (!Pseudos.Contains(value) || pseudos.Contains(value)) throw Invalid("Unsupported pseudoclass."); pseudos.Add(value); break;
-                default: throw Invalid("Use Type, Type.class, Type#name and supported pseudoclasses; complex selectors require application compilation.");
-            }
-            if (classes.Count + pseudos.Count > 16) throw Invalid("Selector predicate budget exceeded.");
-        }
-        return new(target, name, classes.ToImmutable(), pseudos.ToImmutable());
-    }
+    public static UiStyleSelector ParseSelector(string source) => UiStyleSelectors.Parse(source);
+    public static bool IsPseudoClass(string name) => Pseudos.Contains(name);
     public static void ValidateProperty(UiComponent target, string name)
     {
         if (!PresentationProperties.Contains(name) || !target.Properties.ContainsKey(name) || target.InputProperty == name)
@@ -79,7 +56,8 @@ public static class UiStyles
         {
             if (rule is null || rule.Properties is null || rule.Properties.Count > MaximumSetters || (setters += rule.Properties.Count) > 512)
                 throw Invalid("Style setter budget exceeded.");
-            var selector = ParseSelector(rule.Selector); var target = catalog.Get(selector.Target);
+            var selector = ParseSelector(rule.Selector); UiStyleSelectors.ValidateTypes(selector, catalog);
+            var target = catalog.Get(selector.Target);
             foreach (var property in rule.Properties) ValidateProperty(target, property.Key);
             // Reuse all cross-property/geometry/text checks, not only the individual JSON kinds.
             UiTreeValidation.ValidateElement(new("style", target.Name, rule.Properties, []), target, textLimit);

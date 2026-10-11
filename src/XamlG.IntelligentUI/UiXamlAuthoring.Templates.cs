@@ -11,13 +11,24 @@ internal sealed partial class UiXamlAuthoring
     {
         if (source.Name != Ns + "Style") throw Error("invalid_style", "Expected Style, not an include or executable extension.");
         CheckAttributes(source, "Selector"); CheckText(source);
-        var selector = Required(source, "Selector");
+        var groups = UiStyleSelectors.SplitGroups(Required(source, "Selector"));
+        if (groups.Length > 1)
+        {
+            foreach (var group in groups)
+            {
+                var branch = new XElement(source); branch.SetAttributeValue("Selector", group);
+                ReadStyle(branch, parent, scope, rules);
+            }
+            return;
+        }
+        var selector = groups[0];
         if (parent != null)
         {
             if (!selector.StartsWith('^')) throw Error("invalid_style", "Nested styles require the ^ selector.");
             selector = parent + selector[1..];
         }
-        var target = catalog.Get(UiStyles.ParseSelector(selector).Target);
+        var parsed = UiStyles.ParseSelector(selector); UiStyleSelectors.ValidateTypes(parsed, catalog);
+        var target = catalog.Get(parsed.Target);
         if (rules.Count >= UiStyles.MaximumRules) throw Error("invalid_style", "Style rule budget exceeded.");
         var rule = new XElement(Ns + "Style", new XAttribute("Selector", selector)); rules.Add(rule);
         foreach (var setter in source.Elements().Where(child => child.Name != Ns + "Style"))

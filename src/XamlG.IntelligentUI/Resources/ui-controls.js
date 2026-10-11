@@ -17,7 +17,7 @@ function create(node){
   if(input){input.addEventListener('change',()=>changeState(entry).catch(error));input.addEventListener('blur',()=>touchForm(entry));}
   if(node.type==='TextBox')input.addEventListener('input',()=>{if(!applying)drafts.set(entry.node.key,input.value);});
   if(input)input.addEventListener('keydown',event=>{
-    if(event.key==='Tab'&&entry.type==='TextBox'&&entry.node.properties.AcceptsTab===true&&!input.readOnly&&!event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.metaKey){
+    if(event.key==='Tab'&&!event.isComposing&&entry.type==='TextBox'&&entry.node.properties.AcceptsTab===true&&!input.readOnly&&!event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.metaKey){
       const remaining=input.value.length-(input.selectionEnd-input.selectionStart);
       if(remaining<input.maxLength){input.setRangeText('\t',input.selectionStart,input.selectionEnd,'end');drafts.set(entry.node.key,input.value);}
       event.preventDefault();return;
@@ -25,7 +25,7 @@ function create(node){
     if(event.key!=='Enter'||event.isComposing||event.shiftKey||event.ctrlKey||event.altKey||event.metaKey||entry.node.properties.AcceptsReturn)return;
     if(entry.node.form?.role==='input'&&!['ComboBox','ListBox'].includes(entry.type)){
       event.preventDefault();const generation=epoch;changeState(entry).then(()=>current(generation)?submitForm(entry.node.form.id):undefined).catch(error);
-    }else if(node.type==='TextBox')event.preventDefault();
+    }
   });
   if(summary){summary.addEventListener('click',event=>{if(entry.disabled||busy)event.preventDefault();});e.addEventListener('toggle',()=>{if(!applying&&entry.node.stateKey&&e.open!==(entry.node.properties.IsExpanded===true))changeState(entry,e.open).catch(error);});}
   if(node.type==='Button'||node.type==='RepeatButton')e.addEventListener('click',()=>prepare(entry));return entry;
@@ -41,7 +41,7 @@ function accept(value){
     function render(node,disabled=false,hidden=false){
       const p=node.properties;disabled=disabled||p.IsEnabled===false;hidden=hidden||p.IsVisible===false;
       let entry=entries.get(node.key);if(entry&&entry.type!==node.type){retire(entry);entries.delete(node.key);entry=null;}
-      if(!entry){entry=create(node);entries.set(node.key,entry);}entry.node=node;entry.disabled=disabled;used.add(node.key);
+      if(!entry){entry=create(node);installUiInput(entry);entries.set(node.key,entry);}entry.node=node;entry.disabled=disabled;used.add(node.key);
       const e=entry.element;e.setAttribute('class','node');e.style.cssText='';e.hidden=hidden;e.dataset.uiKey=node.key;common(e,p);
       if(entry.input){
         entry.input.disabled=disabled;entry.input.setAttribute('aria-label',p['AutomationProperties.Name']||p.PlaceholderText||p.Content||node.stateKey||node.key);
@@ -50,7 +50,7 @@ function accept(value){
       }
       const children=node.children.map(child=>render(child,disabled,hidden));
       const widget=widgets.get(node.type);
-      if(widget){widget.update(entry,children,{disabled,hidden});applyAvaloniaFeatures(entry);applyUiStyleIdentity(entry);return e;}
+      if(widget){widget.update(entry,children,{disabled,hidden});applyAvaloniaFeatures(entry);applyUiStyleIdentity(entry);applyUiInput(entry);return e;}
       if(p.Content!==undefined&&!children.length&&containers.has(node.type)&&node.type!=='ItemsControl')entry.slot.textContent=p.Content;
       else if(containers.has(node.type))reconcile(entry.slot,children);
       switch(node.type){
@@ -73,12 +73,13 @@ function accept(value){
         case 'Expander':case 'TreeViewItem':entry.summary.textContent=p.Header||'';e.open=p.IsExpanded===true;entry.summary.setAttribute('aria-disabled',String(disabled));break;
         case 'ItemsControl':if(p.ItemsSource){const rows=p.ItemsSource.map(text=>{const row=document.createElement('div');row.textContent=text;return row;});reconcile(entry.slot,rows);}break;
         case 'ComboBox':case 'ListBox':{const options=p.ItemsSource??node.children.map(label),previous=[...e.options].map(option=>option.text);if(JSON.stringify(previous)!==JSON.stringify(options))e.replaceChildren(...options.map(text=>{const option=document.createElement('option');option.textContent=text;return option;}));e.selectedIndex=integer(p.SelectedIndex??-1,-1,4095);if(node.type==='ListBox')e.size=Math.min(8,Math.max(2,options.length));break;}
-        case 'TabControl':{const selected=p.SelectedIndex??0;entry.nav.replaceChildren(...node.children.map((child,index)=>{const tab=document.createElement('button');tab.type='button';tab.setAttribute('role','tab');tab.setAttribute('aria-selected',String(index===selected));tab.textContent=child.properties.Header||label(child);tab.disabled=disabled||busy;tab.onclick=()=>node.stateKey?changeState(entry,index).catch(error):localTab(index);return tab;}));localTab(selected);function localTab(index){children.forEach((child,i)=>{child.hidden=i!==index||hidden||node.children[i].properties.IsVisible===false;});[...entry.nav.children].forEach((tab,i)=>tab.setAttribute('aria-selected',String(i===index)));}break;}
+        case 'TabControl':updateUiTabs(entry,children,hidden);break;
+        case 'TabItem':e.removeAttribute('role');e.removeAttribute('aria-labelledby');e.removeAttribute('id');break;
         case 'DatePicker':case 'CalendarDatePicker':case 'Calendar':entry.input.value=p.SelectedDate?.slice(0,10)||'';break;
         case 'TimePicker':entry.input.value=p.SelectedTime?.slice(0,8)||'';entry.input.step=String((p.MinuteIncrement??1)*60);break;
         case 'Rectangle':case 'Ellipse':case 'Line':{const width=p.Width??100,height=p.Height??60,s=entry.shape;e.setAttribute('viewBox',`0 0 ${width||1} ${height||1}`);e.style.width=px(width);e.style.height=px(height);s.setAttribute('fill',p.Fill?brushPaint(p.Fill):'none');s.setAttribute('stroke',p.Stroke?brushPaint(p.Stroke):'none');s.setAttribute('stroke-width',String(p.StrokeThickness??1));if(node.type==='Rectangle'){s.setAttribute('width',width);s.setAttribute('height',height);s.setAttribute('rx',p.RadiusX??0);s.setAttribute('ry',p.RadiusY??0);}else if(node.type==='Ellipse'){s.setAttribute('cx',width/2);s.setAttribute('cy',height/2);s.setAttribute('rx',width/2);s.setAttribute('ry',height/2);}else{const a=tuple(p.StartPoint??'0,0',-1000000,1000000),b=tuple(p.EndPoint??'0,0',-1000000,1000000);if(a.length!==2||b.length!==2)throw new Error('Line points require two coordinates.');s.setAttribute('x1',a[0]);s.setAttribute('y1',a[1]);s.setAttribute('x2',b[0]);s.setAttribute('y2',b[1]);}break;}
       }
-      applyAvaloniaFeatures(entry);applyUiStyleIdentity(entry);return e;
+      applyAvaloniaFeatures(entry);applyUiStyleIdentity(entry);applyUiInput(entry);return e;
     }
     reconcile(root,value.roots.map(node=>render(node)));for(const [key,entry]of entries)if(!used.has(key)){retire(entry);entries.delete(key);}
     uiStyleElement.textContent=styleText;

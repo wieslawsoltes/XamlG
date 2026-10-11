@@ -13,7 +13,9 @@ var emissionSignature = EmissionScalingProbe.Run(Measure);
 var analysisSignature = EmissionAnalysisProbe.Run(Measure);
 var namespaceSignature = NamespaceEmissionProbe.Run(Measure);
 var resourceGraphSignature = ResourceGraphProbe.Run(Measure);
-var memberBindingSignature = MemberBindingProbe.Run(Measure);
+var finalizationSignature = ProjectFinalizationProbe.Run(Measure);
+var conversionSignature = TextConversionProbe.Run(Measure);
+var memberSignature = MemberBindingProbe.Run(Measure);
 var generatedSources = NamedFieldProbe.Run(Measure);
 var markupAssignments = MarkupAssignmentProbe.Run(Measure);
 var semanticInputs = new List<string>
@@ -96,7 +98,9 @@ using (var writer = new BinaryWriter(snapshot, Encoding.UTF8, leaveOpen: true))
     writer.Write(analysisSignature);
     writer.Write(namespaceSignature);
     writer.Write(resourceGraphSignature);
-    writer.Write(memberBindingSignature);
+    writer.Write(finalizationSignature);
+    writer.Write(conversionSignature);
+    writer.Write(memberSignature);
     foreach (var source in generatedSources) writer.Write(source);
     foreach (var markup in markupAssignments) writer.Write(markup.SemanticSignature);
 }

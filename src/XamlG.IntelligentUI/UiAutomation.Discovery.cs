@@ -18,13 +18,27 @@ public sealed partial class UiAutomation
             pen = "StrokeDashArray contains at most 64 nonnegative numbers; a nonempty pattern needs a positive length. Dash lengths and StrokeDashOffset are multiples of StrokeThickness.",
             limits = new { points = UiDrawingValues.MaximumPoints, pathSegments = UiDrawingValues.MaximumPathSegments, text = UiDrawingValues.MaximumDrawingText },
             layout = "One native response root receives the available viewport. Use Grid star rows/columns with ScrollViewer for constrained scrolling. Multiple roots retain vertical flow. LayoutTransformControl participates in native measure; RenderTransform affects rendering.",
-            assets = "FontFamily accepts local family names only. Model-authored asset URIs, external fonts, images, arbitrary templates and executable property values are not enabled.",
+            assets = "FontFamily accepts local family names only. Model-authored asset URIs, external fonts, images and executable property values are not enabled. Registered data/control templates use the typed authoring contracts below.",
             portability = "Desktop and Avalonia/Wasm render actual Avalonia controls. Portable MCP HTML projects the registered properties to CSS/SVG; it is not a pixel-identical Avalonia layout engine."
         },
         authoring = new
         {
             resources = "Inline Resources and merged ResourceDictionary values resolve in declaration scope. StaticResource and DynamicResource resolve during revisioned publication; this is not a live arbitrary CLR resource graph.",
-            styles = "Scoped Styles with typed presentation Setters, control/class/name selectors and registered pseudoclasses. Nested ^ selectors preserve scope. Local properties override styles. Control templates, selector combinators and arbitrary style includes are not enabled.",
+            styles = "Scoped Styles with typed presentation Setters, control/class/name selectors and registered pseudoclasses. Nested ^ selectors preserve scope. Local properties override styles. Child/descendant/template combinators, :is, :not and bounded positional selectors are supported. Source selector groups validate each typed target. Arbitrary style includes and behavior-changing setters are not enabled.",
+            selectors = new
+            {
+                maximumSteps = UiStyleSelectors.MaximumSteps, maximumPredicates = UiStyleSelectors.MaximumPredicates,
+                maximumGroups = UiStyleSelectors.MaximumGroups, maximumCharacters = 512,
+                syntax = "Final targets require a registered type. Logical descendants use whitespace; children use >; native template parts use /template/. :is(Button) includes derived registered controls; :not(predicate) negates a compound predicate. :nth-child/:nth-last-child use bounded An+B, odd or even. Nested ^ rules retain their owning scope.",
+                portability = "Portable selectors count authored siblings, not incidental DOM slots. Template selectors never target ordinary response children. Native template-part styling requires the Avalonia guest. Both evaluators enforce independent work/output budgets."
+            },
+            inputs = new
+            {
+                navigationModes = new[] { "Continue", "Cycle", "Contained", "Once", "None", "Local" }, maximumTabIndex = 32767,
+                syntax = "Use IsTabStop, TabIndex and KeyboardNavigation.TabNavigation for keyboard groups. AutomationProperties.AutomationId/HelpText are explicit accessibility metadata. CheckBox/ToggleButton/ToggleSwitch preserve null and support IsThreeState; RadioButton retains native select-only activation. TextBox caret/selection declarations do not reset on unrelated state echoes. Slider SmallChange/LargeChange/IsDirectionReversed control native keyboard changes. RepeatButton Delay/Interval are bounded milliseconds.",
+                actions = "IsDefault and IsCancel require declared actions; they confer no tool permission. Portable default/cancel dispatch commits the focused draft first. Portable RepeatButton awaits each local-state action result; external effects still require ordinary review and do not repeat. Focus ordering in native control templates remains authoritative in Avalonia."
+            },
+            controlTemplates = "ControlTemplate constructs only registered typed parts in a private NameScope. ControlTheme supports typed TargetType, BasedOn, presentation setters and template parts. TemplateBinding supports registered OneWay properties or TwoWay registered input pairs; callbacks, arbitrary CLR construction and action/state directives inside parts are not permitted. ContentPresenter/ItemsPresenter connect the native owner's content/items. Portable HTML uses ordinary control fallback, not native theme/template construction.",
             bindings = "Binding and CompiledBinding walk JSON paths, indices and quoted object keys. Default scope is data; DataContext inherits a JSON scope; templates bind their item. Explicit state/data/item roots remain available. Modes Default and OneWay are supported; a registered input may bind TwoWay to exactly one declared state slot. FallbackValue, TargetNullValue and bounded invariant StringFormat are supported. CompiledBinding here validates JSON syntax, not CLR x:DataType bindings. No arbitrary converters, source objects, reflection or effects.",
             templates = "Inline or StaticResource DataTemplate for ItemsControl/ListBox/ComboBox ItemTemplate and content-control ContentTemplate. Provide stable ui:ItemKey for object rows. Content may be structured JSON. Keys are scoped per template instance and actions capture owned current item data. Templates expand within tree budgets and are not virtualized native data templates.",
             brushes = new
@@ -35,6 +49,7 @@ public sealed partial class UiAutomation
                 portability = "Native Avalonia and static XAML preserve brush semantics. Portable SVG paints and CSS backgrounds are projections; CSS text/borders fall back to the first gradient stop. Mixed units, brush transforms and nonsquare background geometry need native rendering for exact fidelity. No image assets or remote brush loading."
             }
         },
+        inputExample = UiInputExamples.Controls(),
         authoringExample = UiAuthoringExamples.Directory(),
         example = UiExamples.Pricing(),
         localActions = UiInteractionExamples.Counter(),

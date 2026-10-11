@@ -70,8 +70,7 @@ public sealed class XamlProjectCompiler
         var bound = new BoundDocument[inputs.Length];
         var entries = new CachedProjectDocument[inputs.Length];
         var addresses = new string?[inputs.Length];
-        var duplicates = new HashSet<string>(inputs.Where(d => profile.Directives.ShouldCompile(d.Syntax, options))
-            .GroupBy(d => d.LogicalPath, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key), StringComparer.Ordinal);
+        var duplicates = ProjectDuplicateDiagnostics.CollectSortedPaths(inputs, profile, options);
         var boundCount = 0; var reusedBindings = 0;
         ForEachDocument(inputs.Length, options, cancellationToken, i =>
         {
@@ -79,7 +78,7 @@ public sealed class XamlProjectCompiler
             var input = inputs[i]; string? addressError = null;
             try { addresses[i] = XamlResourceCatalogBuilder.Address(input, types, profile); }
             catch (ArgumentException error) { addressError = error.Message; }
-            if (!duplicates.Contains(input.LogicalPath) && _documents.TryGetValue(input.LogicalPath, out var cached) &&
+            if (duplicates?.Contains(input.LogicalPath) != true && _documents.TryGetValue(input.LogicalPath, out var cached) &&
                 ReferenceEquals(cached.Input.Syntax, input.Syntax) && cached.Input.ResourceUri == input.ResourceUri)
             { entries[i] = cached; bound[i] = cached.Document; Interlocked.Increment(ref reusedBindings); }
             else
@@ -92,16 +91,13 @@ public sealed class XamlProjectCompiler
             if (!bound[i].IsSkipped)
             {
                 if (addressError != null) bound[i] = AddError(bound[i], "XG3300", addressError);
-                if (duplicates.Contains(input.LogicalPath)) bound[i] = AddError(bound[i], "XG3300", "Duplicate logical XAML path: " + input.LogicalPath);
+                if (duplicates?.Contains(input.LogicalPath) == true) bound[i] = AddError(bound[i], "XG3300", "Duplicate logical XAML path: " + input.LogicalPath);
             }
         });
         // Keep the cache read-only while workers bind and publish in stable input order.
         for (var i = 0; i < inputs.Length; i++)
-            if (!duplicates.Contains(inputs[i].LogicalPath)) _documents[inputs[i].LogicalPath] = entries[i];
-        foreach (var group in addresses.Select((uri, index) => (Uri: uri, Index: index)).Where(p => p.Uri != null && !bound[p.Index].IsSkipped).GroupBy(p => p.Uri, StringComparer.Ordinal).Where(g => g.Count() > 1))
-            foreach (var item in group) bound[item.Index] = AddError(bound[item.Index], "XG3300", "Duplicate resource URI: " + item.Uri);
-        foreach (var group in bound.Select((d, i) => (Document: d, Index: i)).Where(p => !p.Document.IsSkipped && p.Document.ClassName != null).GroupBy(p => p.Document.ClassName, StringComparer.Ordinal).Where(g => g.Count() > 1))
-            foreach (var item in group) bound[item.Index] = AddError(item.Document, "XG2002", "More than one XAML document declares x:Class '" + group.Key + "'.");
+            if (duplicates?.Contains(inputs[i].LogicalPath) != true) _documents[inputs[i].LogicalPath] = entries[i];
+        ProjectDuplicateDiagnostics.Apply(bound, addresses, cancellationToken);
         XamlResourceGraph.Validate(bound, cancellationToken);
         // Regenerate only outputs whose shared accessor layout changed; their bound
         // documents remain reusable. Keep successful builds independent of edit history.
@@ -125,7 +121,7 @@ public sealed class XamlProjectCompiler
                 {
                     entries[i].Output = emission;
                     entries[i].OutputWithHelpers = null;
-                    entries[i].PublishedHelpers = null;
+                    entries[i].PublishedSources = ImmutableArray<SharedGeneratedSource>.Empty;
                 }
             }
             emissions[i] = emission;
@@ -134,29 +130,9 @@ public sealed class XamlProjectCompiler
         // A canceled/failed pass must not forget removal-only invalidation. Clear
         // the marker only after every surviving output has its checked layout.
         if (checkPropertyLayouts) _propertyLayoutsDirty = false;
-        // Publish each identical helper implementation once, in stable input order.
-        // Keep the cached base output independent of ownership so additions/removals
-        // can move a shared definition without rebinding unaffected documents.
-        var published = new HashSet<string>(StringComparer.Ordinal);
-        for (var i = 0; i < emissions.Length; i++)
-        {
-            var emission = emissions[i];
-            if (!emission.Success) continue;
-            var owned = emission.SharedSources.Where(source => published.Add(source.Identity)).ToArray();
-            if (owned.Length == 0) continue;
-            var identity = string.Join("\n", owned.Select(source => source.Identity));
-            if (ReferenceEquals(emission, entries[i].Output))
-            {
-                var entry = entries[i];
-                if (entry.PublishedHelpers != identity)
-                {
-                    entry.PublishedHelpers = identity;
-                    entry.OutputWithHelpers = emission with { Source = emission.Source + "\n" + string.Join("\n", owned.Select(source => source.Source)) };
-                }
-                emissions[i] = entry.OutputWithHelpers!;
-            }
-            else emissions[i] = emission with { Source = emission.Source + "\n" + string.Join("\n", owned.Select(source => source.Source)) };
-        }
+        // Ownership remains independent of cached base outputs. Reuse the selected
+        // helper snapshot on stable builds, and move definitions after edits/removals.
+        SharedSourcePublisher.Publish(emissions, entries, cancellationToken);
         var output = inputs.Select((input, index) => new XamlProjectDocumentResult(input, addresses[index], bound[index], emissions[index])).ToImmutableArray();
         return new(output, catalog) { Statistics = new(boundCount, reusedBindings, emittedCount, reusedOutputs) };
     }
