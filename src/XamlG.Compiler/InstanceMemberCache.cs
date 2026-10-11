@@ -12,6 +12,7 @@ internal sealed class InstanceMemberCache(RoslynTypeSystem types)
 {
     private const int MaximumEntries = 4096;
     private const int MaximumNameLength = 256;
+    private const int MaximumDirectDepth = 4;
     private static readonly ConditionalWeakTable<RoslynTypeSystem, InstanceMemberCache> Caches = new();
     private readonly ConcurrentDictionary<Key, Selection> _entries = new(KeyComparer.Instance);
     private int _count;
@@ -63,27 +64,46 @@ internal sealed class InstanceMemberCache(RoslynTypeSystem types)
         // Preserve Members' class/base/interface ordering, and search ALL
         // properties before ANY event. A derived event does not mask the base
         // property under the existing XAML member-selection contract.
+        // A bounded shape probe prevents fresh type systems from repeatedly
+        // discovering the same deep hierarchy. Reuse the existing symbol-owned
+        // candidate snapshot before scanning any declared-member arrays.
+        var ancestor = target as INamedTypeSymbol;
+        for (var depth = 0; depth < MaximumDirectDepth && ancestor != null; depth++) ancestor = ancestor.BaseType;
+        if (ancestor != null || target.TypeKind == TypeKind.Interface && target.AllInterfaces.Length > MaximumDirectDepth)
+            return FindCachedCandidates(target, name, within, cancellation);
+        var hasEvents = false;
         for (var kind = 0; kind < 2; kind++)
         {
+            // A missing spelling needs no second hierarchy walk unless the
+            // property pass actually encountered an eligible instance event.
+            if (kind != 0 && !hasEvents) return null;
             for (var current = target as INamedTypeSymbol; current != null; current = current.BaseType)
             {
                 cancellation.ThrowIfCancellationRequested();
-                if (FindDeclared(current, name, within, kind == 0) is { } member) return member;
+                if (FindDeclared(current, name, within, kind == 0, ref hasEvents) is { } member) return member;
             }
             if (target.TypeKind == TypeKind.Interface)
+            {
                 foreach (var contract in target.AllInterfaces)
                 {
                     cancellation.ThrowIfCancellationRequested();
-                    if (FindDeclared(contract, name, within, kind == 0) is { } member) return member;
+                    if (FindDeclared(contract, name, within, kind == 0, ref hasEvents) is { } member) return member;
                 }
+            }
         }
         return null;
     }
 
-    private ISymbol? FindDeclared(INamedTypeSymbol target, string name, INamedTypeSymbol? within, bool property)
+    private ISymbol? FindDeclared(INamedTypeSymbol target, string name, INamedTypeSymbol? within, bool property, ref bool hasEvents)
     {
         foreach (var member in target.GetMembers(name))
-            if (Eligible(member, property) && types.IsAccessible(member, within)) return member;
+        {
+            if (Eligible(member, property))
+            {
+                if (types.IsAccessible(member, within)) return member;
+            }
+            else if (property && member is IEventSymbol { IsStatic: false }) hasEvents = true;
+        }
         return null;
     }
 
