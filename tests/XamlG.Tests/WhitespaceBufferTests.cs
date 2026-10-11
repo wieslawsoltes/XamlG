@@ -91,6 +91,35 @@ public sealed class WhitespaceBufferTests
         });
     }
 
+    [Theory]
+    [InlineData(256)]
+    [InlineData(257)]
+    [InlineData(4096)]
+    [InlineData(16384)]
+    [InlineData(16385)]
+    [InlineData(65536)]
+    public void Dense_and_long_run_transitions_keep_the_original_trim_state(int length)
+    {
+        const string dense = "ab\t\r\n c\u00a0\ud800\udfff";
+        foreach (var longFirst in new[] { false, true })
+        {
+            var text = new char[length];
+            for (var i = 0; i < text.Length; i++)
+                text[i] = (i < length / 2) == longFirst ? 'x' : dense[i % dense.Length];
+            text[0] = '\t'; text[length - 1] = '\r';
+            CheckAll(new string(text));
+        }
+    }
+
+    [Fact]
+    public void Bulk_copy_promotion_and_scalar_fallback_preserve_pending_spaces()
+    {
+        foreach (var count in new[] { 15, 16, 17 })
+        foreach (var prefix in new[] { "", "prefix" })
+        foreach (var suffix in new[] { "", "\t", "\tq", "\r\nq\t" + new string('y', 40) })
+            CheckAll(prefix + "\t" + new string('x', count) + suffix);
+    }
+
     private static void CheckAll(string text)
     {
         for (var mask = 0; mask < 4; mask++)
