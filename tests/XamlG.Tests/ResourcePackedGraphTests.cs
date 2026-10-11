@@ -12,6 +12,7 @@ public sealed class ResourcePackedGraphTests
 {
     [Theory]
     [InlineData("fanin")]
+    [InlineData("late-split")]
     [InlineData("fanout")]
     [InlineData("islands")]
     [InlineData("lattice")]
@@ -40,6 +41,8 @@ public sealed class ResourcePackedGraphTests
         IEnumerable<int> Targets(int index) => shape switch
         {
             "fanin" => index < count - 1 ? new[] { count - 1 } : [],
+            "late-split" => index < count - 2 ? new[] { count - 2 } :
+                index == count - 2 ? new[] { count - 1 } : [],
             "fanout" => index == 0 ? Enumerable.Range(1, count - 1) : [],
             "islands" => index % 8 == 0 && index + 1 < count ? new[] { index + 1 } : [],
             "cycles" => new[] { (index + 1) % count, (index + 1) % count },

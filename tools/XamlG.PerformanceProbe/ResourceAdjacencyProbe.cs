@@ -43,7 +43,7 @@ internal static class ResourceAdjacencyProbe
         var appendHelper = shared.PropertyType.GetMethod("Add", [helperType])!;
         var signature = new StringBuilder();
         foreach (var count in new[] { 32, 1024 })
-        foreach (var shape in new[] { "fanin", "islands", "lattice", "dense-blocks" })
+        foreach (var shape in new[] { "fanin", "islands", "lattice", "dense-blocks", "late-split" })
         {
             // Every local target is later in document order. This makes a simple
             // untimed descending closure independent of the production queue.
@@ -94,7 +94,7 @@ internal static class ResourceAdjacencyProbe
                 backend(currentDocuments, currentOutputs, default);
                 return currentOutputs[0].Source.Length;
             });
-            if (shape == "fanin")
+            if (shape is "fanin" or "late-split")
                 measure("resource-packed-cold-" + shape + "-" + count, operations, () =>
                 {
                     var fresh = documents.Select(document => document with { Root = document.Root! with { } }).ToArray();
@@ -104,6 +104,8 @@ internal static class ResourceAdjacencyProbe
             IEnumerable<int> Targets(int index) => shape switch
             {
                 "fanin" => index < count - 1 ? new[] { count - 1 } : [],
+                "late-split" => index < count - 2 ? new[] { count - 2 } :
+                    index == count - 2 ? new[] { count - 1 } : [],
                 "islands" => index % 8 == 0 && index + 1 < count ? new[] { index + 1 } : [],
                 "lattice" => Enumerable.Range(index + 1, Math.Min(4, count - index - 1)),
                 _ => Enumerable.Range(index + 1, Math.Min(count, (index / 16 + 1) * 16) - index - 1)

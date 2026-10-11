@@ -200,5 +200,11 @@
   "resource-packed-warm-lattice-1024",
   "resource-packed-backend-lattice-1024",
   "resource-packed-warm-dense-blocks-1024",
-  "resource-packed-backend-dense-blocks-1024"
+  "resource-packed-backend-dense-blocks-1024",
+  "resource-packed-warm-late-split-32",
+  "resource-packed-backend-late-split-32",
+  "resource-packed-cold-late-split-32",
+  "resource-packed-warm-late-split-1024",
+  "resource-packed-backend-late-split-1024",
+  "resource-packed-cold-late-split-1024"
 ]
