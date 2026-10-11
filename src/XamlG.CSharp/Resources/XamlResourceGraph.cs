@@ -6,7 +6,9 @@ using XamlG.Syntax;
 
 namespace XamlG.CSharp.Resources;
 
-/// <summary>Iterative dependency validation with O(V + E) work and no per-document dependency sets.</summary>
+/// <summary>Iterative dependency validation with O(D + U) graph work after
+/// O(V + E) discovery over distinct immutable IR nodes/edges. D is the document
+/// count and U the distinct per-document dependency URI count.</summary>
 internal static class XamlResourceGraph
 {
     public static BoundDocument[] Validate(BoundDocument[] documents, CancellationToken cancellationToken)
@@ -152,6 +154,8 @@ internal static class XamlResourceGraph
         public BoundResourceExpression Edge { get; } = edge;
     }
 
+    // Compact first-URI representatives, in historical reverse traversal order.
+    // Never use this dependency-only view to emit, evaluate or count occurrences.
     internal static ImmutableArray<BoundResourceExpression> References(BoundDocument document, CancellationToken cancellationToken = default) =>
         ResourceReferenceCache.Get(document, cancellationToken);
     private static BoundDocument Error(BoundDocument document, string code, string message, TextSpan span) =>
