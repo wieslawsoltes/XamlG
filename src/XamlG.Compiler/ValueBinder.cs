@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using XamlG.Roslyn;
+using XamlG.Internal;
 using XamlG.Syntax;
 
 namespace XamlG.Compiler;
@@ -105,11 +106,8 @@ public sealed class ValueBinder
             target = nullable.TypeArguments[0];
         return FindParse(target) != null || FindConverter(target) != null;
     }
-    private IMethodSymbol? FindParse(ITypeSymbol target) => target.Members(ClrNames.Parse).OfType<IMethodSymbol>()
-            .Where(m => m.IsStatic && !m.IsGenericMethod && _context.Types.IsAccessible(m) && m.Parameters.Length is 1 or 2 &&
-                m.Parameters[0].Type.SpecialType == SpecialType.System_String && (m.Parameters.Length == 1 || m.Parameters[1].Type.HasMetadataName(ClrNames.IFormatProvider) || m.Parameters[1].Type.HasMetadataName(ClrNames.CultureInfo)) &&
-                _context.Types.Compilation.ClassifyCommonConversion(m.ReturnType, target).IsImplicit)
-            .OrderByDescending(m => m.Parameters.Length).FirstOrDefault();
+    private IMethodSymbol? FindParse(ITypeSymbol target) =>
+        TextConversionMetadata.FindParse(_context.Types, target, _context.Cancellation);
     private static BoundExpression? TryEnum(string text, INamedTypeSymbol type, TextSpan span)
     {
         if (type.EnumUnderlyingType is { } underlying && long.TryParse(text, out var number))
@@ -130,14 +128,28 @@ public sealed class ValueBinder
             return new BoundCastExpression(new BoundConstantExpression(value, underlying, span), type, span);
         }
         var flags = type.GetAttributes().Any(attribute => attribute.AttributeClass?.Name == "FlagsAttribute");
-        var fields = ImmutableArray.CreateBuilder<IFieldSymbol>();
-        foreach (var name in flags ? text.Split(',').Select(value => value.Trim()) : new[] { text })
+        if (!flags)
         {
-            var field = type.GetMembers(name).OfType<IFieldSymbol>().FirstOrDefault(candidate => candidate.HasConstantValue);
+            var field = FindEnumField(type, text);
+            return field == null ? null : new BoundEnumExpression(ImmutableArray.Create(field), type, span);
+        }
+        var fields = ImmutableArray.CreateBuilder<IFieldSymbol>();
+        foreach (var token in new SpanSplitEnumerator(text.AsSpan(), ',', trim: true))
+        {
+            // Roslyn's named lookup needs a string, but the split array, LINQ
+            // pipeline and intermediate untrimmed strings are unnecessary.
+            var name = token.Length == text.Length ? text : token.ToString();
+            var field = FindEnumField(type, name);
             if (field == null) return null;
             fields.Add(field);
         }
         return fields.Count == 0 ? null : new BoundEnumExpression(fields.ToImmutable(), type, span);
+    }
+    private static IFieldSymbol? FindEnumField(INamedTypeSymbol type, string name)
+    {
+        foreach (var member in type.GetMembers(name))
+            if (member is IFieldSymbol { HasConstantValue: true } field) return field;
+        return null;
     }
     private INamedTypeSymbol? FindConverter(ISymbol? symbol)
     {
@@ -145,22 +157,9 @@ public sealed class ValueBinder
         if (symbol is ITypeSymbol targetType)
             foreach (var provider in _context.Profile.TypeConverterProviders)
                 if (provider.GetConverter(_context, targetType) is { } converter && IsConverter(converter)) return converter;
-        foreach (var attribute in symbol.GetAttributes())
-        {
-            if (attribute.AttributeClass == null || !_context.Types.Configuration.TypeConverterAttributes.Contains(attribute.AttributeClass.MetadataName())) continue;
-            var value = attribute.ConstructorArguments.FirstOrDefault().Value;
-            var type = value as INamedTypeSymbol ?? (value is string name ? _context.Types.Find(name.Split(',')[0].Trim()) : null);
-            if (type != null && IsConverter(type)) return type;
-        }
-        return null;
+        return TextConversionMetadata.FindAttributeConverter(_context.Types, symbol, _context.Cancellation);
     }
-    private bool IsConverter(INamedTypeSymbol type)
-    {
-        if (!_context.Types.IsAccessible(type) || !type.InstanceConstructors.Any(c => c.Parameters.Length == 0 && _context.Types.IsAccessible(c))) return false;
-        for (var current = type; current != null; current = current.BaseType)
-            if (current.HasMetadataName(ClrNames.TypeConverter)) return true;
-        return false;
-    }
+    private bool IsConverter(INamedTypeSymbol type) => TextConversionMetadata.IsConverter(_context.Types, type);
     public ITypeSymbol? ResolveTypeLiteral(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, NamespaceScope? typeArgumentScope = null) =>
         ResolveTypeLiteralAtSource(name, scope, span, typeArguments, report, typeArgumentScope);
     public ITypeSymbol? ResolveTypeLiteralAtSource(string name, NamespaceScope scope, TextSpan span, string? typeArguments = null, bool report = true, NamespaceScope? typeArgumentScope = null, TextSpan? typeArgumentSpan = null)
