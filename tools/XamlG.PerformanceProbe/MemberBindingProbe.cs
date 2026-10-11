@@ -56,6 +56,8 @@ internal static class MemberBindingProbe
         measure("member-lookup-warm-missing-1000", 10, () => Lookup(warm, target, missing, 1000));
         measure("member-lookup-cold-missing-1000", 3, () => Lookup(Context(new RoslynTypeSystem(compilation)), target, missing, 1000));
         measure("member-lookup-warm-deep-1000", 10, () => Lookup(warm, deep, names, 1000));
+        measure("member-lookup-cold-deep-missing-1000", 3, () => Lookup(Context(new RoslynTypeSystem(compilation)), deep, missing, 1000));
+        measure("member-lookup-cold-deep-repeated-1000", 3, () => Lookup(Context(new RoslynTypeSystem(compilation)), deep, names, 1000));
         var saturated = Context(new RoslynTypeSystem(compilation));
         for (var i = 0; i < 4600; i++) saturated.Members.Resolve(deep, "Saturated" + i, scope, default, report: false);
         measure("member-lookup-saturated-deep-missing-1000", 5, () => Lookup(saturated, deep, missing, 1000));

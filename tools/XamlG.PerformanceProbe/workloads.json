@@ -72,6 +72,8 @@
   "member-bind-cold-32x8",
   "member-bind-warm-1024x8",
   "member-bind-warm-32x8",
+  "member-lookup-cold-deep-missing-1000",
+  "member-lookup-cold-deep-repeated-1000",
   "member-lookup-cold-missing-1000",
   "member-lookup-cold-one",
   "member-lookup-cold-repeated-1000",
