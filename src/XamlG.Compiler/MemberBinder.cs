@@ -166,7 +166,7 @@ public sealed class MemberBinder
     {
         if (value.Type != null && !_context.Types.Compilation.ClassifyCommonConversion(value.Type, member.ValueType).IsImplicit)
         { _context.Report("XG1023", $"Value of type '{value.Type}' cannot be assigned to '{member.ValueType}'.", span); return; }
-        var key = member.Symbol.ToDisplayString();
+        var key = AssignmentMemberName.Get(member.Symbol);
         if (!target.AssignedScalars.Add(key) && !member.AllowRepeatedAssignments) { _context.Report("XG1014", $"Property '{member.Name}' is assigned more than once.", span); return; }
         target.Assignments.Add(new BoundSetAssignment(member, value, span));
     }
