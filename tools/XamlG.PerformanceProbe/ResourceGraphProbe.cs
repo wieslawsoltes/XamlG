@@ -89,6 +89,7 @@ internal static class ResourceGraphProbe
                 _ => index == count - 1 ? Array.Empty<string>() : new[] { uris[index + 1] }
             };
         }
+        signature.Append(ResourceAdjacencyProbe.Run(measure));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(signature.ToString())));
     }
 
