@@ -33,6 +33,14 @@ internal static class ResourceAdjacencyProbe
         var root = seed.Root;
         var property = (IPropertySymbol)root.Type.GetMembers("Child").Single();
         var member = new BoundMember(property.Name, BoundMemberKind.Property, property, property.Type, property.GetMethod, property.SetMethod, default);
+        // Internal helper metadata is accessed only during untimed fixture setup
+        // and validation; the probe is intentionally not a compiler friend assembly.
+        const BindingFlags members = BindingFlags.Instance | BindingFlags.NonPublic;
+        var shared = typeof(XamlEmissionResult).GetProperty("SharedSources", members)!;
+        var layout = typeof(XamlEmissionResult).GetProperty("PropertyLayout", members)!;
+        var helperType = shared.PropertyType.GenericTypeArguments[0];
+        var helperConstructor = helperType.GetConstructor([typeof(string), typeof(string)])!;
+        var appendHelper = shared.PropertyType.GetMethod("Add", [helperType])!;
         var signature = new StringBuilder();
         foreach (var count in new[] { 32, 1024 })
         foreach (var shape in new[] { "fanin", "islands", "lattice", "dense-blocks" })
@@ -49,16 +57,29 @@ internal static class ResourceAdjacencyProbe
             var valid = validate((BoundDocument[])documents.Clone(), default);
             if (valid.Any(document => !document.Success)) throw new InvalidOperationException("An acyclic topology was rejected");
             var expectedFailures = Enumerable.Range(0, count).Select(i => i == count / 3 || i == count * 2 / 3 || i == count - 1).ToArray();
-            var outputs = Enumerable.Range(0, count).Select(i => new XamlEmissionResult("g" + i, expectedFailures[i] ? "" : "source" + i,
-                "Factory" + i, "Build", "Populate", [], [new(new(1, 2), new(i, 1), "Graph.xaml")])
-                { SharedSources = [new("Helper" + i, "source")], PropertyLayout = "layout" + i }).ToArray();
+            var outputs = Enumerable.Range(0, count).Select(i =>
+            {
+                var output = new XamlEmissionResult("g" + i, expectedFailures[i] ? "" : "source" + i,
+                    "Factory" + i, "Build", "Populate", [], [new(new(1, 2), new(i, 1), "Graph.xaml")]);
+                var helper = helperConstructor.Invoke(["Helper" + i, "source"]);
+                shared.SetValue(output, appendHelper.Invoke(shared.GetValue(output), [helper]));
+                layout.SetValue(output, "layout" + i);
+                return output;
+            }).ToArray();
             for (var i = count - 1; i >= 0; i--)
                 expectedFailures[i] |= targets[i].Any(target => expectedFailures[target]);
             var checkedDocuments = (BoundDocument[])documents.Clone();
             var checkedOutputs = (XamlEmissionResult[])outputs.Clone();
             backend(checkedDocuments, checkedOutputs, default);
             for (var i = 0; i < count; i++)
+            {
                 if (checkedOutputs[i].Success == expectedFailures[i]) throw new InvalidOperationException("Unexpected backend failure closure");
+                if (!Equals(shared.GetValue(outputs[i]), shared.GetValue(checkedOutputs[i])) ||
+                    !Equals(layout.GetValue(outputs[i]), layout.GetValue(checkedOutputs[i])))
+                    throw new InvalidOperationException("Backend failure changed helper ownership");
+                signature.Append(JsonSerializer.Serialize(shared.GetValue(checkedOutputs[i]), shared.PropertyType));
+                signature.Append(JsonSerializer.Serialize(layout.GetValue(checkedOutputs[i])));
+            }
             signature.Append(shape).Append(count).Append(JsonSerializer.Serialize(targets));
             signature.Append(JsonSerializer.Serialize(valid.Select(document => new { document.Success, document.Diagnostics })));
             signature.Append(JsonSerializer.Serialize(checkedDocuments.Select(document => new { document.Success, document.Diagnostics })));
