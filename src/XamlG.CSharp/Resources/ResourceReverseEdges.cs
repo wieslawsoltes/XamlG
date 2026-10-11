@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using XamlG.Compiler.Resources;
 
 namespace XamlG.CSharp.Resources;
@@ -70,6 +71,7 @@ internal sealed class ResourceReverseEdges
         if (unchecked((uint)target) >= (uint)_documentCount) throw new IndexOutOfRangeException();
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ref Entry At(int link)
     {
         var index = link - 1;
@@ -119,16 +121,20 @@ internal sealed class ResourceReverseEdges
         private readonly ResourceReverseEdges _owner;
         private readonly int _linearEnd;
         private int _next;
-        private int _current;
+        private Entry _current;
         public Enumerator(ResourceReverseEdges owner, int first, int linearEnd)
-        { _owner = owner; _next = first; _current = 0; _linearEnd = linearEnd; }
+        { _owner = owner; _next = first; _current = default; _linearEnd = linearEnd; }
         public Enumerator GetEnumerator() => this;
-        public Entry Current => _owner.At(_current);
+        public Entry Current => _current;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool MoveNext()
         {
             if (_next == 0) return false;
-            _current = _next;
-            _next = _current < _linearEnd ? _current + 1 : _owner.At(_current).Next;
+            var link = _next;
+            // Load the complete entry once. Current and successor selection share
+            // that value instead of repeating block/directory/index checks.
+            _current = _owner.At(link);
+            _next = link < _linearEnd ? link + 1 : _current.Next;
             return true;
         }
     }
