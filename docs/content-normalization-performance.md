@@ -64,12 +64,12 @@ context diagnostic/symbol lists are cleared inside measured calls to avoid accum
 results. Complete binding timings include a new XamlCompiler call on warmed Roslyn and
 preconstructed syntax; they are not cold processes or complete MSBuild runs.
 
-Twenty-seven additional workloads cover canonical/changed/blank whitespace at two
-sizes, 1/32/256/2048 text fragments with collapse/preserve semantics, complete fragmented
+Twenty-nine additional workloads cover canonical/changed/blank whitespace at two
+sizes, 1/2/32/256/2048 text fragments with collapse/preserve semantics, complete fragmented
 binding, 8/128/512 XML attributes, ordinary element sequences and canonical-text
 binding. Every generated fixture must compile. Recursive normalized-node, diagnostic,
 symbol, generated-source and source-mapping bytes enter the cross-revision signature.
-The committed manifest retains all previous cases and requires 171 workloads.
+The committed manifest retains all previous cases and requires 173 workloads.
 
 ```sh
 dotnet test XamlG.slnx -c Release

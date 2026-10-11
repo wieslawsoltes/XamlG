@@ -54,7 +54,7 @@ internal static class ContentNormalizationProbe
         var types = new RoslynTypeSystem(compilation);
         var normalizerType = typeof(XamlCompiler).Assembly.GetType("XamlG.Compiler.ContentWhitespaceNormalizer", true)!;
         const string ns = " xmlns='clr-namespace:ContentProbe' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'";
-        foreach (var count in new[] { 1, 32, 256, 2048 })
+        foreach (var count in new[] { 1, 2, 32, 256, 2048 })
         foreach (var preserve in new[] { false, true })
         {
             var tree = XamlSyntaxTree.Parse("<TextRoot" + ns + (preserve ? " xml:space='preserve'" : "") + ">" +

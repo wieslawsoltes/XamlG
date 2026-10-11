@@ -129,16 +129,18 @@ public sealed class ContentNormalizationTests
     public void Separate_normalizers_can_share_immutable_input_concurrently()
     {
         var types = new RoslynTypeSystem(CompilationFactory.Create(Model));
-        Parallel.For(0, 16, _ => Equivalent(types, Header + "><Trim/> a<!--c--><![CDATA[ b ]]><x:String> c </x:String><Plain/></Root>",
-            types.Find("WhitespaceFixture.Words")!, true, false));
+        var tree = XamlSyntaxTree.Parse(Header + "><Trim/> a<!--c--><![CDATA[ b ]]><x:String> c </x:String><Plain/></Root>", "Shared.xaml");
+        Parallel.For(0, 16, _ => Equivalent(types, tree, types.Find("WhitespaceFixture.Words")!, true, false));
     }
 
     private static BindingContext Context(XamlSyntaxTree tree, RoslynTypeSystem types, Observe rule, CancellationToken token = default) =>
         BindingContext.CreateSignatureProbe(tree, types, XamlFrameworkProfile.Portable with { TypeBindingRules = ImmutableArray.Create<IXamlTypeBindingRule>(rule) }, new(), token);
 
-    private static void Equivalent(RoslynTypeSystem types, string source, ITypeSymbol target, bool collection, bool direct)
+    private static void Equivalent(RoslynTypeSystem types, string source, ITypeSymbol target, bool collection, bool direct) =>
+        Equivalent(types, XamlSyntaxTree.Parse(source, "Content.xaml"), target, collection, direct);
+
+    private static void Equivalent(RoslynTypeSystem types, XamlSyntaxTree tree, ITypeSymbol target, bool collection, bool direct)
     {
-        var tree = XamlSyntaxTree.Parse(source, "Content.xaml");
         var root = tree.Root!; var scope = NamespaceScope.Empty.Push(root); var snapshot = Snapshot(root);
         var expectedRule = new Observe(); var actualRule = new Observe();
         var expectedContext = Context(tree, types, expectedRule); var actualContext = Context(tree, types, actualRule);
