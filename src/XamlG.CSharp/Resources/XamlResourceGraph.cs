@@ -6,74 +6,87 @@ using XamlG.Syntax;
 
 namespace XamlG.CSharp.Resources;
 
-/// <summary>Dependency validation is iterative and linear in vertices and edges, including documents depending on a cycle.</summary>
+/// <summary>Iterative dependency validation with O(V + E) work and no per-document dependency sets.</summary>
 internal static class XamlResourceGraph
 {
     public static BoundDocument[] Validate(BoundDocument[] documents, CancellationToken cancellationToken)
     {
-        var local = documents.Select((d, i) => (Document: d, Index: i)).Where(p => p.Document.Options.ResourceUri != null)
-            .GroupBy(p => p.Document.Options.ResourceUri!, StringComparer.Ordinal).Where(g => g.Count() == 1)
-            .ToDictionary(g => g.Key, g => g.Single().Index, StringComparer.Ordinal);
         cancellationToken.ThrowIfCancellationRequested();
-        if (local.Count == 0) return documents;
-        var edges = documents.Select(d => References(d, cancellationToken).Where(r => local.ContainsKey(r.Resource.Uri)).ToArray()).ToArray();
-        if (edges.All(list => list.Length == 0)) return documents;
-        var dependencies = edges.Select(list => list.Select(r => local[r.Resource.Uri]).Distinct().ToHashSet()).ToArray();
-        var reverse = Enumerable.Range(0, documents.Length).Select(_ => new List<int>()).ToArray();
-        for (var i = 0; i < dependencies.Length; i++) foreach (var target in dependencies[i]) reverse[target].Add(i);
-        var queue = new Queue<int>(Enumerable.Range(0, documents.Length).Where(i => dependencies[i].Count == 0));
+        var local = LocalDocuments(documents, cancellationToken);
+        if (local == null) return documents;
+        var reverse = ReverseEdges(documents, local, countDependencies: true, cancellationToken, out var remaining);
+        if (reverse == null) return documents;
+        var queue = new Queue<int>();
+        for (var i = 0; i < documents.Length; i++)
+            if (remaining![i] == 0) queue.Enqueue(i);
         var visited = new bool[documents.Length];
         while (queue.Count != 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var index = queue.Dequeue(); visited[index] = true;
-            foreach (var parent in reverse[index]) if (dependencies[parent].Remove(index) && dependencies[parent].Count == 0) queue.Enqueue(parent);
+            var index = queue.Dequeue();
+            visited[index] = true;
+            if (reverse[index] is not { } parents) continue;
+            foreach (var incoming in parents)
+                if (--remaining![incoming.Parent] == 0) queue.Enqueue(incoming.Parent);
         }
         for (var i = 0; i < documents.Length; i++)
         {
             if (visited[i]) continue;
-            var edge = edges[i].First(r => !visited[local[r.Resource.Uri]]);
-            documents[i] = Error(documents[i], "XG3304", "This document depends on a compiled-resource cycle through '" + edge.Resource.Uri + "'.", edge.Span);
+            // Reference snapshots retain the old traversal order. Select precisely
+            // the first unresolved local edge, including documents leading into a cycle.
+            foreach (var edge in References(documents[i], cancellationToken))
+            {
+                if (!local.TryGetValue(edge.Resource.Uri, out var target) || target < 0 || visited[target]) continue;
+                documents[i] = Error(documents[i], "XG3304", "This document depends on a compiled-resource cycle through '" + edge.Resource.Uri + "'.", edge.Span);
+                break;
+            }
         }
-        queue = new(Enumerable.Range(0, documents.Length).Where(i => !documents[i].Success));
-        var reported = new HashSet<int>(queue);
+        // Reuse the exhausted queue and visited storage for failure propagation.
+        // Seed in document order, as before: it determines the first diagnostic when
+        // a caller includes more than one independently failed resource.
+        for (var i = 0; i < documents.Length; i++)
+        {
+            visited[i] = !documents[i].Success;
+            if (visited[i]) queue.Enqueue(i);
+        }
         while (queue.Count != 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var failed = queue.Dequeue();
-            foreach (var parent in reverse[failed])
+            if (reverse[queue.Dequeue()] is not { } parents) continue;
+            foreach (var incoming in parents)
             {
-                if (!reported.Add(parent)) continue;
-                var edge = edges[parent].First(r => local[r.Resource.Uri] == failed);
-                documents[parent] = Error(documents[parent], "XG3305", "The included document failed compilation: " + edge.Resource.Uri, edge.Span);
-                queue.Enqueue(parent);
+                if (visited[incoming.Parent]) continue;
+                visited[incoming.Parent] = true;
+                documents[incoming.Parent] = Error(documents[incoming.Parent], "XG3305",
+                    "The included document failed compilation: " + incoming.Edge.Resource.Uri, incoming.Edge.Span);
+                queue.Enqueue(incoming.Parent);
             }
         }
         return documents;
     }
-    /// <summary>Backend-only failures can remove a factory after binding succeeded. Suppress the
-    /// complete caller closure without changing cached raw bindings or reusable emissions.</summary>
+
+    /// <summary>Backend-only failures suppress the complete caller closure without
+    /// mutating cached raw bindings, reusable emissions or shared helper ownership.</summary>
     public static void ValidateEmissions(BoundDocument[] documents, XamlEmissionResult[] outputs, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!outputs.Any(output => !output.Success)) return;
-        var local = documents.Select((document, index) => (Document: document, Index: index))
-            .Where(pair => pair.Document.Options.ResourceUri != null)
-            .GroupBy(pair => pair.Document.Options.ResourceUri!, StringComparer.Ordinal).Where(group => group.Count() == 1)
-            .ToDictionary(group => group.Key, group => group.Single().Index, StringComparer.Ordinal);
-        var reverse = Enumerable.Range(0, documents.Length).Select(_ => new List<(int Parent, BoundResourceExpression Edge)>()).ToArray();
-        for (var i = 0; i < documents.Length; i++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            foreach (var edge in References(documents[i], cancellationToken))
-                if (local.TryGetValue(edge.Resource.Uri, out var target)) reverse[target].Add((i, edge));
-        }
-        var queue = new Queue<int>(Enumerable.Range(0, outputs.Length).Where(i => !outputs[i].Success));
+        var local = LocalDocuments(documents, cancellationToken);
+        if (local == null) return;
+        var reverse = ReverseEdges(documents, local, countDependencies: false, cancellationToken, out _);
+        if (reverse == null) return;
+        var queue = new Queue<int>();
+        for (var i = 0; i < outputs.Length; i++)
+            if (!outputs[i].Success) queue.Enqueue(i);
         while (queue.Count != 0)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            foreach (var (parent, edge) in reverse[queue.Dequeue()])
+            if (reverse[queue.Dequeue()] is not { } parents) continue;
+            foreach (var incoming in parents)
             {
+                var parent = incoming.Parent;
                 if (!outputs[parent].Success) continue;
+                var edge = incoming.Edge;
                 var diagnostic = new XamlDiagnostic("XG3305", "The included document failed code generation: " + edge.Resource.Uri, edge.Span);
                 documents[parent] = documents[parent] with { Diagnostics = documents[parent].Diagnostics.Add(diagnostic) };
                 outputs[parent] = outputs[parent] with
@@ -85,6 +98,60 @@ internal static class XamlResourceGraph
             }
         }
     }
+
+    private static Dictionary<string, int>? LocalDocuments(BoundDocument[] documents, CancellationToken cancellation)
+    {
+        Dictionary<string, int>? local = null;
+        var unique = 0;
+        for (var i = 0; i < documents.Length; i++)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (documents[i].Options.ResourceUri is not { } uri) continue;
+            local ??= new(StringComparer.Ordinal);
+            if (!local.TryGetValue(uri, out var previous)) { local.Add(uri, i); unique++; }
+            else if (previous >= 0) { local[uri] = -1; unique--; }
+        }
+        // Negative slots permanently mark ambiguous URIs, including three or more
+        // declarations. Never silently choose the last duplicate as a valid target.
+        return unique == 0 ? null : local;
+    }
+
+    private static List<Incoming>?[]? ReverseEdges(BoundDocument[] documents, Dictionary<string, int> local,
+        bool countDependencies, CancellationToken cancellation, out int[]? remaining)
+    {
+        List<Incoming>?[]? reverse = null;
+        int[]? seenParents = null;
+        remaining = null;
+        for (var parent = 0; parent < documents.Length; parent++)
+        {
+            foreach (var edge in References(documents[parent], cancellation))
+            {
+                cancellation.ThrowIfCancellationRequested();
+                if (!local.TryGetValue(edge.Resource.Uri, out var target) || target < 0) continue;
+                if (reverse == null)
+                {
+                    reverse = new List<Incoming>?[documents.Length];
+                    seenParents = new int[documents.Length];
+                    if (countDependencies) remaining = new int[documents.Length];
+                }
+                // One dense stamp array replaces a HashSet per caller. Mark the
+                // parent with +1 because zero is the array's unvisited value. Keep
+                // its first edge/span; duplicate includes never add dependency counts.
+                if (seenParents![target] == parent + 1) continue;
+                seenParents[target] = parent + 1;
+                (reverse[target] ??= new()).Add(new(parent, edge));
+                if (remaining != null) remaining[parent]++;
+            }
+        }
+        return reverse;
+    }
+
+    private readonly struct Incoming(int parent, BoundResourceExpression edge)
+    {
+        public int Parent { get; } = parent;
+        public BoundResourceExpression Edge { get; } = edge;
+    }
+
     internal static ImmutableArray<BoundResourceExpression> References(BoundDocument document, CancellationToken cancellationToken = default) =>
         ResourceReferenceCache.Get(document, cancellationToken);
     private static BoundDocument Error(BoundDocument document, string code, string message, TextSpan span) =>
