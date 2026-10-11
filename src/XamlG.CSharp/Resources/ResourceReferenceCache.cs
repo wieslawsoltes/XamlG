@@ -6,8 +6,9 @@ using XamlG.Compiler.Resources;
 
 namespace XamlG.CSharp.Resources;
 
-/// <summary>Only bound expression references are cached, never graph validity or
-/// emitted-factory availability. Diagnostic-only document copies may share a root.</summary>
+/// <summary>Only the first reference per ordinal dependency URI is cached, never
+/// graph validity or emitted-factory availability. This is not an occurrence list.
+/// Diagnostic-only document copies may share a root.</summary>
 internal static class ResourceReferenceCache
 {
     private sealed record Snapshot(ImmutableArray<BoundResourceExpression> Values);
@@ -26,19 +27,9 @@ internal static class ResourceReferenceCache
 
     private static Snapshot Scan(BoundObject root, CancellationToken cancellation)
     {
-        ImmutableArray<BoundResourceExpression>.Builder? resources = null;
-        // Preserve the historical reverse-expression traversal and thus the exact
-        // first failing edge/span selected by cycle and error diagnostics.
-        var stack = new Stack<BoundExpression>(BoundTraversal.Expressions(root));
-        while (stack.Count != 0)
-        {
-            cancellation.ThrowIfCancellationRequested();
-            var expression = stack.Pop();
-            if (expression is BoundResourceExpression resource)
-                (resources ??= ImmutableArray.CreateBuilder<BoundResourceExpression>()).Add(resource);
-            foreach (var child in BoundTraversal.Children(expression, true)) stack.Push(child);
-        }
-        cancellation.ThrowIfCancellationRequested();
-        return resources == null ? Empty : new(resources.ToImmutable());
+        var resources = ResourceDependencyScanner.Scan(root, cancellation);
+        // A successful cold scan is complete before publication. Cancelled or
+        // failed scans never publish partial URI/visited state into the weak cache.
+        return resources.IsEmpty ? Empty : new(resources);
     }
 }
