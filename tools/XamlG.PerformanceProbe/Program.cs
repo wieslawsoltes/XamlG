@@ -20,6 +20,7 @@ var conversionSignature = TextConversionProbe.Run(Measure);
 var memberSignature = MemberBindingProbe.Run(Measure);
 var contentSignature = ContentNormalizationProbe.Run(Measure);
 var whitespaceBufferSignature = WhitespaceBufferProbe.Run(Measure);
+var decodedMaps = DecodedSourceMapProbe.Run(Measure);
 var generatedSources = NamedFieldProbe.Run(Measure);
 var markupAssignments = MarkupAssignmentProbe.Run(Measure);
 var semanticInputs = new List<string>
@@ -109,6 +110,7 @@ using (var writer = new BinaryWriter(snapshot, Encoding.UTF8, leaveOpen: true))
     writer.Write(memberSignature);
     writer.Write(contentSignature);
     writer.Write(whitespaceBufferSignature);
+    writer.Write(decodedMaps.SemanticSignature);
     foreach (var source in generatedSources) writer.Write(source);
     foreach (var markup in markupAssignments) writer.Write(markup.SemanticSignature);
 }
@@ -117,6 +119,7 @@ var result = new
     runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
     architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
     processors = Environment.ProcessorCount,
+    decoded_map_storage = decodedMaps.Storage,
     semantic_inputs = semanticInputs.Count,
     semantic_sha256 = Convert.ToHexString(SHA256.HashData(snapshot.ToArray())),
     measurements,
