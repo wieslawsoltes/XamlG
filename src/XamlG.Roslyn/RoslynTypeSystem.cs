@@ -68,17 +68,37 @@ public sealed class RoslynTypeSystem
         }
         var targets = _namespaceTargets.TryGetValue(xmlNamespace, out var cached)
             ? cached : _namespaceTargets.GetOrAdd(xmlNamespace, ResolveNamespaceTargets);
-        var candidates = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        // Ordinary resolution has zero or one distinct match. Do not allocate a
+        // set and sorting pipeline unless a second different symbol is found.
+        INamedTypeSymbol? single = null;
+        HashSet<INamedTypeSymbol>? candidates = null;
         var metadata = name + (arity == 0 ? string.Empty : "`" + arity);
+        string? previousPrefix = null;
+        string? qualified = null;
         foreach (var target in targets)
         {
-            var qualified = target.Prefix + metadata;
+            // Untargeted mappings visit many assemblies with the same prefix.
+            // Qualify once per contiguous prefix run, not once per assembly.
+            if (qualified == null || !string.Equals(previousPrefix, target.Prefix, StringComparison.Ordinal))
+            {
+                previousPrefix = target.Prefix;
+                qualified = target.Prefix + metadata;
+            }
             // Facades such as netstandard carry forwarders rather than definitions.
             // Preserve the resolved destination symbol's actual assembly identity.
             var type = target.Assembly.GetTypeByMetadataName(qualified) ?? target.Assembly.ResolveForwardedType(qualified);
-            if (type != null && IsAccessible(type)) candidates.Add(type);
+            if (type == null || !IsAccessible(type)) continue;
+            if (candidates != null) candidates.Add(type);
+            else if (single == null) single = type;
+            else if (!SymbolEqualityComparer.Default.Equals(single, type))
+                candidates = new(SymbolEqualityComparer.Default) { single, type };
         }
-        var result = candidates.OrderBy(c => c.ContainingAssembly.Identity.ToString(), StringComparer.Ordinal).ThenBy(c => c.MetadataName(), StringComparer.Ordinal).ToImmutableArray();
+        // Ambiguity retains the exact previous ordering and symbol comparer,
+        // including equivalent matches reached through multiple facade mappings.
+        var result = candidates != null
+            ? candidates.OrderBy(c => c.ContainingAssembly.Identity.ToString(), StringComparer.Ordinal)
+                .ThenBy(c => c.MetadataName(), StringComparer.Ordinal).ToImmutableArray()
+            : single == null ? ImmutableArray<INamedTypeSymbol>.Empty : ImmutableArray.Create(single);
         return new(result.Length == 1 ? result[0] : null, result);
     }
     private ImmutableArray<(string Prefix, IAssemblySymbol Assembly)> ResolveNamespaceTargets(string xmlNamespace)
