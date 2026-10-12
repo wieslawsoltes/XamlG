@@ -32,9 +32,10 @@ internal static class CSharpNames
         var encoded = Encoding.UTF8.GetBytes(value);
         return StableId(hash, encoded, encoded.Length);
     }
-    internal static string StableId(SHA256 hash, byte[] encoded, int count)
+    internal static string StableId(SHA256 hash, byte[] encoded, int count) =>
+        StableIdFromDigest(hash.ComputeHash(encoded, 0, count));
+    internal static string StableIdFromDigest(byte[] bytes)
     {
-        var bytes = hash.ComputeHash(encoded, 0, count);
         const string digits = "0123456789abcdef";
         // Only the final 96-bit identifier string escapes.
         Span<char> characters = stackalloc char[24];
