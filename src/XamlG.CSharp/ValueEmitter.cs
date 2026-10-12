@@ -29,6 +29,8 @@ internal sealed class ValueEmitter
             case BoundCachedExpression cached: return _context.CachedExpressions.Get(cached);
             case BoundEnumExpression enumeration:
                 return "(" + string.Join(" | ", enumeration.Fields.Select(f => f.ContainingType.CSharpName() + "." + CSharpNames.Identifier(f.Name))) + ")";
+            case BoundCastExpression { Value: BoundCastExpression { Value: BoundCastExpression } } chain:
+                return CastChainEmitter.Emit(chain, frame, this, _context);
             case BoundCastExpression cast: return "((" + cast.TargetType.CSharpName() + ")(" + Emit(cast.Value, frame) + "))";
             case BoundTypeExpression type: return "typeof(" + type.ReferencedType.CSharpName() + ")";
             case BoundMethodHandleExpression handle:
