@@ -51,7 +51,7 @@ public sealed class ArrayCreationFormattingTests
             var source = "public static class Factory" + depth + " { public static " + array.CSharpName() +
                 " Create() => " + Format(creation) + "; }";
             using var output = new MemoryStream();
-            var result = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(source)).Emit(output);
+            var result = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(source, (CSharpParseOptions)compilation.SyntaxTrees.First().Options)).Emit(output);
             Assert.True(result.Success, string.Join("\n", result.Diagnostics));
             element = compilation.CreateArrayTypeSymbol(element, depth % 3 + 1);
         }
