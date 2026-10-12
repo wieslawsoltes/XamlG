@@ -59,7 +59,7 @@ internal sealed class ValueEmitter
                 {
                     var itemValue = Emit(item, frame);
                     _context.Writer.Line("((" + collection.AddMethod.ContainingType.CSharpName() + ")" + collectionLocal + ")." + CSharpNames.Method(collection.AddMethod) +
-                        "((" + collection.AddMethod.Parameters[0].Type.CSharpName() + ")(" + itemValue + "));" );
+                        "((" + collection.AddMethod.Parameters[0].Type.CSharpName() + ")(" + itemValue + "));");
                 }
                 return collectionLocal;
             case BoundNewExpression creation:
@@ -99,9 +99,23 @@ internal sealed class ValueEmitter
     private static string ArrayCreation(BoundArrayExpression array)
     {
         var element = array.ArrayType.ElementType;
-        var suffix = string.Empty;
-        while (element is IArrayTypeSymbol nested)
-        { suffix += "[" + new string(',', nested.Rank - 1) + "]"; element = nested.ElementType; }
+        if (element is not IArrayTypeSymbol nested)
+            return "new " + element.CSharpName() + "[" + array.Values.Length + "]";
+        // Preserve the allocation-light single-suffix path. Deep jagged/mixed-rank
+        // shapes append each rank once rather than repeatedly copying the prefix.
+        var suffix = "[" + new string(',', nested.Rank - 1) + "]";
+        element = nested.ElementType;
+        if (element is IArrayTypeSymbol)
+        {
+            var builder = new System.Text.StringBuilder(suffix);
+            do
+            {
+                nested = (IArrayTypeSymbol)element;
+                builder.Append('[').Append(',', nested.Rank - 1).Append(']');
+                element = nested.ElementType;
+            } while (element is IArrayTypeSymbol);
+            suffix = builder.ToString();
+        }
         return "new " + element.CSharpName() + "[" + array.Values.Length + "]" + suffix;
     }
 
@@ -197,7 +211,7 @@ internal sealed class ValueEmitter
             : "(" + deferred.Customizer.Parameters[0].Type.CSharpName() + ")" + name;
         var call = deferred.Customizer.ContainingType.CSharpName() + "." + CSharpNames.Method(deferred.Customizer) + "(" + factory + ", " + parentFrame + ")";
         if (!deferred.UsesFunctionPointer) return call;
-        var value = _context.Temporary("deferred"); writer.Line(deferred.TargetType.CSharpName() + " " + value + ";");
+        var value = _context.Temporary("deferred"); writer.Line(returnType + " " + value + ";");
         writer.Open("unsafe"); writer.Line(value + " = " + call + ";"); writer.Close(); return value;
     }
 }
