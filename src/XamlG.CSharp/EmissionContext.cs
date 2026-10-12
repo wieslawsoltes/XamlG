@@ -73,13 +73,32 @@ internal sealed class EmissionContext : IDisposable
     { if (FrameNamespaces(parent) is { } map) SetFrameNamespaces(frame, map); else _frameNamespaces.Remove(frame); }
     public void Map(TextSpan span, Action emit)
     {
+        var start = BeginMap(span);
+        emit();
+        EndMap(span, start);
+    }
+    public void Map<TState>(TextSpan span, TState state, Action<TState> emit)
+    {
+        var start = BeginMap(span);
+        emit(state);
+        EndMap(span, start);
+    }
+    private int BeginMap(TextSpan span)
+    {
         Cancellation.ThrowIfCancellationRequested();
-        // Shared construction bodies have multiple source occurrences. Their
-        // call arguments carry the occurrence-specific mappings instead.
-        if (ConstructionParameters != null) { emit(); return; }
+        // Capture suppression at entry: the callback may temporarily change the
+        // construction parameters. -1 cannot be a generated-source position.
+        if (ConstructionParameters != null) return -1;
         if (Document.Options.EmitLineDirectives && Document.Syntax.Path.Length != 0)
         { var offset = Math.Min(span.Start, Document.Syntax.Text.Length); Writer.Line("#line " + (Document.Syntax.Lines.GetPosition(offset).Line + 1) + " " + CSharpNames.Literal(Document.Syntax.Path)); }
-        var start = Writer.Position; emit(); Mappings.Add(new(new(start, Writer.Position - start), span, Document.Syntax.Path));
+        return Writer.Position;
+    }
+    private void EndMap(TextSpan span, int start)
+    {
+        // Deliberately not Dispose/finally: a throwing callback must not publish
+        // a completed mapping or a trailing #line directive.
+        if (start < 0) return;
+        Mappings.Add(new(new(start, Writer.Position - start), span, Document.Syntax.Path));
         if (Document.Options.EmitLineDirectives && Document.Syntax.Path.Length != 0) Writer.Line("#line default");
     }
     public string Descriptor(BoundMember member)

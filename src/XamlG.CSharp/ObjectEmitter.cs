@@ -91,7 +91,9 @@ internal sealed class ObjectEmitter
         initialize?.Invoke(variable);
         if (value.UsableDuringInitialization) consume?.Invoke(variable);
         foreach (var assignment in value.Assignments)
-            _context.Map(assignment.Span, () => _assignments.Emit(assignment, value, variable, frame));
+            _context.Map(assignment.Span,
+                (Emitter: _assignments, Assignment: assignment, Owner: value, Target: variable, Frame: frame),
+                static state => state.Emitter.Emit(state.Assignment, state.Owner, state.Target, state.Frame));
         if (value.SupportsInitialize) writer.Line("((global::System.ComponentModel.ISupportInitialize)" + variable + ").EndInit();");
         if (!value.UsableDuringInitialization) consume?.Invoke(variable);
         return variable;
