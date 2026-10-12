@@ -347,5 +347,20 @@
   "decoded-map-create-alternating-density-65536",
   "decoded-map-query32-alternating-density-65536",
   "decoded-map-create-dense-crlf-65536",
-  "decoded-map-query32-dense-crlf-65536"
+  "decoded-map-query32-dense-crlf-65536",
+  "type-candidate-single-hit",
+  "type-candidate-single-miss",
+  "type-candidate-untargeted-hit",
+  "type-candidate-untargeted-miss",
+  "type-candidate-ambiguous",
+  "type-candidate-generic-ambiguous",
+  "type-candidate-forwarded-duplicate",
+  "type-candidate-prefix-switch",
+  "type-resolve-public-cold-1",
+  "type-resolve-public-cold-64",
+  "type-resolve-public-cold-256",
+  "type-resolve-public-warm-256",
+  "type-candidate-bind-cold-32",
+  "type-candidate-bind-cold-256",
+  "type-candidate-bind-warm-256"
 ]
