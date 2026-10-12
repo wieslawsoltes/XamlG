@@ -43,7 +43,13 @@ public sealed class XamlDecodedTextMap
         // Upper bound: all integer positions between checkpoints have the same
         // nonnegative offset. A forbidden checkpoint is immediately followed by
         // its entity end, so it can be selected only for that exact position.
-        var low = 0; var high = changes.Length;
+        // Most sparse XAML attributes have one entity near a boundary. Their
+        // outer affine regions need no search. The final checkpoint is always
+        // legal: a supplementary entity appends its forbidden midpoint first.
+        var last = changes[changes.Length - 1];
+        if (position >= last.Position) return position + last.Offset;
+        if (position < changes[0].Position) return position;
+        var low = 0; var high = changes.Length - 1;
         while (low < high)
         {
             var middle = low + ((high - low) >> 1);
@@ -104,6 +110,13 @@ public sealed class XamlDecodedTextMap
             var count = nextEscape < 0 ? text.Length - i : nextEscape;
             output.Append(source, span.Start + i, count);
             i += count;
+            // Dense entity runs should not build a full checkpoint list and then
+            // reconstruct the full direct table. Promote once, after a small
+            // sample and only when direct boundaries already have smaller payload.
+            // The dense continuation can compact at publication if a later plain
+            // tail changes the final ratio; it never reparses the source.
+            if (changes is { Count: >= 32 } && 2L * changes.Count >= (long)output.Length + 1)
+                return ContinueDense(source, span, attribute, output, i, changes);
         }
         return new(output.ToString(), Finish(changes, output.Length), span.Start);
     }
@@ -128,6 +141,99 @@ public sealed class XamlDecodedTextMap
             dense[position] = position + offset;
         }
         return dense;
+    }
+
+    private static XamlDecodedTextMap ContinueDense(string source, TextSpan span,
+        bool attribute, StringBuilder output, int position, List<Boundary> changes)
+    {
+        var text = source.AsSpan(span.Start, span.Length);
+        // Reconstruct only the already-decoded prefix. Transition is one-way, so
+        // alternating densities cannot cause repeated prefix copying (O(N²)).
+        var boundaries = new List<int>(output.Length + 1);
+        var next = 0; var offset = 0;
+        for (var decoded = 0; decoded <= output.Length; decoded++)
+        {
+            if (next < changes.Count && changes[next].Position == decoded)
+            {
+                var change = changes[next++];
+                if (change.Offset < 0) { boundaries.Add(-1); continue; }
+                offset = change.Offset;
+            }
+            boundaries.Add(decoded + offset);
+        }
+        var changeCount = changes.Count;
+        for (var i = position; i < text.Length;)
+        {
+            if (text[i] == '&')
+            {
+                var relativeEnd = XmlEntityDecoder.FindEntityEnd(text.Slice(i + 1));
+                if (relativeEnd < 0) throw new ArgumentException("Invalid XML entity in the source range.", "source");
+                var entity = text.Slice(i + 1, relativeEnd);
+                if (!XmlEntityDecoder.TryDecodeEntity(entity, out var scalar))
+                    throw new ArgumentException("Invalid XML character entity.", nameof(entity));
+                i += relativeEnd + 2;
+                changeCount++;
+                if (scalar <= 0xFFFF) output.Append((char)scalar);
+                else
+                {
+                    scalar -= 0x10000;
+                    output.Append((char)(0xD800 + (scalar >> 10)));
+                    output.Append((char)(0xDC00 + (scalar & 0x3FF)));
+                    boundaries.Add(-1);
+                    changeCount++;
+                }
+            }
+            else if (text[i] == '\r')
+            {
+                i++;
+                if (i < text.Length && text[i] == '\n') { i++; changeCount++; }
+                output.Append(attribute ? ' ' : '\n');
+            }
+            else
+            {
+                var nextEscape = XmlEntityDecoder.FindEscape(text.Slice(i), attribute);
+                var count = nextEscape < 0 ? text.Length - i : nextEscape;
+                if (count != 0)
+                {
+                    output.Append(source, span.Start + i, count);
+                    // A final ordinary run contributes no checkpoints. Avoid
+                    // constructing thousands of boundaries merely to compact
+                    // them again for dense-prefix/sparse-tail inputs.
+                    if (nextEscape < 0) break;
+                    for (var end = i + count; i < end;) boundaries.Add(++i);
+                    continue;
+                }
+                output.Append(' '); // Attribute-only LF/TAB.
+                i++;
+            }
+            boundaries.Add(i);
+        }
+        if (2L * changeCount >= (long)output.Length + 1)
+        {
+            var direct = new int[output.Length + 1];
+            boundaries.CopyTo(direct);
+            var tailOffset = text.Length - output.Length;
+            for (var decoded = boundaries.Count; decoded < direct.Length; decoded++)
+                direct[decoded] = decoded + tailOffset;
+            return new(output.ToString(), direct, span.Start);
+        }
+
+        // Dense prefixes followed by long ordinary tails still retain O(B)
+        // boundary payload. Never allocate a final dense array merely to discard
+        // it; compact directly from the temporary list in one publication pass.
+        var compact = new Boundary[changeCount];
+        next = 0; offset = 0;
+        for (var decoded = 0; decoded < boundaries.Count; decoded++)
+        {
+            var boundary = boundaries[decoded];
+            if (boundary < 0) compact[next++] = new(decoded, -1);
+            else if (boundary - decoded != offset)
+            {
+                offset = boundary - decoded;
+                compact[next++] = new(decoded, offset);
+            }
+        }
+        return new(output.ToString(), compact, span.Start);
     }
 
     private static XamlDecodedTextMap CreateDense(ReadOnlySpan<char> text, int sourceStart, bool attribute)
