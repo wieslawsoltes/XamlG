@@ -23,18 +23,23 @@ public sealed class XamlDecodedTextMap
     {
         if (decodedSpan.End > Text.Length) throw InvalidBoundary();
         if (_boundaries == null) return new(_sourceStart + decodedSpan.Start, decodedSpan.Length);
-        var start = MapBoundary(decodedSpan.Start);
-        var end = decodedSpan.Length == 0 ? start : MapBoundary(decodedSpan.End);
+        int start, end;
+        if (_boundaries is int[] dense)
+        { start = dense[decodedSpan.Start]; end = dense[decodedSpan.End]; }
+        else
+        {
+            var changes = (Boundary[])_boundaries;
+            start = MapBoundary(changes, decodedSpan.Start);
+            end = decodedSpan.Length == 0 ? start : MapBoundary(changes, decodedSpan.End);
+        }
         if (start < 0 || end < 0) throw InvalidBoundary();
         return TextSpan.FromBounds(_sourceStart + start, _sourceStart + end);
     }
     private static ArgumentException InvalidBoundary() => new(
         "A source edit cannot split an XML entity or exceed the decoded value.", "decodedSpan");
 
-    private int MapBoundary(int position)
+    private static int MapBoundary(Boundary[] changes, int position)
     {
-        if (_boundaries is int[] dense) return dense[position];
-        var changes = (Boundary[])_boundaries!;
         // Upper bound: all integer positions between checkpoints have the same
         // nonnegative offset. A forbidden checkpoint is immediately followed by
         // its entity end, so it can be selected only for that exact position.

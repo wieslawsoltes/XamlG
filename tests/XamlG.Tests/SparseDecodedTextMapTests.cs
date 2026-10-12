@@ -73,11 +73,11 @@ public sealed class SparseDecodedTextMapTests
     {
         var text = new string('x', 65536);
         var map = XamlDecodedTextMap.Create(text + "&amp;" + text, new(0, text.Length * 2 + 5));
-        Assert.Equal(1, Storage(map)!.Length);
+        Assert.Single(Storage(map)!);
         var pair = XamlDecodedTextMap.Create(text + "&#x10000;" + text, new(0, text.Length * 2 + 9));
         Assert.Equal(2, Storage(pair)!.Length);
         var normalized = XamlDecodedTextMap.Create(text + "\t\r\n", new(0, text.Length + 3));
-        Assert.Equal(1, Storage(normalized)!.Length); // Only CRLF changes the offset.
+        Assert.Single(Storage(normalized)!); // Only CRLF changes the offset.
         var sameLength = XamlDecodedTextMap.Create(text + "\t\r\n", new(0, text.Length + 2));
         Assert.Null(Storage(sameLength)); // TAB and lone CR change text, not coordinates.
     }
