@@ -87,7 +87,9 @@ internal static class EmissionBookkeepingProbe
                 (named ? " x:Class='BookkeepingProbe.Page'" : "") + ">\n" +
                 string.Concat(Enumerable.Range(0, count).Select(i => "<Item" + (named ? " x:Name='item" + i + "'" : "") +
                     " P0='a' P1='b' P2='c' P3='d' P4='e' P5='f' P6='g' P7='h'/>\n")) + "</Root>";
-            var path = escaped ? "generated/" + string.Concat(Enumerable.Repeat("folder\\quoted\"part/", 16)) + "Page.xaml" : "Page.xaml";
+            // Backslashes exercise literal escaping without an embedded quote,
+            // which is not representable by the historical #line filename grammar.
+            var path = escaped ? "generated/" + string.Concat(Enumerable.Repeat("folder\\escaped_part/", 16)) + "Page.xaml" : "Page.xaml";
             var bound = new XamlCompiler().Bind(XamlSyntaxTree.Parse(xaml, path), compilation,
                 XamlFrameworkProfile.Portable, new XamlCompilerOptions { EmitLineDirectives = lines });
             Require(bound.Success, "Bookkeeping fixture binding failed: " + string.Join("\n", bound.Diagnostics));

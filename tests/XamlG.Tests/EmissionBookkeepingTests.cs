@@ -136,6 +136,33 @@ public sealed class EmissionBookkeepingTests
         finally { CultureInfo.CurrentCulture = originalCulture; }
     }
 
+    [Fact]
+    public void Quoted_directive_filename_preserves_previous_compiler_diagnostics()
+    {
+        // #line filenames do not process C# string escapes. This performance
+        // pass preserves that pre-existing limitation instead of calling such
+        // a path a successfully compilable benchmark fixture.
+        var fixture = new EmissionAnalysisFixture();
+        var document = fixture.Document with
+        {
+            Syntax = XamlSyntaxTree.Parse("<Node/>", "quoted\"name.xaml"),
+            Options = fixture.Document.Options with { EmitLineDirectives = true }
+        };
+        using var old = new EmissionContext(document, default);
+        using var current = new EmissionContext(document, default);
+        Previous(old, default, () => old.Writer.Line("class C { }"));
+        var start = current.BeginMap(default);
+        current.Writer.Line("class C { }");
+        current.EndMap(default, start);
+        var before = CSharpSyntaxTree.ParseText(old.Writer.ToString()).GetDiagnostics()
+            .Select(d => (d.Id, d.GetMessage(), d.Location.SourceSpan)).ToArray();
+        var after = CSharpSyntaxTree.ParseText(current.Writer.ToString()).GetDiagnostics()
+            .Select(d => (d.Id, d.GetMessage(), d.Location.SourceSpan)).ToArray();
+        Assert.NotEmpty(before);
+        Assert.Equal(before, after);
+        Assert.Equal(old.Writer.ToString(), current.Writer.ToString());
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -155,7 +182,7 @@ public sealed class EmissionBookkeepingTests
         var outputs = new string[8];
         Parallel.For(0, outputs.Length, i =>
         {
-            var document = new XamlCompiler().Bind(XamlSyntaxTree.Parse(xaml, "views/quoted\"name.xaml"), compilation,
+            var document = new XamlCompiler().Bind(XamlSyntaxTree.Parse(xaml, "views\\deep\\name.xaml"), compilation,
                 XamlFrameworkProfile.Portable, new XamlCompilerOptions { EmitLineDirectives = lines });
             Assert.True(document.Success, string.Join("\n", document.Diagnostics));
             var result = new CSharpEmitter().Emit(document);
