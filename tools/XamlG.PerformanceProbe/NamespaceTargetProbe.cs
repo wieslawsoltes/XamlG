@@ -91,6 +91,38 @@ internal static class NamespaceTargetProbe
             foreach (var target in group) { writer.Write(target.Prefix); writer.Write(target.Assembly.Identity.ToString()); }
             measure("namespace-target-grouped-256", 100, () => groupCore("urn:group").Length);
             measure("namespace-target-grouped-miss-256", 1000, () => groupCore("urn:absent").Length);
+            foreach (var unique in new[] { 24, 1000 })
+            {
+                // Deterministic URI values on both revisions/processes. Native
+                // collision tests use runtime hashes, but benchmarks never do.
+                var mappings = Enumerable.Range(0, 1024).Select(i => new XmlNamespaceMapping(
+                    i < unique ? "urn:mixed" + i : "urn:hub", "TargetProbe", "NamespaceTargetProbe, Version=" + i)).ToImmutableArray();
+                var configuration = new XamlTypeSystemConfiguration { XmlnsDefinitionAttributes = [], NamespaceMappings = mappings };
+                var names = Enumerable.Range(0, Math.Min(unique, 128)).Select(i => "urn:mixed" + i).Append("urn:hub").ToArray();
+                var types = new RoslynTypeSystem(compilation, configuration);
+                var core = Core(types);
+                for (var i = 0; i < 8; i++) core(names[i]);
+                foreach (var ns in names)
+                {
+                    var targets = core(ns);
+                    writer.Write(ns); writer.Write(targets.Length);
+                    foreach (var target in targets)
+                    { writer.Write(target.Prefix); writer.Write(target.Assembly.Identity.ToString()); }
+                }
+                measure("namespace-target-mixed-warm-unique" + unique, 20, () =>
+                {
+                    var count = 0;
+                    foreach (var ns in names) count += core(ns).Length;
+                    return count;
+                });
+                measure("namespace-target-mixed-cold-unique" + unique, 5, () =>
+                {
+                    var fresh = new RoslynTypeSystem(compilation, configuration);
+                    var found = 0;
+                    foreach (var ns in names) found += fresh.Resolve(ns, "Item").Candidates.Length;
+                    return found;
+                });
+            }
         }
         return Convert.ToHexString(SHA256.HashData(signature.ToArray()));
     }

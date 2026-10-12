@@ -382,5 +382,9 @@
   "namespace-target-public-cold-1024-q256",
   "namespace-target-bind-cold-1024",
   "namespace-target-grouped-256",
-  "namespace-target-grouped-miss-256"
+  "namespace-target-grouped-miss-256",
+  "namespace-target-mixed-warm-unique24",
+  "namespace-target-mixed-cold-unique24",
+  "namespace-target-mixed-warm-unique1000",
+  "namespace-target-mixed-cold-unique1000"
 ]
