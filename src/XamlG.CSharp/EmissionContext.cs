@@ -139,6 +139,18 @@ internal sealed class EmissionContext : IDisposable
         _sourceInfoSetter = true;
         return _sourceInfoSetterName ??= "__SetSourceInfo_" + Id;
     }
+    public string PropertyRegistration(PropertyAccessor value, string frame)
+    {
+        var key = value.Key;
+        if (SharedProperties?.Registrations.TryGetValue(key, out var shared) == true)
+            return (UsePropertyAliases ? shared.Alias : shared.Source.TypeName) + ".Table.Register(" + frame + ", " + shared.Index + ");";
+        if (!_propertyAccessors.TryGetValue(key, out var accessor))
+        {
+            accessor = (_propertyAccessors.Count, value);
+            _propertyAccessors.Add(key, accessor);
+        }
+        return "__properties_" + Id + ".Register(" + frame + ", " + accessor.Index + ");";
+    }
     public void EmitMetadataHelpers()
     {
         if (_sourceInfoSetter)
