@@ -211,7 +211,7 @@ internal sealed class ValueEmitter
             : "(" + deferred.Customizer.Parameters[0].Type.CSharpName() + ")" + name;
         var call = deferred.Customizer.ContainingType.CSharpName() + "." + CSharpNames.Method(deferred.Customizer) + "(" + factory + ", " + parentFrame + ")";
         if (!deferred.UsesFunctionPointer) return call;
-        var value = _context.Temporary("deferred"); writer.Line(returnType + " " + value + ";");
+        var value = _context.Temporary("deferred"); writer.Line(deferred.TargetType.CSharpName() + " " + value + ";");
         writer.Open("unsafe"); writer.Line(value + " = " + call + ";"); writer.Close(); return value;
     }
 }
