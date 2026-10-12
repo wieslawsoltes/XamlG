@@ -18,6 +18,7 @@ public sealed class ArrayCreationFormattingTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
+    [InlineData(3)]
     [InlineData(32)]
     [InlineData(256)]
     [InlineData(1024)]

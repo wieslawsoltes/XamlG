@@ -101,11 +101,18 @@ internal sealed class ValueEmitter
         var element = array.ArrayType.ElementType;
         if (element is not IArrayTypeSymbol nested)
             return "new " + element.CSharpName() + "[" + array.Values.Length + "]";
-        // Preserve the allocation-light single-suffix path. Deep jagged/mixed-rank
-        // shapes append each rank once rather than repeatedly copying the prefix.
+        // Preserve direct one/two-suffix paths. Deep jagged/mixed-rank shapes
+        // append each rank once rather than repeatedly copying the prefix.
         var suffix = "[" + new string(',', nested.Rank - 1) + "]";
         element = nested.ElementType;
-        if (element is IArrayTypeSymbol)
+        if (element is IArrayTypeSymbol second && second.ElementType is not IArrayTypeSymbol)
+        {
+            // This concatenation is bounded to one additional rank. A builder
+            // costs more than the original two-rank path in both time and bytes.
+            suffix += "[" + new string(',', second.Rank - 1) + "]";
+            element = second.ElementType;
+        }
+        else if (element is IArrayTypeSymbol)
         {
             var builder = new System.Text.StringBuilder(suffix);
             do
