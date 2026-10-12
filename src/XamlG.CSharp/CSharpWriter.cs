@@ -13,6 +13,11 @@ internal sealed class CSharpWriter
         if (text.Length != 0 && !text.StartsWith("#", StringComparison.Ordinal)) _text.Append(' ', Indent * 4);
         _text.Append(text).Append('\n');
     }
+    // Inputs are already formatted in the caller's original evaluation order.
+    // Directives never indent, even inside a nested generated scope. Appending
+    // pieces avoids allocating a second string containing the entire source path.
+    public void LineDirective(string lineNumber, string pathLiteral) =>
+        _text.Append("#line ").Append(lineNumber).Append(' ').Append(pathLiteral).Append('\n');
     public void Open(string header) { Line(header); Line("{"); Indent++; _scopes.Push(++_nextScope); }
     public void Close(string suffix = "") { _scopes.Pop(); Indent--; Line("}" + suffix); }
     public void Prepend(string text) => _text.Insert(0, text);

@@ -11,6 +11,12 @@ internal sealed class EmissionContext : IDisposable
     private byte[] _hashInput = Array.Empty<byte>();
     private int _temporary;
     private bool _sourceInfoSetter;
+    // These strings depend only on this immutable document/Id. Lazy ownership
+    // avoids rebuilding them for each occurrence without any cross-emission cache.
+    private string? _localServicesType;
+    private string? _sourceInfoTableName;
+    private string? _sourceInfoSetterName;
+    private string? _documentPathLiteral;
     private readonly Dictionary<ISymbol, string> _descriptors = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<IMethodSymbol, string> _initSetters = new(SymbolEqualityComparer.Default);
     private readonly Dictionary<string, int> _sourceRecords = new(StringComparer.Ordinal);
@@ -45,7 +51,9 @@ internal sealed class EmissionContext : IDisposable
     public SharedServiceSource? SharedServices { get; set; }
     public SharedPropertyTables? SharedProperties { get; set; }
     public bool UsePropertyAliases { get; set; }
-    public string ServicesType => SharedServices?.TypeName ?? "__XamlGServices_" + Id;
+    // The shared service selection is mutable; never cache that selection itself.
+    public string ServicesType => SharedServices?.TypeName ?? (_localServicesType ??= "__XamlGServices_" + Id);
+    internal string DocumentPathLiteral => _documentPathLiteral ??= CSharpNames.Literal(Document.Syntax.Path);
     public string Temporary(string role) => "__" + role + _temporary++;
     public string StableId(string value) => StableId(null, value, new(0, value.Length));
     public string StableId(string value, TextSpan span) => StableId(null, value, span);
@@ -83,17 +91,23 @@ internal sealed class EmissionContext : IDisposable
         emit(state);
         EndMap(span, start);
     }
-    private int BeginMap(TextSpan span)
+    // Straight-line hot emitters can bracket their work directly: no tuple copy,
+    // generic trampoline or delegate invocation. EndMap must only run on success.
+    internal int BeginMap(TextSpan span)
     {
         Cancellation.ThrowIfCancellationRequested();
         // Capture suppression at entry: the callback may temporarily change the
         // construction parameters. -1 cannot be a generated-source position.
         if (ConstructionParameters != null) return -1;
         if (Document.Options.EmitLineDirectives && Document.Syntax.Path.Length != 0)
-        { var offset = Math.Min(span.Start, Document.Syntax.Text.Length); Writer.Line("#line " + (Document.Syntax.Lines.GetPosition(offset).Line + 1) + " " + CSharpNames.Literal(Document.Syntax.Path)); }
+        {
+            var offset = Math.Min(span.Start, Document.Syntax.Text.Length);
+            var lineNumber = (Document.Syntax.Lines.GetPosition(offset).Line + 1).ToString();
+            Writer.LineDirective(lineNumber, DocumentPathLiteral);
+        }
         return Writer.Position;
     }
-    private void EndMap(TextSpan span, int start)
+    internal void EndMap(TextSpan span, int start)
     {
         // Deliberately not Dispose/finally: a throwing callback must not publish
         // a completed mapping or a trailing #line directive.
@@ -113,7 +127,7 @@ internal sealed class EmissionContext : IDisposable
         if (_initSetters.TryGetValue(method, out var name)) return name;
         name = "__init_" + Id + "_" + _initSetters.Count; _initSetters.Add(method, name); return name;
     }
-    public string SourceInfoTable => "__source_" + Id;
+    public string SourceInfoTable => _sourceInfoTableName ??= "__source_" + Id;
     public int SourceInfoIndex(string record)
     {
         if (!_sourceRecords.TryGetValue(record, out var index))
@@ -123,19 +137,7 @@ internal sealed class EmissionContext : IDisposable
     public string SourceInfoSetter()
     {
         _sourceInfoSetter = true;
-        return "__SetSourceInfo_" + Id;
-    }
-    public string PropertyRegistration(PropertyAccessor value, string frame)
-    {
-        var key = value.Key;
-        if (SharedProperties?.Registrations.TryGetValue(key, out var shared) == true)
-            return (UsePropertyAliases ? shared.Alias : shared.Source.TypeName) + ".Table.Register(" + frame + ", " + shared.Index + ");";
-        if (!_propertyAccessors.TryGetValue(key, out var accessor))
-        {
-            accessor = (_propertyAccessors.Count, value);
-            _propertyAccessors.Add(key, accessor);
-        }
-        return "__properties_" + Id + ".Register(" + frame + ", " + accessor.Index + ");";
+        return _sourceInfoSetterName ??= "__SetSourceInfo_" + Id;
     }
     public void EmitMetadataHelpers()
     {
@@ -145,7 +147,7 @@ internal sealed class EmissionContext : IDisposable
             Writer.Open("private static void " + SourceInfoSetter() + "(object __target, int __line, int __column)");
             Writer.Line(source.ObjectSetter.ContainingType.CSharpName() + "." + CSharpNames.Method(source.ObjectSetter) + "(__target, new " +
                 source.Constructor.ContainingType.CSharpName() + "(__line, __column, " +
-                (Document.Syntax.Path.Length == 0 ? "null" : CSharpNames.Literal(Document.Syntax.Path)) + "));");
+                (Document.Syntax.Path.Length == 0 ? "null" : DocumentPathLiteral) + "));");
             Writer.Close();
         }
         if (_propertyAccessors.Count != 0)
@@ -164,7 +166,7 @@ internal sealed class EmissionContext : IDisposable
             foreach (var record in ordered)
                 records.Append(record.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(':').Append(record);
             Writer.Line("private static readonly global::XamlG.Runtime.XamlSourceInfoTable __source_" + Id +
-                " = global::XamlG.Runtime.XamlSourceInfoTable.FromEncoded(" + CSharpNames.Literal(Document.Syntax.Path) + ", " +
+                " = global::XamlG.Runtime.XamlSourceInfoTable.FromEncoded(" + DocumentPathLiteral + ", " +
                 Document.Syntax.Version.ToString(System.Globalization.CultureInfo.InvariantCulture) + "L, " + CSharpNames.Literal(records.ToString()) + ");");
         }
         foreach (var pair in _descriptors)
