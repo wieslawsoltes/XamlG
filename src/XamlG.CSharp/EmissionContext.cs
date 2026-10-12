@@ -57,24 +57,13 @@ internal sealed class EmissionContext : IDisposable
     public string Temporary(string role) => "__" + role + _temporary++;
     public string StableId(string value) => StableId(null, value, new(0, value.Length));
     public string StableId(string value, TextSpan span) => StableId(null, value, span);
-    public string StableId(string? prefix, string value, TextSpan span)
+    public string StableId(string? prefix, string value, TextSpan span) =>
+        SourceFingerprint.Compute(_hash, ref _hashInput, prefix, value, span);
+    public void Dispose()
     {
-        // Source fingerprints hash slices of the existing document. Reuse one
-        // emission-local UTF-8 buffer instead of copying each subtree into a
-        // substring, concatenating its type name and allocating another byte array.
-        var encoding = System.Text.Encoding.UTF8;
-        var capacity = (prefix == null ? 0 : encoding.GetByteCount(prefix) + 1) + encoding.GetMaxByteCount(span.Length);
-        if (_hashInput.Length < capacity) _hashInput = new byte[capacity];
-        var offset = 0;
-        if (prefix != null)
-        {
-            offset = encoding.GetBytes(prefix, 0, prefix.Length, _hashInput, 0);
-            _hashInput[offset++] = 0;
-        }
-        var written = encoding.GetBytes(value, span.Start, span.Length, _hashInput, offset);
-        return CSharpNames.StableId(_hash, _hashInput, offset + written);
+        _hash.Dispose();
+        _hashInput = Array.Empty<byte>();
     }
-    public void Dispose() => _hash.Dispose();
     public string? FrameNamespaces(string frame) => _frameNamespaces.TryGetValue(frame, out var map) ? map : null;
     public void SetFrameNamespaces(string frame, string map) => _frameNamespaces[frame] = map;
     public void InheritFrameNamespaces(string frame, string parent)

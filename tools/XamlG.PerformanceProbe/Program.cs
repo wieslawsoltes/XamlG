@@ -27,6 +27,7 @@ var frameDependencySignature = FrameDependencyProbe.Run(Measure);
 var valueEmissionSignature = ValueEmissionProbe.Run(Measure);
 var castMappingSignature = CastMappingProbe.Run(Measure);
 var bookkeepingSignature = EmissionBookkeepingProbe.Run(Measure);
+var fingerprints = FingerprintBufferProbe.Run(Measure);
 var generatedSources = NamedFieldProbe.Run(Measure);
 var markupAssignments = MarkupAssignmentProbe.Run(Measure);
 var semanticInputs = new List<string>
@@ -123,6 +124,7 @@ using (var writer = new BinaryWriter(snapshot, Encoding.UTF8, leaveOpen: true))
     writer.Write(valueEmissionSignature);
     writer.Write(castMappingSignature);
     writer.Write(bookkeepingSignature);
+    writer.Write(fingerprints.Signature);
     foreach (var source in generatedSources) writer.Write(source);
     foreach (var markup in markupAssignments) writer.Write(markup.SemanticSignature);
 }
@@ -132,6 +134,7 @@ var result = new
     architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
     processors = Environment.ProcessorCount,
     decoded_map_storage = decodedMaps.Storage,
+    fingerprint_scratch = fingerprints.Storage,
     semantic_inputs = semanticInputs.Count,
     semantic_sha256 = Convert.ToHexString(SHA256.HashData(snapshot.ToArray())),
     measurements,
