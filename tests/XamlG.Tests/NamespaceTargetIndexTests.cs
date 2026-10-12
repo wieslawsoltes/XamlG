@@ -58,13 +58,19 @@ public sealed class NamespaceTargetIndexTests
     }
 
     [Fact]
-    public void Unique_groups_need_no_link_array_and_direct_namespaces_do_not_admit_an_index()
+    public void Collision_free_buckets_need_no_links_and_direct_namespaces_do_not_admit_an_index()
     {
         var compilation = CompilationFactory.Create(Model).WithAssemblyName("TargetIndexTests");
+        // Hash seeds vary per process. Choose one URI for every actual bucket;
+        // these values are correctness fixtures, never paired benchmark inputs.
+        var names = Enumerable.Range(0, 100000).Select(i => "urn:" + i)
+            .GroupBy(ns => StringComparer.Ordinal.GetHashCode(ns) & 63).Take(64)
+            .Select(group => group.First()).ToArray();
+        Assert.Equal(64, names.Length);
         var types = new RoslynTypeSystem(compilation, new()
         {
             XmlnsDefinitionAttributes = [],
-            NamespaceMappings = Enumerable.Range(0, 64).Select(i => new XmlNamespaceMapping("urn:" + i, "TargetFixture", "TargetIndexTests")).ToImmutableArray()
+            NamespaceMappings = names.Select(ns => new XmlNamespaceMapping(ns, "TargetFixture", "TargetIndexTests")).ToImmutableArray()
         });
         var field = typeof(RoslynTypeSystem).GetField("_namespaceMappingIndex", Hidden)!;
         Assert.Null(field.GetValue(types));
@@ -73,12 +79,55 @@ public sealed class NamespaceTargetIndexTests
         Assert.Null(field.GetValue(types));
         for (var i = 0; i < 3; i++)
         {
-            Assert.Single(Core(types)("urn:" + i));
+            Assert.Single(Core(types)(names[i]));
             Assert.Null(field.GetValue(types));
         }
-        Assert.Single(Core(types)("urn:3"));
+        Assert.Single(Core(types)(names[3]));
         var index = field.GetValue(types)!;
         Assert.Null(index.GetType().GetField("_next", Hidden)!.GetValue(index));
+    }
+
+    [Fact]
+    public void Forced_bucket_collisions_never_merge_namespaces_or_reorder_matches()
+    {
+        var names = Enumerable.Range(0, 100000).Select(i => "urn:collision" + i)
+            .Where(ns => (StringComparer.Ordinal.GetHashCode(ns) & 63) == 0).Take(17).ToArray();
+        Assert.Equal(17, names.Length);
+        var compilation = CompilationFactory.Create(Model).WithAssemblyName("TargetIndexTests");
+        var mappings = Enumerable.Range(0, 64).Select(i => new XmlNamespaceMapping(names[i % 16],
+            i % 2 == 0 ? "TargetFixture" : "Missing", "TargetIndexTests, Version=" + i)).ToImmutableArray();
+        var types = new RoslynTypeSystem(compilation, new() { XmlnsDefinitionAttributes = [], NamespaceMappings = mappings });
+        var core = Core(types);
+        for (var i = 0; i < 8; i++) core(names[i]);
+        foreach (var name in names) Equal(Previous(types, name), core(name));
+        Assert.Empty(core(names[16]));
+        var index = typeof(RoslynTypeSystem).GetField("_namespaceMappingIndex", Hidden)!.GetValue(types)!;
+        var heads = (int[])index.GetType().GetField("_heads", Hidden)!.GetValue(index)!;
+        var links = (int[])index.GetType().GetField("_next", Hidden)!.GetValue(index)!;
+        Assert.Equal(64, heads.Length); Assert.Equal(64, links.Length);
+        Assert.Equal(1, heads.Count(head => head != 0));
+    }
+
+    [Theory]
+    [InlineData(33)]
+    [InlineData(64)]
+    [InlineData(1024)]
+    public void Index_payload_is_bounded_by_two_integer_arrays(int count)
+    {
+        var compilation = CompilationFactory.Create(Model).WithAssemblyName("TargetIndexTests");
+        var types = new RoslynTypeSystem(compilation, new()
+        {
+            XmlnsDefinitionAttributes = [],
+            NamespaceMappings = Enumerable.Range(0, count).Select(i =>
+                new XmlNamespaceMapping("urn:" + i, "TargetFixture", "TargetIndexTests")).ToImmutableArray()
+        });
+        for (var i = 0; i < 4; i++) Core(types)("urn:" + i);
+        var index = typeof(RoslynTypeSystem).GetField("_namespaceMappingIndex", Hidden)!.GetValue(types)!;
+        var heads = (int[])index.GetType().GetField("_heads", Hidden)!.GetValue(index)!;
+        var links = (int[]?)index.GetType().GetField("_next", Hidden)!.GetValue(index);
+        Assert.InRange(heads.Length, count / 2 + 1, count);
+        Assert.Equal(0, heads.Length & (heads.Length - 1));
+        Assert.True(heads.Length + (links?.Length ?? 0) <= 2 * count);
     }
 
     [Fact]
