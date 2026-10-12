@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
+using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using XamlG.Syntax;
@@ -18,6 +19,8 @@ public sealed class RoslynTypeSystem
     private readonly ConcurrentDictionary<INamedTypeSymbol, string?> _contentErrors = new(SymbolEqualityComparer.Default);
     private readonly ConcurrentDictionary<ITypeSymbol, bool> _usableDuringInitialization = new(SymbolEqualityComparer.Default);
     private readonly ConcurrentDictionary<string, ImmutableArray<(string Prefix, IAssemblySymbol Assembly)>> _namespaceTargets = new(StringComparer.Ordinal);
+    private NamespaceMappingIndex? _namespaceMappingIndex;
+    private int _namespaceMappingQueries;
     private readonly ImmutableArray<IAssemblySymbol> _assemblies;
     private readonly SymbolAccessibilityCache _accessibility;
     private readonly ILookup<string, IAssemblySymbol> _assembliesByName;
@@ -103,10 +106,24 @@ public sealed class RoslynTypeSystem
     }
     private ImmutableArray<(string Prefix, IAssemblySymbol Assembly)> ResolveNamespaceTargets(string xmlNamespace)
     {
-        // Namespace and assembly selection is independent of the requested type.
-        // Normalize assembly names once, instead of splitting one for every pair
-        // of mapping and reference on each type's first lookup.
-        var mappings = new List<XmlNamespaceMapping>();
+        ImmutableArray<(string Prefix, IAssemblySymbol Assembly)>.Builder? targets = null;
+        void AddMapping(string clrNamespace, string? assemblyName)
+        {
+            var prefix = string.IsNullOrEmpty(clrNamespace) ? string.Empty : clrNamespace + ".";
+            if (assemblyName == null)
+            {
+                // Keep the immutable-array enumerator unboxed on untargeted paths.
+                foreach (var assembly in _assemblies)
+                    (targets ??= ImmutableArray.CreateBuilder<(string Prefix, IAssemblySymbol Assembly)>()).Add((prefix, assembly));
+            }
+            else
+            {
+                var comma = assemblyName.IndexOf(',');
+                var simpleName = (comma < 0 ? assemblyName : assemblyName.Substring(0, comma)).Trim();
+                foreach (var assembly in _assembliesByName[simpleName])
+                    (targets ??= ImmutableArray.CreateBuilder<(string Prefix, IAssemblySymbol Assembly)>()).Add((prefix, assembly));
+            }
+        }
         if (xmlNamespace.StartsWith("clr-namespace:", StringComparison.Ordinal))
         {
             var pieces = new SpanSplitEnumerator(xmlNamespace.AsSpan(14), ';');
@@ -116,23 +133,30 @@ public sealed class RoslynTypeSystem
             while (pieces.MoveNext())
                 if (pieces.Current.StartsWith("assembly=".AsSpan(), StringComparison.Ordinal))
                 { assembly = pieces.Current.Slice(9).ToString(); break; }
-            mappings.Add(new(xmlNamespace, ns, assembly ?? Configuration.DefaultAssemblyName ?? Compilation.AssemblyName));
+            AddMapping(ns, assembly ?? Configuration.DefaultAssemblyName ?? Compilation.AssemblyName);
         }
-        else if (xmlNamespace.StartsWith("using:", StringComparison.Ordinal)) mappings.Add(new(xmlNamespace, xmlNamespace.Substring(6)));
-        else mappings.AddRange(NamespaceMappings.Where(m => m.XmlNamespace == xmlNamespace));
-        var targets = ImmutableArray.CreateBuilder<(string Prefix, IAssemblySymbol Assembly)>();
-        foreach (var mapping in mappings)
+        else if (xmlNamespace.StartsWith("using:", StringComparison.Ordinal)) AddMapping(xmlNamespace.Substring(6), null);
+        else
         {
-            var prefix = string.IsNullOrEmpty(mapping.ClrNamespace) ? string.Empty : mapping.ClrNamespace + ".";
-            IEnumerable<IAssemblySymbol> assemblies = _assemblies;
-            if (mapping.AssemblyName is { } assemblyName)
+            var index = Volatile.Read(ref _namespaceMappingIndex);
+            if (index == null && (NamespaceMappings.Length <= 32 || Interlocked.Increment(ref _namespaceMappingQueries) <= 3))
             {
-                var comma = assemblyName.IndexOf(',');
-                assemblies = _assembliesByName[(comma < 0 ? assemblyName : assemblyName.Substring(0, comma)).Trim()];
+                // Small configurations and the first three uncached namespace
+                // queries need no retained index. The scan budget is constant.
+                foreach (var mapping in NamespaceMappings)
+                    if (mapping.XmlNamespace == xmlNamespace) AddMapping(mapping.ClrNamespace, mapping.AssemblyName);
             }
-            foreach (var assembly in assemblies) targets.Add((prefix, assembly));
+            else
+            {
+                if (index == null)
+                {
+                    var created = new NamespaceMappingIndex(NamespaceMappings);
+                    index = Interlocked.CompareExchange(ref _namespaceMappingIndex, created, null) ?? created;
+                }
+                foreach (var mapping in index.Match(xmlNamespace)) AddMapping(mapping.ClrNamespace, mapping.AssemblyName);
+            }
         }
-        return targets.ToImmutable();
+        return targets?.ToImmutable() ?? ImmutableArray<(string Prefix, IAssemblySymbol Assembly)>.Empty;
     }
     public ImmutableArray<IPropertySymbol> GetDeclaredContentProperties(INamedTypeSymbol type) =>
         _declaredContentProperties.TryGetValue(type, out var properties) ? properties : _declaredContentProperties.GetOrAdd(type, FindDeclaredContentProperties);
