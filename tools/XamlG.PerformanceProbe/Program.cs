@@ -24,6 +24,7 @@ var decodedMaps = DecodedSourceMapProbe.Run(Measure);
 var typeCandidateSignature = TypeCandidateProbe.Run(Measure);
 var namespaceTargetSignature = NamespaceTargetProbe.Run(Measure);
 var frameDependencySignature = FrameDependencyProbe.Run(Measure);
+var valueEmissionSignature = ValueEmissionProbe.Run(Measure);
 var generatedSources = NamedFieldProbe.Run(Measure);
 var markupAssignments = MarkupAssignmentProbe.Run(Measure);
 var semanticInputs = new List<string>
@@ -117,6 +118,7 @@ using (var writer = new BinaryWriter(snapshot, Encoding.UTF8, leaveOpen: true))
     writer.Write(typeCandidateSignature);
     writer.Write(namespaceTargetSignature);
     writer.Write(frameDependencySignature);
+    writer.Write(valueEmissionSignature);
     foreach (var source in generatedSources) writer.Write(source);
     foreach (var markup in markupAssignments) writer.Write(markup.SemanticSignature);
 }

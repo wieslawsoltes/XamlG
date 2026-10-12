@@ -84,9 +84,9 @@ internal sealed class ValueEmitter
                 return parse.Method.ContainingType.CSharpName() + "." + CSharpNames.Method(parse.Method) + "(" + CSharpNames.Literal(parse.Text) +
                     (parse.Method.Parameters.Length == 2 ? ", (" + parse.Method.Parameters[1].Type.CSharpName() + ")" + CSharpNames.InvariantCulture : string.Empty) + ")";
             case BoundConverterExpression converter:
-                return Convert(converter, converter.Converter, converter.ValueType, frame, () => CSharpNames.Literal(converter.Text));
+                return Convert(converter, converter.Converter, converter.ValueType, frame);
             case BoundValueConverterExpression converter:
-                return Convert(converter, converter.Converter, converter.ValueType, frame, () => Emit(converter.Value, frame));
+                return Convert(converter, converter.Converter, converter.ValueType, frame);
             case BoundMarkupExpression markup:
                 var extension = _objects.Emit(markup.Extension, frame, null, null);
                 return "((" + markup.Method.ContainingType.CSharpName() + ")" + extension + ")." + CSharpNames.Method(markup.Method) + "(" + (markup.Method.Parameters.Length == 0 ? string.Empty : frame) + ")";
@@ -99,18 +99,44 @@ internal sealed class ValueEmitter
     private static string ArrayCreation(BoundArrayExpression array)
     {
         var element = array.ArrayType.ElementType;
-        var suffix = string.Empty;
-        while (element is IArrayTypeSymbol nested)
-        { suffix += "[" + new string(',', nested.Rank - 1) + "]"; element = nested.ElementType; }
+        if (element is not IArrayTypeSymbol nested)
+            return "new " + element.CSharpName() + "[" + array.Values.Length + "]";
+        // Preserve direct one/two-suffix paths. Deep jagged/mixed-rank shapes
+        // append each rank once rather than repeatedly copying the prefix.
+        var suffix = "[" + new string(',', nested.Rank - 1) + "]";
+        element = nested.ElementType;
+        if (element is IArrayTypeSymbol second && second.ElementType is not IArrayTypeSymbol)
+        {
+            // This concatenation is bounded to one additional rank. A builder
+            // costs more than the original two-rank path in both time and bytes.
+            suffix += "[" + new string(',', second.Rank - 1) + "]";
+            element = second.ElementType;
+        }
+        else if (element is IArrayTypeSymbol)
+        {
+            var builder = new System.Text.StringBuilder(suffix);
+            do
+            {
+                nested = (IArrayTypeSymbol)element;
+                builder.Append('[').Append(',', nested.Rank - 1).Append(']');
+                element = nested.ElementType;
+            } while (element is IArrayTypeSymbol);
+            suffix = builder.ToString();
+        }
         return "new " + element.CSharpName() + "[" + array.Values.Length + "]" + suffix;
     }
 
-    private string Convert(BoundExpression expression, INamedTypeSymbol converter, ITypeSymbol resultType, string frame, Func<string> value)
+    private string Convert(BoundExpression expression, INamedTypeSymbol converter, ITypeSymbol resultType, string frame)
     {
         var local = _context.Locals.Declare(converter.CSharpName(), "new " + converter.CSharpName() + "()", "converter", inferred: true);
         if (!expression.SuppressSourceInfo && _context.Document.Runtime.SourceInfo != null)
             new SourceInfoEmitter(_context).EmitConstructed(local, expression.SourceInfoSpan ?? BoundSourceInfo.ValueLocation(_context.Document.Syntax, expression.Span));
-        return "((" + resultType.CSharpName() + ")" + local + ".ConvertFrom(" + frame + ", " + CSharpNames.InvariantCulture + ", " + value() + ")!)";
+        return "((" + resultType.CSharpName() + ")" + local + ".ConvertFrom(" + frame + ", " + CSharpNames.InvariantCulture + ", " +
+            // Evaluate the payload only after converter construction and source-info
+            // lowering, at the same point as the former deferred callback. Keeping
+            // this dispatch here avoids captures on every ordinary Emit invocation.
+            (expression is BoundConverterExpression text ? CSharpNames.Literal(text.Text) :
+                Emit(((BoundValueConverterExpression)expression).Value, frame)) + ")!)";
     }
 
     public string[] EmitArguments(IMethodSymbol method, System.Collections.Immutable.ImmutableArray<BoundExpression> arguments, string frame)
@@ -148,11 +174,17 @@ internal sealed class ValueEmitter
     {
         if (initializers.IsDefaultOrEmpty) return Emit(value, frame);
         if (value is BoundObjectExpression child)
-            return _objects.Emit(child.Object, frame, null, null,
-                target => ArgumentInitializerEmitter.Emit(_context, target, initializers, arguments));
+            return EmitInitializedObject(child, frame, initializers, arguments);
         _context.Error("An argument initializer requires a construction expression.", value.Span);
         return Emit(value, frame);
     }
+
+    // Keep the initializer closure in the branch that actually uses it. The empty
+    // and invalid-input paths must not allocate a display class before branching.
+    private string EmitInitializedObject(BoundObjectExpression child, string frame,
+        System.Collections.Immutable.ImmutableArray<BoundArgumentInitialization> initializers, IReadOnlyList<string> arguments) =>
+        _objects.Emit(child.Object, frame, null, null,
+            target => ArgumentInitializerEmitter.Emit(_context, target, initializers, arguments));
 
     public string ExpandTrusted(string source, string frame, string target) => source.Replace("$context", frame).Replace("$target", target).Replace("$root", _context.RootVariable);
 
