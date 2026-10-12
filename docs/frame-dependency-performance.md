@@ -1,0 +1,25 @@
+# Frame-dependency discovery
+
+Baseline: the verified namespace-index merge `912811fc8bb04f1ca143b6d9cb061e89f6587fcc`.
+
+`ValueEmitter.UsesFrame` is a pure ordered OR over selected expression children. Its old recursive implementation re-expanded shared occurrences and allocated LINQ enumerators for array/call/initializer/builder paths. It could do exponential work on a compact shared DAG, and deeply nested unary wrappers consumed the managed call stack.
+
+## Algorithm and ownership
+
+The new predicate first tries at most 32 recursive invocations. Unary casts/cached values/field access/lambda bodies and other exactly-one-child shapes are tail-eliminated inside each invocation. Recursion is therefore bounded independently of input depth. Each of the 32 invocations may traverse a unary segment; this is a constant multiplier on distinct-graph work, not a 32-level binary expansion allowance. Empty/flat known-leaf roots and completed small expressions allocate no traversal state.
+
+On budget exhaustion, restart at the root using iterative postorder traversal. A value cursor enumerates existing arrays, including constructor initializer values and nested builder/scoped call arguments, without iterator objects or new child arrays. A query-local reference-identity set records only completely proven frame-independent composites. Already-completed shared children are skipped; an opaque/frame-dependent child terminates the whole query immediately, so no partially evaluated result is cached. Actual generated execution is not deduplicated.
+
+For valid immutable acyclic IR, expected discovery work per query is O(V + E), with the bounded preliminary factor above, instead of occurrence expansion. V and E count the distinct relevant expression nodes and child records/edges inspected. Temporary memory is O(V + H), where H is traversal depth; hash collisions retain exact reference equality. Deep branching graphs use a heap cursor stack, not unbounded managed recursion. Unary-only chains need neither stack arrays nor the set. State dies at method return, including exceptional exit: no weak/global/document cache, retained source graph, pool or background work is introduced. Existing emission-level cancellation checks remain unchanged; this pure predicate has no new cancellation-token API.
+
+This does not make complete emission of an exponentially expanded program linear, nor does it make every other emitter analysis stack-safe. Constructors, frame descriptors, services, conversions, source mappings, runtime ownership and calls are still occurrence-based. Converter/object/markup/deferred/choice and unknown/custom IR retain the original conservative true result even when a separate generic traversal would find no frame use. Property receivers, index arguments, initializers and builder/scoped calls retain the exact previous short-circuit order.
+
+## Costs and validation
+
+Large unshared composite trees pay hash-set/cursor-stack setup; repeated queries intentionally do not share a result cache. A small prepass may repeat some work. Tests and benchmarks cover those costs alongside shared-DAG benefits. No speedup or retained-heap reduction is asserted before final raw measurements are reviewed.
+
+The frozen previous predicate provides an independent differential oracle. Tests cover every recognized shape, opaque boundaries, 31/32/33 admission transitions, 500 seeded DAGs, reference-distinct equal-valued records, short-circuited malformed suffix records, concurrent queries, 4,096-level shared graphs and 100,000 unary wrappers. Generated standalone and multi-document factories are built twice: each ordinary repeated construction must still create an independent object, and frame-dependent array elements retain their providers.
+
+Twenty-five new paired workloads retain all 388 predecessor cases (413 total). They cover literal/service leaves, short/wide arrays, unary32/4096, shared depth10/16, unshared depth6/10, repeated unary suffixes and complete 16/128-view emission with 4/32-element arrays. Analysis fixtures are not mislabeled as executed programs; complete emission fixtures must compile. The existing internal static entry point is bound once outside timing in both revisions. Graph/model construction, parsing/binding, generated-C# compilation and signature creation are untimed; every measured call starts with fresh query state. Generated source, mappings, diagnostics and predicate results enter strict cross-revision signatures.
+
+Use the unchanged native/MSBuild, workspace, upstream, original-theme, package, host, full catalog and browser gates, plus `compare-fast-paths.py --baseline-ref <baseline> --pairs 3`, the normal-analyzer full/captured-C# catalog comparison, and `verify-compiler-performance.py` with the committed 413-name manifest and `--require-identical-sources`. Local Python/source verification is not a substitute for actual C# execution. Report unfavorable small/unshared/whole-compiler results as well as improvements; no universal build gain or XamlX parity is implied.

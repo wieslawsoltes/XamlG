@@ -167,8 +167,8 @@ public sealed class FrameDependencyAnalysisTests
     {
         var fixture = new EmissionAnalysisFixture(); var hazard = new BoundServiceExpression(fixture.Root.Type, default);
         var creation = new BoundNewExpression(fixture.Root.Constructor!, [hazard], default)
-        { Initializers = ImmutableArray.Create<BoundPropertyInitialization>(null!) };
-        var builder = new BoundBuilderExpression(hazard, ImmutableArray.Create<BoundBuilderCall>(null!), fixture.Root.Constructor!, default);
+        { Initializers = ImmutableArray.Create((BoundPropertyInitialization)null!) };
+        var builder = new BoundBuilderExpression(hazard, ImmutableArray.Create((BoundBuilderCall)null!), fixture.Root.Constructor!, default);
         Assert.True(Previous(creation)); Assert.True(ValueEmitter.UsesFrame(creation));
         Assert.True(Previous(builder)); Assert.True(ValueEmitter.UsesFrame(builder));
     }
