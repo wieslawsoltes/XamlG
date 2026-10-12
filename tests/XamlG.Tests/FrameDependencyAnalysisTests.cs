@@ -73,7 +73,8 @@ public sealed class FrameDependencyAnalysisTests
             Assert.Equal(requiresFrame, Previous(expression));
             Assert.Equal(Previous(expression), ValueEmitter.UsesFrame(expression));
             // Force the iterative path before the exact same shape.
-            var padding = Enumerable.Repeat<BoundExpression>(constant, 64).Append(expression).ToImmutableArray();
+            var pair = new BoundArrayExpression([constant, constant], compilation.CreateArrayTypeSymbol(objectType), default);
+            var padding = Enumerable.Repeat<BoundExpression>(pair, 64).Append(expression).ToImmutableArray();
             var wide = new BoundArrayExpression(padding, compilation.CreateArrayTypeSymbol(objectType), default);
             Assert.Equal(Previous(wide), ValueEmitter.UsesFrame(wide));
         }
@@ -173,6 +174,49 @@ public sealed class FrameDependencyAnalysisTests
         Assert.True(Previous(builder)); Assert.True(ValueEmitter.UsesFrame(builder));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Default_suffix_arrays_are_observed_only_after_an_independent_prefix(bool requiresFrame)
+    {
+        var compilation = CompilationFactory.Create(Model);
+        var type = compilation.GetTypeByMetadataName("FrameCase.Item")!;
+        var property = (IPropertySymbol)type.GetMembers("Value").Single();
+        var method = (IMethodSymbol)type.GetMembers("Call").Single();
+        var constructor = type.InstanceConstructors.Single(c => c.Parameters.IsEmpty);
+        var constant = new BoundConstantExpression(null, type, default);
+        BoundExpression prefix = requiresFrame ? new BoundServiceExpression(type, default) : constant;
+        BoundExpression[] expressions = [
+            new BoundCallExpression(method, prefix, default, default),
+            new BoundPropertyAccessExpression(prefix, property, default, default),
+            new BoundBuilderExpression(prefix, default, method, default),
+            new BoundScopedInitializationExpression(prefix, constructor, default, property, default),
+            new BoundNewExpression(constructor, [prefix], default) { Initializers = default }
+        ];
+        foreach (var expression in expressions)
+        {
+            var pair = new BoundArrayExpression([constant, constant], compilation.CreateArrayTypeSymbol(type), default);
+            var wide = new BoundArrayExpression(Enumerable.Repeat<BoundExpression>(pair, 64)
+                .Append(expression).ToImmutableArray(), compilation.CreateArrayTypeSymbol(type), default);
+            foreach (var candidate in new[] { expression, wide })
+            {
+                if (requiresFrame)
+                {
+                    Assert.True(Previous(candidate));
+                    Assert.True(ValueEmitter.UsesFrame(candidate));
+                }
+                else
+                {
+                    var expected = Record.Exception(() => Previous(candidate));
+                    Assert.NotNull(expected);
+                    var actual = Record.Exception(() => ValueEmitter.UsesFrame(candidate));
+                    Assert.NotNull(actual);
+                    Assert.Equal(expected.GetType(), actual.GetType());
+                }
+            }
+        }
+    }
+
     [Fact]
     public void Parallel_queries_have_no_shared_mutable_or_retained_analysis_state()
     {
@@ -203,6 +247,43 @@ public sealed class FrameDependencyAnalysisTests
         if (service) { Assert.IsAssignableFrom<IServiceProvider>(a[63]); Assert.IsAssignableFrom<IServiceProvider>(b[63]); }
         Assert.True(XamlRuntimeSession.TryGet(first, out var s1)); s1!.Dispose();
         Assert.True(XamlRuntimeSession.TryGet(second, out var s2)); s2!.Dispose();
+    }
+
+    [Fact]
+    public void Empty_argument_lowering_does_not_allocate_per_constructor_or_touch_the_writer()
+    {
+        var fixture = new EmissionAnalysisFixture();
+        using var context = new EmissionContext(fixture.Document, default);
+        var values = new ValueEmitter(context, new ObjectEmitter(context));
+        var first = values.EmitArguments(fixture.Root.Constructor!, [], "__frame");
+        Assert.Same(Array.Empty<string>(), first);
+        for (var i = 0; i < 100; i++)
+            Assert.Same(first, values.EmitArguments(fixture.Root.Constructor!, [], "__frame"));
+        Assert.Equal(string.Empty, context.Writer.ToString());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Shared_empty_call_groups_count_toward_segment_work(bool scoped)
+    {
+        var fixture = new EmissionAnalysisFixture();
+        var type = fixture.Root.Type;
+        var literal = new BoundConstantExpression(null, type, default);
+        var calls = Enumerable.Repeat(new BoundBuilderCall(fixture.Root.Constructor!, []), 1024).ToImmutableArray();
+        BoundExpression node = scoped
+            ? new BoundScopedInitializationExpression(literal, fixture.Root.Constructor!, calls, null, default)
+            : new BoundBuilderExpression(literal, calls, fixture.Root.Constructor!, default);
+        Assert.False(Previous(node));
+        // A node-only budget would incorrectly finish despite scanning 1,024
+        // empty argument groups; assert the bounded segment declines admission.
+        var segment = typeof(CSharpEmitter).Assembly.GetType("XamlG.CSharp.FrameDependencyAnalysis")!
+            .GetMethod("TrySegment", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        object?[] arguments = [node, 31, false];
+        Assert.False((bool)segment.Invoke(null, arguments)!);
+        var root = new BoundArrayExpression(Enumerable.Repeat(node, 1024).ToImmutableArray(), fixture.ArrayType, default);
+        Assert.False(ValueEmitter.UsesFrame(root));
+        Assert.True(ValueEmitter.UsesFrame(root with { Values = root.Values.Add(new BoundServiceExpression(type, default)) }));
     }
 
     private sealed record Custom(ITypeSymbol ValueType) : BoundExpression(ValueType, default);

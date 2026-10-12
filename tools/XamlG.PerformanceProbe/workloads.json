@@ -411,5 +411,8 @@
   "emit-frame-arrays-16x4",
   "emit-frame-arrays-16x32",
   "emit-frame-arrays-128x4",
-  "emit-frame-arrays-128x32"
+  "emit-frame-arrays-128x32",
+  "frame-shared-empty-calls-32",
+  "frame-shared-empty-calls-1024",
+  "frame-shared-empty-scopes-1024"
 ]

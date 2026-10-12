@@ -26,7 +26,7 @@ internal static class FrameDependencyProbe
             namespace FrameProbe {
                 public class Root { [Content] public List<View> Children {get;} = new(); }
                 public class View { public object Value {get;set;} }
-                public class Item { }
+                public class Item { public void Step() { } public Item End() => this; }
             }
             """;
         var paths = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
@@ -75,6 +75,23 @@ internal static class FrameDependencyProbe
         for (var i = 0; i < 1024; i++) suffix = new BoundCastExpression(suffix, objectType, default);
         Check("frame-shared-unary-suffix-1024", new BoundArrayExpression(
             Enumerable.Repeat(suffix, 1024).ToImmutableArray(), arrayType, default), false, 2);
+
+        var itemType = compilation.GetTypeByMetadataName("FrameProbe.Item")!;
+        var step = (IMethodSymbol)itemType.GetMembers("Step").Single();
+        var end = (IMethodSymbol)itemType.GetMembers("End").Single();
+        foreach (var count in new[] { 32, 1024 })
+        {
+            var calls = Enumerable.Repeat(new BoundBuilderCall(step, []), count).ToImmutableArray();
+            var builder = new BoundBuilderExpression(literal, calls, end, default);
+            Check("frame-shared-empty-calls-" + count, new BoundArrayExpression(
+                Enumerable.Repeat<BoundExpression>(builder, count).ToImmutableArray(), arrayType, default), false, 2);
+            if (count == 1024)
+            {
+                var scope = new BoundScopedInitializationExpression(literal, end, calls, null, default);
+                Check("frame-shared-empty-scopes-1024", new BoundArrayExpression(
+                    Enumerable.Repeat<BoundExpression>(scope, count).ToImmutableArray(), arrayType, default), false, 2);
+            }
+        }
 
         foreach (var count in new[] { 16, 128 })
         foreach (var width in new[] { 4, 32 })

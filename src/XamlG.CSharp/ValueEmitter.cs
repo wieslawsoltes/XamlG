@@ -115,6 +115,7 @@ internal sealed class ValueEmitter
 
     public string[] EmitArguments(IMethodSymbol method, System.Collections.Immutable.ImmutableArray<BoundExpression> arguments, string frame)
     {
+        if (arguments.IsEmpty) return Array.Empty<string>();
         var values = new string[arguments.Length];
         for (var index = 0; index < arguments.Length; index++)
         {

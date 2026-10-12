@@ -12,18 +12,29 @@ internal static class FrameDependencyAnalysis
     {
         // Bound recursive branching, not unary depth. Ordinary literals and small
         // expressions need no iterator, visited set, stack array or retained cache.
+        if (value is BoundConstantExpression) return false;
         var budget = 32;
         return TrySmall(value, ref budget, out var result) ? result : Scan(value);
     }
 
     private static bool TrySmall(BoundExpression value, ref int budget, out bool result)
     {
-        if (budget-- == 0) { result = false; return false; }
         if (value is BoundConstantExpression) { result = false; return true; }
-        // Tail-eliminate unary chains. At most 32 invocations can each traverse
+        if (budget-- == 0) { result = false; return false; }
+        // Tail-eliminate unary chains. At most 32 nonconstant invocations can each traverse
         // such a chain before the query switches to exact memoization. This is a
         // constant work multiplier, not an exponential depth allowance.
         while (SingleChild(value) is { } child) value = child;
+        if (value is BoundArrayExpression array)
+        {
+            foreach (var item in array.Values)
+            {
+                if (!TrySmall(item, ref budget, out result)) return false;
+                if (result) return true;
+            }
+            result = false;
+            return true;
+        }
         if (Known(value, out result)) return true;
         var children = new Children(value);
         while (children.MoveNext(out var next))
@@ -57,9 +68,54 @@ internal static class FrameDependencyAnalysis
                 continue;
             }
             if (independent?.Contains(child) == true) continue;
+            // A fully analyzed small subgraph needs no table entry. Unlike the
+            // initial tail-eliminated path, this work budget counts unary nodes
+            // too, so a shared long suffix cannot evade bounded discovery.
+            var budget = 31;
+            if (SingleChild(child) == null && TrySegment(child, ref budget, out var result))
+            {
+                if (result) return true;
+                continue;
+            }
             (parents ??= new(16)).Push(current);
             current = new(child);
         }
+    }
+
+    private static bool TrySegment(BoundExpression value, ref int budget, out bool result)
+    {
+        if (budget-- == 0) { result = false; return false; }
+        if (value is BoundConstantExpression) { result = false; return true; }
+        if (value is BoundArrayExpression array)
+        {
+            foreach (var item in array.Values)
+            {
+                if (!TrySegment(item, ref budget, out result)) return false;
+                if (result) return true;
+            }
+            result = false;
+            return true;
+        }
+        if (Known(value, out result)) return true;
+        // Empty call groups are edges too: charging just expression nodes would
+        // let a shared builder with many zero-argument calls evade the budget.
+        // Default suffixes remain untouched until their creation was evaluated.
+        var calls = value switch
+        {
+            BoundBuilderExpression x when !x.Calls.IsDefault => x.Calls.Length,
+            BoundScopedInitializationExpression x when !x.Calls.IsDefault => x.Calls.Length,
+            _ => 0
+        };
+        if (calls > budget) { result = false; return false; }
+        budget -= calls;
+        var children = new Children(value);
+        while (children.MoveNext(out var child))
+        {
+            if (!TrySegment(child, ref budget, out result)) return false;
+            if (result) return true;
+        }
+        result = false;
+        return true;
     }
 
     // Retain the old conservative boundary. Converter, object, markup, deferred,
@@ -90,11 +146,11 @@ internal static class FrameDependencyAnalysis
         BoundMethodGroupExpression x => x.Receiver,
         BoundArrayExpression { Values.Length: 1 } x => x.Values[0],
         BoundCollectionExpression { Values.Length: 1 } x => x.Values[0],
-        BoundCallExpression { Arguments.IsEmpty: true } x => x.Receiver,
-        BoundPropertyAccessExpression { IndexArguments.IsEmpty: true } x => x.Receiver,
-        BoundBuilderExpression { Calls.IsEmpty: true } x => x.Creation,
-        BoundScopedInitializationExpression { Calls.IsEmpty: true } x => x.Creation,
-        BoundNewExpression { Arguments.Length: 1, Initializers.IsEmpty: true } x => x.Arguments[0],
+        BoundCallExpression x when !x.Arguments.IsDefault && x.Arguments.IsEmpty => x.Receiver,
+        BoundPropertyAccessExpression x when !x.IndexArguments.IsDefault && x.IndexArguments.IsEmpty => x.Receiver,
+        BoundBuilderExpression x when !x.Calls.IsDefault && x.Calls.IsEmpty => x.Creation,
+        BoundScopedInitializationExpression x when !x.Calls.IsDefault && x.Calls.IsEmpty => x.Creation,
+        BoundNewExpression x when x.Arguments.Length == 1 && !x.Initializers.IsDefault && x.Initializers.IsEmpty => x.Arguments[0],
         _ => null
     };
 
