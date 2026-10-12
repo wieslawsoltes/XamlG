@@ -59,7 +59,7 @@ internal sealed class ValueEmitter
                 {
                     var itemValue = Emit(item, frame);
                     _context.Writer.Line("((" + collection.AddMethod.ContainingType.CSharpName() + ")" + collectionLocal + ")." + CSharpNames.Method(collection.AddMethod) +
-                        "((" + collection.AddMethod.Parameters[0].Type.CSharpName() + ")(" + itemValue + "));");
+                        "((" + collection.AddMethod.Parameters[0].Type.CSharpName() + ")(" + itemValue + "));" );
                 }
                 return collectionLocal;
             case BoundNewExpression creation:
@@ -84,9 +84,9 @@ internal sealed class ValueEmitter
                 return parse.Method.ContainingType.CSharpName() + "." + CSharpNames.Method(parse.Method) + "(" + CSharpNames.Literal(parse.Text) +
                     (parse.Method.Parameters.Length == 2 ? ", (" + parse.Method.Parameters[1].Type.CSharpName() + ")" + CSharpNames.InvariantCulture : string.Empty) + ")";
             case BoundConverterExpression converter:
-                return Convert(converter, converter.Converter, converter.ValueType, frame, () => CSharpNames.Literal(converter.Text));
+                return Convert(converter, converter.Converter, converter.ValueType, frame);
             case BoundValueConverterExpression converter:
-                return Convert(converter, converter.Converter, converter.ValueType, frame, () => Emit(converter.Value, frame));
+                return Convert(converter, converter.Converter, converter.ValueType, frame);
             case BoundMarkupExpression markup:
                 var extension = _objects.Emit(markup.Extension, frame, null, null);
                 return "((" + markup.Method.ContainingType.CSharpName() + ")" + extension + ")." + CSharpNames.Method(markup.Method) + "(" + (markup.Method.Parameters.Length == 0 ? string.Empty : frame) + ")";
@@ -105,12 +105,17 @@ internal sealed class ValueEmitter
         return "new " + element.CSharpName() + "[" + array.Values.Length + "]" + suffix;
     }
 
-    private string Convert(BoundExpression expression, INamedTypeSymbol converter, ITypeSymbol resultType, string frame, Func<string> value)
+    private string Convert(BoundExpression expression, INamedTypeSymbol converter, ITypeSymbol resultType, string frame)
     {
         var local = _context.Locals.Declare(converter.CSharpName(), "new " + converter.CSharpName() + "()", "converter", inferred: true);
         if (!expression.SuppressSourceInfo && _context.Document.Runtime.SourceInfo != null)
             new SourceInfoEmitter(_context).EmitConstructed(local, expression.SourceInfoSpan ?? BoundSourceInfo.ValueLocation(_context.Document.Syntax, expression.Span));
-        return "((" + resultType.CSharpName() + ")" + local + ".ConvertFrom(" + frame + ", " + CSharpNames.InvariantCulture + ", " + value() + ")!)";
+        return "((" + resultType.CSharpName() + ")" + local + ".ConvertFrom(" + frame + ", " + CSharpNames.InvariantCulture + ", " +
+            // Evaluate the payload only after converter construction and source-info
+            // lowering, at the same point as the former deferred callback. Keeping
+            // this dispatch here avoids captures on every ordinary Emit invocation.
+            (expression is BoundConverterExpression text ? CSharpNames.Literal(text.Text) :
+                Emit(((BoundValueConverterExpression)expression).Value, frame)) + ")!)";
     }
 
     public string[] EmitArguments(IMethodSymbol method, System.Collections.Immutable.ImmutableArray<BoundExpression> arguments, string frame)
@@ -148,11 +153,17 @@ internal sealed class ValueEmitter
     {
         if (initializers.IsDefaultOrEmpty) return Emit(value, frame);
         if (value is BoundObjectExpression child)
-            return _objects.Emit(child.Object, frame, null, null,
-                target => ArgumentInitializerEmitter.Emit(_context, target, initializers, arguments));
+            return EmitInitializedObject(child, frame, initializers, arguments);
         _context.Error("An argument initializer requires a construction expression.", value.Span);
         return Emit(value, frame);
     }
+
+    // Keep the initializer closure in the branch that actually uses it. The empty
+    // and invalid-input paths must not allocate a display class before branching.
+    private string EmitInitializedObject(BoundObjectExpression child, string frame,
+        System.Collections.Immutable.ImmutableArray<BoundArgumentInitialization> initializers, IReadOnlyList<string> arguments) =>
+        _objects.Emit(child.Object, frame, null, null,
+            target => ArgumentInitializerEmitter.Emit(_context, target, initializers, arguments));
 
     public string ExpandTrusted(string source, string frame, string target) => source.Replace("$context", frame).Replace("$target", target).Replace("$root", _context.RootVariable);
 
