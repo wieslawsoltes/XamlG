@@ -14,26 +14,7 @@ internal sealed class ValueEmitter
 
     // Only expressions whose complete lowering is independent of target services may
     // reuse the enclosing frame. Keep extension, object, deferred and custom IR conservative.
-    internal static bool UsesFrame(BoundExpression value) => value switch
-    {
-        BoundConstantExpression or BoundEnumExpression or BoundTypeExpression or BoundMethodHandleExpression or
-            BoundStaticExpression or BoundParseExpression => false,
-        BoundCastExpression cast => UsesFrame(cast.Value),
-        BoundCachedExpression cached => UsesFrame(cached.Value),
-        BoundNewExpression creation => creation.Arguments.Any(UsesFrame) || creation.Initializers.Any(initializer => UsesFrame(initializer.Value)),
-        BoundBuilderExpression builder => UsesFrame(builder.Creation) || builder.Calls.Any(call => call.Arguments.Any(UsesFrame)),
-        BoundScopedInitializationExpression scoped => UsesFrame(scoped.Creation) || scoped.Calls.Any(call => call.Arguments.Any(UsesFrame)),
-        BoundArrayExpression array => array.Values.Any(UsesFrame),
-        BoundCollectionExpression collection => collection.Values.Any(UsesFrame),
-        BoundCallExpression call => call.Receiver != null && UsesFrame(call.Receiver) || call.Arguments.Any(UsesFrame),
-        BoundParameterExpression => false,
-        BoundPropertyAccessExpression property => UsesFrame(property.Receiver) || property.IndexArguments.Any(UsesFrame),
-        BoundFieldAccessExpression field => UsesFrame(field.Receiver),
-        BoundAssignmentExpression assignment => UsesFrame(assignment.Target) || UsesFrame(assignment.Value),
-        BoundMethodGroupExpression method => method.Receiver != null && UsesFrame(method.Receiver),
-        BoundLambdaExpression lambda => UsesFrame(lambda.Body),
-        _ => true
-    };
+    internal static bool UsesFrame(BoundExpression value) => FrameDependencyAnalysis.UsesFrame(value);
 
     public string Emit(BoundExpression value, string frame)
     {
