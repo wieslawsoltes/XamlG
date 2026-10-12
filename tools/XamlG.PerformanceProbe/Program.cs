@@ -23,6 +23,7 @@ var whitespaceBufferSignature = WhitespaceBufferProbe.Run(Measure);
 var decodedMaps = DecodedSourceMapProbe.Run(Measure);
 var typeCandidateSignature = TypeCandidateProbe.Run(Measure);
 var namespaceTargetSignature = NamespaceTargetProbe.Run(Measure);
+var frameDependencySignature = FrameDependencyProbe.Run(Measure);
 var generatedSources = NamedFieldProbe.Run(Measure);
 var markupAssignments = MarkupAssignmentProbe.Run(Measure);
 var semanticInputs = new List<string>
@@ -30,7 +31,7 @@ var semanticInputs = new List<string>
     "<Root/>", "<Root></Root>", "<Root A='1' A='2'/>", "<Root A='broken<Child/></Root>",
     "<Root><Child></Root>", "<Root A='one\t&amp;\r\ntwo'/>", "<!--a--><Root><![CDATA[x\r\ny]]></Root>",
     "<!DOCTYPE Root [<!ENTITY e 'forbidden'>]><Root>&e;</Root>", "<Root/><Other/>",
-    "<Root A='&#x1F600;' B='&quot;' C='&#13;'/>"
+    "<Root A='&#x1F600;' B='&quot;' C='&#13;'/>",
 };
 foreach (var count in new[] { 100, 1000, 10000 })
 {
@@ -115,6 +116,7 @@ using (var writer = new BinaryWriter(snapshot, Encoding.UTF8, leaveOpen: true))
     writer.Write(decodedMaps.SemanticSignature);
     writer.Write(typeCandidateSignature);
     writer.Write(namespaceTargetSignature);
+    writer.Write(frameDependencySignature);
     foreach (var source in generatedSources) writer.Write(source);
     foreach (var markup in markupAssignments) writer.Write(markup.SemanticSignature);
 }
