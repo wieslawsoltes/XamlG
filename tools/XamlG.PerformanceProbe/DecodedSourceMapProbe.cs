@@ -22,7 +22,8 @@ internal static class DecodedSourceMapProbe
         using (var writer = new BinaryWriter(signature, Encoding.UTF8, leaveOpen: true))
         {
             foreach (var length in new[] { 32, 4096, 65536 })
-            foreach (var shape in new[] { "plain", "normalized-identity", "sparse-bmp", "sparse-pair", "sparse-crlf", "dense-bmp", "dense-pair", "late-dense" })
+            foreach (var shape in new[] { "plain", "normalized-identity", "sparse-bmp", "sparse-pair", "sparse-crlf", "dense-bmp", "dense-pair", "late-dense",
+                "dense-prefix", "dense-prefix-late-entity", "alternating-density", "dense-crlf" })
             {
                 var raw = shape switch
                 {
@@ -33,7 +34,12 @@ internal static class DecodedSourceMapProbe
                     "sparse-crlf" => new string('x', length / 2) + "\r\n" + new string('y', length / 2),
                     "dense-bmp" => string.Concat(Enumerable.Repeat("&amp;", Math.Max(1, length / 5))),
                     "dense-pair" => string.Concat(Enumerable.Repeat("&#x1F600;", Math.Max(1, length / 9))),
-                    _ => new string('x', 129) + string.Concat(Enumerable.Repeat("&amp;&#x10000;\r\n", Math.Max(1, length / 16)))
+                    "late-dense" => new string('x', 129) + string.Concat(Enumerable.Repeat("&amp;&#x10000;\r\n", Math.Max(1, length / 16))),
+                    "dense-prefix" => string.Concat(Enumerable.Repeat("&amp;", 64)) + new string('y', length),
+                    "dense-prefix-late-entity" => string.Concat(Enumerable.Repeat("&amp;", 64)) + new string('y', length) + "&amp;",
+                    "alternating-density" => string.Concat(Enumerable.Repeat("&amp;", 64)) + new string('x', length / 2) +
+                        string.Concat(Enumerable.Repeat("&#x10000;", 64)) + new string('y', length / 2),
+                    _ => string.Concat(Enumerable.Repeat("\r\n", Math.Max(1, length / 2)))
                 };
                 var name = shape + "-" + length;
                 var source = "prefix:" + raw + ":suffix";
