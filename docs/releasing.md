@@ -79,7 +79,7 @@ git tag -a v0.1.0-preview.2 -m "XamlG 0.1.0-preview.2"
 git push origin v0.1.0-preview.2
 ```
 
-The **Release packages** workflow verifies that the tag's commit is an ancestor of `origin/main`, builds/tests/packages the solution with warnings treated as errors and NuGet auditing enabled, runs clean consumers, executes both pinned upstream suites, reuses the unmodified theme-construction workflow, and runs browser acceptance. The theme gate retains original source hashes/document counts, code-behind compilation, root construction and Light/Dark template realization.
+The **Release packages** workflow verifies that the tag's commit is an ancestor of `origin/main`, builds/tests/packages the solution with warnings treated as errors and NuGet auditing enabled, runs clean consumers, executes both pinned upstream suites, reuses the unmodified theme-construction workflow, and reuses all eight browser acceptance shards with their exact-source aggregate check. The theme gate retains original source hashes/document counts, code-behind compilation, root construction and Light/Dark template realization.
 
 Only after all gates pass does it create a GitHub draft, upload checksummed assets and publish the release. Prerelease versions are marked as prereleases. Release notes contain the source identity and GitHub-generated changes using `.github/release.yml`. A partially uploaded draft can be resumed for the same source commit. Published assets are never overwritten; reruns compare checksums and source identity and fail if rebuilt bytes differ.
 

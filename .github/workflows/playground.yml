@@ -5,6 +5,7 @@ on:
     paths: ['src/**', 'tools/XamlG.Playground/**', 'tools/XamlG.Studio.Host/**', 'Directory.*', 'scripts/prepare-pages.py', 'scripts/serve-playground.py', 'scripts/test-browser-studio.py', 'scripts/tests/test_browser_studio.py', '.github/workflows/playground.yml']
   pull_request:
   workflow_dispatch:
+  workflow_call:
 permissions:
   contents: read
 concurrency:
