@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><Description>MSBuild and Roslyn workspace loading, project snapshots, resource inputs and watched refresh for XamlG.</Description></PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../XamlG.ProjectSystem/XamlG.ProjectSystem.csproj" />
     <ProjectReference Include="../XamlG.Tooling/XamlG.Tooling.csproj" />

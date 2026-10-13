@@ -3,11 +3,11 @@ on:
   push:
     tags: ['v*']
   pull_request:
-    paths: ['eng/**', 'scripts/*release*.py', 'tests/*PackagingSmoke/**', 'tests/PackagingSmoke/**', 'src/**', 'tools/XamlG.Cli/**', 'tools/XamlG.Lsp/**', 'Directory.*', 'README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md', '.github/workflows/release.yml', '.github/workflows/theme-corpus.yml']
+    paths: ['eng/**', 'scripts/**', 'tests/**', 'src/**', 'tools/**', 'Directory.*', 'global.json', 'NuGet.Config', 'README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md', 'docs/releasing.md', '.github/release.yml', '.github/workflows/release.yml', '.github/workflows/theme-corpus.yml']
   workflow_dispatch:
     inputs:
       publish_nuget:
-        description: 'Publish NuGet packages from an existing version tag (requires the nuget environment and NUGET_API_KEY).'
+        description: 'Publish the existing GitHub release assets to NuGet using trusted publishing (requires the nuget environment and NUGET_USER).'
         type: boolean
         default: false
 permissions:
@@ -16,9 +16,9 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  packages:
+  prepare:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.identity.outputs.version }}
     steps:
@@ -32,36 +32,41 @@ jobs:
           REF: ${{ github.ref }}
           REF_NAME: ${{ github.ref_name }}
           RUN_NUMBER: ${{ github.run_number }}
-        run: |
-          python - <<'PY'
-          import os, re, subprocess
-          tagged=os.environ['REF'].startswith('refs/tags/')
-          version=os.environ['REF_NAME'][1:] if tagged else '0.1.0-ci.'+os.environ['RUN_NUMBER']
-          if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?',version): raise RuntimeError('Invalid release version')
-          if tagged: subprocess.run(['git','merge-base','--is-ancestor','HEAD','origin/main'],check=True)
-          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('version='+version+'\n')
-          PY
+          PUBLISH_NUGET: ${{ inputs.publish_nuget }}
+        run: python scripts/resolve-release-version.py
+      - name: Verify release tooling
+        run: python -m unittest discover -s scripts/tests -p 'test_release*.py' -v
+  packages:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.publish_nuget) }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.401'
       - name: Build and test shipping solution
         env:
-          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          dotnet build XamlG.slnx -c Release -p:Version="$RELEASE_VERSION" -p:PackageVersion="$RELEASE_VERSION" -p:NuGetAudit=false
+          dotnet build XamlG.slnx -c Release -warnaserror -p:Version="$RELEASE_VERSION" -p:PackageVersion="$RELEASE_VERSION" -p:ContinuousIntegrationBuild=true
           dotnet test XamlG.slnx -c Release --no-build --no-restore --logger trx --results-directory artifacts/release-tests
       - name: Build and inspect all shipping packages
         env:
-          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: python scripts/build-release.py --version "$RELEASE_VERSION" --no-build
       - name: Install and execute clean package consumers
         env:
-          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: python scripts/test-release-packages.py --packages artifacts/release --version "$RELEASE_VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: release-candidate
           path: artifacts/release
+          if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always()
@@ -69,7 +74,8 @@ jobs:
           name: release-test-results
           path: artifacts/release-tests
   upstream:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !(github.event_name == 'workflow_dispatch' && inputs.publish_nuget)
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -104,12 +110,14 @@ jobs:
           python scripts/verify-test-results.py artifacts/upstream/Baseline-parity.trx --expected 268
           python scripts/verify-test-results.py artifacts/upstream/Compatibility-parity.trx --expected 268
   themes:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !(github.event_name == 'workflow_dispatch' && inputs.publish_nuget)
+    needs: prepare
     uses: ./.github/workflows/theme-corpus.yml
     permissions:
       contents: read
   browser:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !(github.event_name == 'workflow_dispatch' && inputs.publish_nuget)
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -134,7 +142,7 @@ jobs:
           dotnet build ../XamlG.Studio.Host -c Release -warnaserror
           python ../../scripts/test-browser-studio.py
   github-release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && !(github.event_name == 'workflow_dispatch' && inputs.publish_nuget)
     needs: [packages, upstream, themes, browser]
     runs-on: ubuntu-latest
     permissions:
@@ -155,22 +163,46 @@ jobs:
         run: python scripts/publish-release.py --directory release
   nuget:
     if: github.event_name == 'workflow_dispatch' && inputs.publish_nuget && startsWith(github.ref, 'refs/tags/v')
-    needs: [packages, upstream, themes, browser]
+    needs: prepare
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: nuget
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          name: release-candidate
-          path: release
+          persist-credentials: false
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.401'
-      - working-directory: release
-        run: sha256sum --check SHA256SUMS
-      - name: Publish explicitly requested NuGet release
+      # Reuse the exact assets that passed the tag's package/upstream/theme/browser
+      # gates. Repacking on dispatch could give NuGet different bytes from GitHub.
+      - name: Download the published GitHub release
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          test -n "$NUGET_API_KEY" || { echo 'The nuget environment must provide NUGET_API_KEY.'; exit 1; }
-          dotnet nuget push 'release/*.nupkg' --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = false
+          gh release download "$RELEASE_TAG" --dir release
+      - name: Verify release checksums, complete inventory and source commit
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: python scripts/verify-release.py --directory release --version "$RELEASE_VERSION" --commit "$(git rev-parse HEAD)"
+      - name: Check trusted publishing configuration
+        env:
+          NUGET_USER: ${{ secrets.NUGET_USER }}
+        run: test -n "$NUGET_USER" || { echo 'Set the NUGET_USER secret in the nuget environment. See docs/releasing.md.'; exit 1; }
+      - name: Obtain a short-lived NuGet API key using GitHub OIDC
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+      - name: Publish packages and portable symbols
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          dotnet nuget push 'release/*.nupkg' --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate --no-symbols
+          dotnet nuget push 'release/*.snupkg' --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate

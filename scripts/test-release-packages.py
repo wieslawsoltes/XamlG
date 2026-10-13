@@ -8,6 +8,8 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
+from release_common import load_manifest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -38,6 +40,35 @@ def main():
         config = work / 'NuGet.Config'
         ET.ElementTree(configuration).write(config, encoding='utf-8', xml_declaration=True)
         environment = dict(os.environ, NUGET_PACKAGES=str(work / 'packages'))
+        # Tool packages bundle their dependencies, so installing them alone cannot
+        # detect a missing standalone library such as XamlG.ProjectSystem.
+        libraries = [package['id'] for package in load_manifest()
+                     if 'command' not in package and package['id'] != 'XamlG.Generator']
+        consumer = work / 'libraries'
+        consumer.mkdir()
+        project = ET.Element('Project', Sdk='Microsoft.NET.Sdk')
+        properties = ET.SubElement(project, 'PropertyGroup')
+        for key, value in {'TargetFramework': 'net10.0', 'OutputType': 'Exe', 'ImplicitUsings': 'enable',
+                           'Nullable': 'enable', 'TreatWarningsAsErrors': 'true'}.items():
+            ET.SubElement(properties, key).text = value
+        items = ET.SubElement(project, 'ItemGroup')
+        ET.SubElement(items, 'FrameworkReference', Include='Microsoft.AspNetCore.App')
+        for package in libraries:
+            ET.SubElement(items, 'PackageReference', Include=package, Version=args.version)
+        ET.ElementTree(project).write(consumer / 'Consumer.csproj', encoding='utf-8', xml_declaration=True)
+        (consumer / 'Program.cs').write_text('''
+using System.Reflection;
+using XamlG.ProjectSystem;
+foreach (var name in args) Assembly.Load(name);
+var plan = WorkspaceTemplates.CreateSolution("Packaged", new("console", "App"));
+var solution = SolutionInspector.Inspect(plan.CreateWorkspace().Current);
+if (solution.Projects.Single().Path != "App/App.csproj")
+    throw new Exception("Packaged project-system solution inspection failed.");
+Console.WriteLine("PASS: all standalone library packages resolve and load; project-system APIs execute.");
+''', encoding='utf-8')
+        run('dotnet', 'restore', str(consumer / 'Consumer.csproj'), '--configfile', str(config), env=environment)
+        run('dotnet', 'run', '--project', str(consumer / 'Consumer.csproj'), '-c', 'Release', '--no-restore',
+            '--', *libraries, env=environment)
         tools = work / 'tools'
         for package, command in (('XamlG.Cli', 'xamlg'), ('XamlG.Lsp', 'xamlg-lsp')):
             run('dotnet', 'tool', 'install', package, '--tool-path', str(tools), '--version', args.version, '--configfile', str(config), env=environment)

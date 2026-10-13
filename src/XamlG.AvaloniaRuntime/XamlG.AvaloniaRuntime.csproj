@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <Description>Avalonia bindings, resources, visual inspection, input dispatch and state-preserving reload for compiled XAML.</Description>
     <!-- Real input dispatch uses Avalonia's platform input pipeline. The exact
          package dependency below is required by Avalonia for these APIs. -->
     <AvaloniaAccessUnstablePrivateApis>true</AvaloniaAccessUnstablePrivateApis>
