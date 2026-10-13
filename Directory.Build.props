@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
-    <Version>0.1.0-alpha.1</Version>
+    <Version>0.1.0</Version>
     <Authors>Wiesław Šoltés</Authors>
     <RepositoryUrl>https://github.com/wieslawsoltes/XamlG</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
